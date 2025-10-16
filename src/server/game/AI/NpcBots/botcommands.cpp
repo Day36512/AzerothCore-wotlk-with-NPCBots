@@ -4986,26 +4986,29 @@ public:
     {
         Player* owner = handler->GetSession()->GetPlayer();
         Unit* u = owner->GetSelectedUnit();
+
+        auto ReviveAllFor = [&](Player* master) -> bool
+            {
+                if (!master->HaveBot())
+                {
+                    handler->PSendSysMessage("{} has no npcbots!", master->GetName());
+                    handler->SetSentErrorMessage(true);
+                    return false;
+                }
+
+                master->GetBotMgr()->ReviveAllBots();
+                handler->SendSysMessage("Npcbots revived");
+                return true;
+            };
+
         if (!u)
         {
-            handler->SendSysMessage(".npcbot revive");
-            handler->SendSysMessage("Revives selected npcbot. If player is selected, revives all selected player's npcbots");
-            handler->SetSentErrorMessage(true);
-            return false;
+            return ReviveAllFor(owner);
         }
 
         if (Player* master = u->ToPlayer())
         {
-            if (!master->HaveBot())
-            {
-                handler->PSendSysMessage("{} has no npcbots!", master->GetName());
-                handler->SetSentErrorMessage(true);
-                return false;
-            }
-
-            master->GetBotMgr()->ReviveAllBots();
-            handler->SendSysMessage("Npcbots revived");
-            return true;
+            return ReviveAllFor(master);
         }
         else if (Creature* bot = u->ToCreature())
         {
@@ -5022,11 +5025,11 @@ public:
                 handler->PSendSysMessage("{} revived", bot->GetName());
                 return true;
             }
+
+            return ReviveAllFor(owner);
         }
 
-        handler->SendSysMessage("You must select player or npcbot");
-        handler->SetSentErrorMessage(true);
-        return false;
+        return ReviveAllFor(owner);
     }
 
     static bool HandleNpcBotAddCommand(ChatHandler* handler)
