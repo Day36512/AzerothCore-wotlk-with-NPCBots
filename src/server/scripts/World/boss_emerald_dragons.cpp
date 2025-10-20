@@ -215,7 +215,7 @@ public:
 
                 // Seeping fog movement is slow enough for a player to be able to walk backwards and still outpace it
                 me->SetWalk(true);
-                me->SetSpeed(MOVE_WALK, 0.75f);
+                me->SetSpeed(MOVE_WALK, 0.7f);
             });
         }
 
@@ -240,7 +240,7 @@ public:
             {
                 if (dragon->GetAI())
                 {
-                    return dragon->GetAI()->SelectTarget(SelectTargetMethod::Random, 0, 0.0f, true);
+                    return dragon->GetAI()->SelectTarget(SelectTargetMethod::Random, 0, 0.0f, false);
                 }
             }
 
@@ -292,13 +292,11 @@ enum YsondreSpells
 class boss_ysondre : public CreatureScript
 {
 public:
-    boss_ysondre() : CreatureScript("boss_ysondre") { }
+    boss_ysondre() : CreatureScript("boss_ysondre") {}
 
     struct boss_ysondreAI : public emerald_dragonAI
     {
-        boss_ysondreAI(Creature* creature) : emerald_dragonAI(creature)
-        {
-        }
+        explicit boss_ysondreAI(Creature* creature) : emerald_dragonAI(creature) {}
 
         void Reset() override
         {
@@ -313,6 +311,28 @@ public:
             WorldBossAI::JustEngagedWith(who);
         }
 
+        // Count living players and NPCBots on the boss's threat list.
+        uint8 GetRelevantAttackersCount() const
+        {
+            uint32 count = 0;
+
+            auto const& list = me->GetThreatMgr().GetThreatList(); // std::list<HostileReference*>
+            for (HostileReference const* ref : list)
+            {
+                if (!ref)
+                    continue;
+
+                Unit* u = ref->getTarget();
+                if (!u || !u->IsAlive())
+                    continue;
+
+                if (u->IsPlayer() || u->IsNPCBot())
+                    ++count;
+            }
+
+            return static_cast<uint8>(std::min<uint32>(count, 255u));
+        }
+
         // Summon druid spirits on 75%, 50% and 25% health
         void DamageTaken(Unit*, uint32& damage, DamageEffectType, SpellSchoolMask) override
         {
@@ -320,20 +340,16 @@ public:
             {
                 Talk(SAY_YSONDRE_SUMMON_DRUIDS);
 
-                auto const& attackers = me->GetThreatMgr().GetThreatList();
-                uint8 attackersCount = 0;
+                const uint8 attackersCount = GetRelevantAttackersCount();
 
-                for (const auto attacker : attackers)
-                {
-                    if ((*attacker)->ToPlayer() && (*attacker)->IsAlive())
-                        ++attackersCount;
-                }
-
-                uint8 amount = attackersCount < 30 ? attackersCount * 0.5f : 15;
-                amount = amount < 1 ? 1 : amount;
+                // Half of relevant attackers, capped at 15, minimum 1
+                uint8 amount = attackersCount < 30 ? static_cast<uint8>(attackersCount / 2) : 15;
+                if (amount < 1)
+                    amount = 1;
 
                 for (uint8 i = 0; i < amount; ++i)
                     DoCast(me, SPELL_SUMMON_DRUID_SPIRITS, true);
+
                 ++_stage;
             }
         }
@@ -342,18 +358,18 @@ public:
         {
             switch (eventId)
             {
-                case EVENT_LIGHTNING_WAVE:
-                    DoCastVictim(SPELL_LIGHTNING_WAVE);
-                    events.ScheduleEvent(EVENT_LIGHTNING_WAVE, urand(10000, 20000));
-                    break;
-                default:
-                    emerald_dragonAI::ExecuteEvent(eventId);
-                    break;
+            case EVENT_LIGHTNING_WAVE:
+                DoCastVictim(SPELL_LIGHTNING_WAVE);
+                events.ScheduleEvent(EVENT_LIGHTNING_WAVE, urand(10000, 20000));
+                break;
+            default:
+                emerald_dragonAI::ExecuteEvent(eventId);
+                break;
             }
         }
 
     private:
-        uint8 _stage;
+        uint8 _stage = 1;
     };
 
     CreatureAI* GetAI(Creature* creature) const override
@@ -751,7 +767,24 @@ class spell_dream_fog_sleep : public SpellScript
 
     void FilterTargets(std::list<WorldObject*>& targets)
     {
-        targets.remove_if(Acore::UnitAuraCheck(true, SPELL_SLEEP));
+        // Remove any units that are already under SLEEP aura (existing behavior),
+        // AND remove NPCBots so they’re never considered valid targets.
+        targets.remove_if([](WorldObject* obj)
+            {
+                if (!obj)
+                    return true; // safety: drop nulls
+
+                Unit* u = obj->ToUnit();
+                if (!u)
+                    return true; // only Units are valid here
+
+                // Filter out NPCBots
+                if (u->IsNPCBot())
+                    return true;
+
+                // Preserve the original sleep-aura filter
+                return u->HasAura(SPELL_SLEEP);
+            });
     }
 
     void Register() override
