@@ -231,10 +231,15 @@ private:
     uint8 _targetClass;
 };
 
+#include "Config.h"            // NEW: for sConfigMgr->GetOption<bool>
+#include "GridNotifiers.h"     // NEW: for range scans
+#include "GridNotifiersImpl.h"
+#include "CellImpl.h"
+
 class boss_victor_nefarius : public CreatureScript
 {
 public:
-    boss_victor_nefarius() : CreatureScript("boss_victor_nefarius") { }
+    boss_victor_nefarius() : CreatureScript("boss_victor_nefarius") {}
 
     struct boss_victor_nefariusAI : public BossAI
     {
@@ -247,15 +252,12 @@ public:
 
             if (!_nefarianLeftTunnel || !_nefarianRightTunnel)
             {
-                // Victor Nefarius weekly mechanic drakonid spawn
-                // Pick 2 drakonids and keep them for the whole save duration (the drakonids can't be repeated).
                 std::vector<uint32> nefarianDrakonidSpawners = { NPC_BLACK_SPAWNER, NPC_BLUE_SPAWNER, NPC_BRONZE_SPAWNER, NPC_GREEN_SPAWNER, NPC_RED_SPAWNER };
                 Acore::Containers::RandomResize(nefarianDrakonidSpawners, 2);
 
                 _nefarianRightTunnel = nefarianDrakonidSpawners[0];
                 _nefarianLeftTunnel = nefarianDrakonidSpawners[1];
 
-                // save it to instance
                 instance->SetData(DATA_NEFARIAN_LEFT_TUNNEL, _nefarianLeftTunnel);
                 instance->SetData(DATA_NEFARIAN_RIGHT_TUNNEL, _nefarianRightTunnel);
             }
@@ -274,17 +276,13 @@ public:
             {
                 if (Creature* nefarian = me->FindNearestCreature(NPC_NEFARIAN, 1000.0f, true))
                 {
-                    // Nefarian is spawned and he didn't finish his intro path yet, despawn it manually.
                     if (nefarian->GetMotionMaster()->GetCurrentMovementGeneratorType() == MovementGeneratorType::WAYPOINT_MOTION_TYPE)
-                    {
                         nefarian->DespawnOrUnsummon();
-                    }
+
                     std::list<GameObject*> drakonidBones;
                     me->GetGameObjectListWithEntryInGrid(drakonidBones, GO_DRAKONID_BONES, DEFAULT_VISIBILITY_INSTANCE);
                     for (auto const& bones : drakonidBones)
-                    {
                         bones->DespawnOrUnsummon();
-                    }
                 }
                 else
                 {
@@ -301,17 +299,12 @@ public:
             }
         }
 
-        void JustReachedHome() override
-        {
-            Reset();
-        }
+        void JustReachedHome() override { Reset(); }
 
         void JustSummoned(Creature* summon) override
         {
             if (summon->GetEntry() != NPC_NEFARIAN)
-            {
                 BossAI::JustSummoned(summon);
-            }
         }
 
         void SummonedCreatureDies(Creature* summon, Unit* /*unit*/) override
@@ -349,7 +342,7 @@ public:
                     events.Reset();
                     DoCastSelf(SPELL_ROOT_SELF, true);
                     me->SetVisible(false);
-                    // Stop spawning adds
+
                     EntryCheckPredicate pred(_nefarianRightTunnel);
                     summons.DoAction(ACTION_SPAWNER_STOP, pred);
                     EntryCheckPredicate pred2(_nefarianLeftTunnel);
@@ -379,7 +372,11 @@ public:
             events.ScheduleEvent(EVENT_SHADOW_BOLT_VOLLEY, 13s, 15s);
             events.ScheduleEvent(EVENT_FEAR, 10s, 20s);
             events.ScheduleEvent(EVENT_SILENCE, 20s, 25s);
-            events.ScheduleEvent(EVENT_MIND_CONTROL, 30s, 35s);
+
+            // schedule Mind Control only if allowed
+            if (!IsMindControlDisabled())
+                events.ScheduleEvent(EVENT_MIND_CONTROL, 30s, 35s);
+
             events.ScheduleEvent(EVENT_SPAWN_ADDS, 10s);
         }
 
@@ -405,46 +402,46 @@ public:
                 {
                     switch (eventId)
                     {
-                        case EVENT_PATH_2:
-                            me->GetMotionMaster()->MovePath(NEFARIUS_PATH_2, false);
-                            events.ScheduleEvent(EVENT_CHAOS_1, 7s);
-                            break;
-                        case EVENT_CHAOS_1:
-                            if (Creature* gyth = me->FindNearestCreature(NPC_GYTH, 75.0f, true))
-                            {
-                                me->SetFacingToObject(gyth);
-                                Talk(SAY_CHAOS_SPELL);
-                            }
-                            events.ScheduleEvent(EVENT_CHAOS_2, 2s);
-                            break;
-                        case EVENT_CHAOS_2:
-                            DoCast(SPELL_CHROMATIC_CHAOS);
-                            me->SetFacingTo(1.570796f);
-                            break;
-                        case EVENT_SUCCESS_1:
-                            if (Unit* player = me->SelectNearestPlayer(60.0f))
-                            {
-                                me->SetFacingToObject(player);
-                                Talk(SAY_SUCCESS);
-                                if (GameObject* portcullis1 = me->FindNearestGameObject(GO_PORTCULLIS_ACTIVE, 65.0f))
-                                    portcullis1->SetGoState(GO_STATE_ACTIVE);
-                                if (GameObject* portcullis2 = me->FindNearestGameObject(GO_PORTCULLIS_TOBOSSROOMS, 80.0f))
-                                    portcullis2->SetGoState(GO_STATE_ACTIVE);
-                            }
-                            events.ScheduleEvent(EVENT_SUCCESS_2, 4s);
-                            break;
-                        case EVENT_SUCCESS_2:
-                            DoCast(me, SPELL_VAELASTRASZZ_SPAWN);
-                            me->DespawnOrUnsummon(1000);
-                            break;
-                        case EVENT_PATH_3:
-                            me->GetMotionMaster()->MovePath(NEFARIUS_PATH_3, false);
-                            break;
-                        case EVENT_START_EVENT:
-                            BeginEvent();
-                            break;
-                        default:
-                            break;
+                    case EVENT_PATH_2:
+                        me->GetMotionMaster()->MovePath(NEFARIUS_PATH_2, false);
+                        events.ScheduleEvent(EVENT_CHAOS_1, 7s);
+                        break;
+                    case EVENT_CHAOS_1:
+                        if (Creature* gyth = me->FindNearestCreature(NPC_GYTH, 75.0f, true))
+                        {
+                            me->SetFacingToObject(gyth);
+                            Talk(SAY_CHAOS_SPELL);
+                        }
+                        events.ScheduleEvent(EVENT_CHAOS_2, 2s);
+                        break;
+                    case EVENT_CHAOS_2:
+                        DoCast(SPELL_CHROMATIC_CHAOS);
+                        me->SetFacingTo(1.570796f);
+                        break;
+                    case EVENT_SUCCESS_1:
+                        if (Unit* player = me->SelectNearestPlayer(60.0f))
+                        {
+                            me->SetFacingToObject(player);
+                            Talk(SAY_SUCCESS);
+                            if (GameObject* portcullis1 = me->FindNearestGameObject(GO_PORTCULLIS_ACTIVE, 65.0f))
+                                portcullis1->SetGoState(GO_STATE_ACTIVE);
+                            if (GameObject* portcullis2 = me->FindNearestGameObject(GO_PORTCULLIS_TOBOSSROOMS, 80.0f))
+                                portcullis2->SetGoState(GO_STATE_ACTIVE);
+                        }
+                        events.ScheduleEvent(EVENT_SUCCESS_2, 4s);
+                        break;
+                    case EVENT_SUCCESS_2:
+                        DoCast(me, SPELL_VAELASTRASZZ_SPAWN);
+                        me->DespawnOrUnsummon(1000);
+                        break;
+                    case EVENT_PATH_3:
+                        me->GetMotionMaster()->MovePath(NEFARIUS_PATH_3, false);
+                        break;
+                    case EVENT_START_EVENT:
+                        BeginEvent();
+                        break;
+                    default:
+                        break;
                     }
                 }
                 return;
@@ -462,35 +459,50 @@ public:
                 {
                     switch (eventId)
                     {
-                        case EVENT_SHADOW_BOLT:
-                            DoCastRandomTarget(SPELL_SHADOWBOLT, 0, 150.f);
-                            events.ScheduleEvent(EVENT_SHADOW_BOLT, 2s, 4s);
+                    case EVENT_SHADOW_BOLT:
+                    {
+                        if (Unit* t = SelectRandomPlayerOrNPCBot(150.0f))
+                            me->CastSpell(t, SPELL_SHADOWBOLT, false);
+                        events.ScheduleEvent(EVENT_SHADOW_BOLT, 2s, 4s);
+                        break;
+                    }
+                    case EVENT_SHADOW_BOLT_VOLLEY:
+                        DoCastAOE(SPELL_SHADOWBOLT_VOLLEY);
+                        events.ScheduleEvent(EVENT_SHADOW_BOLT_VOLLEY, 19s, 25s);
+                        break;
+                    case EVENT_FEAR:
+                    {
+                        if (Unit* t = SelectRandomPlayerOrNPCBot(40.0f))
+                            me->CastSpell(t, SPELL_FEAR, false);
+                        events.ScheduleEvent(EVENT_FEAR, 10s, 20s);
+                        break;
+                    }
+                    case EVENT_SILENCE:
+                    {
+                        if (Unit* t = SelectRandomPlayerOrNPCBot(150.0f))
+                            me->CastSpell(t, SPELL_SILENCE, false);
+                        events.ScheduleEvent(EVENT_SILENCE, 14s, 23s);
+                        break;
+                    }
+                    case EVENT_MIND_CONTROL:
+                    {
+                        // Respect config: if disabled, just skip (also covers hot-reload scenarios)
+                        if (IsMindControlDisabled())
                             break;
-                        case EVENT_SHADOW_BOLT_VOLLEY:
-                            DoCastAOE(SPELL_SHADOWBOLT_VOLLEY);
-                            events.ScheduleEvent(EVENT_SHADOW_BOLT_VOLLEY, 19s, 25s);
-                            break;
-                        case EVENT_FEAR:
-                            DoCastRandomTarget(SPELL_FEAR, 0, 40.0f);
-                            events.ScheduleEvent(EVENT_FEAR, 10s, 20s);
-                            break;
-                        case EVENT_SILENCE:
-                            DoCastRandomTarget(SPELL_SILENCE, 0, 150.f);
-                            events.ScheduleEvent(EVENT_SILENCE, 14s,23s);
-                            break;
-                        case EVENT_MIND_CONTROL:
-                            DoCastRandomTarget(SPELL_SHADOW_COMMAND, 0, 40.0f);
-                            events.ScheduleEvent(EVENT_MIND_CONTROL, 24s, 30s);
-                            break;
-                        case EVENT_SHADOWBLINK:
-                            DoCastSelf(SPELL_SHADOWBLINK);
-                            events.ScheduleEvent(EVENT_SHADOWBLINK, 30s, 40s);
-                            break;
-                        case EVENT_SPAWN_ADDS:
-                            // Spawn the spawners.
-                            me->SummonCreature(_nefarianLeftTunnel, spawnerPositions[0]);
-                            me->SummonCreature(_nefarianRightTunnel, spawnerPositions[1]);
-                            break;
+
+                        // Keep original MC behavior (players only)
+                        DoCastRandomTarget(SPELL_SHADOW_COMMAND, 0, 40.0f);
+                        events.ScheduleEvent(EVENT_MIND_CONTROL, 24s, 30s);
+                        break;
+                    }
+                    case EVENT_SHADOWBLINK:
+                        DoCastSelf(SPELL_SHADOWBLINK);
+                        events.ScheduleEvent(EVENT_SHADOWBLINK, 30s, 40s);
+                        break;
+                    case EVENT_SPAWN_ADDS:
+                        me->SummonCreature(_nefarianLeftTunnel, spawnerPositions[0]);
+                        me->SummonCreature(_nefarianRightTunnel, spawnerPositions[1]);
+                        break;
                     }
 
                     if (me->HasUnitState(UNIT_STATE_CASTING))
@@ -503,7 +515,6 @@ public:
         {
             if (sender == GOSSIP_ID && action == GOSSIP_OPTION_ID)
             {
-                // pussywizard:
                 InstanceScript* instance = player->GetInstanceScript();
                 if (!instance || instance->GetBossState(DATA_NEFARIAN) == DONE)
                     return;
@@ -519,10 +530,58 @@ public:
             }
         }
 
-        private:
-            uint32 KilledAdds;
-            uint32 _nefarianRightTunnel;
-            uint32 _nefarianLeftTunnel;
+    private:
+        // === NEW: random eligible target that includes NPCBots ===
+        Unit* SelectRandomPlayerOrNPCBot(float range, std::function<bool(Unit*)> extra = {})
+        {
+            std::list<Unit*> units;
+            Acore::AnyUnitInObjectRangeCheck check(me, range);
+            Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, units, check);
+            Cell::VisitObjects(me, searcher, range);
+
+            units.remove_if([this, &extra](Unit* u) -> bool
+                {
+                    if (!u || !u->IsAlive())
+                        return true;
+
+                    bool isPlayer = u->IsPlayer();
+                    bool isNPCBot = (u->GetTypeId() == TYPEID_UNIT) && u->ToCreature() && u->ToCreature()->IsNPCBot();
+
+                    if (!isPlayer && !isNPCBot)
+                        return true;
+
+                    if (!me->IsValidAttackTarget(u))
+                        return true;
+
+                    if (extra && !extra(u))
+                        return true;
+
+                    return false;
+                });
+
+            if (units.empty())
+                return nullptr;
+
+            return Acore::Containers::SelectRandomContainerElement(units);
+        }
+
+        // === NEW: config toggle (cached) to disable Mind Control ===
+        static bool IsMindControlDisabled()
+        {
+            static bool s_cached = sConfigMgr->GetOption<bool>("BlackwingLair.Nefarian.DisableMindControl", false);
+            static bool s_logged = false;
+            if (!s_logged)
+            {
+                LOG_INFO("server.loading", "BlackwingLair.Nefarian.DisableMindControl = {}", s_cached ? "true" : "false");
+                s_logged = true;
+            }
+            return s_cached;
+        }
+
+    private:
+        uint32 KilledAdds;
+        uint32 _nefarianRightTunnel;
+        uint32 _nefarianLeftTunnel;
     };
 
     CreatureAI* GetAI(Creature* creature) const override
@@ -533,7 +592,7 @@ public:
 
 struct boss_nefarian : public BossAI
 {
-    boss_nefarian(Creature* creature) : BossAI(creature, DATA_NEFARIAN), _introDone(false) { }
+    boss_nefarian(Creature* creature) : BossAI(creature, DATA_NEFARIAN), _introDone(false) {}
 
     void Reset() override
     {
@@ -541,61 +600,45 @@ struct boss_nefarian : public BossAI
         me->SetUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
         me->SetCanFly(true);
         me->SetDisableGravity(true);
-        if (_introDone) // already in combat, reset properly.
+
+        if (_introDone)
         {
             _Reset();
             if (Creature* victor = me->FindNearestCreature(NPC_VICTOR_NEFARIUS, 200.f, true))
-            {
                 if (victor->AI())
-                {
                     victor->AI()->DoAction(ACTION_RESET);
-                }
-            }
+
             me->DespawnOrUnsummon();
         }
 
-        classesPresent.clear();
-
         ScheduleHealthCheckEvent(20, [&]
-        {
-            DoCastSelf(SPELL_RAISE_DRAKONID, true);
-            Talk(SAY_RAISE_SKELETONS);
-        });
+            {
+                DoCastSelf(SPELL_RAISE_DRAKONID, true);
+                Talk(SAY_RAISE_SKELETONS);
+            });
         ScheduleHealthCheckEvent(5, [&]
-        {
-            Talk(SAY_XHEALTH);
-        });
+            {
+                Talk(SAY_XHEALTH);
+            });
     }
 
     void JustEngagedWith(Unit* /*who*/) override {}
-
-    void JustDied(Unit* /*killer*/) override
-    {
-        _JustDied();
-        Talk(SAY_DEATH);
-    }
+    void JustDied(Unit* /*killer*/) override { _JustDied(); Talk(SAY_DEATH); }
 
     void KilledUnit(Unit* victim) override
     {
         if (rand32() % 5)
-        {
             return;
-        }
-
         Talk(SAY_SLAY, victim);
     }
 
     void MovementInform(uint32 type, uint32 id) override
     {
         if (type != WAYPOINT_MOTION_TYPE)
-        {
             return;
-        }
 
         if (id == 3)
-        {
             Talk(SAY_INTRO);
-        }
 
         if (id == 5)
         {
@@ -617,9 +660,7 @@ struct boss_nefarian : public BossAI
         me->SetReactState(REACT_AGGRESSIVE);
         DoZoneInCombat();
         if (me->GetVictim())
-        {
             AttackStart(me->GetVictim());
-        }
 
         events.ScheduleEvent(EVENT_SHADOWFLAME, 12s);
         events.ScheduleEvent(EVENT_FEAR, 25s, 35s);
@@ -630,123 +671,88 @@ struct boss_nefarian : public BossAI
         _introDone = true;
     }
 
+    // --- NEW: Random class-call helper ---
+    void DoRandomClassCall()
+    {
+        // Table of (spell, say) pairs for random roll
+        static std::array<std::pair<uint32, uint32>, 10> const kCalls = { {
+            { SPELL_MAGE,        SAY_MAGE        },
+            { SPELL_WARRIOR,     SAY_WARRIOR     },
+            { SPELL_DRUID,       SAY_DRUID       },
+            { SPELL_PRIEST,      SAY_PRIEST      },
+            { SPELL_PALADIN,     SAY_PALADIN     },
+            { SPELL_SHAMAN,      SAY_SHAMAN      },
+            { SPELL_WARLOCK,     SAY_WARLOCK     },
+            { SPELL_HUNTER,      SAY_HUNTER      },
+            { SPELL_ROGUE,       SAY_ROGUE       },
+            { SPELL_DEATH_KNIGHT,SAY_DEATH_KNIGHT}
+        } };
+
+        auto const& pick = Acore::Containers::SelectRandomContainerElement(kCalls);
+        uint32 spellId = pick.first;
+        uint32 sayId = pick.second;
+
+        // Say the line for this class call
+        Talk(sayId);
+
+        if (spellId == SPELL_DEATH_KNIGHT)
+        {
+            // DK call is special: cast on all players (non-GM)
+            me->GetMap()->DoForAllPlayers([&](Player* p)
+                {
+                    if (!p->IsGameMaster())
+                        me->CastSpell(p, SPELL_DEATH_KNIGHT, true);
+                });
+            return;
+        }
+
+        // All other class calls: cast from Nefarian; SpellScripts will filter by class.
+        DoCast(me, spellId, true);
+    }
+
     void UpdateAI(uint32 diff) override
     {
         if (!UpdateVictim())
-        {
             return;
-        }
 
         events.Update(diff);
 
         if (me->HasUnitState(UNIT_STATE_CASTING))
-        {
             return;
-        }
 
         while (uint32 eventId = events.ExecuteEvent())
         {
             switch (eventId)
             {
-                case EVENT_SHADOWFLAME:
-                    DoCastVictim(SPELL_SHADOWFLAME);
-                    events.ScheduleEvent(EVENT_SHADOWFLAME, 12s);
-                    break;
-                case EVENT_FEAR:
-                    DoCastVictim(SPELL_BELLOWINGROAR);
-                    events.ScheduleEvent(EVENT_FEAR, 25s, 35s);
-                    break;
-                case EVENT_VEILOFSHADOW:
-                    DoCastVictim(SPELL_VEILOFSHADOW);
-                    events.ScheduleEvent(EVENT_VEILOFSHADOW, 25s, 35s);
-                    break;
-                case EVENT_CLEAVE:
-                    DoCastVictim(SPELL_CLEAVE);
-                    events.ScheduleEvent(EVENT_CLEAVE, 7s);
-                    break;
-                case EVENT_TAILLASH:
-                    // Cast NYI since we need a better check for behind target
-                    DoCastAOE(SPELL_TAILLASH);
-                    events.ScheduleEvent(EVENT_TAILLASH, 10s);
-                    break;
-                case EVENT_CLASSCALL:
-                    if (classesPresent.empty())
-                    {
-                        for (auto& ref : me->GetThreatMgr().GetThreatList())
-                        {
-                            if (ref->getTarget() && ref->getTarget()->IsPlayer())
-                            {
-                                classesPresent.insert(ref->getTarget()->getClass());
-                            }
-                        }
-                    }
-
-                    uint8 targetClass = Acore::Containers::SelectRandomContainerElement(classesPresent);
-
-                    classesPresent.erase(targetClass);
-
-                    if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, ClassCallSelector(me, targetClass)))
-                    {
-                        switch (target->getClass())
-                        {
-                            case CLASS_MAGE:
-                                Talk(SAY_MAGE);
-                                DoCast(me, SPELL_MAGE);
-                                break;
-                            case CLASS_WARRIOR:
-                                Talk(SAY_WARRIOR);
-                                DoCast(me, SPELL_WARRIOR);
-                                break;
-                            case CLASS_DRUID:
-                                Talk(SAY_DRUID);
-                                DoCast(target, SPELL_DRUID);
-                                break;
-                            case CLASS_PRIEST:
-                                Talk(SAY_PRIEST);
-                                DoCast(me, SPELL_PRIEST);
-                                break;
-                            case CLASS_PALADIN:
-                                Talk(SAY_PALADIN);
-                                DoCast(me, SPELL_PALADIN);
-                                break;
-                            case CLASS_SHAMAN:
-                                Talk(SAY_SHAMAN);
-                                DoCast(me, SPELL_SHAMAN);
-                                break;
-                            case CLASS_WARLOCK:
-                                Talk(SAY_WARLOCK);
-                                DoCast(me, SPELL_WARLOCK);
-                                break;
-                            case CLASS_HUNTER:
-                                Talk(SAY_HUNTER);
-                                DoCast(me, SPELL_HUNTER);
-                                break;
-                            case CLASS_ROGUE:
-                                Talk(SAY_ROGUE);
-                                DoCast(me, SPELL_ROGUE);
-                                break;
-                            case CLASS_DEATH_KNIGHT:
-                                Talk(SAY_DEATH_KNIGHT);
-                                me->GetMap()->DoForAllPlayers([&](Player* p)
-                                {
-                                    if (!p->IsGameMaster())
-                                    {
-                                        me->CastSpell(p, SPELL_DEATH_KNIGHT, true);
-                                    }
-                                });
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    events.ScheduleEvent(EVENT_CLASSCALL, 30s, 35s);
-                    break;
+            case EVENT_SHADOWFLAME:
+                DoCastVictim(SPELL_SHADOWFLAME);
+                events.ScheduleEvent(EVENT_SHADOWFLAME, 12s);
+                break;
+            case EVENT_FEAR:
+                DoCastVictim(SPELL_BELLOWINGROAR);
+                events.ScheduleEvent(EVENT_FEAR, 25s, 35s);
+                break;
+            case EVENT_VEILOFSHADOW:
+                DoCastVictim(SPELL_VEILOFSHADOW);
+                events.ScheduleEvent(EVENT_VEILOFSHADOW, 25s, 35s);
+                break;
+            case EVENT_CLEAVE:
+                DoCastVictim(SPELL_CLEAVE);
+                events.ScheduleEvent(EVENT_CLEAVE, 7s);
+                break;
+            case EVENT_TAILLASH:
+                DoCastAOE(SPELL_TAILLASH);
+                events.ScheduleEvent(EVENT_TAILLASH, 10s);
+                break;
+            case EVENT_CLASSCALL:
+                // NEW: always pick a random class call; no raid composition sniffing.
+                DoRandomClassCall();
+                events.ScheduleEvent(EVENT_CLASSCALL, 30s, 35s);
+                break;
             }
 
             if (me->HasUnitState(UNIT_STATE_CASTING))
-            {
                 return;
-            }
         }
 
         DoMeleeAttackIfReady();
@@ -754,7 +760,6 @@ struct boss_nefarian : public BossAI
 
 private:
     bool _introDone;
-    std::set<uint8> classesPresent;
 };
 
 enum TotemSpells

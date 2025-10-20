@@ -13534,16 +13534,16 @@ void Player::InitGlyphsForLevel()
     uint8 level = GetLevel();
     uint32 value = 0;
 
-    // 0x3F = 0x01 | 0x02 | 0x04 | 0x08 | 0x10 | 0x20 for 80 level
-    if (level >= 15)
+    // 0x3F = 0x01 | 0x02 | 0x04 | 0x08 | 0x10 | 0x20 for 60 level
+    if (level >= 10) // Adjusted for level 10
         value |= (0x01 | 0x02);
-    if (level >= 30)
+    if (level >= 20) // Adjusted for level 20
         value |= 0x08;
-    if (level >= 50)
+    if (level >= 30) // Adjusted for level 30
         value |= 0x04;
-    if (level >= 70)
+    if (level >= 40) // Adjusted for level 40
         value |= 0x10;
-    if (level >= 80)
+    if (level >= 60) // Adjusted for level 60
         value |= 0x20;
 
     SetUInt32Value(PLAYER_GLYPHS_ENABLED, value);
@@ -13872,14 +13872,19 @@ uint32 Player::CalculateTalentsPoints() const
         talentPointsForLevel += m_questRewardTalentCount;
 
         if (talentPointsForLevel > base_talent)
-        {
             talentPointsForLevel = base_talent;
-        }
     }
 
     talentPointsForLevel += m_extraBonusTalentCount;
     sScriptMgr->OnPlayerCalculateTalentsPoints(this, talentPointsForLevel);
-    return uint32(talentPointsForLevel * sWorld->getRate(RATE_TALENT));
+
+    uint32 points = uint32(talentPointsForLevel * sWorld->getRate(RATE_TALENT));
+
+    // Dinkle
+    if (uint32 maxPts = sWorld->getIntConfig(CONFIG_MAX_TALENT_POINTS); maxPts > 0 && points > maxPts)
+        points = maxPts;
+
+    return points;
 }
 
 bool Player::canFlyInZone(uint32 mapid, uint32 zone, SpellInfo const* bySpell)

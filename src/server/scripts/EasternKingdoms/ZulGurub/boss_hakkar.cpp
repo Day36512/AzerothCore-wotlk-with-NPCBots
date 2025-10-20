@@ -2,84 +2,124 @@
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
+ * under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
- * more details.
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+ * PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License along with this
+ * program. If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "AreaTriggerScript.h"
+#include "Creature.h"
 #include "CreatureScript.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "zulgurub.h"
-/*
-Name: Boss_Hakkar
-%Complete: 95
-Comment: Blood siphon spell buggy cause of Core Issue.
-Category: Zul'Gurub
-*/
+#include "Config.h" // new: read worldserver.conf
+#include "CellImpl.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
+
+ /*
+ Name: Boss_Hakkar
+ %Complete: 95
+ Comment: Blood siphon spell buggy cause of Core Issue.
+ Category: Zul'Gurub
+ */
 
 enum Says
 {
-    SAY_AGGRO                       = 0,
-    SAY_FLEEING                     = 1,
-    SAY_MINION_DESTROY              = 2,
-    SAY_PROTECT_ALTAR               = 3,
-    SAY_PROTECT_GURUBASHI_EMPIRE    = 4,
-    SAY_PLEDGE_ALLEGIANCE           = 5,
-    SAY_WORLD_WILL_SUFFER           = 6,
-    SAY_EVADE                       = 7
+    SAY_AGGRO = 0,
+    SAY_FLEEING = 1,
+    SAY_MINION_DESTROY = 2,
+    SAY_PROTECT_ALTAR = 3,
+    SAY_PROTECT_GURUBASHI_EMPIRE = 4,
+    SAY_PLEDGE_ALLEGIANCE = 5,
+    SAY_WORLD_WILL_SUFFER = 6,
+    SAY_EVADE = 7
 };
 
 enum Spells
 {
-    SPELL_BLOOD_SIPHON          = 24324,
-    SPELL_BLOOD_SIPHON_HEAL     = 24322,
-    SPELL_BLOOD_SIPHON_DAMAGE   = 24323,
-    SPELL_CORRUPTED_BLOOD       = 24328,
-    SPELL_CAUSE_INSANITY        = 24327,
-    SPELL_ENRAGE                = 24318,
+    SPELL_BLOOD_SIPHON = 24324,
+    SPELL_BLOOD_SIPHON_HEAL = 24322,
+    SPELL_BLOOD_SIPHON_DAMAGE = 24323,
+    SPELL_CORRUPTED_BLOOD = 24328,
+    SPELL_CAUSE_INSANITY = 24327,
+    SPELL_ENRAGE = 24318,
+
     // The Aspects of all High Priests spells
-    SPELL_ASPECT_OF_JEKLIK      = 24687,
-    SPELL_ASPECT_OF_VENOXIS     = 24688,
-    SPELL_ASPECT_OF_MARLI       = 24686,
-    SPELL_ASPECT_OF_THEKAL      = 24689,
-    SPELL_ASPECT_OF_ARLOKK      = 24690,
-    SPELL_POISONOUS_BLOOD       = 24321
+    SPELL_ASPECT_OF_JEKLIK = 24687,
+    SPELL_ASPECT_OF_VENOXIS = 24688,
+    SPELL_ASPECT_OF_MARLI = 24686,
+    SPELL_ASPECT_OF_THEKAL = 24689,
+    SPELL_ASPECT_OF_ARLOKK = 24690,
+
+    SPELL_POISONOUS_BLOOD = 24321,
+
+    // New toggled alternatives
+    SPELL_FEAR_SWAP = 300337,  
+    SPELL_MIND_BLAST_SWAP = 25375  
 };
 
 enum Events
 {
-    EVENT_BLOOD_SIPHON          = 1,
-    EVENT_CORRUPTED_BLOOD       = 2,
-    EVENT_CAUSE_INSANITY        = 3,
-    EVENT_ENRAGE                = 4,
+    EVENT_BLOOD_SIPHON = 1,
+    EVENT_CORRUPTED_BLOOD = 2,
+    EVENT_CAUSE_INSANITY = 3,
+    EVENT_ENRAGE = 4,
     // The Aspects of all High Priests events
-    EVENT_ASPECT_OF_JEKLIK      = 5,
-    EVENT_ASPECT_OF_VENOXIS     = 6,
-    EVENT_ASPECT_OF_MARLI       = 7,
-    EVENT_ASPECT_OF_THEKAL      = 8,
-    EVENT_ASPECT_OF_ARLOKK      = 9
+    EVENT_ASPECT_OF_JEKLIK = 5,
+    EVENT_ASPECT_OF_VENOXIS = 6,
+    EVENT_ASPECT_OF_MARLI = 7,
+    EVENT_ASPECT_OF_THEKAL = 8,
+    EVENT_ASPECT_OF_ARLOKK = 9,
+    EVENT_HAKKAR_STASIS_PULSE = 10
 };
+
+
+// 24324 - Blood Siphon (channel) SpellScript forward decls (implemented after AI)
+class spell_blood_siphon;
+class spell_blood_siphon_aura;
+class spell_hakkar_power_down;
 
 class boss_hakkar : public CreatureScript
 {
 public:
-    boss_hakkar() : CreatureScript("boss_hakkar") { }
+    boss_hakkar() : CreatureScript("boss_hakkar") {}
 
     struct boss_hakkarAI : public BossAI
     {
-        boss_hakkarAI(Creature* creature) : BossAI(creature, DATA_HAKKAR) { }
+
+        static constexpr std::array<uint32, 8> STASIS_ENTRIES =
+        {
+            15043, 11352, 11359, 11340, 11356, 11830, 11389, 11374
+        };
+
+        static constexpr uint32 SPELL_STASIS = 300334;
+        static constexpr float  STASIS_RADIUS = 200.0f;
+        static constexpr Milliseconds STASIS_PERIOD = 5s;
+
+        boss_hakkarAI(Creature* creature) : BossAI(creature, DATA_HAKKAR)
+        {
+            // Config toggles
+            _swapInsanityToFear = sConfigMgr->GetOption<bool>("ZG.HakkarSwapInsanityToFear", false);
+            _includeBotsInSiphon = sConfigMgr->GetOption<bool>("ZG.HakkarBloodSiphonIncludeBots", true);
+            _swapSiphonToMindBlast = sConfigMgr->GetOption<bool>("ZG.HakkarSwapBloodSiphonToMindBlast", false);
+
+            LOG_DEBUG("scripts.ai", "Hakkar config: Insanity->Fear={}, SiphonIncludeBots={}, Siphon->MindBlast={}",
+                _swapInsanityToFear ? "true" : "false",
+                _includeBotsInSiphon ? "true" : "false",
+                _swapSiphonToMindBlast ? "true" : "false");
+        }
 
         bool CheckInRoom() override
         {
@@ -102,8 +142,8 @@ public:
         void Reset() override
         {
             _Reset();
-
             ApplyHakkarPowerStacks();
+            // No manual unschedule needed; _Reset() clears events
         }
 
         void JustDied(Unit* /*killer*/) override
@@ -114,6 +154,9 @@ public:
         void JustEngagedWith(Unit* /*who*/) override
         {
             _JustEngagedWith();
+
+            events.ScheduleEvent(EVENT_HAKKAR_STASIS_PULSE, STASIS_PERIOD);
+
             events.ScheduleEvent(EVENT_BLOOD_SIPHON, 90s);
             events.ScheduleEvent(EVENT_CORRUPTED_BLOOD, 25s);
             events.ScheduleEvent(EVENT_CAUSE_INSANITY, 17s);
@@ -134,8 +177,8 @@ public:
         void EnterEvadeMode(EvadeReason evadeReason) override
         {
             BossAI::EnterEvadeMode(evadeReason);
-
             Talk(SAY_EVADE);
+            // Event system is cleared by BossAI; STASIS pulses stop automatically
         }
 
         void UpdateAI(uint32 diff) override
@@ -152,64 +195,161 @@ public:
             {
                 switch (eventId)
                 {
-                    case EVENT_BLOOD_SIPHON:
+                case EVENT_HAKKAR_STASIS_PULSE:
+                {
+                    ApplyStasisPulse();
+                    events.ScheduleEvent(EVENT_HAKKAR_STASIS_PULSE, STASIS_PERIOD);
+                    break;
+                }
+
+                case EVENT_BLOOD_SIPHON:
+                {
+                    if (_swapSiphonToMindBlast)
+                    {
+                        CastMindBlastOnRaid(150.0f);
+                    }
+                    else
+                    {
+                        // Standard Blood Siphon channel spell – SpellScript now supports bots
                         DoCastAOE(SPELL_BLOOD_SIPHON, true);
-                        events.ScheduleEvent(EVENT_BLOOD_SIPHON, 90s);
-                        break;
-                    case EVENT_CORRUPTED_BLOOD:
-                        DoCastVictim(SPELL_CORRUPTED_BLOOD, true);
-                        events.ScheduleEvent(EVENT_CORRUPTED_BLOOD, 30s, 40s);
-                        break;
-                    case EVENT_CAUSE_INSANITY:
-                        if (me->GetThreatMgr().GetThreatListSize() > 1)
+                    }
+
+                    events.ScheduleEvent(EVENT_BLOOD_SIPHON, 90s);
+                    break;
+                }
+
+                case EVENT_CORRUPTED_BLOOD:
+                    DoCastVictim(SPELL_CORRUPTED_BLOOD, true);
+                    events.ScheduleEvent(EVENT_CORRUPTED_BLOOD, 30s, 40s);
+                    break;
+
+                case EVENT_CAUSE_INSANITY:
+                {
+                    if (me->GetThreatMgr().GetThreatListSize() > 1)
+                    {
+                        if (Unit* victim = SelectTarget(SelectTargetMethod::MaxThreat, 0, 30.f, true))
                         {
-                            if (Unit* victim = SelectTarget(SelectTargetMethod::MaxThreat, 0, 30.f, true))
-                            {
+                            if (_swapInsanityToFear)
+                                DoCast(victim, SPELL_FEAR_SWAP, true);
+                            else
                                 DoCast(victim, SPELL_CAUSE_INSANITY);
-                            }
                         }
-                        events.ScheduleEvent(EVENT_CAUSE_INSANITY, 35s, 40s);
-                        break;
-                    case EVENT_ENRAGE:
-                        if (!me->HasAura(SPELL_ENRAGE))
-                            DoCastSelf(SPELL_ENRAGE);
-                        events.ScheduleEvent(EVENT_ENRAGE, 90s);
-                        break;
-                    case EVENT_ASPECT_OF_JEKLIK:
-                        DoCastVictim(SPELL_ASPECT_OF_JEKLIK, true);
-                        events.ScheduleEvent(EVENT_ASPECT_OF_JEKLIK, 24s);
-                        break;
-                    case EVENT_ASPECT_OF_VENOXIS:
-                        DoCastVictim(SPELL_ASPECT_OF_VENOXIS, true);
-                        events.ScheduleEvent(EVENT_ASPECT_OF_VENOXIS, 16s, 18s);
-                        break;
-                    case EVENT_ASPECT_OF_MARLI:
-                        if (Unit* victim = SelectTarget(SelectTargetMethod::MaxThreat, 0, 5.f, true))
-                        {
-                            DoCast(victim, SPELL_ASPECT_OF_MARLI, true);
-                            me->GetThreatMgr().ModifyThreatByPercent(victim, -100.f);
-                        }
-                        events.ScheduleEvent(EVENT_ASPECT_OF_MARLI, 45s);
-                        break;
-                    case EVENT_ASPECT_OF_THEKAL:
-                        DoCastVictim(SPELL_ASPECT_OF_THEKAL, true);
-                        events.ScheduleEvent(EVENT_ASPECT_OF_THEKAL, 15s);
-                        break;
-                    case EVENT_ASPECT_OF_ARLOKK:
-                        if (Unit* victim = SelectTarget(SelectTargetMethod::MaxThreat, 0, 5.f, true))
-                        {
-                            DoCast(victim, SPELL_ASPECT_OF_ARLOKK, true);
-                            me->GetThreatMgr().ModifyThreatByPercent(victim, -100.f);
-                        }
-                        events.ScheduleEvent(EVENT_ASPECT_OF_ARLOKK, 10s, 15s);
-                        break;
-                    default:
-                        break;
+                    }
+                    events.ScheduleEvent(EVENT_CAUSE_INSANITY, 35s, 40s);
+                    break;
+                }
+
+                case EVENT_ENRAGE:
+                    if (!me->HasAura(SPELL_ENRAGE))
+                        DoCastSelf(SPELL_ENRAGE);
+                    events.ScheduleEvent(EVENT_ENRAGE, 90s);
+                    break;
+
+                case EVENT_ASPECT_OF_JEKLIK:
+                    DoCastVictim(SPELL_ASPECT_OF_JEKLIK, true);
+                    events.ScheduleEvent(EVENT_ASPECT_OF_JEKLIK, 24s);
+                    break;
+
+                case EVENT_ASPECT_OF_VENOXIS:
+                    DoCastVictim(SPELL_ASPECT_OF_VENOXIS, true);
+                    events.ScheduleEvent(EVENT_ASPECT_OF_VENOXIS, 16s, 18s);
+                    break;
+
+                case EVENT_ASPECT_OF_MARLI:
+                    if (Unit* victim = SelectTarget(SelectTargetMethod::MaxThreat, 0, 5.f, true))
+                    {
+                        DoCast(victim, SPELL_ASPECT_OF_MARLI, true);
+                        me->GetThreatMgr().ModifyThreatByPercent(victim, -100.f);
+                    }
+                    events.ScheduleEvent(EVENT_ASPECT_OF_MARLI, 45s);
+                    break;
+
+                case EVENT_ASPECT_OF_THEKAL:
+                    DoCastVictim(SPELL_ASPECT_OF_THEKAL, true);
+                    events.ScheduleEvent(EVENT_ASPECT_OF_THEKAL, 15s);
+                    break;
+
+                case EVENT_ASPECT_OF_ARLOKK:
+                    if (Unit* victim = SelectTarget(SelectTargetMethod::MaxThreat, 0, 5.f, true))
+                    {
+                        DoCast(victim, SPELL_ASPECT_OF_ARLOKK, true);
+                        me->GetThreatMgr().ModifyThreatByPercent(victim, -100.f);
+                    }
+                    events.ScheduleEvent(EVENT_ASPECT_OF_ARLOKK, 10s, 15s);
+                    break;
+
+                default:
+                    break;
                 }
             }
 
             DoMeleeAttackIfReady();
         }
+
+        // Swap helper: fire Mind Blast on everyone (players + NPCBots)
+        void CastMindBlastOnRaid(float range)
+        {
+            std::list<Unit*> targets;
+            Acore::AnyUnitInObjectRangeCheck check(me, range);
+            Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, targets, check);
+            Cell::VisitObjects(me, searcher, range);
+
+            targets.remove_if([](Unit* u)
+                {
+                    if (!u || !u->IsAlive())
+                        return true;
+
+                    if (u->GetTypeId() == TYPEID_PLAYER)
+                        return false;
+
+                    if (u->GetTypeId() == TYPEID_UNIT)
+                        return !static_cast<Creature*>(u)->IsNPCBot();
+
+                    return true;
+                });
+
+            if (targets.empty())
+                return;
+
+            for (Unit* u : targets)
+                DoCast(u, SPELL_MIND_BLAST_SWAP, true);
+        }
+
+        // Expose to SpellScript (read-only)
+        bool IncludeBotsInSiphon() const { return _includeBotsInSiphon; }
+
+    private:
+        // ---- STASIS pulse implementation ----
+        void ApplyStasisPulse()
+        {
+            std::list<Unit*> nearby;
+            Acore::AnyUnitInObjectRangeCheck check(me, STASIS_RADIUS);
+            Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, nearby, check);
+            Cell::VisitObjects(me, searcher, STASIS_RADIUS);
+
+            if (nearby.empty())
+                return;
+
+            for (Unit* u : nearby)
+            {
+                if (!u || u->GetTypeId() != TYPEID_UNIT || !u->IsAlive())
+                    continue;
+
+                Creature* c = static_cast<Creature*>(u);
+                uint32 entry = c->GetEntry();
+
+                // Check if creature is in our target set
+                if (std::find(STASIS_ENTRIES.begin(), STASIS_ENTRIES.end(), entry) == STASIS_ENTRIES.end())
+                    continue;
+
+                // Apply STASIS with Hakkar as the caster
+                me->AddAura(SPELL_STASIS, c);
+            }
+        }
+
+        bool _swapInsanityToFear = false;
+        bool _includeBotsInSiphon = true;
+        bool _swapSiphonToMindBlast = false;
     };
 
     CreatureAI* GetAI(Creature* creature) const override
@@ -276,7 +416,7 @@ public:
             {
                 if (hakkar->GetAI())
                 {
-                    hakkar->AI()->Talk(SAY_MINION_DESTROY);
+                    hakkar->AI()->Talk(SAY_MINION_DESTROY, player);
                 }
             }
         }
@@ -336,27 +476,36 @@ class spell_blood_siphon : public SpellScript
 
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
-        return ValidateSpellInfo({ SPELL_BLOOD_SIPHON_DAMAGE, SPELL_BLOOD_SIPHON_HEAL });
+        return ValidateSpellInfo({ SPELL_BLOOD_SIPHON_DAMAGE, SPELL_BLOOD_SIPHON_HEAL, SPELL_POISONOUS_BLOOD });
     }
 
     void FilterTargets(std::list<WorldObject*>& targets)
     {
-        // Max. 20 targets
+        // Max. 20 targets (kept blizzlike)
         if (!targets.empty())
-        {
             Acore::Containers::RandomResize(targets, 20);
-        }
     }
 
     void HandleScriptEffect(SpellEffIndex /*effIndex*/)
     {
-        if (Unit* caster = GetCaster())
-        {
-            if (Player* player = GetHitPlayer())
-            {
-                player->CastSpell(caster, player->HasAura(SPELL_POISONOUS_BLOOD) ? SPELL_BLOOD_SIPHON_DAMAGE : SPELL_BLOOD_SIPHON_HEAL, true);
-            }
-        }
+        Unit* caster = GetCaster();
+        Unit* hit = GetHitUnit(); // changed from GetHitPlayer(): support both players and NPCBots
+        if (!caster || !hit)
+            return;
+
+        // Only process for players and NPCBots, per request
+        bool eligible = false;
+        if (hit->GetTypeId() == TYPEID_PLAYER)
+            eligible = true;
+        else if (hit->GetTypeId() == TYPEID_UNIT)
+            eligible = static_cast<Creature*>(hit)->IsNPCBot();
+
+        if (!eligible)
+            return;
+
+        // Victim casts either damage or heal back to Hakkar based on Poisonous Blood
+        uint32 siphonSpell = hit->HasAura(SPELL_POISONOUS_BLOOD) ? SPELL_BLOOD_SIPHON_DAMAGE : SPELL_BLOOD_SIPHON_HEAL;
+        hit->CastSpell(caster, siphonSpell, true);
     }
 
     void Register() override

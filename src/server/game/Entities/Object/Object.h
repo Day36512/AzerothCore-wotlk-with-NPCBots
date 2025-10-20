@@ -368,16 +368,28 @@ public:
     {
         return _gridRef.isValid();
     }
+
     void AddToGrid(GridRefMgr<T>& m)
     {
+        // Linking twice is still a programmer error; assert loudly.
         ASSERT(!IsInGrid());
-        _gridRef.link(&m, (T*)this);
+        _gridRef.link(&m, static_cast<T*>(this));
     }
+
     void RemoveFromGrid()
     {
-        ASSERT(IsInGrid());
+        // Dinkle
+        if (!IsInGrid())
+        {
+            // Keep this at DEBUG to avoid log spam in production; raise to INFO if you need forensics.
+            LOG_DEBUG("server.maps", "GridObject<{}>::RemoveFromGrid called, but object is not linked to any grid. No-op.",
+                typeid(T).name());
+            return;
+        }
+
         _gridRef.unlink();
     }
+
 private:
     GridReference<T> _gridRef;
 };

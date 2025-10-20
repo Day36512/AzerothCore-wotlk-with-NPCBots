@@ -149,31 +149,51 @@ class spell_moam_mana_drain_filter : public SpellScript
 {
     PrepareSpellScript(spell_moam_mana_drain_filter);
 
+    static constexpr size_t kMaxTargets = 6;
+
+    static bool IsValidDrainTarget(WorldObject* wo)
+    {
+        if (!wo)
+            return false;
+
+        Unit* u = wo->ToUnit();
+        if (!u)
+            return false;
+
+        if (Player* p = u->ToPlayer())
+            return p->getPowerType() == POWER_MANA;
+
+        if (Creature* c = u->ToCreature())
+            return c->IsNPCBot() && c->getPowerType() == POWER_MANA;
+
+        return false;
+    }
+
     void FilterTargets(std::list<WorldObject*>& targets)
     {
-        targets.remove_if([&](WorldObject* target) -> bool
-        {
-            return !target->IsPlayer() || target->ToPlayer()->getPowerType() != POWER_MANA;
-        });
+        targets.remove_if([](WorldObject* t) { return !IsValidDrainTarget(t); });
 
         if (!targets.empty())
-        {
-            Acore::Containers::RandomResize(targets, 6);
-        }
+            Acore::Containers::RandomResize(targets, kMaxTargets);
     }
 
     void HandleScript(SpellEffIndex /*effIndex*/)
     {
-        if (Unit* caster = GetCaster())
-        {
-            caster->CastSpell(GetHitUnit(), SPELL_DRAIN_MANA, true);
-        }
+        Unit* caster = GetCaster();
+        Unit* victim = GetHitUnit();
+        if (!caster || !victim)
+            return;
+
+        caster->CastSpell(victim, SPELL_DRAIN_MANA, true);
     }
 
     void Register() override
     {
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_moam_mana_drain_filter::FilterTargets, EFFECT_ALL, TARGET_UNIT_SRC_AREA_ENEMY);
-        OnEffectHitTarget += SpellEffectFn(spell_moam_mana_drain_filter::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(
+            spell_moam_mana_drain_filter::FilterTargets, EFFECT_ALL, TARGET_UNIT_SRC_AREA_ENEMY);
+
+        OnEffectHitTarget += SpellEffectFn(
+            spell_moam_mana_drain_filter::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
     }
 };
 

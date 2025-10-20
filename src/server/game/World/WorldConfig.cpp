@@ -122,6 +122,7 @@ void WorldConfig::BuildConfigCache()
 
     SetConfigValue<float>(RATE_TALENT, "Rate.Talent", 1.0f, ConfigValueCache::Reloadable::Yes, [](float const& value) { return value >= 0.0f; }, ">= 0");
     SetConfigValue<float>(RATE_TALENT_PET, "Rate.Talent.Pet", 1.0f, ConfigValueCache::Reloadable::Yes, [](float const& value) { return value >= 0.0f; }, ">= 0");
+    SetConfigValue<uint32>(CONFIG_MAX_TALENT_POINTS, "MaxTalentPoints", 0, ConfigValueCache::Reloadable::Yes);
     // Controls Player movespeed rate.
     SetConfigValue<float>(RATE_MOVESPEED_PLAYER, "Rate.MoveSpeed.Player", 1.0f, ConfigValueCache::Reloadable::Yes, [](float const& value) { return value >= 0.0f; }, ">= 0");
 

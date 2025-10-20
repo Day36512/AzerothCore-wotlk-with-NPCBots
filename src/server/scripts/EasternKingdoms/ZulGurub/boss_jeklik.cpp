@@ -113,7 +113,7 @@ struct boss_jeklik : public BossAI
     // Bat Riders (14750) counter
     uint8 batRidersCount = 0;
 
-    boss_jeklik(Creature* creature) : BossAI(creature, DATA_JEKLIK) { }
+    boss_jeklik(Creature* creature) : BossAI(creature, DATA_JEKLIK) {}
 
     void Reset() override
     {
@@ -155,106 +155,112 @@ struct boss_jeklik : public BossAI
         // Phase 1
         //
         scheduler.Schedule(10s, 20s, PHASE_ONE, [this](TaskContext context)
-        {
-            if (Unit* target = SelectTarget(SelectTargetMethod::MinDistance, 0, -8.0f, false, false))
             {
-                DoCast(target, SPELL_CHARGE);
-                AttackStart(target);
-            }
-            context.Repeat(15s, 30s);
-        }).Schedule(5s, 15s, PHASE_ONE, [this](TaskContext context)
-        {
-            DoCastVictim(SPELL_PIERCE_ARMOR);
-            context.Repeat(20s, 30s);
-        }).Schedule(5s, 15s, PHASE_ONE, [this](TaskContext context)
-        {
-            DoCastVictim(SPELL_BLOOD_LEECH);
-            context.Repeat(10s, 20s);
-        }).Schedule(5s, 15s, PHASE_ONE, [this](TaskContext context)
-        {
-            DoCastVictim(SPELL_SONIC_BURST);
-            context.Repeat(20s, 30s);
-        }).Schedule(20s, PHASE_ONE, [this](TaskContext context)
-        {
-            DoCastVictim(SPELL_SWOOP);
-            context.Repeat(20s, 30s);
-        }).Schedule(30s, PHASE_ONE, [this](TaskContext context)
-        {
-            Talk(EMOTE_SUMMON_BATS);
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0))
-            {
-                for (uint8 i = 0; i < 6; ++i)
+                if (Unit* target = SelectTarget(SelectTargetMethod::MinDistance, 0, -8.0f, false, false))
                 {
-                    if (Creature* bat = me->SummonCreature(NPC_BLOODSEEKER_BAT, SpawnBat[i], TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 15000))
-                    {
-                        bat->AI()->AttackStart(target);
-                    }
+                    DoCast(target, SPELL_CHARGE);
+                    AttackStart(target);
                 }
-            }
-            context.Repeat(30s);
-        });
-
-        //
-        // Phase 2 (@ 50% health)
-        //
-        ScheduleHealthCheckEvent(50, [&]
-        {
-            me->RemoveAurasDueToSpell(SPELL_BAT_FORM);
-            DoResetThreatList();
-
-            scheduler.CancelGroup(PHASE_ONE);
-
-            scheduler.Schedule(5s, 15s, PHASE_TWO, [this](TaskContext context)
-            {
-                DoCastSelf(SPELL_CURSE_OF_BLOOD);
-                context.Repeat(25s, 30s);
-            }).Schedule(25s, 35s, PHASE_TWO, [this](TaskContext context)
-            {
-                DoCastVictim(SPELL_PSYCHIC_SCREAM);
-                context.Repeat(35s, 45s);
-            }).Schedule(10s, 15s, PHASE_TWO, [this](TaskContext context)
-            {
-                DoCastRandomTarget(SPELL_SHADOW_WORD_PAIN, 0, true);
-                context.Repeat(12s, 18s);
-            }).Schedule(10s, 30s, PHASE_TWO, [this](TaskContext context)
-            {
-                DoCastVictim(SPELL_MIND_FLAY);
-                context.Repeat(20s, 40s);
-            }).Schedule(25s, PHASE_TWO, [this](TaskContext context)
-            {
-                Talk(EMOTE_GREAT_HEAL);
-                me->InterruptNonMeleeSpells(false);
-                DoCastSelf(SPELL_GREATER_HEAL);
-                context.Repeat(25s);
-            }).Schedule(10s, PHASE_TWO, [this](TaskContext context)
-            {
-                if (me->GetThreatMgr().GetThreatListSize())
+                context.Repeat(15s, 30s);
+            }).Schedule(5s, 15s, PHASE_ONE, [this](TaskContext context)
                 {
-                    // summon up to 2 bat riders
-                    if (batRidersCount < 2)
+                    DoCastVictim(SPELL_PIERCE_ARMOR);
+                    context.Repeat(20s, 30s);
+                }).Schedule(5s, 15s, PHASE_ONE, [this](TaskContext context)
                     {
-                        Talk(SAY_CALL_RIDERS);
-                        // only if the bat rider was successfully created
-                        if (me->SummonCreature(NPC_BATRIDER, SpawnBatRider, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT))
+                        DoCastVictim(SPELL_BLOOD_LEECH);
+                        context.Repeat(10s, 20s);
+                    }).Schedule(5s, 15s, PHASE_ONE, [this](TaskContext context)
                         {
-                            batRidersCount++;
-                        }
-                        if (batRidersCount == 1)
-                        {
-                            context.Repeat(10s, 15s);
-                        }
-                    }
-                }
-            });
-        });
+                            DoCastVictim(SPELL_SONIC_BURST);
+                            context.Repeat(20s, 30s);
+                        }).Schedule(20s, PHASE_ONE, [this](TaskContext context)
+                            {
+                                DoCastVictim(SPELL_SWOOP);
+                                context.Repeat(20s, 30s);
+                            }).Schedule(30s, PHASE_ONE, [this](TaskContext context)
+                                {
+                                    Talk(EMOTE_SUMMON_BATS);
+                                    if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0))
+                                    {
+                                        for (uint8 i = 0; i < 6; ++i)
+                                        {
+                                            if (Creature* bat = me->SummonCreature(NPC_BLOODSEEKER_BAT, SpawnBat[i], TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 15000))
+                                            {
+                                                bat->AI()->AttackStart(target);
+                                            }
+                                        }
+                                    }
+                                    context.Repeat(30s);
+                                });
+
+                            //
+                            // Phase 2 (@ 50% health)
+                            //
+                            ScheduleHealthCheckEvent(50, [&]
+                                {
+                                    me->RemoveAurasDueToSpell(SPELL_BAT_FORM);
+                                    DoResetThreatList();
+
+                                    scheduler.CancelGroup(PHASE_ONE);
+
+                                    scheduler.Schedule(5s, 15s, PHASE_TWO, [this](TaskContext context)
+                                        {
+                                            DoCastSelf(SPELL_CURSE_OF_BLOOD);
+                                            context.Repeat(25s, 30s);
+                                        }).Schedule(25s, 35s, PHASE_TWO, [this](TaskContext context)
+                                            {
+                                                DoCastVictim(SPELL_PSYCHIC_SCREAM);
+                                                context.Repeat(35s, 45s);
+                                            }).Schedule(10s, 15s, PHASE_TWO, [this](TaskContext context)
+                                                {
+                                                    // CUSTOM: target players or NPCBots for SW:P
+                                                    if (Unit* t = SelectRandomPlayerOrNPCBot(60.0f, [this](Unit* u)
+                                                        {
+                                                            // prefer valid, non-pet hostile targets without SW:P already applied
+                                                            if (u->IsPet())
+                                                                return false;
+                                                            if (!me->IsValidAttackTarget(u))
+                                                                return false;
+                                                            return !u->HasAura(SPELL_SHADOW_WORD_PAIN);
+                                                        }))
+                                                    {
+                                                        DoCast(t, SPELL_SHADOW_WORD_PAIN);
+                                                    }
+                                                    context.Repeat(12s, 18s);
+                                                }).Schedule(10s, 30s, PHASE_TWO, [this](TaskContext context)
+                                                    {
+                                                        DoCastVictim(SPELL_MIND_FLAY);
+                                                        context.Repeat(20s, 40s);
+                                                    }).Schedule(25s, PHASE_TWO, [this](TaskContext context)
+                                                        {
+                                                            Talk(EMOTE_GREAT_HEAL);
+                                                            me->InterruptNonMeleeSpells(false);
+                                                            DoCastSelf(SPELL_GREATER_HEAL);
+                                                            context.Repeat(25s);
+                                                        }).Schedule(10s, PHASE_TWO, [this](TaskContext context)
+                                                            {
+                                                                if (me->GetThreatMgr().GetThreatListSize())
+                                                                {
+                                                                    // summon up to 2 bat riders
+                                                                    if (batRidersCount < 2)
+                                                                    {
+                                                                        Talk(SAY_CALL_RIDERS);
+                                                                        if (me->SummonCreature(NPC_BATRIDER, SpawnBatRider, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT))
+                                                                            batRidersCount++;
+
+                                                                        if (batRidersCount == 1)
+                                                                            context.Repeat(10s, 15s);
+                                                                    }
+                                                                }
+                                                            });
+                                });
     }
 
     void EnterEvadeMode(EvadeReason why) override
     {
         if (why != EvadeReason::EVADE_REASON_NO_PATH)
-        {
             me->DespawnOnEvade(5s);
-        }
 
         BossAI::EnterEvadeMode(why);
     }
@@ -263,6 +269,41 @@ struct boss_jeklik : public BossAI
     {
         BossAI::JustDied(killer);
         Talk(SAY_DEATH);
+    }
+
+private:
+    // === Contained selector: players OR NPCBots within range, valid hostile target ===
+    Unit* SelectRandomPlayerOrNPCBot(float range, std::function<bool(Unit*)> extra = {})
+    {
+        std::list<Unit*> units;
+        Acore::AnyUnitInObjectRangeCheck check(me, range);
+        Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, units, check);
+        Cell::VisitObjects(me, searcher, range);
+
+        units.remove_if([this, &extra](Unit* u) -> bool
+            {
+                if (!u || !u->IsAlive())
+                    return true;
+
+                const bool isPlayer = u->IsPlayer();
+                const bool isNPCBot = (u->GetTypeId() == TYPEID_UNIT) && u->ToCreature() && u->ToCreature()->IsNPCBot();
+
+                if (!isPlayer && !isNPCBot)
+                    return true;
+
+                if (!me->IsValidAttackTarget(u))
+                    return true;
+
+                if (extra && !extra(u))
+                    return true;
+
+                return false;
+            });
+
+        if (units.empty())
+            return nullptr;
+
+        return Acore::Containers::SelectRandomContainerElement(units);
     }
 };
 
@@ -276,13 +317,13 @@ struct npc_batrider : public CreatureAI
     {
         // if this is a summon of Jeklik, it is in boss mode
         if
-        (
-            me->GetEntry() == NPC_BATRIDER &&
-            me->IsSummon() &&
-            me->ToTempSummon() &&
-            me->ToTempSummon()->GetSummoner() &&
-            me->ToTempSummon()->GetSummoner()->GetEntry() == NPC_PRIESTESS_JEKLIK
-        )
+            (
+                me->GetEntry() == NPC_BATRIDER &&
+                me->IsSummon() &&
+                me->ToTempSummon() &&
+                me->ToTempSummon()->GetSummoner() &&
+                me->ToTempSummon()->GetSummoner()->GetEntry() == NPC_PRIESTESS_JEKLIK
+                )
         {
             _mode = BATRIDER_MODE_BOSS;
 
@@ -305,9 +346,9 @@ struct npc_batrider : public CreatureAI
 
             // don't interrupt casting
             _scheduler.SetValidator([this]
-            {
-                return !me->HasUnitState(UNIT_STATE_CASTING);
-            });
+                {
+                    return !me->HasUnitState(UNIT_STATE_CASTING);
+                });
         }
     }
 
@@ -334,25 +375,35 @@ struct npc_batrider : public CreatureAI
         if (_mode == BATRIDER_MODE_BOSS)
         {
             _scheduler.Schedule(2s, [this](TaskContext context)
-            {
-                DoCastRandomTarget(SPELL_BATRIDER_THROW_LIQUID_FIRE);
-                context.Repeat(8s);
-            });
+                {
+                    // CUSTOM: Throw Liquid Fire at player or NPCBot
+                    if (Unit* t = SelectRandomPlayerOrNPCBot(80.0f, [this](Unit* u)
+                        {
+                            if (!me->IsValidAttackTarget(u))
+                                return false;
+                            // avoid pets; prefer real units (players/bots)
+                            return !u->IsPet();
+                        }))
+                    {
+                        DoCast(t, SPELL_BATRIDER_THROW_LIQUID_FIRE);
+                    }
+                    context.Repeat(8s);
+                });
         }
         else if (_mode == BATRIDER_MODE_TRASH)
         {
             _scheduler.Schedule(1s, [this](TaskContext /*context*/)
-            {
-                DoCastSelf(SPELL_BATRIDER_DEMO_SHOUT);
-            }).Schedule(8s, [this](TaskContext context)
-            {
-                DoCastSelf(SPELL_BATRIDER_BATTLE_COMMAND);
-                context.Repeat(25s);
-            }).Schedule(6500ms, [this](TaskContext context)
-            {
-                DoCastVictim(SPELL_BATRIDER_INFECTED_BITE);
-                context.Repeat(8s);
-            });
+                {
+                    DoCastSelf(SPELL_BATRIDER_DEMO_SHOUT);
+                }).Schedule(8s, [this](TaskContext context)
+                    {
+                        DoCastSelf(SPELL_BATRIDER_BATTLE_COMMAND);
+                        context.Repeat(25s);
+                    }).Schedule(6500ms, [this](TaskContext context)
+                        {
+                            DoCastVictim(SPELL_BATRIDER_INFECTED_BITE);
+                            context.Repeat(8s);
+                        });
         }
     }
 
@@ -381,14 +432,47 @@ struct npc_batrider : public CreatureAI
         else if (_mode == BATRIDER_MODE_TRASH)
         {
             if (!UpdateVictim())
-            {
                 return;
-            }
 
             DoMeleeAttackIfReady();
         }
 
         _scheduler.Update();
+    }
+
+private:
+    // === Contained selector: players OR NPCBots within range, valid hostile target ===
+    Unit* SelectRandomPlayerOrNPCBot(float range, std::function<bool(Unit*)> extra = {})
+    {
+        std::list<Unit*> units;
+        Acore::AnyUnitInObjectRangeCheck check(me, range);
+        Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, units, check);
+        Cell::VisitObjects(me, searcher, range);
+
+        units.remove_if([this, &extra](Unit* u) -> bool
+            {
+                if (!u || !u->IsAlive())
+                    return true;
+
+                const bool isPlayer = u->IsPlayer();
+                const bool isNPCBot = (u->GetTypeId() == TYPEID_UNIT) && u->ToCreature() && u->ToCreature()->IsNPCBot();
+
+                if (!isPlayer && !isNPCBot)
+                    return true;
+
+                if (!me->IsValidAttackTarget(u))
+                    return true;
+
+                if (extra && !extra(u))
+                    return true;
+
+                return false;
+            });
+
+        if (units.empty())
+            return nullptr;
+
+        return Acore::Containers::SelectRandomContainerElement(units);
     }
 };
 

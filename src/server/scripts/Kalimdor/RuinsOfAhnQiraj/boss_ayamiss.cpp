@@ -87,20 +87,22 @@ struct boss_ayamiss : public BossAI
         me->SetCombatMovement(false);
         me->SetReactState(REACT_AGGRESSIVE);
 
-        ScheduleHealthCheckEvent(70, [&] {
-            me->ClearUnitState(UNIT_STATE_ROOT);
-            me->SetReactState(REACT_PASSIVE);
-            me->SetCanFly(false);
-            me->SetDisableGravity(false);
-            me->GetMotionMaster()->MovePath(me->GetEntry() * 10, false);
-            DoResetThreatList();
-            scheduler.CancelGroup(GROUP_AIR);
-        });
+        ScheduleHealthCheckEvent(70, [&]
+            {
+                me->ClearUnitState(UNIT_STATE_ROOT);
+                me->SetReactState(REACT_PASSIVE);
+                me->SetCanFly(false);
+                me->SetDisableGravity(false);
+                me->GetMotionMaster()->MovePath(me->GetEntry() * 10, false);
+                DoResetThreatList();
+                scheduler.CancelGroup(GROUP_AIR);
+            });
 
-        ScheduleHealthCheckEvent(20, [&] {
-            DoCastSelf(SPELL_FRENZY);
-            Talk(EMOTE_FRENZY);
-        });
+        ScheduleHealthCheckEvent(20, [&]
+            {
+                DoCastSelf(SPELL_FRENZY);
+                Talk(EMOTE_FRENZY);
+            });
     }
 
     void JustSummoned(Creature* who) override
@@ -111,7 +113,10 @@ struct boss_ayamiss : public BossAI
             _swarmers.push_back(who->GetGUID());
         }
         else if (who->GetEntry() == NPC_HIVEZARA_LARVA)
+        {
+            // Send larva to the altar; when it reaches it, it will cast FEED on the stored sacrificed target.
             who->GetMotionMaster()->MovePoint(POINT_PARALYZE, AltarPos);
+        }
 
         summons.Summon(who);
     }
@@ -119,55 +124,69 @@ struct boss_ayamiss : public BossAI
     void MovementInform(uint32 type, uint32 id) override
     {
         if (type == POINT_MOTION_TYPE && id == POINT_AIR)
+        {
             me->AddUnitState(UNIT_STATE_ROOT);
+        }
         else if (type == WAYPOINT_MOTION_TYPE && id == POINT_GROUND)
         {
             me->SetCombatMovement(true);
             me->SetDisableGravity(false);
 
             me->m_Events.AddEventAtOffset([this]()
-            {
-                me->SetReactState(REACT_AGGRESSIVE);
-                me->ResumeChasingVictim();
+                {
+                    me->SetReactState(REACT_AGGRESSIVE);
+                    me->ResumeChasingVictim();
+                }, 1s);
 
-            }, 1s);
-
-            scheduler.Schedule(5s, 8s, [this](TaskContext context) {
-                DoCastVictim(SPELL_LASH);
-                context.Repeat(8s, 15s);
-            }).Schedule(16s, [this](TaskContext context)
-            {
-                DoCastSelf(SPELL_THRASH);
-                context.Repeat();
-            });
+            scheduler
+                .Schedule(5s, 8s, [this](TaskContext context)
+                    {
+                        DoCastVictim(SPELL_LASH);
+                        context.Repeat(8s, 15s);
+                    })
+                .Schedule(16s, [this](TaskContext context)
+                    {
+                        DoCastSelf(SPELL_THRASH);
+                        context.Repeat();
+                    });
         }
     }
 
     void ScheduleTasks() override
     {
-        scheduler.Schedule(20s, 30s, [this](TaskContext context)
-        {
-            DoCastSelf(SPELL_STINGER_SPRAY);
-            context.Repeat(15s, 20s);
-        }).Schedule(5s, GROUP_AIR, [this](TaskContext context) {
-            DoCastVictim(SPELL_POISON_STINGER);
-            context.Repeat(2s, 3s);
-        }).Schedule(5s, [this](TaskContext context) {
-            DoCastAOE(SPELL_SUMMON_HIVEZARA_SWARMER, true);
+        scheduler
+            .Schedule(20s, 30s, [this](TaskContext context)
+                {
+                    DoCastSelf(SPELL_STINGER_SPRAY);
+                    context.Repeat(15s, 20s);
+                })
+            .Schedule(5s, GROUP_AIR, [this](TaskContext context)
+                {
+                    DoCastVictim(SPELL_POISON_STINGER);
+                    context.Repeat(2s, 3s);
+                })
+            .Schedule(5s, [this](TaskContext context)
+                {
+                    DoCastAOE(SPELL_SUMMON_HIVEZARA_SWARMER, true);
 
-            if (_swarmers.size() >= MAX_SWARMER_COUNT)
-                DoCastAOE(SPELL_HIVEZARA_SWARMER_SWARM, true);
+                    if (_swarmers.size() >= MAX_SWARMER_COUNT)
+                        DoCastAOE(SPELL_HIVEZARA_SWARMER_SWARM, true);
 
-            context.Repeat(RAND(2400ms, 3600ms));
-        }).Schedule(15s, 28s, [this](TaskContext context) {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 0, true))
-            {
-                DoCast(target, SPELL_PARALYZE, true);
-                instance->SetGuidData(DATA_PARALYZED, target->GetGUID());
-                DoCastAOE(RAND(SPELL_SUMMON_LARVA_A, SPELL_SUMMON_LARVA_B), true);
-            }
-            context.Repeat();
-        });
+                    context.Repeat(RAND(2400ms, 3600ms));
+                })
+            .Schedule(15s, 28s, [this](TaskContext context)
+                {
+                    // *** CHANGED: select from players AND NPCBots ***
+                    if (Unit* target = SelectSacrificeTarget())
+                    {
+                        DoCast(target, SPELL_PARALYZE, true);
+                        // store the GUID generically (works for players and bots)
+                        instance->SetGuidData(DATA_PARALYZED, target->GetGUID());
+                        // summon larva that will feed at altar then cast on the stored GUID
+                        DoCastAOE(RAND(SPELL_SUMMON_LARVA_A, SPELL_SUMMON_LARVA_B), true);
+                    }
+                    context.Repeat();
+                });
     }
 
     void DoAction(int32 action) override
@@ -208,6 +227,61 @@ struct boss_ayamiss : public BossAI
 private:
     GuidList _swarmers;
     Position homePos;
+
+    bool IsValidSacrificeTarget(Unit* u) const
+    {
+        return u
+            && u->IsAlive()
+            && me->IsValidAttackTarget(u);
+    }
+
+    Unit* SelectSacrificeTarget()
+    {
+        GuidVector candidates;
+        candidates.reserve(32);
+
+        // 1) Players (exclude GM/Spectator)
+        me->GetMap()->DoForAllPlayers([&](Player* p)
+            {
+                if (p->IsGameMaster())
+                    return;
+                if (IsValidSacrificeTarget(p))
+                    candidates.push_back(p->GetGUID());
+            });
+
+        // 2) NPCBots near Ayamiss (use a sane radius; sacrifice is thematic to the encounter area)
+        //    If you prefer truly global selection, iterate map creatures; we keep a proximity check for sanity.
+        static constexpr float BOT_SCAN_RANGE_YARDS = 120.0f;
+        std::list<Unit*> nearby;
+        {
+            Acore::AnyUnitInObjectRangeCheck check(me, BOT_SCAN_RANGE_YARDS);
+            Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, nearby, check);
+            Cell::VisitObjects(me, searcher, BOT_SCAN_RANGE_YARDS);
+        }
+
+        for (Unit* u : nearby)
+        {
+            if (u->GetTypeId() != TYPEID_UNIT)
+                continue;
+
+            Creature* c = u->ToCreature();
+            if (!c)
+                continue;
+
+            // Only NPCBots (avoids pets/guardians and non-bot NPCs)
+            if (!c->IsNPCBot())
+                continue;
+
+            if (IsValidSacrificeTarget(c))
+                candidates.push_back(c->GetGUID());
+        }
+
+        if (candidates.empty())
+            return nullptr;
+
+        ObjectGuid chosen = Acore::Containers::SelectRandomContainerElement(candidates);
+        return ObjectAccessor::GetUnit(*me, chosen);
+    }
 };
 
 struct npc_hive_zara_larva : public ScriptedAI
@@ -221,12 +295,24 @@ struct npc_hive_zara_larva : public ScriptedAI
     void MovementInform(uint32 type, uint32 id) override
     {
         if (type == POINT_MOTION_TYPE && id == POINT_PARALYZE)
-            if (Player* target = ObjectAccessor::GetPlayer(*me, _instance->GetGuidData(DATA_PARALYZED)))
+        {
+            if (!_instance)
+                return;
+
+            ObjectGuid guid = _instance->GetGuidData(DATA_PARALYZED);
+
+            if (Unit* target = ObjectAccessor::GetUnit(*me, guid))
+            {
                 DoCast(target, SPELL_FEED);
+            }
+        }
     }
 
     void JustSummoned(Creature* summon) override
     {
+        if (!_instance)
+            return;
+
         if (Creature* ayamiss = _instance->GetCreature(DATA_AYAMISS))
         {
             ayamiss->AI()->JustSummoned(summon);

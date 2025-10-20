@@ -254,18 +254,38 @@ class spell_suppression_aura : public SpellScript
 {
     PrepareSpellScript(spell_suppression_aura);
 
+private:
+    static bool FilterOutAll()
+    {
+        static bool s_filter = sConfigMgr->GetOption<bool>("Spell.SuppressionAura.FilterOutAll", false);
+        static bool s_logged = false;
+        if (!s_logged)
+        {
+            LOG_INFO("server.loading", "> Spell.SuppressionAura.FilterOutAll = {}", s_filter ? "true" : "false");
+            s_logged = true;
+        }
+        return s_filter;
+    }
+
     void FilterTargets(std::list<WorldObject*>& targets)
     {
-        targets.remove_if([&](WorldObject* target) -> bool
+        if (FilterOutAll())
         {
-            Unit* unit = target->ToUnit();
-            return !unit || unit->HasStealthAura();
-        });
+            targets.clear();
+            return;
+        }
+        targets.remove_if([](WorldObject* target) -> bool
+            {
+                Unit* unit = target ? target->ToUnit() : nullptr;
+                return !unit || unit->HasStealthAura();
+            });
     }
 
     void Register() override
     {
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_suppression_aura::FilterTargets, EFFECT_ALL, TARGET_UNIT_DEST_AREA_ENEMY);
+        OnObjectAreaTargetSelect +=
+            SpellObjectAreaTargetSelectFn(spell_suppression_aura::FilterTargets,
+                EFFECT_ALL, TARGET_UNIT_DEST_AREA_ENEMY);
     }
 };
 

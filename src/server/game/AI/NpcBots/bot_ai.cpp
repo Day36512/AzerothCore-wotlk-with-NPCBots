@@ -46,6 +46,7 @@
 #include "TemporarySummon.h"
 #include "Transport.h"
 #include "World.h"
+
 /*
 NpcBot System by Trickerer (https://github.com/trickerer/Trinity-Bots; onlysuffering@gmail.com)
 Version 5.2.77a
@@ -161,6 +162,99 @@ static void ApplyBotPercentModFloatVar(float &var, float val, bool apply)
 }
 
 static uint16 __rand; //calculated for each bot separately once every updateAI tick
+
+namespace NpcBotPortalCfg
+{
+    inline uint8 GetMinLevelShattrath()
+    {
+        return uint8(sConfigMgr->GetOption<uint32>("NpcBot.MagePortal.MinLevel.Shattrath", 65));
+    }
+
+    inline uint8 GetMinLevelDalaran()
+    {
+        return uint8(sConfigMgr->GetOption<uint32>("NpcBot.MagePortal.MinLevel.Dalaran", 74));
+    }
+
+    inline bool CostsEnabled()
+    {
+        return sConfigMgr->GetOption<bool>("NpcBot.MagePortal.Cost.Enable", true);
+    }
+
+    inline uint64 GetCostCopperForLevel(uint8 level)
+    {
+        if (!CostsEnabled())
+            return 0;
+
+        uint32 maxLevel = sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL);
+        if (maxLevel == 0)
+            maxLevel = 80; // sane fallback
+
+        uint64 minGold = sConfigMgr->GetOption<uint32>("NpcBot.MagePortal.Cost.MinGold", 0);
+        uint64 maxGold = sConfigMgr->GetOption<uint32>("NpcBot.MagePortal.Cost.MaxGold", 50);
+
+        uint64 minC = minGold * GOLD;
+        uint64 maxC = maxGold * GOLD;
+
+        if (maxLevel <= 1)
+            return maxC;
+
+        uint8 clamped = std::min<uint8>(level, uint8(maxLevel));
+        // Linear ramp from min at level 1 to max at level = maxLevel
+        return minC + ((maxC - minC) * (clamped - 1)) / (maxLevel - 1);
+    }
+
+    inline std::string MoneyToString(uint64 copper)
+    {
+        uint64 g = copper / GOLD; copper %= GOLD;
+        uint64 s = copper / SILVER; uint64 c = copper % SILVER;
+        return Acore::StringFormat("{}g {}s {}c", uint32(g), uint32(s), uint32(c));
+    }
+
+    inline std::string LabelWithCost(std::string const& base, Player* p)
+    {
+        uint64 cost = GetCostCopperForLevel(p->GetLevel());
+        return cost ? Acore::StringFormat("{} - {}", base, MoneyToString(cost)) : base;
+    }
+}
+
+namespace NpcBotConjureCfg
+{
+    inline bool CostsEnabled()
+    {
+        return sConfigMgr->GetOption<bool>("NpcBot.MageConjure.Cost.Enable", true);
+    }
+
+    inline uint64 GetCostCopperForLevel(uint8 level)
+    {
+        if (!CostsEnabled())
+            return 0;
+
+        uint32 maxLevel = sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL);
+        if (maxLevel == 0)
+            maxLevel = 80; // sane fallback
+
+        // Config is in SILVER (whole numbers); code converts to copper
+        uint64 minSilver = sConfigMgr->GetOption<uint32>("NpcBot.MageConjure.Cost.MinSilver", 0);
+        uint64 maxSilver = sConfigMgr->GetOption<uint32>("NpcBot.MageConjure.Cost.MaxSilver", 75);
+
+        uint64 minC = minSilver * SILVER; // SILVER = 100 copper
+        uint64 maxC = maxSilver * SILVER;
+
+        if (maxLevel <= 1)
+            return maxC;
+
+        uint8 clamped = std::min<uint8>(level, uint8(maxLevel));
+        // Linear ramp: level 1 => min, max level => max
+        return minC + ((maxC - minC) * (clamped - 1)) / (maxLevel - 1);
+    }
+
+    inline std::string MoneyToString(uint64 copper)
+    {
+        uint64 g = copper / GOLD; copper %= GOLD;
+        uint64 s = copper / SILVER; uint64 c = copper % SILVER;
+        return Acore::StringFormat("{}g {}s {}c", uint32(g), uint32(s), uint32(c));
+    }
+}
 
 bot_ai::bot_ai(Creature* creature) : CreatureAI(creature),
     _botData(const_cast<NpcBotData*>(BotDataMgr::SelectNpcBotData(creature->GetEntry() == BOT_ENTRY_MIRROR_IMAGE_BM ? creature->ToTempSummon()->GetSummonerGUID().GetEntry() : creature->GetEntry()))),
@@ -1199,7 +1293,7 @@ bool bot_ai::CanBotMoveVehicle() const
 void bot_ai::MoveToSendPosition(Position const& mpos)
 {
     EventRemoveBotAwaitState(BOT_AWAIT_SEND);
-    if (me->GetExactDist(mpos) <= 70.0f && !CCed(me, true))
+    if (me->GetExactDist(mpos) <= 100.0f && !CCed(me, true))
     {
         SetBotCommandState(BOT_COMMAND_STAY);
         me->InterruptNonMeleeSpells(true);
@@ -4148,6 +4242,328 @@ std::tuple<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool &re
             }
         }
 
+        //Dinkle -------- Temple of Ahn'Qiraj (AQ40, map 531) — Twin Emperors -------- (Probably need to add exploding bugs somewhere too)
+        if (!IAmFree() && me->GetMapId() == 531 && me->IsInCombat())
+        {
+            // Boss entries (3.3.5): Vek'nilash (15275) = physical-vulnerable, magic-immune; Vek'lor (15276) = magic-vulnerable, physical-immune
+            static const uint32 EMPEROR_MELEE_ID = 15275;  // Vek'nilash
+            static const uint32 EMPEROR_CASTER_ID = 15276;  // Vek'lor
+
+            auto meleeEmpCheck = [](Unit const* u) { return u && u->IsAlive() && u->GetEntry() == EMPEROR_MELEE_ID;  };
+            auto casterEmpCheck = [](Unit const* u) { return u && u->IsAlive() && u->GetEntry() == EMPEROR_CASTER_ID; };
+
+            Creature* meleeEmp = nullptr;
+            Creature* casterEmp = nullptr;
+
+            Bcore::CreatureSearcher findMelee(me, meleeEmp, meleeEmpCheck);
+            Bcore::CreatureSearcher findCaster(me, casterEmp, casterEmpCheck);
+            Cell::VisitObjects(me, findMelee, 120.f);
+            Cell::VisitObjects(me, findCaster, 120.f);
+
+            // Hunters: prioritize Mutating Bugs (entries 15316/15317) with aura 802
+            {
+                const auto myClass = GetBotClass();
+                const bool isHunter = (myClass == BOT_CLASS_HUNTER);
+                const bool isTankRole = IsTank();
+                const bool isDpsRole = HasRole(BOT_ROLE_DPS) && !isTankRole;
+                const bool isPhysRange = isDpsRole && HasRole(BOT_ROLE_RANGED) && isHunter;
+
+                if (isPhysRange)
+                {
+                    static const uint32 AURA_MUTATE_BUG = 802; // Mutate Bug
+                    static const std::array<uint32, 2> MutatingBugIds = { 15316, 15317 };
+
+                    auto bugCheck = [](Unit const* u)
+                        {
+                            if (!u || !u->IsAlive())
+                                return false;
+                            uint32 e = u->GetEntry();
+                            return e == MutatingBugIds[0] || e == MutatingBugIds[1];
+                        };
+
+                    std::list<Creature*> bugList;
+                    Bcore::CreatureListSearcher bugSearch(me, bugList, bugCheck);
+                    Cell::VisitObjects(me, bugSearch, 80.f);
+
+                    Creature* best = nullptr;
+                    float bestDist = std::numeric_limits<float>::max();
+
+                    for (Creature* c : bugList)
+                    {
+                        if (!c->HasAura(AURA_MUTATE_BUG))
+                            continue;
+                        if (!me->IsValidAttackTarget(c) || c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
+                            continue;
+
+                        float d = me->GetDistance(c);
+                        if (d < bestDist)
+                        {
+                            bestDist = d;
+                            best = c;
+                        }
+                    }
+
+                    if (best)
+                        return { best, nullptr };
+                }
+            }
+
+            // Only consider bosses that make sense to hit right now
+            auto validBoss = [this](Creature* c) -> bool
+                {
+                    if (!c) return false;
+                    if (!me->IsValidAttackTarget(c)) return false;
+                    return c->IsInCombat() || me->IsInCombat() || (!IAmFree() && master && master->IsInCombat());
+                };
+
+            if (meleeEmp || casterEmp)
+            {
+                const auto myClass = GetBotClass();
+                const bool isHunter = (myClass == BOT_CLASS_HUNTER);
+                const bool isWarlock = (myClass == BOT_CLASS_WARLOCK);
+                const bool isTankRole = IsTank();
+                const bool isDpsRole = HasRole(BOT_ROLE_DPS) && !isTankRole;
+                const bool isRangedDPS = isDpsRole && HasRole(BOT_ROLE_RANGED) && !isHunter; // casters (magic)
+                const bool isPhysRange = isDpsRole && HasRole(BOT_ROLE_RANGED) && isHunter;  // hunter (physical)
+                const bool isMeleeDPS = isDpsRole && !HasRole(BOT_ROLE_RANGED);             // melee (physical)
+
+                // Tanks: warlock pick Vek'lor; other tanks pick Vek'nilash
+                if (isTankRole)
+                {
+                    if (isWarlock && validBoss(casterEmp))
+                        return { casterEmp, nullptr };
+                    if (validBoss(meleeEmp))
+                        return { meleeEmp, nullptr };
+                }
+
+                // DPS routing according to immunities
+                if (isRangedDPS && validBoss(casterEmp))
+                    return { casterEmp, nullptr };   // casters -> Vek'lor
+                if (isPhysRange && validBoss(meleeEmp))
+                    return { meleeEmp, nullptr };    // hunters -> Vek'nilash
+                if (isMeleeDPS && validBoss(meleeEmp))
+                    return { meleeEmp, nullptr };    // melee -> Vek'nilash
+
+                // Fallbacks
+                if (validBoss(casterEmp))
+                    return { casterEmp, nullptr };
+                if (validBoss(meleeEmp))
+                    return { meleeEmp, nullptr };
+            }
+        }
+        // Temple of Ahn'Qiraj (AQ40) — Viscidus: prioritize Glob of Viscidus (15667), then Viscidus (15299)
+        if (me->GetMapId() == 531 && me->IsInCombat())
+        {
+            static constexpr uint32 GLOB_OF_VISCIDUS = 15667;
+            static constexpr uint32 BOSS_VISCIDUS = 15299;
+
+            struct EntryEquals
+            {
+                uint32 entry;
+                bool operator()(Creature* c) const
+                {
+                    return c && c->IsAlive() && c->GetEntry() == entry;
+                }
+            };
+
+            auto isAttackable = [this](Creature* c) -> bool
+                {
+                    if (!c) return false;
+                    if (!c->IsAlive()) return false;
+                    if (c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE)) return false;
+                    return me->IsValidAttackTarget(c) && (CanSeeEveryone() || (me->CanSeeOrDetect(c) && c->InSamePhase(me)));
+                };
+
+            auto findClosestByEntry = [this, &isAttackable](uint32 entry, float radius) -> Creature*
+                {
+                    std::list<Creature*> found;
+                    EntryEquals check{ entry };
+                    Bcore::CreatureListSearcher searcher(me, found, check);
+                    Cell::VisitObjects(me, searcher, radius);
+
+                    Creature* best = nullptr;
+                    float bestDist = std::numeric_limits<float>::max();
+
+                    for (Creature* c : found)
+                    {
+                        if (!isAttackable(c))
+                            continue;
+                        if (!me->IsWithinLOSInMap(c))
+                            continue;
+
+                        float const d = me->GetDistance(c);
+                        if (d < bestDist)
+                        {
+                            bestDist = d;
+                            best = c;
+                        }
+                    }
+                    return best;
+                };
+
+            // Pass 1: nearest Glob of Viscidus
+            if (Creature* glob = findClosestByEntry(GLOB_OF_VISCIDUS, 120.f))
+                return { glob, nullptr };
+
+            // Pass 2: fall back to boss Viscidus (Since bots are being bitchy about attacking)
+            if (Creature* boss = findClosestByEntry(BOSS_VISCIDUS, 150.f))
+                return { boss, nullptr };
+        }
+        // Temple of Ahn'Qiraj (AQ40) — C'thun target priorities
+        // Always: Giant Eye (15334) > Giant Claw Tentacle (15728) > C'thun (15727 only with aura 22581 "purple coloration")
+        if (me->GetMapId() == 531 && me->IsInCombat())
+        {
+            static constexpr uint32 CT_GIANT_EYE = 15334;
+            static constexpr uint32 CT_GIANT_CLAW_TENT = 15728;
+            static constexpr uint32 CT_CTHUN = 15727;
+            static constexpr uint32 CT_CTHUN_PURPLE_AURA = 22581;
+            static constexpr uint32 CT_EYE_TENT = 15726;
+            static constexpr uint32 CT_FLESH_TENT = 15802;
+
+            auto isAttackable = [this](Creature* c) -> bool
+                {
+                    if (!c) return false;
+                    if (!c->IsAlive()) return false;
+                    if (c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE)) return false;
+                    return me->IsValidAttackTarget(c) && (CanSeeEveryone() || (me->CanSeeOrDetect(c) && c->InSamePhase(me)));
+                };
+
+            auto findClosestByEntry = [this, &isAttackable](uint32 entry, float radius) -> Creature*
+                {
+                    auto entryCheck = [entry](Unit const* u) -> bool
+                        {
+                            return u && u->IsAlive() && u->GetEntry() == entry;
+                        };
+
+                    std::list<Creature*> found;
+                    Bcore::CreatureListSearcher searcher(me, found, entryCheck);
+                    Cell::VisitObjects(me, searcher, radius);
+
+                    Creature* best = nullptr;
+                    float bestDist = std::numeric_limits<float>::max();
+                    for (Creature* c : found)
+                    {
+                        if (!isAttackable(c))
+                            continue;
+                        float d = me->GetDistance(c);
+                        if (d < bestDist)
+                        {
+                            bestDist = d;
+                            best = c;
+                        }
+                    }
+                    return best;
+                };
+
+            // Highest priority: Giant Eye
+            if (Creature* giantEye = findClosestByEntry(CT_GIANT_EYE, 80.f))
+                return { giantEye, nullptr };
+
+            // Next: Giant Claw Tentacle
+            if (Creature* giantClaw = findClosestByEntry(CT_GIANT_CLAW_TENT, 80.f))
+                return { giantClaw, nullptr };
+
+            // Next: Flesh Tentacle (with line of sight check)
+            if (Creature* fleshTent = findClosestByEntry(CT_FLESH_TENT, 80.f))
+            {
+                // Make sure bot can actually see and target it
+                if (me->IsWithinLOSInMap(fleshTent) && me->CanSeeOrDetect(fleshTent))
+                    return { fleshTent, nullptr };
+            }
+
+            // Finally: C'thun himself, but only when "purple" (aura 22581) is present
+            if (Creature* cthun = findClosestByEntry(CT_CTHUN, 150.f))
+            {
+                if (cthun->HasAura(CT_CTHUN_PURPLE_AURA))
+                    return { cthun, nullptr };
+            }
+
+            if (Creature* eyeTent = findClosestByEntry(CT_EYE_TENT, 100.f))
+                return { eyeTent, nullptr };
+        }
+        // Temple of Ahn'Qiraj (AQ40) — Viscidus: prioritize Glob of Viscidus (15667)
+        if (me->GetMapId() == 531 && me->IsInCombat())
+        {
+            static constexpr uint32 GLOB_OF_VISCIDUS = 15667;
+
+            auto globEntryCheck = [](Unit const* u) -> bool
+            {
+                return u && u->IsAlive() && u->GetEntry() == GLOB_OF_VISCIDUS;
+            };
+
+            std::list<Creature*> globList;
+            Bcore::CreatureListSearcher globSearcher(me, globList, globEntryCheck);
+            Cell::VisitObjects(me, globSearcher, 120.f);
+
+            if (!globList.empty())
+            {
+                Creature* best = nullptr;
+                float bestDist = std::numeric_limits<float>::max();
+
+                for (Creature* c : globList)
+                {
+                    if (!c)
+                        continue;
+                    if (!me->IsValidAttackTarget(c) || c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
+                        continue;
+                    if (!me->IsWithinLOSInMap(c) || !me->CanSeeOrDetect(c))
+                        continue;
+
+                    float d = me->GetDistance(c);
+                    if (d < bestDist)
+                    {
+                        bestDist = d;
+                        best = c;
+                    }
+                }
+
+                if (best)
+                    return { best, nullptr };
+            }
+        }
+        // Ruins of Ahn'Qiraj (AQ20, map 509) — Ayamiss: prioritize Hive'Zara Larva (15555)
+        if (!IAmFree() && me->GetMapId() == 509 && me->IsInCombat())
+        {
+            static constexpr uint32 NPC_HIVEZARA_LARVA = 15555;
+
+            auto isAttackable = [this](Creature* c) -> bool
+                {
+                    if (!c) return false;
+                    if (!c->IsAlive()) return false;
+                    if (c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE)) return false;
+                    return me->IsValidAttackTarget(c) && (CanSeeEveryone() || (me->CanSeeOrDetect(c) && c->InSamePhase(me)));
+                };
+
+            auto larvaEntryCheck = [](Unit const* u) -> bool
+                {
+                    return u && u->IsAlive() && u->GetEntry() == NPC_HIVEZARA_LARVA;
+                };
+
+            std::list<Creature*> larvaList;
+            Bcore::CreatureListSearcher larvaSearch(me, larvaList, larvaEntryCheck);
+            Cell::VisitObjects(me, larvaSearch, 100.f);
+
+            Creature* best = nullptr;
+            float bestDist = std::numeric_limits<float>::max();
+
+            for (Creature* c : larvaList)
+            {
+                if (!isAttackable(c))
+                    continue;
+                if (!me->IsWithinLOSInMap(c))
+                    continue;
+
+                float const d = me->GetDistance(c);
+                if (d < bestDist)
+                {
+                    bestDist = d;
+                    best = c;
+                }
+            }
+
+            if (best)
+                return { best, nullptr };
+        }
         // Icecrown Citadel - Sindragosa
         if (me->GetMapId() == 631 && isInWMOArea(WMOAreaGroupSindragosa)/* &&
             (!mytar || (mytar->GetEntry() != CREATURE_ICC_ICE_TOMB1 && mytar->GetEntry() != CREATURE_ICC_ICE_TOMB2 &&
@@ -5230,6 +5646,77 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
         float radius = 15.0f + DEFAULT_COMBAT_REACH;
         for (std::list<GameObject*>::const_iterator ci = gListMC.cbegin(); ci != gListMC.cend(); ++ci)
             spots.push_back(AoeSpotsVec::value_type(*(*ci), radius));
+    }
+    // Ruins of Ahn'Qiraj (AQ20) — Sand Trap avoidance
+    else if (unit->GetMapId() == 509)
+    {
+        std::list<GameObject*> traps;
+        static constexpr uint32 GO_SAND_TRAP = 180647; // Sand Trap
+        Bcore::AllGameObjectsWithEntryInRange trapCheck(unit, GO_SAND_TRAP, 60.f);
+        Bcore::GameObjectListSearcher<Bcore::AllGameObjectsWithEntryInRange> trapSearcher(unit, traps, trapCheck);
+        Cell::VisitObjects(unit, trapSearcher, 40.f);
+
+        float radius = 12.0f + DEFAULT_COMBAT_REACH * 1.2f;
+        for (GameObject* go : traps)
+            spots.emplace_back(*go, radius);
+    }
+    // Temple of Ahn'Qiraj (AQ40)
+    else if (unit->GetMapId() == 531)
+    {
+        // ---------------------------
+        // 1) Mutating bugs exploding
+        // ---------------------------
+        static const uint32 AURA_EXPLODE = 804; // "Explode"
+        static const std::array<uint32, 2> MutatingBugIds = { 15316u, 15317u };
+
+        {
+            std::list<Creature*> bugList;
+            auto bugCheck = [](Creature const* c)
+                {
+                    if (!c || !c->IsAlive())
+                        return false;
+                    uint32 e = c->GetEntry();
+                    return e == MutatingBugIds[0] || e == MutatingBugIds[1];
+                };
+
+            Bcore::CreatureListSearcher bugSearcher(unit, bugList, bugCheck);
+            Cell::VisitObjects(unit, bugSearcher, 60.f);
+
+            SpellInfo const* explodeInfo = sSpellMgr->GetSpellInfo(AURA_EXPLODE);
+            float explodeRadius = explodeInfo ? explodeInfo->Effects[0].CalcRadius() : 18.0f;
+            float radius = explodeRadius + DEFAULT_COMBAT_REACH * 1.5f;
+
+            for (Creature* c : bugList)
+            {
+                if (!c->HasAura(AURA_EXPLODE))
+                    continue;
+
+                spots.emplace_back(*c, radius);
+            }
+        }
+
+        // ---------------------------------------
+        // 2) Ouro's Dirt Mounds — avoid the cone
+        // ---------------------------------------
+        {
+            static constexpr uint32 OURO_DIRT_MOUND = 15712; // Dirt Mound
+            std::list<Creature*> mounds;
+
+            auto moundCheck = [](Creature const* c)
+                {
+                    return c && c->IsAlive() && c->GetEntry() == OURO_DIRT_MOUND;
+                };
+
+            Bcore::CreatureListSearcher moundSearcher(unit, mounds, moundCheck);
+            Cell::VisitObjects(unit, moundSearcher, 80.f);
+
+            // Radius: generous buffer around the mound eruption/sweep zone.
+            // Tuned to keep melee and pets out of harm’s way without pathing chaos.
+            float moundRadius = 15.0f + DEFAULT_COMBAT_REACH * 1.5f;
+
+            for (Creature* m : mounds)
+                spots.emplace_back(*m, moundRadius);
+        }
     }
     //Aucheai Crypts
     else if (unit->GetMapId() == 558)
@@ -8244,7 +8731,7 @@ bool bot_ai::OnGossipSelect(Player* player, Creature* creature/* == me*/, uint32
                     }
 
                     uint32 option = action - GOSSIP_ACTION_INFO_DEF;
-                    if (option == 1 || option == 2) //food, water
+                    if (option == 1 || option == 2) // food, water
                     {
                         //Prevent high-leveled consumables for low-level characters
                         Unit* checker;
@@ -8268,6 +8755,7 @@ bool bot_ai::OnGossipSelect(Player* player, Creature* creature/* == me*/, uint32
                             BotWhisper(LocalizedNpcText(player, iswater ? BOT_TEXT_CANT_CONJURE_WATER_YET : BOT_TEXT_CANT_CONJURE_FOOD_YET), player);
                             break;
                         }
+
                         SpellInfo const* Info = sSpellMgr->GetSpellInfo(food);
                         Spell* foodspell = new Spell(me, Info, TRIGGERED_NONE, player->GetGUID());
                         SpellCastTargets targets;
@@ -8281,6 +8769,22 @@ bool bot_ai::OnGossipSelect(Player* player, Creature* creature/* == me*/, uint32
                         }
                         else
                         {
+                            // Level-scaled fee (in copper); defaults: 0s at lvl 1 -> 75s at max level
+                            uint64 costC = NpcBotConjureCfg::GetCostCopperForLevel(player->GetLevel());
+                            if (costC > 0)
+                            {
+                                if (player->GetMoney() < costC)
+                                {
+                                    // Clean up the prepared spell object before exiting
+                                    foodspell->finish(false);
+                                    delete foodspell;
+
+                                    BotWhisper(Acore::StringFormat("You don’t have enough money. Required: {}", NpcBotConjureCfg::MoneyToString(costC)), player);
+                                    break;
+                                }
+                                player->ModifyMoney(-int64(costC));
+                            }
+
                             aftercastTargetGuid = player->GetGUID();
                             foodspell->prepare(&targets);
                             BotWhisper(LocalizedNpcText(player, BOT_TEXT_HERE_YOU_GO), player);
@@ -8337,24 +8841,27 @@ bool bot_ai::OnGossipSelect(Player* player, Creature* creature/* == me*/, uint32
 
                         if (player->GetTeamId() == TEAM_ALLIANCE)
                         {
-                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, LocalizedNpcText(player, BOT_TEXT_STORMWIND), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_STORMWIND));
-                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, LocalizedNpcText(player, BOT_TEXT_IRONFORGE), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_IRONFORGE));
-                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, LocalizedNpcText(player, BOT_TEXT_DARNASSUS), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_DARNASSUS));
-                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, LocalizedNpcText(player, BOT_TEXT_EXORDAR), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_EXODAR));
-                            if (me->GetLevel() >= 65)
-                                AddGossipItemFor(player, GOSSIP_ICON_CHAT, LocalizedNpcText(player, BOT_TEXT_SHATTRATH), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_SHATTRATH_A));
+                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, NpcBotPortalCfg::LabelWithCost(LocalizedNpcText(player, BOT_TEXT_STORMWIND), player), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_STORMWIND));
+                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, NpcBotPortalCfg::LabelWithCost(LocalizedNpcText(player, BOT_TEXT_IRONFORGE), player), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_IRONFORGE));
+                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, NpcBotPortalCfg::LabelWithCost(LocalizedNpcText(player, BOT_TEXT_DARNASSUS), player), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_DARNASSUS));
+                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, NpcBotPortalCfg::LabelWithCost(LocalizedNpcText(player, BOT_TEXT_EXORDAR), player), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_EXODAR));
+                            if (me->GetLevel() >= 65 && player->GetLevel() >= NpcBotPortalCfg::GetMinLevelShattrath())
+                                AddGossipItemFor(player, GOSSIP_ICON_CHAT, NpcBotPortalCfg::LabelWithCost(LocalizedNpcText(player, BOT_TEXT_SHATTRATH), player), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_SHATTRATH_A));
                         }
                         else
                         {
-                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, LocalizedNpcText(player, BOT_TEXT_ORGRIMMAR), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_ORGRIMMAR));
-                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, LocalizedNpcText(player, BOT_TEXT_UNDERCITY), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_UNDERCITY));
-                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, LocalizedNpcText(player, BOT_TEXT_THUNDER_BLUFF), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_THUNDERBLUFF));
-                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, LocalizedNpcText(player, BOT_TEXT_SILVERMOON), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_SILVERMOON));
-                            if (me->GetLevel() >= 65)
-                                AddGossipItemFor(player, GOSSIP_ICON_CHAT, LocalizedNpcText(player, BOT_TEXT_SHATTRATH), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_SHATTRATH_H));
+                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, NpcBotPortalCfg::LabelWithCost(LocalizedNpcText(player, BOT_TEXT_ORGRIMMAR), player), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_ORGRIMMAR));
+                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, NpcBotPortalCfg::LabelWithCost(LocalizedNpcText(player, BOT_TEXT_UNDERCITY), player), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_UNDERCITY));
+                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, NpcBotPortalCfg::LabelWithCost(LocalizedNpcText(player, BOT_TEXT_THUNDER_BLUFF), player), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_THUNDERBLUFF));
+                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, NpcBotPortalCfg::LabelWithCost(LocalizedNpcText(player, BOT_TEXT_SILVERMOON), player), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_SILVERMOON));
+                            if (me->GetLevel() >= 65 && player->GetLevel() >= NpcBotPortalCfg::GetMinLevelShattrath())
+                                AddGossipItemFor(player, GOSSIP_ICON_CHAT, NpcBotPortalCfg::LabelWithCost(LocalizedNpcText(player, BOT_TEXT_SHATTRATH), player), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_SHATTRATH_H));
                         }
-                        if (me->GetLevel() >= 74)
-                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, LocalizedNpcText(player, BOT_TEXT_DALARAN), GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_DALARAN));
+
+                        if (me->GetLevel() >= 74 && player->GetLevel() >= NpcBotPortalCfg::GetMinLevelDalaran())
+                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, NpcBotPortalCfg::LabelWithCost(LocalizedNpcText(player, BOT_TEXT_DALARAN), player),
+                                GOSSIP_SENDER_CLASS_ACTION1, GOSSIP_ACTION_INFO_DEF + uint32(PORTAL_DALARAN));
+
                         AddGossipItemFor(player, GOSSIP_ICON_CHAT, LocalizedNpcText(player, BOT_TEXT_BACK), 1, GOSSIP_ACTION_INFO_DEF + 7);
                     }
                     break;
@@ -8768,14 +9275,40 @@ bool bot_ai::OnGossipSelect(Player* player, Creature* creature/* == me*/, uint32
                         if (!portal_spell_id)
                             break;
 
-                        if (!IsSpellReady(portal_spell_id, lastdiff, false))
+                        if (!IsSpellReady(portal_spell_id, GetLastDiff(), false))
                         {
                             BotWhisper(LocalizedNpcText(player, BOT_TEXT_NOT_READY_YET), player);
                             return OnGossipSelect(player, creature, GOSSIP_SENDER_CLASS, GOSSIP_ACTION_INFO_DEF + 4);
                         }
 
-                        //CastSpellExtraArgs args;
-                        //args.SetOriginalCaster(player->GetGUID());
+                        // Configurable player-level gates for Shattrath / Dalaran
+                        bool isShattrath = (portal_spell_id == 33691 /*Alliance*/ || portal_spell_id == 35717 /*Horde*/);
+                        bool isDalaran  = (portal_spell_id == 53142 /*Dalaran*/);
+
+                        if (isShattrath && player->GetLevel() < NpcBotPortalCfg::GetMinLevelShattrath())
+                        {
+                            BotWhisper(Acore::StringFormat("You must be at least level {} to use this portal.", uint32(NpcBotPortalCfg::GetMinLevelShattrath())), player);
+                            return OnGossipSelect(player, creature, GOSSIP_SENDER_CLASS, GOSSIP_ACTION_INFO_DEF + 4);
+                        }
+                        if (isDalaran && player->GetLevel() < NpcBotPortalCfg::GetMinLevelDalaran())
+                        {
+                            BotWhisper(Acore::StringFormat("You must be at least level {} to use this portal.", uint32(NpcBotPortalCfg::GetMinLevelDalaran())), player);
+                            return OnGossipSelect(player, creature, GOSSIP_SENDER_CLASS, GOSSIP_ACTION_INFO_DEF + 4);
+                        }
+
+                        // Level-scaled fee for all portals
+                        uint64 costC = NpcBotPortalCfg::GetCostCopperForLevel(player->GetLevel());
+                        if (costC > 0)
+                        {
+                            if (player->GetMoney() < costC)
+                            {
+                                BotWhisper(Acore::StringFormat("You don’t have enough money. Required: {}", NpcBotPortalCfg::MoneyToString(costC)), player);
+                                return OnGossipSelect(player, creature, GOSSIP_SENDER_CLASS, GOSSIP_ACTION_INFO_DEF + 4);
+                            }
+                            player->ModifyMoney(-int64(costC));
+                        }
+
+                        // Cast the actual portal on behalf of the player
                         me->CastCustomSpell(me, portal_spell_id, nullptr, nullptr, nullptr, false, nullptr, nullptr, player->GetGUID());
                     }
                     break;
@@ -14968,6 +15501,9 @@ void bot_ai::DefaultInit()
 
 void bot_ai::ApplyRacials()
 {
+    if (me->IsAlive() && !me->HasAura(300171))
+        me->AddAura(300171, me);
+
     uint8 myrace = me->GetRace();
     switch (myrace)
     {
@@ -15040,6 +15576,8 @@ void bot_ai::ApplyRacials()
             //BOT_LOG_ERROR("entities.player", "bot_ai::ApplyRacePassives(): unknown race %u for bot %s (%u)", uint32(me->GetRace()), me->GetName().c_str(), me->GetEntry());
             return;
     }
+    // NPC BOT aura
+    RefreshAura(300171);
 }
 
 void bot_ai::InitFaction()

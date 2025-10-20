@@ -2648,7 +2648,8 @@ public:
             handler->SetSentErrorMessage(true);
             return false;
         }
-        if (owner->GetBotMgr()->IsPartyInCombat(true))
+        // Allow teleport even if in combat — only restriction is PvP combat
+        if (owner->GetMap()->IsBattleArena())
         {
             handler->SendNotification("You can't do that while in PvP combat");
             handler->SetSentErrorMessage(true);
@@ -3037,17 +3038,32 @@ public:
     {
         Player* owner = handler->GetSession()->GetPlayer();
 
-        ObjectGuid guid = owner->GetTarget();
-        if (!guid || !owner->HaveBot())
+        if (!owner || !owner->HaveBot())
         {
             handler->SendSysMessage(".npcbot recall");
             handler->SendSysMessage("Forces npcbots to move directly on your position. Select a npcbot you want to move or select yourself to move all bots");
             handler->SetSentErrorMessage(true);
             return false;
         }
-        if (owner->GetBotMgr()->IsPartyInCombat(false))
+
+        // Disallow in BGs/Arenas regardless of combat state
+        if (Map const* map = owner->GetMap())
         {
-            handler->SendNotification(LANG_YOU_IN_COMBAT);
+            if (map->IsBattlegroundOrArena())
+            {
+                handler->SendSysMessage("You cannot recall bots in battlegrounds or arenas.");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+        }
+
+        // In open-world/instances: allow recall even if the party (or player) is in combat
+        ObjectGuid guid = owner->GetTarget();
+
+        if (!guid)
+        {
+            handler->SendSysMessage(".npcbot recall");
+            handler->SendSysMessage("Forces npcbots to move directly on your position. Select a npcbot you want to move or select yourself to move all bots");
             handler->SetSentErrorMessage(true);
             return false;
         }
@@ -3057,6 +3073,7 @@ public:
             owner->GetBotMgr()->RecallAllBots();
             return true;
         }
+
         if (Creature* bot = owner->GetBotMgr()->GetBot(guid))
         {
             owner->GetBotMgr()->RecallBot(bot);
@@ -3102,32 +3119,48 @@ public:
     {
         Player* owner = handler->GetSession()->GetPlayer();
 
-        if (!owner->HaveBot())
+        if (!owner || !owner->HaveBot())
         {
             handler->SendSysMessage(".npcbot recall teleport");
             handler->SendSysMessage("Forces all your npcbots to teleport to your position");
             handler->SetSentErrorMessage(true);
             return false;
         }
+
+        // Disallow recall in Battlegrounds or Arenas, regardless of combat
+        if (Map const* map = owner->GetMap())
+        {
+            if (map->IsBattlegroundOrArena())
+            {
+                handler->SendSysMessage("You cannot recall or teleport bots in battlegrounds or arenas.");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+        }
+
         if (!owner->IsAlive())
         {
             handler->SendNotification("You are dead");
             handler->SetSentErrorMessage(true);
             return false;
         }
+
         if (owner->GetBotMgr()->GetBotsHidden())
         {
             handler->SendNotification("You can't do that while bots are hidden");
             handler->SetSentErrorMessage(true);
             return false;
         }
-        if (owner->GetBotMgr()->IsPartyInCombat(true))
+
+        // Allow teleport even if in combat — only restriction is PvP combat
+        if (owner->GetMap()->IsBattleArena())
         {
             handler->SendNotification("You can't do that while in PvP combat");
             handler->SetSentErrorMessage(true);
             return false;
         }
 
+        // Teleport all bots directly to the player's current position
         owner->GetBotMgr()->RecallAllBots(true);
         return true;
     }
@@ -4986,26 +5019,29 @@ public:
     {
         Player* owner = handler->GetSession()->GetPlayer();
         Unit* u = owner->GetSelectedUnit();
+
+        auto ReviveAllFor = [&](Player* master) -> bool
+            {
+                if (!master->HaveBot())
+                {
+                    handler->PSendSysMessage("{} has no npcbots!", master->GetName());
+                    handler->SetSentErrorMessage(true);
+                    return false;
+                }
+
+                master->GetBotMgr()->ReviveAllBots();
+                handler->SendSysMessage("Npcbots revived");
+                return true;
+            };
+
         if (!u)
         {
-            handler->SendSysMessage(".npcbot revive");
-            handler->SendSysMessage("Revives selected npcbot. If player is selected, revives all selected player's npcbots");
-            handler->SetSentErrorMessage(true);
-            return false;
+            return ReviveAllFor(owner);
         }
 
         if (Player* master = u->ToPlayer())
         {
-            if (!master->HaveBot())
-            {
-                handler->PSendSysMessage("{} has no npcbots!", master->GetName());
-                handler->SetSentErrorMessage(true);
-                return false;
-            }
-
-            master->GetBotMgr()->ReviveAllBots();
-            handler->SendSysMessage("Npcbots revived");
-            return true;
+            return ReviveAllFor(master);
         }
         else if (Creature* bot = u->ToCreature())
         {
@@ -5022,11 +5058,11 @@ public:
                 handler->PSendSysMessage("{} revived", bot->GetName());
                 return true;
             }
+
+            return ReviveAllFor(owner);
         }
 
-        handler->SendSysMessage("You must select player or npcbot");
-        handler->SetSentErrorMessage(true);
-        return false;
+        return ReviveAllFor(owner);
     }
 
     static bool HandleNpcBotAddCommand(ChatHandler* handler)

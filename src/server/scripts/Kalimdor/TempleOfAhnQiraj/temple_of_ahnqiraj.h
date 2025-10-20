@@ -76,6 +76,7 @@ enum Creatures
     NPC_OURO                = 15517,
     NPC_OURO_SPAWNER        = 15957,
     NPC_SARTURA             = 15516,
+    NPC_FANKRISS            = 15510,
 
     NPC_QIRAJI_SLAYER       = 15250,
     NPC_QIRAJI_MINDSLAYER   = 15246

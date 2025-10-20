@@ -226,9 +226,10 @@ struct npc_vekniss_stinger : public ScriptedAI
     }
 };
 
+// AFTER — npc_obsidian_eradicator targets Players AND NPCBots with mana
 struct npc_obsidian_eradicator : public ScriptedAI
 {
-    npc_obsidian_eradicator(Creature* creature) : ScriptedAI(creature) { }
+    npc_obsidian_eradicator(Creature* creature) : ScriptedAI(creature) {}
 
     void Reset() override
     {
@@ -240,49 +241,109 @@ struct npc_obsidian_eradicator : public ScriptedAI
     void JustEngagedWith(Unit* /*who*/) override
     {
         scheduler.Schedule(3500ms, [this](TaskContext context)
-        {
-            if (_targetGUIDs.empty())
             {
-                me->GetMap()->DoForAllPlayers([&](Player* player)
+                // Refresh targets if list is empty (or got invalidated)
+                if (_targetGUIDs.empty())
                 {
-                    if (player->IsAlive() && !player->IsGameMaster() && !player->IsSpectator() && player->GetPower(POWER_MANA) > 0)
-                    {
-                        _targetGUIDs.push_back(player->GetGUID());
-                    }
-                });
-
-                Acore::Containers::RandomResize(_targetGUIDs, 10);
-            }
-
-            for (ObjectGuid guid : _targetGUIDs)
-            {
-                if (Unit* target = ObjectAccessor::GetUnit(*me, guid))
-                {
-                    DoCast(target, SPELL_DRAIN_MANA_ERADICATOR, true);
+                    FillManaTargets(_targetGUIDs, 120.f); // scan nearby for mana users (players + npcbots)
+                    Acore::Containers::RandomResize(_targetGUIDs, 10);
                 }
-            }
 
-            if (me->GetPowerPct(POWER_MANA) >= 100.f)
-            {
-                DoCastAOE(SPELL_SHOCK_BLAST);
-            }
+                bool anyValid = false;
 
-            context.Repeat(3500ms);
-        });
+                for (auto it = _targetGUIDs.begin(); it != _targetGUIDs.end(); )
+                {
+                    if (Unit* target = ObjectAccessor::GetUnit(*me, *it))
+                    {
+                        // Only drain if still a valid target and has mana left
+                        if (target->IsAlive() && me->IsValidAttackTarget(target) && target->GetPower(POWER_MANA) > 0)
+                        {
+                            // Optional safety checks to reduce wasted casts behind walls/stealth etc.
+                            if (me->IsWithinLOSInMap(target) && me->CanSeeOrDetect(target))
+                            {
+                                DoCast(target, SPELL_DRAIN_MANA_ERADICATOR, true);
+                                anyValid = true;
+                            }
+                            ++it;
+                            continue;
+                        }
+                    }
+                    // purge invalid/empty
+                    it = _targetGUIDs.erase(it);
+                }
+
+                // If nothing valid left, rebuild the list next tick
+                if (!anyValid)
+                {
+                    _targetGUIDs.clear();
+                }
+
+                if (me->GetPowerPct(POWER_MANA) >= 100.f)
+                {
+                    DoCastAOE(SPELL_SHOCK_BLAST);
+                }
+
+                context.Repeat(3500ms);
+            });
     }
 
     void UpdateAI(uint32 diff) override
     {
         if (!UpdateVictim())
-        {
             return;
-        }
 
-        scheduler.Update(diff,
-            std::bind(&ScriptedAI::DoMeleeAttackIfReady, this));
+        scheduler.Update(diff, std::bind(&ScriptedAI::DoMeleeAttackIfReady, this));
     }
 
 private:
+    static bool IsPlayerManaTarget(Player* plr, Creature const* me)
+    {
+        if (!plr->IsAlive()) return false;
+        //if (plr->IsGameMaster() || plr->IsSpectator()) return false;
+        if (plr->GetPower(POWER_MANA) <= 0) return false;
+        if (!me->IsValidAttackTarget(plr)) return false;
+        if (!me->CanSeeOrDetect(plr)) return false;
+        if (!me->IsWithinLOSInMap(plr)) return false;
+        return true;
+    }
+
+    static bool IsBotManaTarget(Creature* c, Creature const* me)
+    {
+        if (!c->IsAlive()) return false;
+        if (!c->IsNPCBot()) return false;
+        if (c->GetPower(POWER_MANA) <= 0) return false;
+        if (!me->IsValidAttackTarget(c)) return false;
+        if (!me->CanSeeOrDetect(c)) return false;
+        if (!me->IsWithinLOSInMap(c)) return false;
+        return true;
+    }
+
+    void FillManaTargets(GuidList& out, float range)
+    {
+        std::list<Unit*> nearby;
+        Acore::AnyUnitInObjectRangeCheck check(me, range);
+        Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, nearby, check);
+        Cell::VisitObjects(me, searcher, range);
+
+        for (Unit* u : nearby)
+        {
+            if (!u) continue;
+
+            if (u->GetTypeId() == TYPEID_PLAYER)
+            {
+                Player* plr = u->ToPlayer();
+                if (plr && IsPlayerManaTarget(plr, me))
+                    out.push_back(plr->GetGUID());
+            }
+            else if (u->GetTypeId() == TYPEID_UNIT)
+            {
+                Creature* c = u->ToCreature();
+                if (c && IsBotManaTarget(c, me))
+                    out.push_back(c->GetGUID());
+            }
+        }
+    }
+
     GuidList _targetGUIDs;
 };
 
@@ -352,7 +413,7 @@ struct npc_anubisath_warder : public ScriptedAI
 
 struct npc_obsidian_nullifier : public ScriptedAI
 {
-    npc_obsidian_nullifier(Creature* creature) : ScriptedAI(creature) { }
+    npc_obsidian_nullifier(Creature* creature) : ScriptedAI(creature) {}
 
     void Reset() override
     {
@@ -364,55 +425,77 @@ struct npc_obsidian_nullifier : public ScriptedAI
     void JustEngagedWith(Unit* /*who*/) override
     {
         scheduler.Schedule(6s, [this](TaskContext context)
-        {
-            if (_targetGUIDs.empty())
             {
-                me->GetMap()->DoForAllPlayers([&](Player* player)
+                // Build the target list only once (same as original logic)
+                if (_targetGUIDs.empty())
                 {
-                    if (player->IsAlive() && !player->IsGameMaster() && !player->IsSpectator() && player->GetPower(POWER_MANA) > 0)
-                    {
-                        _targetGUIDs.push_back(player->GetGUID());
-                    }
-                });
-
-                Acore::Containers::RandomResize(_targetGUIDs, 11);
-            }
-
-            for (ObjectGuid guid : _targetGUIDs)
-            {
-                if (Unit* target = ObjectAccessor::GetUnit(*me, guid))
-                {
-                    DoCast(target, SPELL_DRAIN_MANA_NULLIFIER, true);
+                    CollectManaTargets();
+                    Acore::Containers::RandomResize(_targetGUIDs, 11); // preserve 11-target behavior
                 }
-            }
 
-            if (me->GetPowerPct(POWER_MANA) >= 100.f)
-            {
-                DoCastAOE(SPELL_NULLIFY);
-            }
+                for (ObjectGuid guid : _targetGUIDs)
+                {
+                    if (Unit* target = ObjectAccessor::GetUnit(*me, guid))
+                        DoCast(target, SPELL_DRAIN_MANA_NULLIFIER, true);
+                }
 
-            context.Repeat(6s);
-        })
-        .Schedule(6000ms, 8400ms, [this](TaskContext context)
-        {
-            DoCastVictim(SPELL_CLEAVE, true);
-            context.Repeat(6000ms, 8400ms);
-        });
+                if (me->GetPowerPct(POWER_MANA) >= 100.f)
+                    DoCastAOE(SPELL_NULLIFY);
+
+                context.Repeat(6s);
+            })
+            .Schedule(6000ms, 8400ms, [this](TaskContext context)
+                {
+                    DoCastVictim(SPELL_CLEAVE, true);
+                    context.Repeat(6000ms, 8400ms);
+                });
     }
 
     void UpdateAI(uint32 diff) override
     {
         if (!UpdateVictim())
-        {
             return;
-        }
 
-        scheduler.Update(diff,
-            std::bind(&ScriptedAI::DoMeleeAttackIfReady, this));
+        scheduler.Update(diff, std::bind(&ScriptedAI::DoMeleeAttackIfReady, this));
     }
 
 private:
     GuidList _targetGUIDs;
+
+    static constexpr float BOT_SCAN_RANGE = 60.0f;
+
+    bool IsDrainableManaTarget(Unit* unit) const
+    {
+        return unit && unit->IsAlive() &&
+            me->IsValidAttackTarget(unit) &&
+            unit->GetPower(POWER_MANA) > 0;
+    }
+
+    void CollectManaTargets()
+    {
+        // Players: all on map, excluding GMs/spectators
+        me->GetMap()->DoForAllPlayers([&](Player* player)
+            {
+                if (!player->IsGameMaster() && !player->IsSpectator() && IsDrainableManaTarget(player))
+                    _targetGUIDs.push_back(player->GetGUID());
+            });
+
+        // NPCBots: creatures nearby within BOT_SCAN_RANGE
+        std::list<Unit*> nearby;
+        Acore::AnyUnitInObjectRangeCheck check(me, BOT_SCAN_RANGE);
+        Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, nearby, check);
+        Cell::VisitObjects(me, searcher, BOT_SCAN_RANGE);
+
+        for (Unit* u : nearby)
+        {
+            if (u->GetTypeId() != TYPEID_UNIT)
+                continue;
+
+            Creature* c = u->ToCreature();
+            if (c && c->IsNPCBot() && IsDrainableManaTarget(c))
+                _targetGUIDs.push_back(c->GetGUID());
+        }
+    }
 };
 
 struct npc_ahnqiraji_critter : public ScriptedAI

@@ -51,22 +51,26 @@ struct boss_kurinnaxx : public BossAI
     {
         BossAI::JustEngagedWith(who);
 
-        scheduler.Schedule(8s, 10s, [this](TaskContext context)
+        scheduler
+        .Schedule(8s, 10s, [this](TaskContext context)
         {
             DoCastVictim(SPELL_MORTAL_WOUND);
             context.Repeat(8s, 10s);
-        }).Schedule(5s, 15s, [this](TaskContext context)
+        })
+        .Schedule(5s, 15s, [this](TaskContext context)
         {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.f, true, false))
+            if (Unit* target = SelectSandTrapTarget())
             {
                 target->CastSpell(target, SPELL_SAND_TRAP, true, nullptr, nullptr, me->GetGUID());
             }
             context.Repeat(5s, 15s);
-        }).Schedule(10s, 15s, [this](TaskContext context)
+        })
+        .Schedule(10s, 15s, [this](TaskContext context)
         {
             DoCastSelf(SPELL_WIDE_SLASH);
             context.Repeat(12s, 15s);
-        }).Schedule(16s, [this](TaskContext context)
+        })
+        .Schedule(16s, [this](TaskContext context)
         {
             DoCastSelf(SPELL_THRASH);
             context.Repeat(16s);
@@ -97,7 +101,63 @@ struct boss_kurinnaxx : public BossAI
             if (ossirian->GetAI())
                 ossirian->AI()->Talk(SAY_KURINNAXX_DEATH);
         }
+
         BossAI::JustDied(killer);
+    }
+
+private:
+    static constexpr float SAND_TRAP_RANGE = 100.0f;
+
+    bool IsValidSandTrapTarget(Unit* unit) const
+    {
+        return unit
+            && unit->IsAlive()
+            && me->IsValidAttackTarget(unit)
+            && me->IsWithinDistInMap(unit, SAND_TRAP_RANGE);
+    }
+
+    Unit* SelectSandTrapTarget()
+    {
+        GuidVector candidates;
+        candidates.reserve(32);
+
+        me->GetMap()->DoForAllPlayers([&](Player* player)
+        {
+            if (player->IsGameMaster())
+                return;
+
+            if (IsValidSandTrapTarget(player))
+                candidates.push_back(player->GetGUID());
+        });
+
+        std::list<Unit*> nearby;
+        {
+            Acore::AnyUnitInObjectRangeCheck check(me, SAND_TRAP_RANGE);
+            Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, nearby, check);
+            Cell::VisitObjects(me, searcher, SAND_TRAP_RANGE);
+        }
+
+        for (Unit* u : nearby)
+        {
+            if (u->GetTypeId() != TYPEID_UNIT)
+                continue;
+
+            Creature* c = u->ToCreature();
+            if (!c)
+                continue;
+
+            if (!c->IsNPCBot())
+                continue;
+
+            if (IsValidSandTrapTarget(c))
+                candidates.push_back(c->GetGUID());
+        }
+
+        if (candidates.empty())
+            return nullptr;
+
+        ObjectGuid chosen = Acore::Containers::SelectRandomContainerElement(candidates);
+        return ObjectAccessor::GetUnit(*me, chosen);
     }
 };
 

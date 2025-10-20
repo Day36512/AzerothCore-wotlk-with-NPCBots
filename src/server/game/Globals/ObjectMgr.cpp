@@ -2909,6 +2909,9 @@ void ObjectMgr::LoadItemTemplates()
         return;
     }
 
+    // NEW
+    bool const makeBoPNoReqLevelBindToAccount = sConfigMgr->GetOption<bool>("Item.BoPNoReqLevel.BindToAccount", false);
+
     _itemTemplateStore.reserve(result->GetRowCount());
     uint32 count = 0;
     // original inspiration https://github.com/TrinityCore/TrinityCore/commit/0c44bd33ee7b42c924859139a9f4b04cf2b91261
@@ -3417,9 +3420,18 @@ void ObjectMgr::LoadItemTemplates()
             itemTemplate.FlagsCu = static_cast<ItemFlagsCustom>(static_cast<uint32>(itemTemplate.FlagsCu) & ~ITEM_FLAGS_CU_DURATION_REAL_TIME);
         }
 
-        // Set after checks to ensure valid item quality
+        if (makeBoPNoReqLevelBindToAccount)
+        {
+            if (itemTemplate.Bonding == BIND_WHEN_PICKED_UP && itemTemplate.RequiredLevel >= 1)
+            {
+                    itemTemplate.Flags = static_cast<ItemFlags>(static_cast<uint32>(itemTemplate.Flags) | ITEM_FLAG_IS_BOUND_TO_ACCOUNT);
+                    LOG_DEBUG("server.loading", "Item (Entry: {}) flagged as account-bound via config (BoP && RequiredLevel=0).", entry);
+            }
+        }
+
         itemTemplate.BuyPrice *= sWorld->getRate(qualityToBuyValueConfig[itemTemplate.Quality]);
         itemTemplate.SellPrice *= sWorld->getRate(qualityToSellValueConfig[itemTemplate.Quality]);
+
 
         // Fill categories map
         for (uint8 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)

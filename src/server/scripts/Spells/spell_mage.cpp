@@ -23,43 +23,48 @@
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "TemporarySummon.h"
-/*
- * Scripts for spells with SPELLFAMILY_MAGE and SPELLFAMILY_GENERIC spells used by mage players.
- * Ordered alphabetically using scriptname.
- * Scriptnames of files in this file should be prefixed with "spell_mage_".
- */
+ /*
+  * Scripts for spells with SPELLFAMILY_MAGE and SPELLFAMILY_GENERIC spells used by mage players.
+  * Ordered alphabetically using scriptname.
+  * Scriptnames of files in this file should be prefixed with "spell_mage_".
+  */
 
 enum MageSpells
 {
-    SPELL_MAGE_BURNOUT_TRIGGER                   = 44450,
-    SPELL_MAGE_IMPROVED_BLIZZARD_CHILLED         = 12486,
-    SPELL_MAGE_COMBUSTION                        = 11129,
-    SPELL_MAGE_COLD_SNAP                         = 11958,
-    SPELL_MAGE_FOCUS_MAGIC_PROC                  = 54648,
-    SPELL_MAGE_FROST_WARDING_R1                  = 11189,
-    SPELL_MAGE_FROST_WARDING_TRIGGERED           = 57776,
-    SPELL_MAGE_INCANTERS_ABSORBTION_R1           = 44394,
-    SPELL_MAGE_INCANTERS_ABSORBTION_TRIGGERED    = 44413,
-    SPELL_MAGE_IGNITE                            = 12654,
-    SPELL_MAGE_MASTER_OF_ELEMENTS_ENERGIZE       = 29077,
-    SPELL_MAGE_SQUIRREL_FORM                     = 32813,
-    SPELL_MAGE_GIRAFFE_FORM                      = 32816,
-    SPELL_MAGE_SERPENT_FORM                      = 32817,
-    SPELL_MAGE_DRAGONHAWK_FORM                   = 32818,
-    SPELL_MAGE_WORGEN_FORM                       = 32819,
-    SPELL_MAGE_SHEEP_FORM                        = 32820,
-    SPELL_MAGE_GLYPH_OF_ETERNAL_WATER            = 70937,
-    SPELL_MAGE_SUMMON_WATER_ELEMENTAL_PERMANENT  = 70908,
-    SPELL_MAGE_SUMMON_WATER_ELEMENTAL_TEMPORARY  = 70907,
-    SPELL_MAGE_GLYPH_OF_BLAST_WAVE               = 62126,
-    SPELL_MAGE_FINGERS_OF_FROST                  = 44543
+    SPELL_MAGE_BURNOUT_TRIGGER = 44450,
+    SPELL_MAGE_IMPROVED_BLIZZARD_CHILLED = 12486,
+    SPELL_MAGE_COMBUSTION = 11129,
+    SPELL_MAGE_COLD_SNAP = 11958,
+    SPELL_MAGE_FOCUS_MAGIC_PROC = 54648,
+    SPELL_MAGE_FROST_WARDING_R1 = 11189,
+    SPELL_MAGE_FROST_WARDING_TRIGGERED = 57776,
+    SPELL_MAGE_INCANTERS_ABSORBTION_R1 = 44394,
+    SPELL_MAGE_INCANTERS_ABSORBTION_TRIGGERED = 44413,
+    SPELL_MAGE_IGNITE = 12654,
+    AURA_BONUS_IGNITE_PCT = 300258,
+    SPELL_MAGE_MASTER_OF_ELEMENTS_ENERGIZE = 29077,
+    SPELL_MAGE_SQUIRREL_FORM = 32813,
+    SPELL_MAGE_GIRAFFE_FORM = 32816,
+    SPELL_MAGE_SERPENT_FORM = 32817,
+    SPELL_MAGE_DRAGONHAWK_FORM = 32818,
+    SPELL_MAGE_WORGEN_FORM = 32819,
+    SPELL_MAGE_SHEEP_FORM = 32820,
+    SPELL_MAGE_GLYPH_OF_ETERNAL_WATER = 70937,
+    SPELL_MAGE_SUMMON_WATER_ELEMENTAL_PERMANENT = 70908,
+    SPELL_MAGE_SUMMON_WATER_ELEMENTAL_TEMPORARY = 70907,
+    SPELL_MAGE_GLYPH_OF_BLAST_WAVE = 62126,
+    SPELL_MAGE_FINGERS_OF_FROST = 44543
 };
 
 class spell_mage_arcane_blast : public SpellScript
 {
     PrepareSpellScript(spell_mage_arcane_blast);
 
-    bool Load() override { _triggerSpellId = 0; return true; }
+    bool Load() override
+    {
+        _triggerSpellId = 0;
+        return true;
+    }
 
     void HandleTriggerSpell(SpellEffIndex effIndex)
     {
@@ -72,11 +77,38 @@ class spell_mage_arcane_blast : public SpellScript
         GetCaster()->CastSpell(GetCaster(), _triggerSpellId, TRIGGERED_FULL_MASK);
     }
 
+    // ---------------------------------------------------------------------
+    // NEW: OnHit – add 8 % damage if requirements are met
+    // ---------------------------------------------------------------------
+    void HandleOnHit()
+    {
+        constexpr uint32 AURA_HIGH_HEALTH_BONUS = 300248; // tier aura
+        constexpr float  HEALTH_THRESHOLD_PCT = 75.0f;  // target must be above this %
+        constexpr float  BONUS_MULTIPLIER = 1.13f;  // +8% damage
+
+        Unit* caster = GetCaster();
+        Unit* target = GetHitUnit();
+
+        if (!caster || !target)
+            return;
+
+        if (!caster->HasAura(AURA_HIGH_HEALTH_BONUS))
+            return;
+
+        if (target->GetHealthPct() <= HEALTH_THRESHOLD_PCT)
+            return;
+
+        int32 dmg = GetHitDamage();
+        dmg = int32(dmg * BONUS_MULTIPLIER);
+        SetHitDamage(dmg);
+    }
+
     void Register() override
     {
         OnEffectLaunch += SpellEffectFn(spell_mage_arcane_blast::HandleTriggerSpell, EFFECT_1, SPELL_EFFECT_TRIGGER_SPELL);
         OnEffectLaunchTarget += SpellEffectFn(spell_mage_arcane_blast::HandleTriggerSpell, EFFECT_1, SPELL_EFFECT_TRIGGER_SPELL);
         AfterCast += SpellCastFn(spell_mage_arcane_blast::HandleAfterCast);
+        OnHit += SpellHitFn(spell_mage_arcane_blast::HandleOnHit); // <-- added hook
     }
 
 private:
@@ -157,7 +189,7 @@ class spell_mage_mirror_image : public AuraScript
 {
     PrepareAuraScript(spell_mage_mirror_image)
 
-    void HandleEffectApply(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
+        void HandleEffectApply(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
     {
         GetTarget()->CastSpell((Unit*)nullptr, GetSpellInfo()->Effects[aurEff->GetEffIndex()].TriggerSpell, true);
     }
@@ -379,25 +411,25 @@ class spell_mage_glyph_of_eternal_water : public AuraScript
     }
 };
 
-    class spell_mage_combustion_proc : public AuraScript
-    {
-        PrepareAuraScript(spell_mage_combustion_proc);
+class spell_mage_combustion_proc : public AuraScript
+{
+    PrepareAuraScript(spell_mage_combustion_proc);
 
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_MAGE_COMBUSTION });
     }
 
-        void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
-        {
-            GetTarget()->RemoveAurasDueToSpell(SPELL_MAGE_COMBUSTION);
-        }
+    void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        GetTarget()->RemoveAurasDueToSpell(SPELL_MAGE_COMBUSTION);
+    }
 
-        void Register() override
-        {
-            AfterEffectRemove += AuraEffectRemoveFn(spell_mage_combustion_proc::OnRemove, EFFECT_0, SPELL_AURA_ADD_FLAT_MODIFIER, AURA_EFFECT_HANDLE_REAL);
-        }
-    };
+    void Register() override
+    {
+        AfterEffectRemove += AuraEffectRemoveFn(spell_mage_combustion_proc::OnRemove, EFFECT_0, SPELL_AURA_ADD_FLAT_MODIFIER, AURA_EFFECT_HANDLE_REAL);
+    }
+};
 
 // Incanter's Absorbtion
 class spell_mage_incanters_absorbtion_base_AuraScript : public AuraScript
@@ -671,7 +703,8 @@ class spell_mage_ignite : public AuraScript
 
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
-        return ValidateSpellInfo({ SPELL_MAGE_IGNITE });
+        // Ensure both Ignite and the optional bonus aura exist in DBC
+        return ValidateSpellInfo({ SPELL_MAGE_IGNITE, AURA_BONUS_IGNITE_PCT });
     }
 
     bool CheckProc(ProcEventInfo& eventInfo)
@@ -680,38 +713,49 @@ class spell_mage_ignite : public AuraScript
             return false;
 
         DamageInfo* damageInfo = eventInfo.GetDamageInfo();
-
         if (!damageInfo || !damageInfo->GetSpellInfo())
-        {
             return false;
-        }
 
-        // Molten Armor
+        // Skip Molten Armor reflection procs
         if (SpellInfo const* spellInfo = eventInfo.GetSpellInfo())
         {
+            // SpellFamilyFlags[1] bit 0x8 corresponds to Molten Armor
             if (spellInfo->SpellFamilyFlags[1] & 0x8)
-            {
                 return false;
-            }
         }
 
         return true;
     }
 
-    void HandleProc(AuraEffect const*  /*aurEff*/, ProcEventInfo& eventInfo)
+    void HandleProc(AuraEffect const* /*aurEff*/, ProcEventInfo& eventInfo)
     {
-        PreventDefaultAction();
+        PreventDefaultAction(); // We apply our own Ignite DoT
 
         SpellInfo const* igniteDot = sSpellMgr->AssertSpellInfo(SPELL_MAGE_IGNITE);
-        int32 pct = 8 * GetSpellInfo()->GetRank();
 
-        int32 amount = int32(CalculatePct(eventInfo.GetDamageInfo()->GetDamage(), pct) / igniteDot->GetMaxTicks());
+        // -----------------------------------------------------------------
+        //  CALCULATE PERCENTAGE
+        //  Base: 7 % per talent rank
+        //  Bonus: +5 pp if caster has Aura 300258
+        // -----------------------------------------------------------------
+        uint8 rank = GetSpellInfo()->GetRank(); // talent rank (1–5)
+        int32 pct = 7 * rank;                  // base % per rank
 
-        // Xinef: implement ignite bug
-        eventInfo.GetProcTarget()->CastDelayedSpellWithPeriodicAmount(eventInfo.GetActor(), SPELL_MAGE_IGNITE, SPELL_AURA_PERIODIC_DAMAGE, amount);
-        //GetTarget()->CastCustomSpell(SPELL_MAGE_IGNITE, SPELLVALUE_BASE_POINT0, amount, eventInfo.GetProcTarget(), true, nullptr, aurEff);
+        Unit* caster = eventInfo.GetActor();
+        if (caster && caster->HasAura(AURA_BONUS_IGNITE_PCT))
+            pct += 5; // flat +5 percentage points
+
+        int32 amount = int32(CalculatePct(eventInfo.GetDamageInfo()->GetDamage(), pct)
+            / igniteDot->GetMaxTicks());
+
+        // Xinef: implement original Ignite stacking bug behaviour
+        eventInfo.GetProcTarget()->CastDelayedSpellWithPeriodicAmount(
+            caster, SPELL_MAGE_IGNITE, SPELL_AURA_PERIODIC_DAMAGE, amount);
     }
 
+    // ---------------------------------------------------------------------
+    //  REGISTRATION
+    // ---------------------------------------------------------------------
     void Register() override
     {
         DoCheckProc += AuraCheckProcFn(spell_mage_ignite::CheckProc);
@@ -858,7 +902,7 @@ private:
 
 enum SilvermoonPolymorph
 {
-    NPC_AUROSALIA   = 18744,
+    NPC_AUROSALIA = 18744,
 };
 
 /// @todo move out of here and rename - not a mage spell
@@ -905,7 +949,7 @@ const uint32 spell_mage_polymorph_cast_visual::spell_mage_polymorph_cast_visual:
 class spell_mage_summon_water_elemental : public SpellScript
 {
     PrepareSpellScript(spell_mage_summon_water_elemental)
-    bool Validate(SpellInfo const* /*spellInfo*/) override
+        bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo(
             {
@@ -918,11 +962,6 @@ class spell_mage_summon_water_elemental : public SpellScript
     void HandleDummy(SpellEffIndex /*effIndex*/)
     {
         Unit* caster = GetCaster();
-
-        //npcbot: prevent default handler for bots
-        if (caster->IsNPCBot())
-            return;
-        //end npcbot
 
         if (Creature* pet = ObjectAccessor::GetCreature(*caster, caster->GetPetGUID()))
             if (!pet->IsAlive())
@@ -953,7 +992,8 @@ class spell_mage_summon_water_elemental : public SpellScript
 
 #define FingersOfFrostScriptName "spell_mage_fingers_of_frost_proc_aura"
 class spell_mage_fingers_of_frost_proc_aura : public AuraScript
-{   PrepareAuraScript(spell_mage_fingers_of_frost_proc_aura);
+{
+    PrepareAuraScript(spell_mage_fingers_of_frost_proc_aura);
 
     bool CheckProc(ProcEventInfo& eventInfo)
     {
@@ -1002,9 +1042,9 @@ class spell_mage_fingers_of_frost_proc_aura : public AuraScript
     {
         switch (eventInfo.GetSpellPhaseMask())
         {
-            case PROC_SPELL_PHASE_HIT:    _chance = 100.f; break;
-            case PROC_SPELL_PHASE_FINISH: ResetProcState(); break;
-            default: break;
+        case PROC_SPELL_PHASE_HIT:    _chance = 100.f; break;
+        case PROC_SPELL_PHASE_FINISH: ResetProcState(); break;
+        default: break;
         }
     }
 

@@ -57,8 +57,40 @@ struct boss_fankriss : public BossAI
 
     void Reset() override
     {
-        summonWormSpells = { SPELL_SUMMON_WORM_1, SPELL_SUMMON_WORM_2, SPELL_SUMMON_WORM_3};
+        // Clear any leftovers from previous attempts
+        summons.DespawnAll();
+
+        summonWormSpells = { SPELL_SUMMON_WORM_1, SPELL_SUMMON_WORM_2, SPELL_SUMMON_WORM_3 };
         BossAI::Reset();
+    }
+
+    void EnterEvadeMode(EvadeReason /*why*/) override
+    {
+        // On wipe/evade, clean the room
+        summons.DespawnAll();
+        BossAI::EnterEvadeMode(/*why*/);
+    }
+
+    void JustDied(Unit* killer) override
+    {
+        // Clean up all summoned adds immediately
+        summons.DespawnAll();
+        BossAI::JustDied(killer);
+    }
+
+    void JustSummoned(Creature* summon) override
+    {
+        BossAI::JustSummoned(summon);
+        summons.Summon(summon);                // track it
+        summon->SetReactState(REACT_AGGRESSIVE);
+        if (Unit* v = me->GetVictim())
+            summon->AI()->AttackStart(v);
+    }
+
+    void SummonedCreatureDespawn(Creature* summon) override
+    {
+        BossAI::SummonedCreatureDespawn(summon);
+        summons.Despawn(summon);               // untrack on natural despawn
     }
 
     void SummonWorms()
@@ -66,7 +98,7 @@ struct boss_fankriss : public BossAI
         uint32 amount = urand(1, 3);
         Acore::Containers::RandomResize(summonWormSpells, amount);
         for (uint32 summonSpell : summonWormSpells)
-            DoCastAOE(summonSpell, true);
+            DoCastAOE(summonSpell, true);      // JustSummoned() will be called for these
         summonWormSpells = { SPELL_SUMMON_WORM_1, SPELL_SUMMON_WORM_2, SPELL_SUMMON_WORM_3 };
     }
 
@@ -77,7 +109,10 @@ struct boss_fankriss : public BossAI
             for (uint8 i = 0; i < MAX_HATCHLING_SPAWN; i++)
             {
                 Position randSpawn = me->GetRandomPoint(spawnPos, 10.f);
-                me->SummonCreature(NPC_VEKNISS_HATCHLING, randSpawn, TEMPSUMMON_CORPSE_DESPAWN);
+                if (Creature* c = me->SummonCreature(NPC_VEKNISS_HATCHLING, randSpawn, TEMPSUMMON_CORPSE_DESPAWN))
+                {
+                    JustSummoned(c);           // ensure it’s tracked in SummonList
+                }
             }
         }
     }
@@ -92,24 +127,63 @@ struct boss_fankriss : public BossAI
                 context.Repeat();
             })
             .Schedule(30s, 50s, [this](TaskContext context)
-            {
-                SummonWorms();
-                context.Repeat(22s, 70s);
-            })
-            .Schedule(15s, 20s, [this](TaskContext context)
-            {
-                if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 0.0f, true, false))
                 {
-                    uint32 spellId = Acore::Containers::SelectRandomContainerElement(entangleSpells);
-                    DoCast(target, spellId);
-                }
+                    SummonWorms();
+                    context.Repeat(22s, 70s);
+                })
+            .Schedule(15s, 20s, [this](TaskContext context)
+                {
+                    // Custom selector that includes NPCBots (and players), excludes current tank, requires LOS
+                    if (Unit* target = SelectEntangleTarget(100.f))
+                    {
+                        uint32 spellId = Acore::Containers::SelectRandomContainerElement(entangleSpells);
+                        DoCast(target, spellId);
+                    }
 
-                SummonHatchlingWaves();
-                context.Repeat(25s, 55s);
-            });
+                    SummonHatchlingWaves();
+                    context.Repeat(25s, 55s);
+                });
     }
 
 private:
+    // Select a random valid target (Player or NPCBot), not the current tank, in LOS
+    Unit* SelectEntangleTarget(float range)
+    {
+        std::list<Unit*> units;
+        Acore::AnyUnitInObjectRangeCheck check(me, range);
+        Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, units, check);
+        Cell::VisitObjects(me, searcher, range);
+
+        units.remove_if([this](Unit* u) -> bool
+            {
+                if (!u || !u->IsAlive())
+                    return true;
+
+                // Only players or creatures that are NPCBots
+                bool isPlayer = u->GetTypeId() == TYPEID_PLAYER;
+                bool isNpcBot = (u->GetTypeId() == TYPEID_UNIT) && u->ToCreature() && u->ToCreature()->IsNPCBot();
+                if (!isPlayer && !isNpcBot)
+                    return true;
+
+                // Must be a valid hostile target and in LOS
+                if (!me->IsValidAttackTarget(u))
+                    return true;
+                if (!me->IsWithinLOSInMap(u) || !me->CanSeeOrDetect(u))
+                    return true;
+
+                // Exclude current tank (replicates SelectTarget(..., withTank=false))
+                if (u == me->GetVictim())
+                    return true;
+
+                return false;
+            });
+
+        if (units.empty())
+            return nullptr;
+
+        return Acore::Containers::SelectRandomContainerElement(units);
+    }
+
     std::vector<uint32> summonWormSpells;
 };
 

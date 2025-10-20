@@ -16,6 +16,7 @@
  */
 
 #include "AreaTriggerScript.h"
+#include "bot_ai.h"
 #include "CreatureScript.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
@@ -119,11 +120,36 @@ const Position FleshTentaclePos[2] =
 class NotInStomachSelector
 {
 public:
-    NotInStomachSelector() { }
+    NotInStomachSelector() {}
 
-    bool operator()(Unit* unit) const
+    bool operator()(Unit * unit) const
     {
-        return unit->IsPlayer() && !unit->HasAura(SPELL_DIGESTIVE_ACID) && (unit->GetPositionZ() > 0.0f);
+        if (!unit || !unit->IsAlive())
+            return false;
+
+        // Exclude any unit already affected by Digestive Acid
+        if (unit->HasAura(SPELL_DIGESTIVE_ACID))
+            return false;
+
+        // Only target players and NPCBots
+        if (unit->GetTypeId() == TYPEID_PLAYER)
+        {
+            // Players above ground are fair game
+            return unit->GetPositionZ() > 0.0f;
+        }
+
+        if (unit->GetTypeId() == TYPEID_UNIT)
+        {
+            Creature* c = unit->ToCreature();
+            if (!c)
+                return false;
+
+            // Only include creatures that are flagged as NPCBots
+            if (c->IsNPCBot() && c->GetPositionZ() > 0.0f)
+                return true;
+        }
+
+        return false;
     }
 };
 
@@ -396,45 +422,80 @@ struct boss_cthun : public BossAI
     void ScheduleTasks() override
     {
         scheduler.Schedule(13800ms, [this](TaskContext context)
-        {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, NotInStomachSelector()))
             {
-                target->CastSpell(target, SPELL_MOUTH_TENTACLE, true);
-
-                target->m_Events.AddEventAtOffset([target, this]()
+                if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, NotInStomachSelector()))
                 {
-                    DoTeleportPlayer(target, StomachPosition);
-                    target->RemoveAurasDueToSpell(SPELL_MIND_FLAY);
+                    // Visual grab first
+                    target->CastSpell(target, SPELL_MOUTH_TENTACLE, true);
 
+                    // After the grab animation, teleport into the stomach. Works for Players AND NPCBots.
                     target->m_Events.AddEventAtOffset([target, this]()
+                        {
+                            // Players use DoTeleportPlayer(); NPCBots use NearTeleportTo()
+                            if (target->GetTypeId() == TYPEID_PLAYER)
+                            {
+                                DoTeleportPlayer(target, StomachPosition);
+                            }
+                            else if (target->GetTypeId() == TYPEID_UNIT)
+                            {
+                                if (Creature* c = target->ToCreature())
+                                {
+                                    if (c->IsNPCBot())
+                                    {
+                                        // Stop any active casts before teleporting
+                                        c->InterruptNonMeleeSpells(false);
+
+                                        // Make sure the destination grid is loaded before teleport
+                                        Map* map = c->GetMap();
+                                        if (map)
+                                            map->LoadGrid(StomachPosition.GetPositionX(), StomachPosition.GetPositionY());
+
+                                        // Safely teleport NPCBots into C’Thun’s stomach
+                                        c->NearTeleportTo(
+                                            StomachPosition.GetPositionX(),
+                                            StomachPosition.GetPositionY(),
+                                            StomachPosition.GetPositionZ(),
+                                            StomachPosition.GetOrientation()); // use default flags
+
+                                        // Reset motion state so the bot doesn’t try to path back up
+                                        c->GetMotionMaster()->Clear(false);
+                                    }
+                                }
+                            }
+
+                            // Clean up beam if present
+                            target->RemoveAurasDueToSpell(SPELL_MIND_FLAY);
+
+                            // Apply stomach DoT shortly after arrival (matches player timing)
+                            target->m_Events.AddEventAtOffset([target, this]()
+                                {
+                                    DoCast(target, SPELL_DIGESTIVE_ACID, true);
+                                }, 2s);
+                        }, 3800ms);
+                }
+
+                context.Repeat();
+            }).Schedule(30s, [this](TaskContext context)
+                {
+                    if (Creature* eye = instance->GetCreature(DATA_EYE_OF_CTHUN))
+                        eye->AI()->DoAction(ACTION_SPAWN_EYE_TENTACLES);
+
+                    context.Repeat();
+                }).Schedule(8s, [this](TaskContext context)
                     {
-                        DoCast(target, SPELL_DIGESTIVE_ACID, true);
-                    }, 2s);
-                }, 3800ms);
-            }
+                        if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, NotInStomachSelector()))
+                            if (Creature* spawned = me->SummonCreature(NPC_GIANT_CLAW_TENTACLE, *target, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 5000))
+                                spawned->AI()->AttackStart(target);
 
-            context.Repeat();
-        }).Schedule(30s, [this](TaskContext context)
-        {
-            if (Creature* eye = instance->GetCreature(DATA_EYE_OF_CTHUN))
-                eye->AI()->DoAction(ACTION_SPAWN_EYE_TENTACLES);
+                        context.Repeat(1min);
+                    }).Schedule(38s, [this](TaskContext context)
+                        {
+                            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, NotInStomachSelector()))
+                                if (Creature* spawned = me->SummonCreature(NPC_GIANT_EYE_TENTACLE, *target, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 5000))
+                                    spawned->AI()->AttackStart(target);
 
-            context.Repeat();
-        }).Schedule(8s, [this](TaskContext context)
-        {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, NotInStomachSelector()))
-                if (Creature* spawned = me->SummonCreature(NPC_GIANT_CLAW_TENTACLE, *target, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 5000))
-                    spawned->AI()->AttackStart(target);
-
-            context.Repeat(1min);
-        }).Schedule(38s, [this](TaskContext context)
-        {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, NotInStomachSelector()))
-                if (Creature* spawned = me->SummonCreature(NPC_GIANT_EYE_TENTACLE, *target, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 5000))
-                    spawned->AI()->AttackStart(target);
-
-            context.Repeat(1min);
-        });
+                            context.Repeat(1min);
+                        });
     }
 
     void UpdateAI(uint32 diff) override
@@ -536,32 +597,36 @@ struct npc_eye_tentacle : public ScriptedAI
 
     void JustDied(Unit* /*killer*/) override
     {
-        if (Unit* portal = ObjectAccessor::GetUnit(*me, _portalGUID))
-            portal->KillSelf();
+        if (!_portalGUID.IsEmpty())
+            if (Creature* portal = ObjectAccessor::GetCreature(*me, _portalGUID))
+                if (portal->IsInWorld())
+                    portal->DespawnOrUnsummon();
+
+        _portalGUID.Clear();
     }
 
     void Reset() override
     {
         DoZoneInCombat();
         scheduler.Schedule(500ms, [this](TaskContext /*task*/)
-        {
-            DoCastAOE(SPELL_GROUND_RUPTURE);
-        })
-        .Schedule(5min, [this](TaskContext /*task*/)
-        {
-            me->DespawnOrUnsummon();
-        });
+            {
+                DoCastAOE(SPELL_GROUND_RUPTURE);
+            })
+            .Schedule(5min, [this](TaskContext /*task*/)
+                {
+                    me->DespawnOrUnsummon();
+                });
     }
 
     void JustEngagedWith(Unit* /*who*/) override
     {
+        // Mind Flay should be able to target both players and NPCBots
+        // Use a custom selector that explicitly includes NPCBots
         scheduler.Schedule(1s, 5s, [this](TaskContext context)
-        {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, NotInStomachSelector()))
-                DoCast(target, SPELL_MIND_FLAY);
-
-            context.Repeat(10s, 15s);
-        });
+            {
+                CastSpellOnRandomTarget(SPELL_MIND_FLAY, 60.0f); // 60 yd is safe for Mind Flay here
+                context.Repeat(10s, 15s);
+            });
     }
 
     void UpdateAI(uint32 diff) override
@@ -574,6 +639,42 @@ struct npc_eye_tentacle : public ScriptedAI
     }
 
 private:
+    void CastSpellOnRandomTarget(uint32 spellId, float range)
+    {
+        std::list<Unit*> targets;
+        Acore::AnyUnitInObjectRangeCheck check(me, range);
+        Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, targets, check);
+        Cell::VisitObjects(me, searcher, range);
+
+        // Keep only alive, valid, hostile Players or NPCBots
+        targets.remove_if([this](Unit* unit) -> bool
+            {
+                if (!unit || !unit->IsAlive())
+                    return true;
+
+                // Only players or creatures that are NPCBots
+                bool isPlayer = unit->GetTypeId() == TYPEID_PLAYER;
+                bool isNpcBot = (unit->GetTypeId() == TYPEID_UNIT) && unit->ToCreature() && unit->ToCreature()->IsNPCBot();
+                if (!isPlayer && !isNpcBot)
+                    return true;
+
+                // Must be a valid hostile target for the tentacle
+                if (!me->IsValidAttackTarget(unit))
+                    return true;
+
+                if (!NotInStomachSelector()(unit))
+                     return true;
+
+                return false;
+            });
+
+        if (!targets.empty())
+        {
+            Unit* target = Acore::Containers::SelectRandomContainerElement(targets);
+            DoCast(target, spellId);
+        }
+    }
+
     ObjectGuid _portalGUID;
 };
 

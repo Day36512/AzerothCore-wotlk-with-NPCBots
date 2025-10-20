@@ -913,6 +913,9 @@ class spell_pal_holy_shock : public SpellScript
     }
 };
 
+static constexpr uint32 SPELL_EXORCISM_R1 = 879;      // Exorcism (Rank 1) - chain anchor
+static constexpr uint32 AURA_EXORCISM_REFRESH = 300315; // Your custom talent aura
+
 // 53407 - Judgement of Justice
 // 20271 - Judgement of Light
 // 53408 - Judgement of Wisdom
@@ -921,11 +924,16 @@ class spell_pal_judgement : public SpellScript
     PrepareSpellScript(spell_pal_judgement);
 
 public:
-    spell_pal_judgement(uint32 spellId) : SpellScript(), _spellId(spellId) { }
+    spell_pal_judgement(uint32 spellId) : SpellScript(), _spellId(spellId) {}
 
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
-        return ValidateSpellInfo({ SPELL_PALADIN_JUDGEMENT_DAMAGE, _spellId });
+        // Keep existing validation; Judgement damage + current Judgement spell id must exist
+        if (!ValidateSpellInfo({ SPELL_PALADIN_JUDGEMENT_DAMAGE, _spellId }))
+            return false;
+
+        // Ensure Exorcism anchor spell exists
+        return sSpellMgr->GetSpellInfo(SPELL_EXORCISM_R1) != nullptr;
     }
 
     void HandleScriptEffect(SpellEffIndex /*effIndex*/)
@@ -958,8 +966,25 @@ public:
         {
             if (GetCaster()->CastSpell(GetHitUnit(), SPELL_JUDGEMENTS_OF_THE_JUST, true) && (spellId2 == SPELL_JUDGEMENT_OF_VENGEANCE_EFFECT || spellId2 == SPELL_JUDGEMENT_OF_CORRUPTION_EFFECT))
             {
-                //hidden effect only cast when spellcast of judgements of the just is succesful
-                GetCaster()->CastSpell(GetHitUnit(), SealApplication(spellId2), true); //add hidden seal apply effect for vengeance and corruption
+                // hidden effect only cast when spellcast of judgements of the just is successful
+                GetCaster()->CastSpell(GetHitUnit(), SealApplication(spellId2), true); // add hidden seal apply effect for vengeance and corruption
+            }
+        }
+
+        // --- NEW: Exorcism Refresh Talent Proc ---
+        // If the caster has the custom aura 300315, 33% chance per Judgement to refresh Exorcism CD.
+        if (GetCaster()->HasAura(AURA_EXORCISM_REFRESH))
+        {
+            if (roll_chance_i(33))
+            {
+                if (Player* player = GetCaster()->ToPlayer())
+                {
+                    if (ResetExorcismCooldown(player))
+                    {
+                        LOG_DEBUG("spells", "Paladin Judgement: Exorcism cooldown refreshed for player {}", player->GetGUID().ToString());
+                    }
+                }
+                // If caster is not a Player (e.g., creature/NpcBot), no-op by design.
             }
         }
     }
@@ -968,12 +993,12 @@ public:
     {
         switch (correspondingSpellId)
         {
-            case SPELL_JUDGEMENT_OF_VENGEANCE_EFFECT:
-                return SPELL_HOLY_VENGEANCE;
-            case SPELL_JUDGEMENT_OF_CORRUPTION_EFFECT:
-                return SPELL_BLOOD_CORRUPTION;
-            default:
-                return 0;
+        case SPELL_JUDGEMENT_OF_VENGEANCE_EFFECT:
+            return SPELL_HOLY_VENGEANCE;
+        case SPELL_JUDGEMENT_OF_CORRUPTION_EFFECT:
+            return SPELL_BLOOD_CORRUPTION;
+        default:
+            return 0;
         }
     }
 
@@ -983,6 +1008,32 @@ public:
     }
 
 private:
+    // Clears cooldown for Exorcism on the player across the whole spell chain.
+    // Returns true if at least one cooldown entry was removed.
+    static bool ResetExorcismCooldown(Player* player)
+    {
+        bool removedAny = false;
+
+        // Anchor to first spell in chain for Exorcism; iterate forward
+        uint32 spellId = sSpellMgr->GetFirstSpellInChain(SPELL_EXORCISM_R1);
+        while (spellId)
+        {
+            if (player->HasSpell(spellId))
+            {
+                // Only attempt to remove if there is a recorded cooldown
+                if (player->HasSpellCooldown(spellId))
+                {
+                    player->RemoveSpellCooldown(spellId, true); // notify client
+                    removedAny = true;
+                }
+            }
+
+            spellId = sSpellMgr->GetNextSpellInChain(spellId);
+        }
+
+        return removedAny;
+    }
+
     uint32 const _spellId;
 };
 

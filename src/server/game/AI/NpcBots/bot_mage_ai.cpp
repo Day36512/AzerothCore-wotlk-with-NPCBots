@@ -73,7 +73,7 @@ enum MageBaseSpells
     MANA_GEM_1                          = 5405,
     RITUAL_OF_REFRESHMENT_1             = 43987,
 
-    SUMMON_WATER_ELEMENTAL_1            = 31687
+    SUMMON_WATER_ELEMENTAL_1            = 300338 // Dinkle: Fixed a stupid client crash.
 };
 
 enum MagePassives

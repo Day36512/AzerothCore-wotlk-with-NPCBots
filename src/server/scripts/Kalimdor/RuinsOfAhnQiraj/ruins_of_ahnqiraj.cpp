@@ -79,7 +79,7 @@ struct npc_hivezara_stinger : public ScriptedAI
 
 struct npc_obsidian_destroyer : public ScriptedAI
 {
-    npc_obsidian_destroyer(Creature* creature) : ScriptedAI(creature) { }
+    npc_obsidian_destroyer(Creature* creature) : ScriptedAI(creature) {}
 
     void Reset() override
     {
@@ -90,25 +90,24 @@ struct npc_obsidian_destroyer : public ScriptedAI
     void JustEngagedWith(Unit* /*who*/) override
     {
         scheduler.Schedule(6s, [this](TaskContext context)
-        {
-            std::list<Unit*> targets;
-            SelectTargetList(targets, 6, SelectTargetMethod::Random, 1, [&](Unit* target)
             {
-                return target && target->IsPlayer() && target->GetPower(POWER_MANA) > 0;
+                GuidVector selection;
+                CollectManaTargets(selection);
+
+                // Randomly keep up to 6 targets, matching original SelectTargetList(..., 6, Random, ...)
+                Acore::Containers::RandomResize(selection, 6);
+
+                for (ObjectGuid guid : selection)
+                {
+                    if (Unit* target = ObjectAccessor::GetUnit(*me, guid))
+                        DoCast(target, SPELL_DRAIN_MANA, true);
+                }
+
+                if (me->GetPowerPct(POWER_MANA) >= 100.f)
+                    DoCastAOE(SPELL_PURGE, true);
+
+                context.Repeat(6s);
             });
-
-            for (Unit* target : targets)
-            {
-                DoCast(target, SPELL_DRAIN_MANA, true);
-            }
-
-            if (me->GetPowerPct(POWER_MANA) >= 100.f)
-            {
-                DoCastAOE(SPELL_PURGE, true);
-            }
-
-            context.Repeat(6s);
-        });
     }
 
     void JustDied(Unit* /*killer*/) override
@@ -119,12 +118,62 @@ struct npc_obsidian_destroyer : public ScriptedAI
     void UpdateAI(uint32 diff) override
     {
         if (!UpdateVictim())
-        {
             return;
+
+        scheduler.Update(diff, std::bind(&ScriptedAI::DoMeleeAttackIfReady, this));
+    }
+
+private:
+    // ---- Internal helpers/consts (encapsulated) ----
+    static constexpr float BOT_SCAN_RANGE_YARDS = 60.0f;
+
+    bool IsDrainableManaTarget(Unit* unit) const
+    {
+        // Alive, hostile to the destroyer, has any mana now
+        return unit && unit->IsAlive() &&
+            me->IsValidAttackTarget(unit) &&
+            unit->GetPower(POWER_MANA) > 0;
+    }
+
+    void CollectManaTargets(GuidVector& out)
+    {
+        out.clear();
+        out.reserve(32);
+
+        // 1) Players across the map (exclude GMs/spectators), must be drainable
+        me->GetMap()->DoForAllPlayers([&](Player* player)
+            {
+                if (player->IsGameMaster() || player->IsSpectator())
+                    return;
+
+                if (IsDrainableManaTarget(player))
+                    out.push_back(player->GetGUID());
+            });
+
+        // 2) NPCBots in range (BOT_SCAN_RANGE_YARDS), must be drainable
+        std::list<Unit*> nearby;
+        {
+            Acore::AnyUnitInObjectRangeCheck check(me, BOT_SCAN_RANGE_YARDS);
+            Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, nearby, check);
+            Cell::VisitObjects(me, searcher, BOT_SCAN_RANGE_YARDS);
         }
 
-        scheduler.Update(diff,
-            std::bind(&ScriptedAI::DoMeleeAttackIfReady, this));
+        for (Unit* u : nearby)
+        {
+            if (u->GetTypeId() != TYPEID_UNIT)
+                continue;
+
+            Creature* c = u->ToCreature();
+            if (!c)
+                continue;
+
+            // Only NPCBots (function provided by the NPCBots module)
+            if (!c->IsNPCBot())
+                continue;
+
+            if (IsDrainableManaTarget(c))
+                out.push_back(c->GetGUID());
+        }
     }
 };
 

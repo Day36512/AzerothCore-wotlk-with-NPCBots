@@ -19,7 +19,7 @@ enum MagePetBaseSpells
 
 enum MagePetSpecial
 {
-    ELEMENTAL_DURATION      = 45000
+    ELEMENTAL_DURATION      = 450000
 };
 
 class mage_pet_bot : public CreatureScript

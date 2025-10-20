@@ -478,22 +478,69 @@ enum ShadowFlame
     SPELL_SHADOW_FLAME_DOT = 22682
 };
 
-// 22539 - Shadowflame (used in Blackwing Lair)
 class spell_bwl_shadowflame : public SpellScript
 {
     PrepareSpellScript(spell_bwl_shadowflame);
 
+private:
+    // Cached config toggles (read once, per-process)
+    static bool TreatAllAsCloaked()
+    {
+        static bool s_all = sConfigMgr->GetOption<bool>("BlackwingLair.Shadowflame.TreatAllAsCloaked", false);
+        static bool s_logged = false;
+        if (!s_logged)
+        {
+            LOG_INFO("server.loading", "BlackwingLair.Shadowflame.TreatAllAsCloaked = {}", s_all ? "true" : "false");
+            s_logged = true;
+        }
+        return s_all;
+    }
+
+    static bool TreatNPCBotsAsCloaked()
+    {
+        static bool s_bots = sConfigMgr->GetOption<bool>("BlackwingLair.Shadowflame.TreatNPCBotsAsCloaked", false);
+        static bool s_logged = false;
+        if (!s_logged)
+        {
+            LOG_INFO("server.loading", "BlackwingLair.Shadowflame.TreatNPCBotsAsCloaked = {}", s_bots ? "true" : "false");
+            s_logged = true;
+        }
+        return s_bots;
+    }
+
+    static bool IsNPCBot(Unit* u)
+    {
+        if (!u || u->GetTypeId() != TYPEID_UNIT)
+            return false;
+        if (Creature* c = u->ToCreature())
+            return c->IsNPCBot(); // provided by NPCBots module
+        return false;
+    }
+
+public:
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
+        // Ensure we have the referenced spells available
         return ValidateSpellInfo({ SPELL_ONYXIA_SCALE_CLOAK, SPELL_SHADOW_FLAME_DOT });
     }
 
     void HandleEffectScriptEffect(SpellEffIndex /*effIndex*/)
     {
-        // If the victim of the spell does not have "Onyxia Scale Cloak" - add the Shadow Flame DoT (22682)
-        if (Unit* victim = GetHitUnit())
-            if (!victim->HasAura(SPELL_ONYXIA_SCALE_CLOAK))
-                victim->AddAura(SPELL_SHADOW_FLAME_DOT, victim);
+        Unit* victim = GetHitUnit();
+        if (!victim)
+            return;
+
+        // Global override: treat everyone as cloaked
+        if (TreatAllAsCloaked())
+            return;
+
+        // NPCBot-only override
+        if (TreatNPCBotsAsCloaked() && IsNPCBot(victim))
+            return;
+
+        // Original behavior: apply DoT if target lacks the cloak aura
+        if (!victim->HasAura(SPELL_ONYXIA_SCALE_CLOAK))
+            victim->AddAura(SPELL_SHADOW_FLAME_DOT, victim);
     }
 
     void Register() override
