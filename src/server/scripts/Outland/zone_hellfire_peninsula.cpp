@@ -15,6 +15,7 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Config.h"
 #include "CreatureScript.h"
 #include "GameObjectAI.h"
 #include "GameObjectScript.h"
@@ -171,7 +172,7 @@ public:
         npc_ancestral_wolfAI(Creature* creature) : npc_escortAI(creature)
         {
             if (creature->GetOwner() && creature->GetOwner()->IsPlayer())
-                Start(false, false, creature->GetOwner()->GetGUID());
+                Start(false, creature->GetOwner()->GetGUID());
             creature->SetSpeed(MOVE_WALK, 1.5f);
             DoCast(SPELL_GUIDED_BY_THE_SPIRITS);
             Reset();
@@ -209,7 +210,7 @@ public:
                         {
                             ryga->SetWalk(true);
                             ryga->SetSpeed(MOVE_WALK, 1.0f);
-                            ryga->GetMotionMaster()->MovePoint(0, 515.877991f, 3885.67627f, 190.470535f, true);
+                            ryga->GetMotionMaster()->MovePoint(0, 515.877991f, 3885.67627f, 190.470535f, FORCED_MOVEMENT_NONE, 0.f, true);
                             Reset();
                         }
                     }
@@ -234,7 +235,7 @@ public:
                             ryga->SetStandState(UNIT_STAND_STATE_STAND);
                             ryga->SetWalk(true);
                             ryga->SetSpeed(MOVE_WALK, 1.0f);
-                            ryga->GetMotionMaster()->MovePoint(0, 504.59201f, 3882.12988f, 192.156006f, true);
+                            ryga->GetMotionMaster()->MovePoint(0, 504.59201f, 3882.12988f, 192.156006f, FORCED_MOVEMENT_NONE, 0.f, true);
                             Reset();
                         }
                     }
@@ -312,7 +313,7 @@ public:
             {
                 me->SetReactState(REACT_AGGRESSIVE);
                 me->SetFaction(FACTION_ESCORTEE_H_PASSIVE);
-                npc_escortAI::Start(true, false, player->GetGUID());
+                npc_escortAI::Start(true, player->GetGUID());
             }
         }
 
@@ -622,6 +623,117 @@ struct go_magtheridons_head : public GameObjectAI
     }
 };
 
+/* ===========================
+ * Hellfire PvP mark payout
+ * ===========================
+ *
+ * Grants marks to the killer's whole group (nearby members) for any Player kill
+ * or any NPCBot kill that occurs in Hellfire Peninsula (zone 3483).
+ *
+ * Config (worldserver.conf):
+ *   Hellfire.Mark.Enable = 1
+ *   Hellfire.Mark.Count  = 1
+ *
+ * Items:
+ *   Alliance → 24579
+ *   Horde    → 24581
+ */
+
+namespace HellfireMarks
+{
+    static constexpr uint32 ZONE_HELLFIRE_PENINSULA = 3483;
+    static constexpr uint32 ITEM_ALLIANCE = 24579;
+    static constexpr uint32 ITEM_HORDE = 24581;
+
+    static constexpr char const* CONF_ENABLE = "Hellfire.Mark.Enable";
+    static constexpr char const* CONF_COUNT = "Hellfire.Mark.Count";
+
+    static bool   s_enable = true;
+    static uint32 s_count = 1;
+
+    static inline bool IsInHellfire(Unit const* u)
+    {
+        return u && u->GetZoneId() == ZONE_HELLFIRE_PENINSULA;
+    }
+
+    static inline void GiveOne(Player* p)
+    {
+        if (!p) return;
+        uint32 itemId = (p->GetTeamId() == TEAM_ALLIANCE) ? ITEM_ALLIANCE : ITEM_HORDE;
+        p->AddItem(itemId, s_count);
+    }
+
+    // Pay the killer's entire group if they're at standard group-reward distance of "context" (victim).
+    static inline void GiveToGroup(Player* killer, WorldObject const* context)
+    {
+        if (!killer) return;
+
+        Group* group = killer->GetGroup();
+        if (!group)
+        {
+            if (!killer->IsGameMaster())
+                GiveOne(killer);
+            return;
+        }
+
+        for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+        {
+            Player* member = itr->GetSource();
+            if (!member || !member->IsInWorld() || member->IsGameMaster())
+                continue;
+
+            if (!member->IsAtGroupRewardDistance(context))
+                continue;
+
+            GiveOne(member);
+        }
+    }
+
+    class WorldConfLoader final : public WorldScript
+    {
+    public:
+        WorldConfLoader() : WorldScript("HellfireMarks_WorldConfLoader") {}
+
+        void OnAfterConfigLoad(bool /*reload*/) override
+        {
+            auto& C = *sConfigMgr;
+            s_enable = C.GetOption<bool>(CONF_ENABLE, true);
+            uint32 c = C.GetOption<uint32>(CONF_COUNT, 1u);
+            s_count = c > 0 ? std::min<uint32>(c, 100u) : 1u;
+        }
+    };
+
+    class PayoutOnKills final : public PlayerScript
+    {
+    public:
+        PayoutOnKills() : PlayerScript("HellfireMarks_PayoutOnKills") {}
+
+        // PvP: killer vs player
+        void OnPlayerPVPKill(Player* killer, Player* killed) override
+        {
+            if (!s_enable || !killer || !killed) return;
+
+            if (!(IsInHellfire(killer) || IsInHellfire(killed)))
+                return;
+
+            GiveToGroup(killer, killed);
+        }
+
+        // PvE: killer vs NPCBot only
+        void OnPlayerCreatureKill(Player* killer, Creature* killed) override
+        {
+            if (!s_enable || !killer || !killed) return;
+            if (!(IsInHellfire(killer) || IsInHellfire(killed)))
+                return;
+
+            if (!killed->IsNPCBot())
+                return;
+
+            GiveToGroup(killer, killed);
+        }
+    };
+} // namespace HellfireMarks
+
 void AddSC_hellfire_peninsula()
 {
     RegisterSpellScript(spell_q10935_the_exorcism_of_colonel_jules);
@@ -633,4 +745,7 @@ void AddSC_hellfire_peninsula()
 
     RegisterCreatureAI(npc_magister_aledis);
     RegisterGameObjectAI(go_magtheridons_head);
+
+    new HellfireMarks::WorldConfLoader();
+    new HellfireMarks::PayoutOnKills();
 }

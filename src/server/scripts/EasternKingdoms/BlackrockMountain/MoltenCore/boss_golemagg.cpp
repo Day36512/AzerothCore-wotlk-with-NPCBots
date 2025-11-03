@@ -16,9 +16,16 @@
  */
 
 #include "CreatureScript.h"
+#include "Creature.h"
 #include "ObjectAccessor.h"
 #include "ScriptedCreature.h"
 #include "molten_core.h"
+#include "ScriptMgr.h"
+#include "SpellScript.h"
+#include "SpellAuraEffects.h"
+#include "bot_ai.h"
+#include "botmgr.h"
+#include "botdatamgr.h"
 
 enum Texts
 {
@@ -223,8 +230,61 @@ public:
     }
 };
 
+static inline bool IsNPCBot(Unit const* u)
+{
+    if (!u || u->GetTypeId() != TYPEID_UNIT)
+        return false;
+    if (Creature const* c = u->ToCreature())
+        return c->IsNPCBot();
+    return false;
+}
+
+class spell_magma_splash_bot_stack_cap : public SpellScript
+{
+    PrepareSpellScript(spell_magma_splash_bot_stack_cap);
+
+    static uint8 GetBotMaxStacks()
+    {
+        static uint8 sMax = []() -> uint8
+            {
+                int v = sConfigMgr->GetOption<int>("MoltenCore.MagmaSplash.BotMaxStacks", 10);
+                if (v < 1)   v = 1;
+                if (v > 255) v = 255;
+                return static_cast<uint8>(v);
+            }();
+        return sMax;
+    }
+
+    void HandleAfterHit()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || !target->IsAlive())
+            return;
+
+        if (!IsNPCBot(target))
+            return;
+
+        uint32 const spellId = GetSpellInfo()->Id;
+
+        if (Aura* a = target->GetAura(spellId))
+        {
+            uint8 const maxStacks = GetBotMaxStacks();
+            if (a->GetStackAmount() > maxStacks)
+            {
+                a->Remove();
+            }
+        }
+    }
+
+    void Register() override
+    {
+        OnHit += SpellHitFn(spell_magma_splash_bot_stack_cap::HandleAfterHit);
+    }
+};
+
 void AddSC_boss_golemagg()
 {
     new boss_golemagg();
     new npc_core_rager();
+    RegisterSpellScript(spell_magma_splash_bot_stack_cap);
 }

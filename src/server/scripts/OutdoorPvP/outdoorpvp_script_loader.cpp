@@ -23,7 +23,7 @@ void AddSC_outdoorpvp_si();
 void AddSC_outdoorpvp_tf();
 void AddSC_outdoorpvp_zm();
 void AddSC_outdoorpvp_gh();
-
+void AddSC_mod_hp_activity_spawns();
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
 void AddOutdoorPvPScripts()
@@ -35,4 +35,5 @@ void AddOutdoorPvPScripts()
     AddSC_outdoorpvp_tf();
     AddSC_outdoorpvp_zm();
     AddSC_outdoorpvp_gh();
+    AddSC_mod_hp_activity_spawns();
 }

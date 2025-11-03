@@ -180,7 +180,6 @@ struct boss_viscidus : public BossAI
         me->m_CombatDistance = 60.f;
         _cfg.Load();
 
-        // NEW: Make the room center the home position to stabilize movement/evade logic
         me->SetHomePosition(leashCenter);
     }
 

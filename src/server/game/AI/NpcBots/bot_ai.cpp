@@ -903,6 +903,34 @@ SpellCastResult bot_ai::CheckBotCast(Unit const* victim, uint32 spellId) const
             break;
     }
 
+    // Thaddius Polarity Logic
+    if (me->GetMapId() == 533)
+    {
+        Position positivePos = { 3522.434f, -2934.121f, 302.885f, 2.394f };
+        Position negativePos = { 3508.312f, -2920.059f, 302.860f, 5.468f };
+
+        if (me->HasAura(28059)) // Positive charge
+        {
+            if (me->GetDistance(positivePos) > 1.0f)
+            {
+                me->AttackStop();
+                me->InterruptNonMeleeSpells(true);
+                me->GetBotAI()->MoveToSendPosition(positivePos);
+                return SPELL_FAILED_NOT_READY;
+            }
+        }
+        else if (me->HasAura(28084)) // Negative charge
+        {
+            if (me->GetDistance(negativePos) > 1.0f)
+            {
+                me->AttackStop();
+                me->InterruptNonMeleeSpells(true);
+                me->GetBotAI()->MoveToSendPosition(negativePos);
+                return SPELL_FAILED_NOT_READY;
+            }
+        }
+    }
+
     return SPELL_CAST_OK;
 }
 
@@ -1272,7 +1300,7 @@ void bot_ai::BotMovement(BotMovementType type, Position const* pos, Unit* target
             mover->GetMotionMaster()->MoveChase(target, {}, ChaseAngle(target->GetRelativeAngle(me), float(target->IsPlayer() ? M_PI * 2.0 : M_PI / 8.0)));
             break;
         case BOT_MOVE_POINT:
-            mover->GetMotionMaster()->Add(new PointMovementGenerator<Creature>(1, pos->m_positionX, pos->m_positionY, pos->m_positionZ, speed, 0.0f, nullptr, generatePath));
+            mover->GetMotionMaster()->Add(new PointMovementGenerator<Creature>(1, pos->m_positionX, pos->m_positionY, pos->m_positionZ, FORCED_MOVEMENT_NONE, speed, 0.0f, nullptr, generatePath));
             break;
         case BOT_MOVE_JUMP:
             mover->GetMotionMaster()->MoveJump(pos->m_positionX, pos->m_positionY, pos->m_positionZ,
@@ -1302,7 +1330,7 @@ void bot_ai::MoveToSendPosition(Position const& mpos)
         {
             botPet->GetBotPetAI()->SetBotCommandState(BOT_COMMAND_STAY);
             botPet->InterruptNonMeleeSpells(true);
-            botPet->GetMotionMaster()->MovePoint(me->GetMapId(), mpos, false);
+            botPet->GetMotionMaster()->MovePoint(me->GetMapId(), mpos, FORCED_MOVEMENT_NONE, 0.0f, false);
         }
         sendlastpos.Relocate(me);
         BotWhisper("Moving to position!");
@@ -1610,6 +1638,130 @@ void bot_ai::BuffAndHealGroup(uint32 diff)
     //heals
     if (HasRole(BOT_ROLE_HEAL))
     {
+        // Custom Heal Priority target, Dinkle, Naxx
+        if (HasRole(BOT_ROLE_HEAL))
+        {
+            static constexpr uint32 FROST_BLAST_AURA = 27808;
+            std::list<Unit*> frostTargets;
+
+            for (GroupReference const* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
+            {
+                Player* tPlayer = itr->GetSource();
+                if (!tPlayer)
+                    continue;
+                if (me->GetMap() != tPlayer->FindMap())
+                    continue;
+
+                if (tPlayer->HaveBot() && !Bots)
+                    Bots = true;
+
+                if (!tPlayer->IsAlive() || tPlayer->HasUnitState(UNIT_STATE_ISOLATED))
+                    continue;
+                if (me->GetDistance(tPlayer) > 40.0f)
+                    continue;
+
+                if (tPlayer->HasAura(FROST_BLAST_AURA))
+                    frostTargets.push_back(tPlayer);
+
+                if (Unit* veh = tPlayer->GetVehicleBase())
+                {
+                    if (!(veh->GetTypeId() == TYPEID_UNIT &&
+                        veh->ToCreature()->GetCreatureTemplate()->type == CREATURE_TYPE_MECHANICAL) &&
+                        !veh->HasUnitState(UNIT_STATE_ISOLATED) &&
+                        me->GetDistance(veh) < 40.0f &&
+                        veh->HasAura(FROST_BLAST_AURA))
+                    {
+                        frostTargets.push_back(veh);
+                    }
+                }
+            }
+
+            if (Bots)
+            {
+                for (GroupReference const* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
+                {
+                    Player* tPlayer = itr->GetSource();
+                    if (!tPlayer)
+                        continue;
+                    if (me->GetMap() != tPlayer->FindMap())
+                        continue;
+
+                    if (tPlayer->HaveBot())
+                    {
+                        map = tPlayer->GetBotMgr()->GetBotMap();
+                        for (BotMap::const_iterator bitr = map->begin(); bitr != map->end(); ++bitr)
+                        {
+                            Unit* u = bitr->second;
+
+                            // bot body
+                            if (u->IsInWorld() &&
+                                me->GetMap() == u->FindMap() &&
+                                u->IsAlive() &&
+                                !u->HasUnitState(UNIT_STATE_ISOLATED) &&
+                                !u->ToCreature()->IsTempBot() &&
+                                me->GetDistance(u) <= 40.0f &&
+                                u->HasAura(FROST_BLAST_AURA))
+                            {
+                                frostTargets.push_back(u);
+                            }
+
+                            // bot pet (ghoul, elemental, etc.)
+                            if (Unit* pet = bitr->second->GetBotsPet())
+                            {
+                                if (pet->IsAlive() &&
+                                    !pet->HasUnitState(UNIT_STATE_ISOLATED) &&
+                                    me->GetDistance(pet) <= 40.0f &&
+                                    pet->HasAura(FROST_BLAST_AURA))
+                                {
+                                    frostTargets.push_back(pet);
+                                }
+                            }
+
+                            if (Unit* veh = bitr->second->GetVehicleBase())
+                            {
+                                if (veh &&
+                                    !(veh->GetTypeId() == TYPEID_UNIT &&
+                                        veh->ToCreature()->GetCreatureTemplate()->type == CREATURE_TYPE_MECHANICAL) &&
+                                    !veh->HasUnitState(UNIT_STATE_ISOLATED) &&
+                                    me->GetDistance(veh) < 40.0f &&
+                                    veh->HasAura(FROST_BLAST_AURA))
+                                {
+                                    frostTargets.push_back(veh);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Pass C: master's controlled units (guardians, charmed mobs, etc.)
+                for (Unit::ControlSet::const_iterator bitr = master->m_Controlled.begin();
+                    bitr != master->m_Controlled.end(); ++bitr)
+                {
+                    Unit* u = *bitr;
+                    if (!u ||
+                        !u->IsInWorld() ||
+                        me->GetMap() != u->FindMap() ||
+                        !u->IsAlive() ||
+                        u->HasUnitState(UNIT_STATE_ISOLATED) ||
+                        u->IsTotem() ||
+                        u->GetEntry() == SHAMAN_EARTH_ELEMENTAL ||
+                        me->GetDistance(u) > 40.0f)
+                    {
+                        continue;
+                    }
+
+                    if (u->HasAura(FROST_BLAST_AURA))
+                        frostTargets.push_back(u);
+                }
+            }
+
+            // If anybody is Frost Blasted, heal them RIGHT NOW and stop.
+            if (!frostTargets.empty())
+            {
+                if (HealTarget(Bcore::Containers::SelectRandomContainerElement(frostTargets), diff))
+                    return;
+            }
+        }
         std::list<Unit*> targets5;
         for (GroupReference const* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
         {
@@ -4564,6 +4716,381 @@ std::tuple<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool &re
             if (best)
                 return { best, nullptr };
         }
+        // Naxxramas (Map 533) — Maexxna Web Wraps (all difficulties)
+        if (me->GetMapId() == 533 && me->IsInCombat() && HasRole(BOT_ROLE_DPS) && !IsTank())
+        {
+            static constexpr std::array<uint32, 3> NAXX_WEB_WRAP_IDS = { 16486, 30183, 351079 };
+
+            auto wrapEntryCheck = [](Unit const* u) -> bool
+                {
+                    if (!u || !u->IsAlive())
+                        return false;
+                    uint32 e = u->GetEntry();
+                    return e == 16486 || e == 30183 || e == 351079;
+                };
+
+            auto isAttackable = [this](Creature* c) -> bool
+                {
+                    if (!c) return false;
+                    if (!c->IsAlive()) return false;
+                    if (c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE)) return false;
+                    if (!me->IsValidAttackTarget(c)) return false;
+                    return true;
+                };
+
+            std::list<Creature*> wrapList;
+            Bcore::CreatureListSearcher wrapSearch(me, wrapList, wrapEntryCheck);
+            Cell::VisitObjects(me, wrapSearch, 120.f);
+
+            if (!wrapList.empty())
+            {
+                Creature* best = nullptr;
+                float bestDist = std::numeric_limits<float>::max();
+
+                for (Creature* c : wrapList)
+                {
+                    if (!isAttackable(c))
+                        continue;
+                    if (!me->IsWithinLOSInMap(c))
+                        continue;
+
+                    float dist = me->GetDistance(c);
+                    if (dist < bestDist)
+                    {
+                        bestDist = dist;
+                        best = c;
+                    }
+                }
+
+                if (best)
+                    return { best, nullptr };
+            }
+        }
+        // Naxxramas (Map 533) — Grobbulus: prioritize Fallout Slime (DPS and OffTank only)
+        if (me->GetMapId() == 533 && me->IsInCombat())
+        {
+            // Fallout Slime entries (normal/alt DB variants)
+            static constexpr uint32 FSLIME_1 = 16290;
+            static constexpr uint32 FSLIME_2 = 29388;
+            static constexpr uint32 FSLIME_3 = 351067;
+
+            const bool isMainTank = IsTank() && !IsOffTank();
+            const bool isDpsOrOfftank = ((HasRole(BOT_ROLE_DPS) || IsOffTank()) && !isMainTank);
+
+            if (isDpsOrOfftank)
+            {
+                // If we're already on a slime, keep it.
+                if (mytar && mytar->GetTypeId() == TYPEID_UNIT)
+                {
+                    uint32 e = mytar->GetEntry();
+                    if (e == FSLIME_1 || e == FSLIME_2 || e == FSLIME_3)
+                        return { mytar, nullptr };
+                }
+
+                auto isFalloutSlime = [](Unit const* u) -> bool
+                    {
+                        if (!u || !u->IsAlive())
+                            return false;
+                        uint32 e = u->GetEntry();
+                        return e == FSLIME_1 || e == FSLIME_2 || e == FSLIME_3;
+                    };
+
+                auto isAttackable = [this](Creature* c) -> bool
+                    {
+                        if (!c) return false;
+                        if (!c->IsAlive()) return false;
+                        if (c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE)) return false;
+                        if (!me->IsValidAttackTarget(c)) return false;
+                        if (!(CanSeeEveryone() || (me->CanSeeOrDetect(c) && c->InSamePhase(me)))) return false;
+                        if (!me->IsWithinLOSInMap(c)) return false;
+                        return true;
+                    };
+
+                // Scan reasonable combat radius
+                std::list<Creature*> found;
+                Bcore::CreatureListSearcher searcher(me, found, isFalloutSlime);
+                Cell::VisitObjects(me, searcher, 60.f);
+
+                if (!found.empty())
+                {
+                    Creature* best = nullptr;
+                    float bestDist = std::numeric_limits<float>::max();
+
+                    for (Creature* c : found)
+                    {
+                        if (!isAttackable(c))
+                            continue;
+
+                        float d = me->GetDistance(c);
+                        if (d < bestDist)
+                        {
+                            bestDist = d;
+                            best = c;
+                        }
+                    }
+
+                    if (best)
+                        return { best, nullptr }; // hard-prioritize slimes for DPS/offtank
+                }
+            }
+        }
+        // Naxxramas (Map 533) — Gluth
+        if (me->GetMapId() == 533 && me->IsInCombat())
+        {
+            // Gluth boss entries (normal/alt DB variants)
+            static constexpr uint32 GLUTH_1 = 15932;
+            static constexpr uint32 GLUTH_2 = 29417;
+            static constexpr uint32 GLUTH_3 = 351004;
+
+            // Zombie Chow entries (normal/alt DB variants)
+            static constexpr uint32 ZCHOW_1 = 16360;
+            static constexpr uint32 ZCHOW_2 = 30303;
+            static constexpr uint32 ZCHOW_3 = 351069;
+
+            auto isGluth = [](Unit const* u)
+                {
+                    if (!u || !u->IsAlive()) return false;
+                    uint32 e = u->GetEntry();
+                    return e == GLUTH_1 || e == GLUTH_2 || e == GLUTH_3;
+                };
+
+            auto isChow = [](Unit const* u)
+                {
+                    if (!u || !u->IsAlive()) return false;
+                    uint32 e = u->GetEntry();
+                    return e == ZCHOW_1 || e == ZCHOW_2 || e == ZCHOW_3;
+                };
+
+            auto isAttackable = [this](Creature* c)
+                {
+                    if (!c) return false;
+                    if (!c->IsAlive()) return false;
+                    if (c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE)) return false;
+                    if (!me->IsValidAttackTarget(c)) return false;
+                    if (!(CanSeeEveryone() || (me->CanSeeOrDetect(c) && c->InSamePhase(me)))) return false;
+                    if (!me->IsWithinLOSInMap(c)) return false;
+                    return true;
+                };
+
+            // ---------------- Off-tank: grab every chow not attacking me ----------------
+            if (IsOffTank())
+            {
+                if (mytar && mytar->GetTypeId() == TYPEID_UNIT && isChow(mytar))
+                    return { mytar, nullptr };
+
+                std::list<Creature*> chowList;
+                Bcore::CreatureListSearcher chowSearch(me, chowList, isChow);
+                Cell::VisitObjects(me, chowSearch, 120.f);
+
+                Creature* bestNotOnMe = nullptr;
+                Creature* bestAny = nullptr;
+                float bestDistNotOnMe = std::numeric_limits<float>::max();
+                float bestDistAny = std::numeric_limits<float>::max();
+
+                for (Creature* c : chowList)
+                {
+                    if (!isAttackable(c))
+                        continue;
+
+                    float d = me->GetDistance(c);
+                    Unit* vic = c->GetVictim();
+
+                    if (!vic || vic != me)
+                    {
+                        if (d < bestDistNotOnMe)
+                        {
+                            bestDistNotOnMe = d;
+                            bestNotOnMe = c;
+                        }
+                    }
+                    else if (d < bestDistAny)
+                    {
+                        bestDistAny = d;
+                        bestAny = c;
+                    }
+                }
+
+                if (bestNotOnMe)
+                    return { bestNotOnMe, nullptr };
+                if (bestAny)
+                    return { bestAny, nullptr };
+            }
+
+            // ---------------- Melee DPS: always attack the nearest chow ----------------
+            if (HasRole(BOT_ROLE_DPS) && !HasRole(BOT_ROLE_RANGED) && !IsTank())
+            {
+                if (mytar && mytar->GetTypeId() == TYPEID_UNIT && isChow(mytar))
+                    return { mytar, nullptr };
+
+                std::list<Creature*> chowList;
+                Bcore::CreatureListSearcher chowSearch(me, chowList, isChow);
+                Cell::VisitObjects(me, chowSearch, 100.f);
+
+                Creature* nearestChow = nullptr;
+                float bestDist = std::numeric_limits<float>::max();
+
+                for (Creature* c : chowList)
+                {
+                    if (!isAttackable(c))
+                        continue;
+
+                    float d = me->GetDistance(c);
+                    if (d < bestDist)
+                    {
+                        bestDist = d;
+                        nearestChow = c;
+                    }
+                }
+
+                if (nearestChow)
+                    return { nearestChow, nullptr };
+            }
+
+            // ---------------- Ranged DPS: only attack chows ≤11%; otherwise Gluth ----------------
+            if (HasRole(BOT_ROLE_DPS) && HasRole(BOT_ROLE_RANGED) && !IsTank())
+            {
+                std::list<Creature*> chowList;
+                Bcore::CreatureListSearcher chowSearch(me, chowList, isChow);
+                Cell::VisitObjects(me, chowSearch, 120.f);
+
+                Creature* lowChow = nullptr;
+                float bestDist = std::numeric_limits<float>::max();
+
+                for (Creature* c : chowList)
+                {
+                    if (!isAttackable(c))
+                        continue;
+
+                    if (GetHealthPCT(c) <= 11)
+                    {
+                        float d = me->GetDistance(c);
+                        if (d < bestDist)
+                        {
+                            bestDist = d;
+                            lowChow = c;
+                        }
+                    }
+                }
+
+                // Stick if already on a low HP chow
+                if (mytar && mytar->GetTypeId() == TYPEID_UNIT && isChow(mytar) && GetHealthPCT(mytar) <= 11)
+                    return { mytar, nullptr };
+
+                if (lowChow)
+                    return { lowChow, nullptr };
+
+                // Otherwise focus Gluth
+                std::list<Creature*> bosses;
+                Bcore::CreatureListSearcher bossSearch(me, bosses, isGluth);
+                Cell::VisitObjects(me, bossSearch, 120.f);
+
+                Creature* bestBoss = nullptr;
+                float bestBossDist = std::numeric_limits<float>::max();
+
+                for (Creature* c : bosses)
+                {
+                    if (!isAttackable(c))
+                        continue;
+
+                    float d = me->GetDistance(c);
+                    if (d < bestBossDist)
+                    {
+                        bestBossDist = d;
+                        bestBoss = c;
+                    }
+                }
+
+                if (bestBoss)
+                    return { bestBoss, nullptr };
+            }
+
+            // ---------------- Main tank: always focus Gluth ----------------
+            if (IsTank() && !IsOffTank())
+            {
+                if (mytar && mytar->GetTypeId() == TYPEID_UNIT && isGluth(mytar))
+                    return { mytar, nullptr };
+
+                std::list<Creature*> bosses;
+                Bcore::CreatureListSearcher bossSearch(me, bosses, isGluth);
+                Cell::VisitObjects(me, bossSearch, 120.f);
+
+                Creature* bestBoss = nullptr;
+                float bestDist = std::numeric_limits<float>::max();
+
+                for (Creature* c : bosses)
+                {
+                    if (!isAttackable(c))
+                        continue;
+
+                    float d = me->GetDistance(c);
+                    if (d < bestDist)
+                    {
+                        bestDist = d;
+                        bestBoss = c;
+                    }
+                }
+
+                if (bestBoss)
+                    return { bestBoss, nullptr };
+            }
+        }
+        // ========================== Naxxramas (Map 533) — Instructor Razuvious ==========================
+        // Requirement: All bots except tanks should focus Razuv (DPS focus rule).
+        if (me->GetMapId() == 533 && me->IsInCombat() && HasRole(BOT_ROLE_DPS) && !IsTank())
+        {
+            // Razuvious entries (multiple DB variants supported)
+            static constexpr uint32 UND_1 = 16061;
+            static constexpr uint32 UND_2 = 29940;
+            static constexpr uint32 UND_3 = 351036;
+
+            auto isRazuvious = [](Unit const* u) -> bool
+                {
+                    if (!u || !u->IsAlive())
+                        return false;
+                    uint32 e = u->GetEntry();
+                    return e == UND_1 || e == UND_2 || e == UND_3;
+                };
+
+            auto isAttackable = [this](Creature* c) -> bool
+                {
+                    if (!c) return false;
+                    if (!c->IsAlive()) return false;
+                    if (c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE)) return false;
+                    if (!me->IsValidAttackTarget(c)) return false;
+                    if (!(CanSeeEveryone() || (me->CanSeeOrDetect(c) && c->InSamePhase(me)))) return false;
+                    if (!me->IsWithinLOSInMap(c)) return false;
+                    return true;
+                };
+
+            // If we're already on an Razuvious, keep it.
+            if (mytar && mytar->GetTypeId() == TYPEID_UNIT && isRazuvious(mytar))
+                return { mytar, nullptr };
+
+            // Otherwise pick the nearest valid Razuvious in a sane radius.
+            std::list<Creature*> found;
+            Bcore::CreatureListSearcher searcher(me, found, isRazuvious);
+            Cell::VisitObjects(me, searcher, 80.f);
+
+            Creature* best = nullptr;
+            float bestDist = std::numeric_limits<float>::max();
+
+            for (Creature* c : found)
+            {
+                if (!isAttackable(c))
+                    continue;
+
+                float d = me->GetDistance(c);
+                if (d < bestDist)
+                {
+                    bestDist = d;
+                    best = c;
+                }
+            }
+
+            if (best)
+                return { best, nullptr };
+            // If none found/attackable, fall through to other encounter rules.
+        }
         // Icecrown Citadel - Sindragosa
         if (me->GetMapId() == 631 && isInWMOArea(WMOAreaGroupSindragosa)/* &&
             (!mytar || (mytar->GetEntry() != CREATURE_ICC_ICE_TOMB1 && mytar->GetEntry() != CREATURE_ICC_ICE_TOMB2 &&
@@ -4641,7 +5168,92 @@ std::tuple<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool &re
                 }
             }
         }
+        // ---------------- Naxxramas (Map 533) — Thaddius wing: prioritize Stalagg/Feugen when close ----------------
+        // If a bot is within 40f of either Stalagg or Feugen, prefer the nearest of them.
+        // Covers classic/wotlk/custom entries:
+        //   Stalagg: 15929, 29446, 351001
+        //   Feugen : 15930, 29447, 351002
+        if (me->GetMapId() == 533 && me->IsInCombat())
+        {
+            static constexpr float THADDIUS_SIDE_PRIORITY_RADIUS = 40.0f;
 
+            auto isSideBossId = [](uint32 e) -> bool
+                {
+                    switch (e)
+                    {
+                    case 15929u: case 29446u: case 351001u: // Stalagg variants
+                    case 15930u: case 29447u: case 351002u: // Feugen variants
+                        return true;
+                    default:
+                        return false;
+                    }
+                };
+
+            auto isSideBossWithin = [this, &isSideBossId](Unit const* u) -> bool
+                {
+                    if (!u || u->GetTypeId() != TYPEID_UNIT || !u->IsAlive())
+                        return false;
+
+                    uint32 e = u->GetEntry();
+                    if (!isSideBossId(e))
+                        return false;
+
+                    float d = me->GetDistance(u);
+                    if (d > THADDIUS_SIDE_PRIORITY_RADIUS)
+                        return false;
+
+                    Creature const* c = u->ToCreature();
+                    if (!c)
+                        return false;
+
+                    if (c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
+                        return false;
+
+                    if (!me->IsValidAttackTarget(c))
+                        return false;
+
+                    if (!(CanSeeEveryone() || (me->CanSeeOrDetect(c) && c->InSamePhase(me))))
+                        return false;
+
+                    if (!me->IsWithinLOSInMap(c))
+                        return false;
+
+                    return true;
+                };
+
+            std::list<Creature*> bossesInRange;
+            Bcore::CreatureListSearcher searcher(me, bossesInRange, isSideBossWithin);
+            // Search a bit beyond 40 so we don't miss edges; filtering keeps ≤ 40f.
+            Cell::VisitObjects(me, searcher, 60.0f);
+
+            if (!bossesInRange.empty())
+            {
+                // Stickiness: if already on Stalagg/Feugen within 40f and valid, keep it.
+                if (mytar && mytar->GetTypeId() == TYPEID_UNIT && isSideBossWithin(mytar))
+                    return { mytar, nullptr };
+
+                // Otherwise, pick the nearest valid boss in ≤ 40f.
+                Creature* best = nullptr;
+                float bestDist = std::numeric_limits<float>::max();
+
+                for (Creature* c : bossesInRange)
+                {
+                    float d = me->GetDistance(c);
+                    if (d < bestDist)
+                    {
+                        bestDist = d;
+                        best = c;
+                    }
+                }
+
+                if (best)
+                {
+                    if (mytar && mytar != best)
+                        reset = true; // force target swap to the correct side boss
+                    return { best, nullptr };
+                }
+            }
+        }
         // Icecrown Citadel - The Lich King
         if (me->GetMapId() == 631 && isInWMOArea(WMOAreaGroupLichKing) && me->IsInCombat() && HasRole(BOT_ROLE_DPS) && HasRole(BOT_ROLE_RANGED) && !IsTank())
         {
@@ -5496,7 +6108,7 @@ bool bot_ai::ProcessImmediateNonAttackTarget()
 #elif defined(AC_COMPILER)
                 Creature* cre = get_shield_creature(go, cList);
                 ASSERT(cre);
-                cre->DespawnOrUnsummon(1);
+                cre->DespawnOrUnsummon(1ms);
                 player->DestroyItemCount(31088, 1, true); // Tainted Core
 #endif
                 return true;
@@ -5635,17 +6247,88 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
 
     //Additional: aoe coming from spawned npcs
 
-    //Molten Core
-    if (unit->GetMapId() == 409)
+    // Hellfire Ramparts (TBC) — Liquid Fire puddles
+    if (unit->GetMapId() == 543) // Hellfire Ramparts
     {
-        std::list<GameObject*> gListMC;
-        Bcore::AllGameObjectsWithEntryInRange checkMC(unit, GAMEOBJECT_HOT_COAL, 60.f);
-        Bcore::GameObjectListSearcher<Bcore::AllGameObjectsWithEntryInRange> searcherMC(unit, gListMC, checkMC);
-        Cell::VisitObjects(unit, searcherMC, 60.f);
+        // GO entries to avoid
+        static constexpr uint32 GO_LIQUID_FIRE_1 = 180125;
+        static constexpr uint32 GO_LIQUID_FIRE_2 = 181890;
+        static constexpr uint32 GO_LIQUID_FIRE_3 = 182533;
 
-        float radius = 15.0f + DEFAULT_COMBAT_REACH;
-        for (std::list<GameObject*>::const_iterator ci = gListMC.cbegin(); ci != gListMC.cend(); ++ci)
-            spots.push_back(AoeSpotsVec::value_type(*(*ci), radius));
+        // Helper to scan a single GO entry
+        auto scanGoEntry = [unit, &spots](uint32 entry, float scanRange, float baseRadius)
+            {
+                std::list<GameObject*> list;
+                Bcore::AllGameObjectsWithEntryInRange check(unit, entry, scanRange);
+                Bcore::GameObjectListSearcher<Bcore::AllGameObjectsWithEntryInRange> searcher(unit, list, check);
+                Cell::VisitObjects(unit, searcher, scanRange);
+
+                for (GameObject* go : list)
+                {
+                    if (!go)
+                        continue;
+
+                    // Pad radius with object size and bot reach so they don't skim edges.
+                    float radius = baseRadius + go->GetObjectSize() + DEFAULT_COMBAT_REACH * 1.2f;
+                    spots.emplace_back(*go, radius);
+                }
+            };
+
+        constexpr float SCAN = 60.f;
+        constexpr float BASE = 12.0f;
+
+        scanGoEntry(GO_LIQUID_FIRE_1, SCAN, BASE);
+        scanGoEntry(GO_LIQUID_FIRE_2, SCAN, BASE);
+        scanGoEntry(GO_LIQUID_FIRE_3, SCAN, BASE);
+    }
+    else if (unit->GetMapId() == 409)
+    {
+        // Hot Coals 
+        {
+            std::list<GameObject*> gListMC;
+            Bcore::AllGameObjectsWithEntryInRange checkMC(unit, GAMEOBJECT_HOT_COAL, 60.f);
+            Bcore::GameObjectListSearcher<Bcore::AllGameObjectsWithEntryInRange> searcherMC(unit, gListMC, checkMC);
+            Cell::VisitObjects(unit, searcherMC, 60.f);
+
+            float radius = 15.0f + DEFAULT_COMBAT_REACH;
+            for (std::list<GameObject*>::const_iterator ci = gListMC.cbegin(); ci != gListMC.cend(); ++ci)
+                spots.push_back(AoeSpotsVec::value_type(*(*ci), radius));
+        }
+        // Baron Geddon (Inferno)
+        {
+            static constexpr uint32 GEDDON_ENTRY = 12056;  // Baron Geddon
+            static constexpr uint32 INFERNO_AURA_OR_SPELL = 19695;
+
+            std::list<Creature*> geddons;
+            auto geddonCheck = [](Creature const* c)
+                {
+                    return c && c->IsAlive() && c->GetEntry() == GEDDON_ENTRY && c->HasAura(INFERNO_AURA_OR_SPELL);
+                };
+
+            Bcore::CreatureListSearcher geddonSearcher(unit, geddons, geddonCheck);
+            Cell::VisitObjects(unit, geddonSearcher, 60.f);
+
+            bot_ai* thatBotAI = nullptr;
+            if (unit->IsNPCBot())
+            {
+                if (Creature const* bc = unit->ToCreature())
+                    thatBotAI = const_cast<Creature*>(bc)->GetBotAI(); 
+            }
+
+            bool const skipGeddonInfernoForThisUnit = (thatBotAI && thatBotAI->HasRole(BOT_ROLE_TANK));
+
+            for (Creature* g : geddons)
+            {
+                if (!g)
+                    continue;
+
+                if (skipGeddonInfernoForThisUnit)
+                    continue; 
+
+                float infernoRadius = 25.0f + g->GetObjectScale() + DEFAULT_COMBAT_REACH * 1.5f;
+                spots.emplace_back(*g, infernoRadius);
+            }
+        }
     }
     // Ruins of Ahn'Qiraj (AQ20) — Sand Trap avoidance
     else if (unit->GetMapId() == 509)
@@ -5716,6 +6399,88 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
 
             for (Creature* m : mounds)
                 spots.emplace_back(*m, moundRadius);
+        }
+    }
+    // Naxxramas (NAXX40/NAXX WotLK)
+    else if (unit->GetMapId() == 533)
+    {
+        // 1) Void Zone (creature-based puddle)
+        {
+            static constexpr uint32 NAXX_VOID_ZONE = 16697;
+            std::list<Creature*> vList;
+
+            auto vzCheck = [](Creature const* c) -> bool
+                {
+                    return c && c->IsAlive() && c->GetEntry() == NAXX_VOID_ZONE;
+                };
+
+            Bcore::CreatureListSearcher vzSearcher(unit, vList, vzCheck);
+            Cell::VisitObjects(unit, vzSearcher, 60.f);
+
+            for (Creature* v : vList)
+            {
+                if (!v)
+                    continue;
+
+                float radius = 10.0f
+                    + v->GetObjectScale() * 2.0f
+                    + DEFAULT_COMBAT_REACH * 1.5f;
+
+                spots.emplace_back(*v, radius);
+            }
+        }
+
+        // 2) Embalming Slime avoidance (existing)
+        {
+            static constexpr uint32 SLIME_IDS[3] = { 16024u, 29355u, 351026u };
+
+            auto slimeCheck = [](Creature const* c) -> bool
+                {
+                    if (!c || !c->IsAlive())
+                        return false;
+                    uint32 e = c->GetEntry();
+                    return e == SLIME_IDS[0] || e == SLIME_IDS[1] || e == SLIME_IDS[2];
+                };
+
+            std::list<Creature*> slimes;
+            Bcore::CreatureListSearcher slimeSearcher(unit, slimes, slimeCheck);
+            Cell::VisitObjects(unit, slimeSearcher, 60.f);
+
+            for (Creature* s : slimes)
+            {
+                if (!s)
+                    continue;
+
+                float radius = 10.0f + s->GetObjectScale() * 2.0f + DEFAULT_COMBAT_REACH * 1.5f;
+                spots.emplace_back(*s, radius);
+            }
+        }
+
+        // 3) Shadow Fissure Minion — "double safe" creature-based avoidance
+        {
+            static constexpr uint32 SHADOW_FISSURE_MINION = 16129; // Shadow fissure spawner/marker
+            std::list<Creature*> fissures;
+
+            auto fissureCheck = [](Creature const* c) -> bool
+                {
+                    return c && c->IsAlive() && c->GetEntry() == SHADOW_FISSURE_MINION;
+                };
+
+            Bcore::CreatureListSearcher fissureSearcher(unit, fissures, fissureCheck);
+            Cell::VisitObjects(unit, fissureSearcher, 60.f);
+
+            // Retail radius is ~10y; pad for object scale and bot reach so they don't skim the edge.
+            for (Creature* f : fissures)
+            {
+                if (!f)
+                    continue;
+
+                float radius = 10.0f
+                    + f->GetObjectScale() * 2.0f
+                    + DEFAULT_COMBAT_REACH * 1.2f;
+
+                spots.emplace_back(*f, radius);
+            }
         }
     }
     //Aucheai Crypts
@@ -8352,6 +9117,11 @@ void bot_ai::ApplyBotThreatMods(SpellInfo const* spellInfo, float& threat) const
 {
     //ALL threat mods
     ApplyClassThreatMods(spellInfo, threat);
+    if (HasRole(BOT_ROLE_TANK))
+    {
+        static float sTankThreatMult = sConfigMgr->GetOption<float>("NpcBot.TankThreat.Multiplier", 1.0f);
+        threat *= sTankThreatMult;
+    }
 }
 void bot_ai::ApplyBotEffectValueMultiplierMods(SpellInfo const* spellInfo, SpellEffIndex effIndex, float& multiplier) const
 {
@@ -21291,7 +22061,7 @@ void bot_ai::OnBotExitVehicle(Vehicle const* vehicle)
 
             curVehStrat = BOT_VEH_STRAT_NONE;
             if (vehicle->GetBase()->IsSummon())
-                vehicle->GetBase()->ToCreature()->DespawnOrUnsummon(1);
+                vehicle->GetBase()->ToCreature()->DespawnOrUnsummon(1ms);
         }
     }
 }

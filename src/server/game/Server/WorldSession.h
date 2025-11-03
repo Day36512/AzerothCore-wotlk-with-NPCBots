@@ -628,7 +628,6 @@ public:                                                 // opcodes handlers
     void HandlePlayedTime(WorldPackets::Character::PlayedTimeClient& packet);
 
     // new
-    void HandleMoveUnRootAck(WorldPacket& recvPacket);
     void HandleMoveRootAck(WorldPacket& recvPacket);
 
     // new inspect
@@ -1138,6 +1137,8 @@ public:                                                 // opcodes handlers
 
     void InitializeSession();
     void InitializeSessionCallback(CharacterDatabaseQueryHolder const& realmHolder, uint32 clientCacheVersion);
+
+    void SetPacketLogging(bool state);
 
 private:
     void ProcessQueryCallbacks();

@@ -3,13 +3,13 @@
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * Free Software Foundation; either version 3 of the
+ * License, or (at your option) any later version.
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
- * more details.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
@@ -21,60 +21,71 @@
 #include "SpellScriptLoader.h"
 #include "molten_core.h"
 
+ // (Needed for random-target helpers)
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
+#include "Cell.h"
+#include "CellImpl.h"
+
+// Optional NPCBots (safe include even if module absent; the IsNPCBot runtime check gates usage)
+#include "bot_ai.h"
+#include "botmgr.h"
+#include "botdatamgr.h"
+
 enum Texts
 {
-    SAY_SUMMON_MAJ                          = 0,
-    SAY_ARRIVAL1_RAG                        = 1,
-    SAY_ARRIVAL2_MAJ                        = 2,
-    SAY_ARRIVAL3_RAG                        = 3,
-    SAY_ARRIVAL5_RAG                        = 4,
-    SAY_REINFORCEMENTS1                     = 5,
-    SAY_REINFORCEMENTS2                     = 6,
-    SAY_KNOCKBACK                           = 7,        // Text is used for SPELL_HAND_OF_RAGNAROS & SPELL_MIGHT_OF_RAGNAROS. "By fire be purged!"
-    SAY_WRATH                               = 8,
-    SAY_KILL                                = 9,
-    SAY_MAGMABURST                          = 10,
+    SAY_SUMMON_MAJ = 0,
+    SAY_ARRIVAL1_RAG = 1,
+    SAY_ARRIVAL2_MAJ = 2,
+    SAY_ARRIVAL3_RAG = 3,
+    SAY_ARRIVAL5_RAG = 4,
+    SAY_REINFORCEMENTS1 = 5,
+    SAY_REINFORCEMENTS2 = 6,
+    SAY_KNOCKBACK = 7,        // Text is used for SPELL_HAND_OF_RAGNAROS & SPELL_MIGHT_OF_RAGNAROS. "By fire be purged!"
+    SAY_WRATH = 8,
+    SAY_KILL = 9,
+    SAY_MAGMABURST = 10,
 };
 
 enum Spells
 {
-    SPELL_HAND_OF_RAGNAROS                  = 19780,
-    SPELL_WRATH_OF_RAGNAROS                 = 20566,
-    SPELL_LAVA_BURST                        = 21908,    // Randomly trigger one of server side spells (21886, 21900 - 21907) which summons Go 178088
-    SPELL_MAGMA_BLAST                       = 20565,    // Ranged attack
-    SPELL_SONS_OF_FLAME_DUMMY               = 21108,    // Server side effect
-    SPELL_RAGSUBMERGE                       = 21107,    // Stealth aura
-    SPELL_RAGNA_SUBMERGE_VISUAL             = 20567,    // Visual for submerging into lava
-    SPELL_RAGEMERGE                         = 20568,
-    SPELL_RAGNAROS_SUBMERGE_EFFECT          = 21859,    // Applies pacify state and applies all schools immunity (server side)
-    SPELL_ELEMENTAL_FIRE_KILL               = 19773,    // Spell is used only on Majordomo
-    SPELL_MIGHT_OF_RAGNAROS                 = 21154,
-    SPELL_INTENSE_HEAT                      = 21155,
-    SPELL_SUMMON_SONS_FLAME                 = 21108,    // Trigger the eight spells summoning the Son of Flame adds
+    SPELL_HAND_OF_RAGNAROS = 19780,
+    SPELL_WRATH_OF_RAGNAROS = 20566,
+    SPELL_LAVA_BURST = 21908,    // Randomly trigger one of server side spells (21886, 21900 - 21907) which summons Go 178088
+    SPELL_MAGMA_BLAST = 20565,    // Ranged attack
+    SPELL_SONS_OF_FLAME_DUMMY = 21108,    // Server side effect
+    SPELL_RAGSUBMERGE = 21107,    // Stealth aura
+    SPELL_RAGNA_SUBMERGE_VISUAL = 20567,    // Visual for submerging into lava
+    SPELL_RAGEMERGE = 20568,
+    SPELL_RAGNAROS_SUBMERGE_EFFECT = 21859,    // Applies pacify state and applies all schools immunity (server side)
+    SPELL_ELEMENTAL_FIRE_KILL = 19773,    // Spell is used only on Majordomo
+    SPELL_MIGHT_OF_RAGNAROS = 21154,
+    SPELL_INTENSE_HEAT = 21155,
+    SPELL_SUMMON_SONS_FLAME = 21108,    // Trigger the eight spells summoning the Son of Flame adds
 
-    SPELL_LAVA_BURST_A                      = 21886,
-    SPELL_LAVA_BURST_B                      = 21900,
-    SPELL_LAVA_BURST_C                      = 21901,
-    SPELL_LAVA_BURST_D                      = 21902,
-    SPELL_LAVA_BURST_E                      = 21903,
-    SPELL_LAVA_BURST_F                      = 21905,
-    SPELL_LAVA_BURST_G                      = 21906,
-    SPELL_LAVA_BURST_H                      = 21907,
-    SPELL_LAVA_BURST_TRAP                   = 21158,
+    SPELL_LAVA_BURST_A = 21886,
+    SPELL_LAVA_BURST_B = 21900,
+    SPELL_LAVA_BURST_C = 21901,
+    SPELL_LAVA_BURST_D = 21902,
+    SPELL_LAVA_BURST_E = 21903,
+    SPELL_LAVA_BURST_F = 21905,
+    SPELL_LAVA_BURST_G = 21906,
+    SPELL_LAVA_BURST_H = 21907,
+    SPELL_LAVA_BURST_TRAP = 21158,
 
-    SPELL_SUMMON_SON_OF_FLAME_A             = 21117,
-    SPELL_SUMMON_SON_OF_FLAME_B             = 21110,
-    SPELL_SUMMON_SON_OF_FLAME_C             = 21111,
-    SPELL_SUMMON_SON_OF_FLAME_D             = 21112,
-    SPELL_SUMMON_SON_OF_FLAME_E             = 21113,
-    SPELL_SUMMON_SON_OF_FLAME_F             = 21114,
-    SPELL_SUMMON_SON_OF_FLAME_G             = 21115,
-    SPELL_SUMMON_SON_OF_FLAME_H             = 21116
+    SPELL_SUMMON_SON_OF_FLAME_A = 21117,
+    SPELL_SUMMON_SON_OF_FLAME_B = 21110,
+    SPELL_SUMMON_SON_OF_FLAME_C = 21111,
+    SPELL_SUMMON_SON_OF_FLAME_D = 21112,
+    SPELL_SUMMON_SON_OF_FLAME_E = 21113,
+    SPELL_SUMMON_SON_OF_FLAME_F = 21114,
+    SPELL_SUMMON_SON_OF_FLAME_G = 21115,
+    SPELL_SUMMON_SON_OF_FLAME_H = 21116
 };
 
 enum Events
 {
-    EVENT_ERUPTION                          = 1,
+    EVENT_ERUPTION = 1,
     EVENT_WRATH_OF_RAGNAROS,
     EVENT_HAND_OF_RAGNAROS,
     EVENT_MIGHT_OF_RAGNAROS,
@@ -96,21 +107,27 @@ enum Events
 
 enum Creatures
 {
-    NPC_SON_OF_FLAME                        = 12143,
-    NPC_FLAME_OF_RAGNAROS                   = 13148,
+    NPC_SON_OF_FLAME = 12143,
+    NPC_FLAME_OF_RAGNAROS = 13148,
 };
 
 enum Misc
 {
-    MAX_SON_OF_FLAME_COUNT                  = 8,
+    MAX_SON_OF_FLAME_COUNT = 8,
 
     // Event phase
-    PHASE_INTRO                             = 1,        // Intro events with Majordomu
-    PHASE_EMERGED                           = 2,        // events which are executed while Ragnaros is visible
-    PHASE_SUBMERGED                         = 3,        // events which are executed while Ragnaros is submerged (not visible)
+    PHASE_INTRO = 1,        // Intro events with Majordomu
+    PHASE_EMERGED = 2,        // events which are executed while Ragnaros is visible
+    PHASE_SUBMERGED = 3,        // events which are executed while Ragnaros is submerged (not visible)
 };
 
 constexpr float DEATH_ORIENTATION = 4.0f;
+
+// Local helper (keep it simple & runtime-gated; compiles fine without NPCBots module)
+static inline bool IsNPCBot(Unit* u)
+{
+    return u && u->GetTypeId() == TYPEID_UNIT && u->ToCreature() && u->ToCreature()->IsNPCBot();
+}
 
 class boss_ragnaros : public CreatureScript
 {
@@ -138,7 +155,7 @@ public:
                 extraEvents.Reset();
                 extraEvents.SetPhase(PHASE_EMERGED);
                 me->SetReactState(REACT_AGGRESSIVE);
-                me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE|UNIT_FLAG_NOT_SELECTABLE);
+                me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
                 me->SetImmuneToAll(false);
                 me->SetUInt32Value(UNIT_NPC_EMOTESTATE, 0);
                 me->HandleEmoteCommand(EMOTE_ONESHOT_EMERGE);
@@ -183,13 +200,13 @@ public:
             }
         }
 
-        void SetGUID(ObjectGuid guid, int32 index) override
+        void SetGUID(ObjectGuid const& guid, int32 index) override
         {
             if (index == GO_LAVA_BURST)
             {
                 if (_lavaBurstGUIDS.empty())
                 {
-                    extraEvents.ScheduleEvent(EVENT_LAVA_BURST_TRIGGER, 1);
+                    extraEvents.ScheduleEvent(EVENT_LAVA_BURST_TRIGGER, 1ms);
                 }
 
                 _lavaBurstGUIDS.insert(guid);
@@ -268,56 +285,56 @@ public:
                     switch (eventId)
                     {
                         // Intro events
-                        case EVENT_INTRO_SAY:
+                    case EVENT_INTRO_SAY:
+                    {
+                        Talk(SAY_ARRIVAL5_RAG);
+                        extraEvents.ScheduleEvent(EVENT_INTRO_MAKE_ATTACKABLE, 2500ms, 0, PHASE_INTRO);
+                        break;
+                    }
+                    case EVENT_INTRO_MAKE_ATTACKABLE:
+                    {
+                        _isIntroDone = true;
+                        extraEvents.SetPhase(PHASE_EMERGED);
+                        me->RemoveAurasDueToSpell(SPELL_RAGNAROS_SUBMERGE_EFFECT);
+                        me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
+                        me->SetImmuneToAll(false);
+                        me->SetReactState(REACT_AGGRESSIVE);
+                        DoZoneInCombat();
+                        break;
+                    }
+                    // Submerge events
+                    case EVENT_EMERGE:
+                    {
+                        HandleEmerge();
+                        break;
+                    }
+                    case EVENT_RESET_KNOCKBACK_EMOTE:
+                    {
+                        _isKnockbackEmoteAllowed = true;
+                        break;
+                    }
+                    case EVENT_LAVA_BURST_TRIGGER:
+                    {
+                        if (!_lavaBurstGUIDS.empty())
                         {
-                            Talk(SAY_ARRIVAL5_RAG);
-                            extraEvents.ScheduleEvent(EVENT_INTRO_MAKE_ATTACKABLE, 2500ms, 0, PHASE_INTRO);
-                            break;
-                        }
-                        case EVENT_INTRO_MAKE_ATTACKABLE:
-                        {
-                            _isIntroDone = true;
-                            extraEvents.SetPhase(PHASE_EMERGED);
-                            me->RemoveAurasDueToSpell(SPELL_RAGNAROS_SUBMERGE_EFFECT);
-                            me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-                            me->SetImmuneToAll(false);
-                            me->SetReactState(REACT_AGGRESSIVE);
-                            DoZoneInCombat();
-                            break;
-                        }
-                        // Submerge events
-                        case EVENT_EMERGE:
-                        {
-                            HandleEmerge();
-                            break;
-                        }
-                        case EVENT_RESET_KNOCKBACK_EMOTE:
-                        {
-                            _isKnockbackEmoteAllowed = true;
-                            break;
-                        }
-                        case EVENT_LAVA_BURST_TRIGGER:
-                        {
-                            if (!_lavaBurstGUIDS.empty())
-                            {
-                                ObjectGuid lavaBurstGUID = Acore::Containers::SelectRandomContainerElement(_lavaBurstGUIDS);
+                            ObjectGuid lavaBurstGUID = Acore::Containers::SelectRandomContainerElement(_lavaBurstGUIDS);
 
-                                if (GameObject* go = ObjectAccessor::GetGameObject(*me, lavaBurstGUID))
-                                {
-                                    go->CastSpell(nullptr, SPELL_LAVA_BURST_TRAP);
-                                    go->SendCustomAnim(0);
-                                }
-
-                                _lavaBurstGUIDS.erase(lavaBurstGUID);
-                                extraEvents.RepeatEvent(1000);
-                            }
-                            else
+                            if (GameObject* go = ObjectAccessor::GetGameObject(*me, lavaBurstGUID))
                             {
-                                events.RescheduleEvent(EVENT_LAVA_BURST, 10s, PHASE_EMERGED, PHASE_EMERGED);
+                                go->CastSpell(nullptr, SPELL_LAVA_BURST_TRAP);
+                                go->SendCustomAnim(0);
                             }
 
-                            break;
+                            _lavaBurstGUIDS.erase(lavaBurstGUID);
+                            extraEvents.Repeat(1s);
                         }
+                        else
+                        {
+                            events.RescheduleEvent(EVENT_LAVA_BURST, 10s, PHASE_EMERGED, PHASE_EMERGED);
+                        }
+
+                        break;
+                    }
                     }
                 }
             }
@@ -342,94 +359,93 @@ public:
             {
                 switch (eventId)
                 {
-                    case EVENT_WRATH_OF_RAGNAROS:
-                    {
-                        DoCastVictim(SPELL_WRATH_OF_RAGNAROS);
+                case EVENT_WRATH_OF_RAGNAROS:
+                {
+                    DoCastVictim(SPELL_WRATH_OF_RAGNAROS);
 
-                        if (urand(0, 1))
-                        {
-                            Talk(SAY_WRATH);
-                        }
-                        events.RepeatEvent(25000);
-                        break;
-                    }
-                    case EVENT_HAND_OF_RAGNAROS:
+                    if (urand(0, 1))
                     {
-                        DoCastSelf(SPELL_HAND_OF_RAGNAROS);
-                        if (_isKnockbackEmoteAllowed)
+                        Talk(SAY_WRATH);
+                    }
+                    events.Repeat(25s);
+                    break;
+                }
+                case EVENT_HAND_OF_RAGNAROS:
+                {
+                    DoCastSelf(SPELL_HAND_OF_RAGNAROS);
+                    if (_isKnockbackEmoteAllowed)
+                    {
+                        Talk(SAY_KNOCKBACK);
+                        _isKnockbackEmoteAllowed = false;
+                        extraEvents.RescheduleEvent(EVENT_RESET_KNOCKBACK_EMOTE, 5s);
+                    }
+                    events.Repeat(20s);
+                    break;
+                }
+                case EVENT_LAVA_BURST:
+                {
+                    DoCastAOE(SPELL_LAVA_BURST);
+                    break;
+                }
+                case EVENT_MAGMA_BLAST:
+                {
+                    _processingMagmaBurst = false;
+
+                    if (!IsVictimWithinMeleeRange())
+                    {
+                        // INCLUDE players + NPCBots
+                        if (Unit* target = SelectRandomPlayerOrNPCBot(100.0f))
+                            me->CastSpell(target, SPELL_MAGMA_BLAST, false);
+
+                        if (!_hasYelledMagmaBurst)
                         {
-                            Talk(SAY_KNOCKBACK);
+                            Talk(SAY_MAGMABURST);
+                            _hasYelledMagmaBurst = true;
+                        }
+                    }
+
+                    break;
+                }
+                case EVENT_MIGHT_OF_RAGNAROS:
+                {
+                    // INCLUDE players + NPCBots who use MANA
+                    if (Unit* target = SelectRandomManaUser(100.0f))
+                    {
+                        if (me->CastSpell(target, SPELL_MIGHT_OF_RAGNAROS) == SPELL_CAST_OK && _isKnockbackEmoteAllowed)
+                        {
+                            Talk(SAY_KNOCKBACK, me);
                             _isKnockbackEmoteAllowed = false;
                             extraEvents.RescheduleEvent(EVENT_RESET_KNOCKBACK_EMOTE, 5s);
                         }
-                        events.RepeatEvent(20000);
-                        break;
                     }
-                    case EVENT_LAVA_BURST:
+                    events.Repeat(11s, 30s);
+                    break;
+                }
+                case EVENT_SUBMERGE:
+                {
+                    events.CancelEventGroup(PHASE_EMERGED);
+                    events.SetPhase(PHASE_SUBMERGED);
+                    extraEvents.SetPhase(PHASE_SUBMERGED);
+                    me->SetReactState(REACT_PASSIVE);
+                    me->InterruptNonMeleeSpells(false);
+                    me->AttackStop();
+                    DoResetThreatList();
+                    me->SetUnitFlag(UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+                    me->SetUInt32Value(UNIT_NPC_EMOTESTATE, EMOTE_STATE_SUBMERGED);
+                    DoCastSelf(SPELL_RAGNA_SUBMERGE_VISUAL, true);
+
+                    Talk(_hasSubmergedOnce ? SAY_REINFORCEMENTS2 : SAY_REINFORCEMENTS1);
+
+                    DoCastAOE(SPELL_SUMMON_SONS_FLAME);
+
+                    if (!_hasSubmergedOnce)
                     {
-                        DoCastAOE(SPELL_LAVA_BURST);
-                        break;
+                        _hasSubmergedOnce = true;
                     }
-                    case EVENT_MAGMA_BLAST:
-                    {
-                        _processingMagmaBurst = false;
 
-                        if (!IsVictimWithinMeleeRange())
-                        {
-                            DoCastRandomTarget(SPELL_MAGMA_BLAST);
-
-                            if (!_hasYelledMagmaBurst)
-                            {
-                                Talk(SAY_MAGMABURST);
-                                _hasYelledMagmaBurst = true;
-                            }
-                        }
-
-                        break;
-                    }
-                    case EVENT_MIGHT_OF_RAGNAROS:
-                    {
-                        if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, [](Unit const* target)
-                        {
-                            return target->IsPlayer() && target->getPowerType() == POWER_MANA;
-                        }))
-                        {
-                            if (me->CastSpell(target, SPELL_MIGHT_OF_RAGNAROS) == SPELL_CAST_OK && _isKnockbackEmoteAllowed)
-                            {
-                                Talk(SAY_KNOCKBACK, me);
-                                _isKnockbackEmoteAllowed = false;
-                                extraEvents.RescheduleEvent(EVENT_RESET_KNOCKBACK_EMOTE, 5s);
-                            }
-                        }
-                        events.RepeatEvent(urand(11000, 30000));
-                        break;
-                    }
-                    case EVENT_SUBMERGE:
-                    {
-                        events.CancelEventGroup(PHASE_EMERGED);
-                        events.SetPhase(PHASE_SUBMERGED);
-                        extraEvents.SetPhase(PHASE_SUBMERGED);
-                        me->SetReactState(REACT_PASSIVE);
-                        me->InterruptNonMeleeSpells(false);
-                        me->AttackStop();
-                        DoResetThreatList();
-                        me->SetUnitFlag(UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
-                        me->SetUInt32Value(UNIT_NPC_EMOTESTATE, EMOTE_STATE_SUBMERGED);
-                        DoCastSelf(SPELL_RAGNA_SUBMERGE_VISUAL, true);
-                        //me->HandleEmoteCommand(EMOTE_ONESHOT_SUBMERGE);
-
-                        Talk(_hasSubmergedOnce ? SAY_REINFORCEMENTS2 : SAY_REINFORCEMENTS1);
-
-                        DoCastAOE(SPELL_SUMMON_SONS_FLAME);
-
-                        if (!_hasSubmergedOnce)
-                        {
-                            _hasSubmergedOnce = true;
-                        }
-
-                        extraEvents.ScheduleEvent(EVENT_EMERGE, 90s, PHASE_SUBMERGED, PHASE_SUBMERGED);
-                        break;
-                    }
+                    extraEvents.ScheduleEvent(EVENT_EMERGE, 90s, PHASE_SUBMERGED, PHASE_SUBMERGED);
+                    break;
+                }
                 }
 
                 if (me->HasUnitState(UNIT_STATE_CASTING))
@@ -451,6 +467,96 @@ public:
 
         GuidSet _lavaBurstGUIDS;
 
+        Unit* SelectRandomPlayerOrNPCBot(float range)
+        {
+            std::list<Unit*> nearby;
+            Acore::AnyUnitInObjectRangeCheck check(me, range);
+            Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, nearby, check);
+            Cell::VisitObjects(me, searcher, range);
+
+            std::vector<Unit*> pool;
+            pool.reserve(nearby.size());
+            for (Unit* u : nearby)
+            {
+                if (!u || !u->IsAlive())
+                    continue;
+                if (!u->IsHostileTo(me))
+                    continue;
+                if (!(u->IsPlayer() || IsNPCBot(u)))
+                    continue;
+
+                pool.push_back(u);
+            }
+
+            if (pool.empty())
+                return nullptr;
+
+            return pool[urand(0u, uint32(pool.size() - 1))];
+        }
+        bool IsTankForTargeting(Unit* u) const
+        {
+            if (!u) return false;
+
+            if (Creature* c = u->ToCreature())
+            {
+                if (c->IsNPCBot())
+                    if (bot_ai* ai = c->GetBotAI())
+                        return ai->HasRole(BOT_ROLE_TANK);
+                return false;
+            }
+
+            if (Player* p = u->ToPlayer())
+            {
+                static constexpr uint32 RIGHTEOUS_FURY = 25780;
+                if (p->getClass() == CLASS_PALADIN && p->HasAura(RIGHTEOUS_FURY))
+                    return true;
+            }
+
+            return false;
+        }
+
+        Unit* SelectRandomManaUser(float range)
+        {
+            std::list<Unit*> nearby;
+            Acore::AnyUnitInObjectRangeCheck check(me, range);
+            Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, nearby, check);
+            Cell::VisitObjects(me, searcher, range);
+
+            std::vector<Unit*> pool;
+            pool.reserve(nearby.size());
+
+            for (Unit* u : nearby)
+            {
+                if (!u || !u->IsAlive())
+                    continue;
+                if (!u->IsHostileTo(me))
+                    continue;
+
+                if (!(u->IsPlayer() || (u->GetTypeId() == TYPEID_UNIT && u->ToCreature() && u->ToCreature()->IsNPCBot())))
+                    continue;
+
+                if (u->getPowerType() != POWER_MANA)
+                    continue;
+
+                if (!me->IsWithinLOSInMap(u))
+                    continue;
+
+                pool.push_back(u);
+            }
+
+            if (pool.empty())
+                return nullptr;
+
+            std::vector<Unit*> nonTanks;
+            nonTanks.reserve(pool.size());
+            for (Unit* u : pool)
+                if (!IsTankForTargeting(u))
+                    nonTanks.push_back(u);
+
+            std::vector<Unit*>& pick = nonTanks.empty() ? pool : nonTanks;
+            return pick[urand(0u, uint32(pick.size() - 1))];
+        }
+
         void HandleEmerge()
         {
             if (events.IsInPhase(PHASE_EMERGED))
@@ -464,13 +570,14 @@ public:
             extraEvents.SetPhase(PHASE_EMERGED);
 
             me->SetReactState(REACT_AGGRESSIVE);
-            me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE|UNIT_FLAG_NOT_SELECTABLE);
+            me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
             me->SetUInt32Value(UNIT_NPC_EMOTESTATE, 0);
             me->HandleEmoteCommand(EMOTE_ONESHOT_EMERGE);
 
             me->RemoveAurasDueToSpell(SPELL_RAGNA_SUBMERGE_VISUAL);
 
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 0.0f, true))
+            // INCLUDE players + NPCBots for initial target on emerge
+            if (Unit* target = SelectRandomPlayerOrNPCBot(100.0f))
             {
                 AttackStart(target);
             }

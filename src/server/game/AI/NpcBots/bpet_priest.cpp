@@ -63,7 +63,7 @@ public:
             if ((liveTimer += diff) >= SHADOWFIEND_DURATION)
             {
                 canUpdate = false;
-                me->ToTempSummon()->UnSummon(1);
+                me->ToTempSummon()->UnSummon(1ms);
                 return;
             }
 

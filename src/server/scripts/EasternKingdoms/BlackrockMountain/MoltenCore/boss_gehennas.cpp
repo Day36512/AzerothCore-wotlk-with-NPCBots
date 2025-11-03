@@ -2,8 +2,8 @@
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
+ * under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -18,18 +18,19 @@
 #include "CreatureScript.h"
 #include "ScriptedCreature.h"
 #include "molten_core.h"
+#include "Containers.h" // Acore::Containers::SelectRandomContainerElement
 
 enum Spells
 {
-    SPELL_GEHENNAS_CURSE        = 19716,
-    SPELL_RAIN_OF_FIRE          = 19717,
-    SPELL_SHADOW_BOLT_RANDOM    = 19728,
-    SPELL_SHADOW_BOLT_VICTIM    = 19729,
+    SPELL_GEHENNAS_CURSE = 19716,
+    SPELL_RAIN_OF_FIRE = 19717,
+    SPELL_SHADOW_BOLT_RANDOM = 19728,
+    SPELL_SHADOW_BOLT_VICTIM = 19729,
 };
 
 enum Events
 {
-    EVENT_GEHENNAS_CURSE    = 1,
+    EVENT_GEHENNAS_CURSE = 1,
     EVENT_RAIN_OF_FIRE,
     EVENT_SHADOW_BOLT,
 };
@@ -37,7 +38,7 @@ enum Events
 class boss_gehennas : public CreatureScript
 {
 public:
-    boss_gehennas() : CreatureScript("boss_gehennas") { }
+    boss_gehennas() : CreatureScript("boss_gehennas") {}
 
     struct boss_gehennasAI : public BossAI
     {
@@ -55,43 +56,77 @@ public:
         {
             switch (eventId)
             {
-                case EVENT_GEHENNAS_CURSE:
-                {
-                    DoCastVictim(SPELL_GEHENNAS_CURSE);
-                    events.RepeatEvent(urand(25000, 30000));
-                    break;
-                }
-                case EVENT_RAIN_OF_FIRE:
-                {
-                    if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 0.0f, true))
-                    {
-                        DoCast(target, SPELL_RAIN_OF_FIRE, true);
-                    }
-                    events.RepeatEvent(6000);
-                    break;
-                }
-                case EVENT_SHADOW_BOLT:
-                {
-                    if (urand(0, 1))
-                    {
-                        if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 0.0f, true, false))
-                        {
-                            DoCast(target, SPELL_SHADOW_BOLT_RANDOM);
-                        }
-                        else
-                        {
-                            DoCastVictim(SPELL_SHADOW_BOLT_VICTIM);
-                        }
-                    }
-                    else
-                    {
-                        DoCastVictim(SPELL_SHADOW_BOLT_VICTIM);
-                    }
-
-                    events.RepeatEvent(5000);
-                    break;
-                }
+            case EVENT_GEHENNAS_CURSE:
+            {
+                DoCastVictim(SPELL_GEHENNAS_CURSE);
+                events.Repeat(25s, 30s);
+                break;
             }
+
+            case EVENT_RAIN_OF_FIRE:
+            {
+                if (Unit* target = SelectRandomPlayerOrBot(100.0f, /*preferNonVictim=*/true))
+                    DoCast(target, SPELL_RAIN_OF_FIRE, true);
+                else
+                    DoCastVictim(SPELL_RAIN_OF_FIRE, true);
+
+                events.Repeat(6s);
+                break;
+            }
+
+            case EVENT_SHADOW_BOLT:
+            {
+                if (urand(0, 1))
+                {
+                    if (Unit* target = SelectRandomPlayerOrBot(100.0f, /*preferNonVictim=*/true))
+                        DoCast(target, SPELL_SHADOW_BOLT_RANDOM);
+                    else
+                        DoCastVictim(SPELL_SHADOW_BOLT_VICTIM);
+                }
+                else
+                {
+                    DoCastVictim(SPELL_SHADOW_BOLT_VICTIM);
+                }
+
+                events.Repeat(5s);
+                break;
+            }
+            }
+        }
+
+    private:
+        Unit* SelectRandomPlayerOrBot(float range, bool preferNonVictim = false)
+        {
+            std::list<Unit*> targets;
+            Acore::AnyUnitInObjectRangeCheck check(me, range);
+            Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, targets, check);
+            Cell::VisitObjects(me, searcher, range);
+
+            Unit* currentVictim = me->GetVictim();
+
+            targets.remove_if([this, currentVictim, preferNonVictim](Unit* u)
+                {
+                    if (!u || !u->IsAlive())
+                        return true;
+
+                    const bool isPlayer = u->GetTypeId() == TYPEID_PLAYER;
+                    const bool isNpcBot = (u->GetTypeId() == TYPEID_UNIT) && u->ToCreature() && u->ToCreature()->IsNPCBot();
+                    if (!isPlayer && !isNpcBot)
+                        return true;
+
+                    if (!me->IsValidAttackTarget(u))
+                        return true;
+
+                    if (preferNonVictim && currentVictim && u->GetGUID() == currentVictim->GetGUID())
+                        return true;
+
+                    return false;
+                });
+
+            if (targets.empty())
+                return nullptr;
+
+            return Acore::Containers::SelectRandomContainerElement(targets);
         }
     };
 

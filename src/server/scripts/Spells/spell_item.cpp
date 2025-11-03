@@ -347,7 +347,7 @@ class spell_item_rocket_chicken : public AuraScript
     {
         if (roll_chance_i(5))
         {
-            GetTarget()->ToCreature()->DespawnOrUnsummon(8000);
+            GetTarget()->ToCreature()->DespawnOrUnsummon(8s);
             GetTarget()->Kill(GetTarget(), GetTarget());
         }
         else if (roll_chance_i(50))
@@ -468,7 +468,7 @@ class spell_item_toxic_wasteling : public SpellScript
             GetCaster()->GetMotionMaster()->MoveIdle();
             GetCaster()->ToCreature()->SetHomePosition(target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), 0.0f);
             GetCaster()->GetMotionMaster()->MoveJump(target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), 12.0f, 3.0f, 1);
-            target->DespawnOrUnsummon(1500);
+            target->DespawnOrUnsummon(1500ms);
         }
     }
 
@@ -505,7 +505,7 @@ class spell_item_lil_xt : public SpellScript
             return;
         if (GetCaster()->IsCreature() && GetCaster()->ToCreature()->AI())
             GetCaster()->ToCreature()->AI()->Talk(2);
-        target->DespawnOrUnsummon(500);
+        target->DespawnOrUnsummon(500ms);
     }
 
     void Register() override
@@ -1503,16 +1503,20 @@ class spell_item_blessing_of_ancient_kings : public AuraScript
 
         HealInfo* healInfo = eventInfo.GetHealInfo();
         if (!healInfo)
-        {
             return;
-        }
 
         int32 absorb = int32(CalculatePct(healInfo->GetHeal(), 15.0f));
         // xinef: all heals contribute to one bubble
         if (AuraEffect* protEff = eventInfo.GetProcTarget()->GetAuraEffect(SPELL_PROTECTION_OF_ANCIENT_KINGS, 0/*, eventInfo.GetActor()->GetGUID()*/))
         {
-            // The shield can grow to a maximum size of 20,000 damage absorbtion
-            protEff->SetAmount(std::min<int32>(protEff->GetAmount() + absorb, 20000));
+            // The shield is supposed to cap out at 20,000 absorption...
+            absorb += protEff->GetAmount();
+
+            // ...but Blizz wrote this instead. See #23152 for details
+            if (absorb > 20000)
+                absorb = 200000;
+
+            protEff->SetAmount(absorb);
 
             // Refresh and return to prevent replacing the aura
             protEff->GetBase()->RefreshDuration();
@@ -1665,7 +1669,7 @@ public:
             _player->HandleEmoteCommand(RAND(EMOTE_ONESHOT_APPLAUD, EMOTE_ONESHOT_DANCESPECIAL, EMOTE_ONESHOT_LAUGH, EMOTE_ONESHOT_CHEER, EMOTE_ONESHOT_CHICKEN));
         }
 
-        _player->m_Events.AddEvent(this, RAND(_player->m_Events.CalculateTime(5000), _player->m_Events.CalculateTime(10000), _player->m_Events.CalculateTime(15000)));
+        _player->m_Events.AddEventAtOffset(this, RAND(5s, 10s, 15s));
 
         return false; // do not delete re-added event in EventProcessor::Update
     }
@@ -1686,7 +1690,7 @@ class spell_item_party_time : public AuraScript
             return;
         }
 
-        player->m_Events.AddEvent(new PartyTimeEmoteEvent(player), RAND(player->m_Events.CalculateTime(5000), player->m_Events.CalculateTime(10000), player->m_Events.CalculateTime(15000)));
+        player->m_Events.AddEventAtOffset(new PartyTimeEmoteEvent(player), RAND(5s, 10s, 15s));
     }
 
     void Register() override

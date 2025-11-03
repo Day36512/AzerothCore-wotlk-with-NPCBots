@@ -398,5 +398,5 @@ class spell_four_horsemen_mark_aura : public AuraScript
 void AddSC_boss_four_horsemen()
 {
     new boss_four_horsemen();
-    RegisterSpellScript(spell_four_horsemen_mark_aura);
+//    RegisterSpellScript(spell_four_horsemen_mark_aura);
 }

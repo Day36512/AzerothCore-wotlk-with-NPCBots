@@ -58,7 +58,7 @@ public:
             if ((liveTimer += diff) >= TREANT_DURATION)
             {
                 canUpdate = false;
-                me->ToTempSummon()->UnSummon(1);
+                me->ToTempSummon()->UnSummon(1ms);
                 return;
             }
 

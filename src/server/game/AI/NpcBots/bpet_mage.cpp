@@ -78,7 +78,7 @@ public:
             if ((liveTimer += diff) >= ELEMENTAL_DURATION * (IAmFree() ? 80u : 1u))
             {
                 canUpdate = false;
-                me->ToTempSummon()->UnSummon(1);
+                me->ToTempSummon()->UnSummon(1ms);
                 return;
             }
 

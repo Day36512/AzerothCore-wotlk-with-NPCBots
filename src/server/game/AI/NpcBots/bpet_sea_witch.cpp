@@ -88,14 +88,14 @@ public:
             if (((liveTimer += diff) >= TORNADO_DURATION) || !petOwner->GetBotAI()->HasRole(BOT_ROLE_DPS))
             {
                 canUpdate = false;
-                me->ToTempSummon()->UnSummon(1);
+                me->ToTempSummon()->UnSummon(1ms);
                 return;
             }
             else if ((IsIndoors() && !me->IsOutdoors()) && (isIndoorsTimer += diff) >= TORNADO_DISSIPATE_TIMER)
             {
                 canUpdate = false;
                 me->SetObjectScale(me->GetCreatureTemplate()->scale / 2.f);
-                me->ToTempSummon()->UnSummon(2000);
+                me->ToTempSummon()->UnSummon(2000ms);
                 return;
             }
 
@@ -128,7 +128,7 @@ public:
                 SetBotCommandState(BOT_COMMAND_ATTACK);
                 me->SetTarget(opponent->GetGUID());
                 Position pos = opponent->GetNearPosition(frand(3.f, 5.f + opponent->GetCombatReach()), opponent->GetAbsoluteAngle(petOwner) + frand(float(-M_PI) / 2.f, float(M_PI) / 2.f));
-                me->GetMotionMaster()->MovePoint(me->GetMapId(), pos.GetPositionX(), pos.GetPositionY(), opponent->GetPositionZ(), false);
+                me->GetMotionMaster()->MovePoint(me->GetMapId(), pos, FORCED_MOVEMENT_NONE, 0.0f, false);
                 //me->GetMotionMaster()->MoveChase(opponent, frand(3.f, 10.f), opponent->GetAbsoluteAngle(petOwner) + frand(-M_PI / 2, M_PI / 2));
             }
         }

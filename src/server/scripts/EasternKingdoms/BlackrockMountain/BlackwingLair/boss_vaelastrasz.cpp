@@ -3,13 +3,13 @@
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * the Free Software Foundation; either version 3 of the
+ * License, or (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Affero General Public License for more details.
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
@@ -25,7 +25,8 @@
 #include "SpellScriptLoader.h"
 #include "blackwing_lair.h"
 
-#include "bot_ai.h" // NPCBots API (pulls in botcommon.h for BOT_ROLE_*)
+#include "bot_ai.h" 
+#include "ThreatMgr.h" 
 
  // Grid search helpers
 #include "GridNotifiers.h"
@@ -67,25 +68,24 @@ enum Spells
     SPELL_BURNING_ADRENALINE_EXPLOSION = 23478, // AOE
     SPELL_BURNING_ADRENALINE_INSTAKILL = 23644, // instakill
 
-    // custom manual-taunt for NPCBots (provided by your core)
     SPELL_NPCBOT_MANUAL_TAUNT = 300336
 };
 
 enum Events
 {
     EVENT_SPEECH_1 = 1,
-    EVENT_SPEECH_2 = 2,
-    EVENT_SPEECH_3 = 3,
-    EVENT_SPEECH_4 = 4,
-    EVENT_SPEECH_5 = 5,
-    EVENT_SPEECH_6 = 6,
-    EVENT_SPEECH_7 = 7,
-    EVENT_FLAME_BREATH = 8,
-    EVENT_FIRE_NOVA = 9,
-    EVENT_TAIL_SWEEP = 10,
-    EVENT_CLEAVE = 11,
-    EVENT_BURNING_ADRENALINE = 12,
-    EVENT_TANK_TAUNT_AT_5S = 13 // tanks taunt + reposition
+    EVENT_SPEECH_2,
+    EVENT_SPEECH_3,
+    EVENT_SPEECH_4,
+    EVENT_SPEECH_5,
+    EVENT_SPEECH_6,
+    EVENT_SPEECH_7,
+    EVENT_FLAME_BREATH,
+    EVENT_FIRE_NOVA,
+    EVENT_TAIL_SWEEP,
+    EVENT_CLEAVE,
+    EVENT_BURNING_ADRENALINE,
+    EVENT_TANK_TAUNT_AT_1S // tanks taunt + reposition
 };
 
 // Forward declare our spell aura script registration
@@ -101,6 +101,18 @@ public:
         boss_vaelAI(Creature* creature) : BossAI(creature, DATA_VAELASTRAZ_THE_CORRUPT)
         {
             Initialize();
+        }
+
+        static float GetBotTankThreatBonus()
+        {
+            static float sBonus = []() -> float
+                {
+                    float v = sConfigMgr->GetOption<float>("NPCBots.BossEngage.BotTankThreatBonus", 120000.0f);
+                    if (v < 0.0f)
+                        v = 0.0f;
+                    return v;
+                }();
+            return sBonus;
         }
 
         void Initialize()
@@ -141,7 +153,6 @@ public:
             DoCastAOE(SPELL_ESSENCE_OF_THE_RED);
             me->ResetPlayerDamageReq();
 
-            // Immediately reposition role-based ranged (healers + ranged dps) to RANGED_POS
             MoveRoleBasedRangedToClump();
 
             events.ScheduleEvent(EVENT_CLEAVE, 10s);
@@ -150,8 +161,9 @@ public:
             events.ScheduleEvent(EVENT_TAIL_SWEEP, 11s);
             events.ScheduleEvent(EVENT_BURNING_ADRENALINE, 15s);
 
-            // At +5s, tank bots taunt + move to TANK_POS
-            events.ScheduleEvent(EVENT_TANK_TAUNT_AT_5S, 5s);
+            events.ScheduleEvent(EVENT_TANK_TAUNT_AT_1S, 1s);
+
+            BoostThreatToBotTanksOnEngage(100.0f);
         }
 
         void BeginSpeech(Unit* target)
@@ -169,7 +181,6 @@ public:
             Talk(SAY_KILLTARGET, victim);
         }
 
-        // Random cast on players OR NPCBots, with optional extra filter
         void CastSpellOnRandomEligibleTarget(uint32 spellId, float range, std::function<bool(Unit*)> extraFilter = {})
         {
             std::list<Unit*> targets;
@@ -344,7 +355,7 @@ public:
                 {
                     Unit* currentTank = me->GetVictim();
 
-                    // First two casts: random mana users, explicitly excluding the current victim (tank)
+                    // First two casts: random mana users, excluding the current victim (tank)
                     if (_burningAdrenalineCast < 2)
                     {
                         auto manaUserFilter = [this, currentTank](Unit* u) -> bool
@@ -380,9 +391,8 @@ public:
                     break;
                 }
 
-                case EVENT_TANK_TAUNT_AT_5S:
+                case EVENT_TANK_TAUNT_AT_1S:
                 {
-                    // Hostility-agnostic scan, then filter NPCBots that are tanks by ROLE
                     std::vector<Creature*> bots;
                     bots.reserve(64);
                     CollectNearbyNPCBots(100.0f, bots);
@@ -399,7 +409,6 @@ public:
                         if (!(bai->IsTank() || isTankRole))
                             continue;
 
-                        // Move and taunt
                         bai->MoveToSendPosition(TANK_POS);
                         c->CastSpell(me, SPELL_NPCBOT_MANUAL_TAUNT, true);
                     }
@@ -443,6 +452,63 @@ public:
         bool      _introDone;
         EventMap  _eventsIntro;
         uint8     _burningAdrenalineCast;
+
+        // -------- NEW: add threat to NPCBot tanks on engage --------
+        void BoostThreatToBotTanksOnEngage(float range)
+        {
+            float const bonus = GetBotTankThreatBonus();
+            if (bonus <= 0.0f)
+                return;
+
+            std::vector<Creature*> bots;
+            bots.reserve(32);
+            CollectNearbyNPCBots(range, bots);
+
+            // Filter to tanks
+            std::vector<Creature*> tankBots;
+            tankBots.reserve(bots.size());
+
+            for (Creature* c : bots)
+            {
+                bot_ai* bai = dynamic_cast<bot_ai*>(c->AI());
+                if (!bai)
+                    continue;
+
+                uint32 const roles = bai->GetBotRoles();
+                bool const isTankRole = (roles & (BOT_ROLE_TANK | BOT_ROLE_TANK_OFF)) != 0;
+
+                if (bai->IsTank() || isTankRole)
+                    tankBots.push_back(c);
+            }
+
+            if (tankBots.empty())
+                return;
+
+            Creature* primary = nullptr;
+            float bestDist = std::numeric_limits<float>::max();
+
+            for (Creature* c : tankBots)
+            {
+                if (!c)
+                    continue;
+
+                float d = me->GetDistance(c);            
+                if (d < bestDist)
+                {
+                    bestDist = d;
+                    primary = c;
+                }
+            }
+
+            for (Creature* c : tankBots)
+            {
+                float amount = (c == primary) ? bonus * 1.05f : bonus;
+                me->GetThreatMgr().AddThreat(c, amount);
+            }
+
+            if (primary)
+                AttackStart(primary);
+        }
     };
 
     CreatureAI* GetAI(Creature* creature) const override
@@ -467,7 +533,6 @@ class spell_vael_burning_adrenaline : public AuraScript
         if (!target)
             return;
 
-        // For NPCBots, force a run to the BA SAFE position
         if (target->GetTypeId() == TYPEID_UNIT)
         {
             if (Creature* c = target->ToCreature())
@@ -486,7 +551,6 @@ class spell_vael_burning_adrenaline : public AuraScript
         if (!GetTarget())
             return;
 
-        // Explode then kill
         GetTarget()->CastSpell(GetTarget(), SPELL_BURNING_ADRENALINE_EXPLOSION, true);
         GetTarget()->CastSpell(GetTarget(), SPELL_BURNING_ADRENALINE_INSTAKILL, true);
     }

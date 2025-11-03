@@ -2,8 +2,8 @@
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
+ * under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -21,41 +21,48 @@
 #include "TaskScheduler.h"
 #include "hellfire_ramparts.h"
 #include "SpellScript.h"
+#include "Containers.h" // Acore::Containers helpers
 
 enum Says
 {
-    SAY_INTRO                   = 0,
-    SAY_WIPE                    = 0,
-    SAY_AGGRO                   = 1,
-    SAY_KILL                    = 2,
-    SAY_DIE                     = 3,
-    EMOTE_NAZAN                 = 0
+    SAY_INTRO = 0,
+    SAY_WIPE = 0,
+    SAY_AGGRO = 1,
+    SAY_KILL = 2,
+    SAY_DIE = 3,
+    EMOTE_NAZAN = 0
 };
 
 enum Spells
 {
-    SPELL_FIREBALL              = 33793,
-    SPELL_SUMMON_LIQUID_FIRE    = 31706,
-    SPELL_REVENGE               = 19130,
-    SPELL_CALL_NAZAN            = 30693,
-    SPELL_BELLOWING_ROAR        = 39427,
-    SPELL_CONE_OF_FIRE          = 30926
+    SPELL_FIREBALL = 33793,
+    SPELL_SUMMON_LIQUID_FIRE = 31706,
+    SPELL_REVENGE = 19130,
+    SPELL_CALL_NAZAN = 30693,
+    SPELL_BELLOWING_ROAR = 39427,
+    SPELL_CONE_OF_FIRE = 30926,
+
+    // New Vazruden ground tools
+    SPELL_CLEAVE = 15496, // common creature Cleave
+    SPELL_HAMSTRING = 9080,  // creature Hamstring
+    SPELL_THROW = 300356, // Throw/Throw Axe
+    SPELL_ENRAGE = 8599   // simple Enrage burst
 };
 
 enum Misc
 {
-    ACTION_FLY_DOWN             = 0,
-    POINT_MIDDLE                = 0,
-    POINT_FLIGHT                = 1
+    ACTION_FLY_DOWN = 0,
+    POINT_MIDDLE = 0,
+    POINT_FLIGHT = 1
 };
 
 enum GroupPhase
 {
-    GROUP_PHASE_1               = 0,
-    GROUP_PHASE_2               = 1
+    GROUP_PHASE_1 = 0, // Nazan airborne
+    GROUP_PHASE_2 = 1  // Nazan grounded
 };
 
-const Position NazanPos[3] =
+static Position const NazanPos[3] =
 {
     {-1430.37f, 1710.03f, 111.0f, 0.0f},
     {-1428.40f, 1772.09f, 111.0f, 0.0f},
@@ -81,9 +88,7 @@ struct boss_vazruden_the_herald : public BossAI
     {
         summons.Summon(summon);
         if (summon->GetEntry() != NPC_HELLFIRE_SENTRY)
-        {
             summon->SetInCombatWithZone();
-        }
     }
 
     void MovementInform(uint32 type, uint32 id) override
@@ -102,7 +107,7 @@ struct boss_vazruden_the_herald : public BossAI
         if (summon->GetEntry() == NPC_HELLFIRE_SENTRY && summons.size() == 0)
         {
             Talk(SAY_INTRO);
-            me->GetMotionMaster()->MovePoint(POINT_MIDDLE, -1406.5f, 1746.5f, 85.0f, false);
+            me->GetMotionMaster()->MovePoint(POINT_MIDDLE, -1406.5f, 1746.5f, 85.0f, FORCED_MOVEMENT_NONE, 0.f, false);
             _JustEngagedWith();
         }
         else if (summons.size() == 0)
@@ -115,25 +120,19 @@ struct boss_vazruden_the_herald : public BossAI
     {
         summons.Despawn(summon);
         if (summon->GetEntry() != NPC_HELLFIRE_SENTRY)
-        {
             BossAI::EnterEvadeMode();
-        }
     }
 
     void SetData(uint32 type, uint32 data) override
     {
         if (type == 0 && data == 1)
-        {
             summons.DoZoneInCombat(NPC_HELLFIRE_SENTRY);
-        }
     }
 
-    void UpdateAI(uint32  /*diff*/) override
+    void UpdateAI(uint32 /*diff*/) override
     {
         if (!me->IsVisible() && summons.size() == 0)
-        {
             BossAI::EnterEvadeMode();
-        }
     }
 };
 
@@ -141,48 +140,54 @@ struct boss_nazan : public ScriptedAI
 {
     boss_nazan(Creature* creature) : ScriptedAI(creature)
     {
-        _scheduler.SetValidator([this]
-        {
-            return !me->HasUnitState(UNIT_STATE_CASTING);
-        });
+        _scheduler.SetValidator([this] { return !me->HasUnitState(UNIT_STATE_CASTING); });
     }
 
     void Reset() override
     {
         me->SetCanFly(true);
         me->SetDisableGravity(true);
+        _scheduler.CancelAll();
     }
 
     void EnterEvadeMode(EvadeReason /*why*/) override
     {
-        me->DespawnOrUnsummon(1);
+        me->DespawnOrUnsummon(1ms);
     }
 
     void JustEngagedWith(Unit*) override
     {
         _scheduler.CancelAll();
+
         _scheduler.Schedule(5ms, GROUP_PHASE_1, [this](TaskContext context)
+            {
+                me->GetMotionMaster()->MovePoint(POINT_FLIGHT, NazanPos[urand(0, 2)], FORCED_MOVEMENT_NONE, 0.f, false);
+                _scheduler.DelayAll(7s);
+                context.Repeat(30s);
+            });
+
+        _scheduler.Schedule(5s, GROUP_PHASE_1, [this](TaskContext context)
+            {
+                CastFireballOnRandomPlayerOrBot(80.0f);
+                context.Repeat(4s, 6s);
+            });
+
+        if (IsHeroic())
         {
-            me->GetMotionMaster()->MovePoint(POINT_FLIGHT, NazanPos[urand(0, 2)], false);
-            _scheduler.DelayAll(7s);
-            context.Repeat(30s);
-        }).Schedule(5s, GROUP_PHASE_1, [this](TaskContext context)
-        {
-            DoCastRandomTarget(SPELL_FIREBALL);
-            context.Repeat(4s, 6s);
-        });
+            _scheduler.Schedule(14s, GROUP_PHASE_1, [this](TaskContext context)
+                {
+                    LaunchAirBombardment(3 /*shots*/, 900ms /*gap*/, 80.0f /*range*/);
+                    context.Repeat(16s, 22s);
+                });
+        }
     }
 
     void AttackStart(Unit* who) override
     {
         if (me->IsLevitating())
-        {
             me->Attack(who, true);
-        }
         else
-        {
             ScriptedAI::AttackStart(who);
-        }
     }
 
     void DoAction(int32 param) override
@@ -193,7 +198,7 @@ struct boss_nazan : public ScriptedAI
             Talk(EMOTE_NAZAN);
             me->SetReactState(REACT_PASSIVE);
             me->InterruptNonMeleeSpells(true);
-            me->GetMotionMaster()->MovePoint(POINT_MIDDLE, -1406.5f, 1746.5f, 81.2f, false);
+            me->GetMotionMaster()->MovePoint(POINT_MIDDLE, -1406.5f, 1746.5f, 81.2f, FORCED_MOVEMENT_NONE, 0.f, false);
         }
     }
 
@@ -204,24 +209,28 @@ struct boss_nazan : public ScriptedAI
             me->SetCanFly(false);
             me->SetDisableGravity(false);
             me->SetReactState(REACT_AGGRESSIVE);
-            me->GetMotionMaster()->MoveChase(me->GetVictim());
+            if (Unit* v = me->GetVictim())
+                me->GetMotionMaster()->MoveChase(v);
+
             _scheduler.Schedule(5s, GROUP_PHASE_2, [this](TaskContext context)
-            {
-                DoCastVictim(SPELL_CONE_OF_FIRE);
-                context.Repeat(12s);
-            }).Schedule(6s, GROUP_PHASE_2, [this](TaskContext context)
-            {
-                DoCastRandomTarget(SPELL_FIREBALL);
-                context.Repeat(4s, 6s);
-            });
+                {
+                    DoCastVictim(SPELL_CONE_OF_FIRE);
+                    context.Repeat(12s);
+                });
+
+            _scheduler.Schedule(6s, GROUP_PHASE_2, [this](TaskContext context)
+                {
+                    CastFireballOnRandomPlayerOrBot(80.0f);
+                    context.Repeat(4s, 6s);
+                });
 
             if (IsHeroic())
             {
                 _scheduler.Schedule(10s, GROUP_PHASE_2, [this](TaskContext context)
-                {
-                    DoCastSelf(SPELL_BELLOWING_ROAR);
-                    context.Repeat(30s);
-                });
+                    {
+                        DoCastSelf(SPELL_BELLOWING_ROAR);
+                        context.Repeat(30s);
+                    });
             }
         }
     }
@@ -233,48 +242,131 @@ struct boss_nazan : public ScriptedAI
 
         _scheduler.Update(diff, [this]
             {
-            if (!me->IsLevitating())
-                DoMeleeAttackIfReady();
+                if (!me->IsLevitating())
+                    DoMeleeAttackIfReady();
             });
-
     }
 
 private:
     TaskScheduler _scheduler;
+
+    Unit* SelectRandomPlayerOrBot(float range, bool preferNonVictim = false)
+    {
+        std::list<Unit*> targets;
+        Acore::AnyUnitInObjectRangeCheck check(me, range);
+        Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, targets, check);
+        Cell::VisitObjects(me, searcher, range);
+
+        Unit* currentVictim = me->GetVictim();
+
+        targets.remove_if([this, currentVictim, preferNonVictim](Unit* u)
+            {
+                if (!u || !u->IsAlive())
+                    return true;
+
+                const bool isPlayer = u->GetTypeId() == TYPEID_PLAYER;
+                const bool isNpcBot = (u->GetTypeId() == TYPEID_UNIT) && u->ToCreature() && u->ToCreature()->IsNPCBot();
+                if (!isPlayer && !isNpcBot)
+                    return true;
+
+                if (!me->IsValidAttackTarget(u))
+                    return true;
+
+                // Avoid the tank when possible (soft-target bias)
+                if (preferNonVictim && currentVictim && u->GetGUID() == currentVictim->GetGUID())
+                    return true;
+
+                return false;
+            });
+
+        if (targets.empty())
+            return nullptr;
+
+        return Acore::Containers::SelectRandomContainerElement(targets);
+    }
+
+    void CastFireballOnRandomPlayerOrBot(float range)
+    {
+        if (Unit* tgt = SelectRandomPlayerOrBot(range, /*preferNonVictim=*/true))
+            DoCast(tgt, SPELL_FIREBALL, false);
+    }
+
+    void LaunchAirBombardment(uint8 shots, Milliseconds gap, float range)
+    {
+        std::vector<ObjectGuid> used; used.reserve(shots);
+        for (uint8 i = 0; i < shots; ++i)
+        {
+            _scheduler.Schedule(gap * i, [this, range, &used](TaskContext /*ctx*/)
+                {
+                    // Try to avoid repeating the exact same target in the same volley when possible
+                    Unit* choice = SelectRandomPlayerOrBot(range, /*preferNonVictim=*/true);
+                    for (uint8 attempt = 0; attempt < 3 && choice && std::find(used.begin(), used.end(), choice->GetGUID()) != used.end(); ++attempt)
+                        choice = SelectRandomPlayerOrBot(range, /*preferNonVictim=*/true);
+
+                    if (choice)
+                    {
+                        used.push_back(choice->GetGUID());
+                        DoCast(choice, SPELL_FIREBALL, false);
+                    }
+                });
+        }
+    }
 };
 
 struct boss_vazruden : public ScriptedAI
 {
     boss_vazruden(Creature* creature) : ScriptedAI(creature)
     {
-        _scheduler.SetValidator([this]
-        {
-            return !me->HasUnitState(UNIT_STATE_CASTING);
-        });
+        _scheduler.SetValidator([this] { return !me->HasUnitState(UNIT_STATE_CASTING); });
     }
 
     void Reset() override
     {
         _scheduler.CancelAll();
         _nazanCalled = false;
+        _hasSpoken = false;
+        _enraged = false;
     }
 
     void EnterEvadeMode(EvadeReason /*why*/) override
     {
         Talk(SAY_WIPE);
-        me->DespawnOrUnsummon(1);
+        me->DespawnOrUnsummon(1ms);
     }
 
     void JustEngagedWith(Unit*) override
     {
-        _scheduler.Schedule(5s, [this](TaskContext /*context*/)
-        {
-            Talk(SAY_AGGRO);
-        }).Schedule(4s, [this](TaskContext context)
-        {
-            DoCastVictim(SPELL_REVENGE);
-            context.Repeat(6s);
-        });
+        _scheduler.Schedule(5s, [this](TaskContext) { Talk(SAY_AGGRO); });
+
+        // Keep Revenge as your core button
+        _scheduler.Schedule(4s, [this](TaskContext context)
+            {
+                DoCastVictim(SPELL_REVENGE);
+                context.Repeat(6s);
+            });
+
+        // New: Cleave rhythm on victim (hits nearby melee)
+        _scheduler.Schedule(6s, [this](TaskContext context)
+            {
+                DoCastVictim(SPELL_CLEAVE);
+                context.Repeat(9s, 12s);
+            });
+
+        // New: Hamstring a random nearby player/NPCBot (prefer non-tank)
+        _scheduler.Schedule(8s, [this](TaskContext context)
+            {
+                if (Unit* t = SelectRandomPlayerOrBot(8.0f, /*preferNonVictim=*/true))
+                    DoCast(t, SPELL_HAMSTRING, false);
+                context.Repeat(12s, 16s);
+            });
+
+        // New: Throw at a random distant player/NPCBot (pressure on ranged/stragglers)
+        _scheduler.Schedule(10s, [this](TaskContext context)
+            {
+                if (Unit* t = SelectRandomPlayerOrBot(60.0f, /*preferNonVictim=*/true))
+                    DoCast(t, SPELL_THROW, false);
+                context.Repeat(10s, 14s);
+            });
     }
 
     void KilledUnit(Unit*) override
@@ -283,11 +375,8 @@ struct boss_vazruden : public ScriptedAI
         {
             _hasSpoken = true;
             Talk(SAY_KILL);
+            _scheduler.Schedule(6s, [this](TaskContext) { _hasSpoken = false; });
         }
-        _scheduler.Schedule(6s, [this](TaskContext /*context*/)
-        {
-            _hasSpoken = false;
-        });
     }
 
     void DamageTaken(Unit* /*attacker*/, uint32& damage, DamageEffectType /*type*/, SpellSchoolMask /*school*/) override
@@ -296,6 +385,12 @@ struct boss_vazruden : public ScriptedAI
         {
             _nazanCalled = true;
             DoCastSelf(SPELL_CALL_NAZAN, true);
+        }
+
+        if (!_enraged && me->HealthBelowPctDamaged(50, damage))
+        {
+            _enraged = true;
+            DoCastSelf(SPELL_ENRAGE, true); // short burst window
         }
     }
 
@@ -316,9 +411,45 @@ struct boss_vazruden : public ScriptedAI
     }
 
 private:
-    bool _hasSpoken;
-    bool _nazanCalled;
+    bool _hasSpoken = false;
+    bool _nazanCalled = false;
+    bool _enraged = false;
     TaskScheduler _scheduler;
+
+    // players + NPCBots only, hostile to Vazruden
+    Unit* SelectRandomPlayerOrBot(float range, bool preferNonVictim = false)
+    {
+        std::list<Unit*> targets;
+        Acore::AnyUnitInObjectRangeCheck check(me, range);
+        Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, targets, check);
+        Cell::VisitObjects(me, searcher, range);
+
+        Unit* currentVictim = me->GetVictim();
+
+        targets.remove_if([this, currentVictim, preferNonVictim](Unit* u)
+            {
+                if (!u || !u->IsAlive())
+                    return true;
+
+                const bool isPlayer = u->GetTypeId() == TYPEID_PLAYER;
+                const bool isNpcBot = (u->GetTypeId() == TYPEID_UNIT) && u->ToCreature() && u->ToCreature()->IsNPCBot();
+                if (!isPlayer && !isNpcBot)
+                    return true;
+
+                if (!me->IsValidAttackTarget(u))
+                    return true;
+
+                if (preferNonVictim && currentVictim && u->GetGUID() == currentVictim->GetGUID())
+                    return true;
+
+                return false;
+            });
+
+        if (targets.empty())
+            return nullptr;
+
+        return Acore::Containers::SelectRandomContainerElement(targets);
+    }
 };
 
 class spell_vazruden_fireball : public SpellScript
@@ -328,9 +459,7 @@ class spell_vazruden_fireball : public SpellScript
     void HandleScriptEffect(SpellEffIndex /*effIndex*/)
     {
         if (Unit* target = GetHitUnit())
-        {
             target->CastSpell(target, SPELL_SUMMON_LIQUID_FIRE, true);
-        }
     }
 
     void Register() override
@@ -346,9 +475,9 @@ class spell_vazruden_call_nazan : public SpellScript
     void HandleScriptEffect(SpellEffIndex /*effIndex*/)
     {
         if (Unit* target = GetHitUnit())
-        {
-            target->GetAI()->DoAction(ACTION_FLY_DOWN);
-        }
+            if (Creature* nazan = target->ToCreature())
+                if (nazan->GetAI())
+                    nazan->GetAI()->DoAction(ACTION_FLY_DOWN);
     }
 
     void Register() override

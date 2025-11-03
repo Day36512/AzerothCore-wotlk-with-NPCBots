@@ -620,7 +620,7 @@ public:
 
             locust->SetUInt32Value(UNIT_CREATED_BY_SPELL, LOCUST_SWARM_1);
 
-            locust->GetMotionMaster()->MovePoint(1, pos, false);
+            locust->GetMotionMaster()->MovePoint(1, pos, FORCED_MOVEMENT_NONE, 0.0f, false);
 
             locust->GetAI()->SetData(BOTPETAI_MISC_CAPACITY, CalculatePct(me->GetMaxHealth(), uint32(2)));
             locust->GetAI()->SetData(BOTPETAI_MISC_MAX_ATTACKERS, CalculatePct(me->GetMaxHealth(), (_getMaxLocusts() + 2) / 3));

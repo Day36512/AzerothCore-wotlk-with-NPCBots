@@ -228,7 +228,7 @@ struct boss_ouro : public BossAI
         }
         StartWipeCheck();
 
-        me->DespawnOrUnsummon(1000);
+        me->DespawnOrUnsummon(1s);
     }
 
     void CastGroundRupture()
@@ -332,7 +332,7 @@ struct boss_ouro : public BossAI
         if (me->GetThreatMgr().GetThreatList().empty())
         {
             DoCastSelf(SPELL_OURO_SUBMERGE_VISUAL);
-            me->DespawnOrUnsummon(1000);
+            me->DespawnOrUnsummon(1s);
             instance->SetBossState(DATA_OURO, FAIL);
             instance->SetBossState(DATA_OURO, NOT_STARTED);
             scheduler.CancelAll();
@@ -411,10 +411,10 @@ struct npc_dirt_mound : ScriptedAI
     {
         DoZoneInCombat();
         scheduler.Schedule(30s, [this](TaskContext /*context*/)
-            {
-                DoCastSelf(SPELL_SUMMON_SCARABS, true);
-                me->DespawnOrUnsummon(1000);
-            })
+        {
+            DoCastSelf(SPELL_SUMMON_SCARABS, true);
+            me->DespawnOrUnsummon(1s);
+        })
             .Schedule(100ms, [this](TaskContext context)
                 {
                     ChaseNewTarget();

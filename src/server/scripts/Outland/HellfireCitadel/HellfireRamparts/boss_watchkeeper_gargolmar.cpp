@@ -35,7 +35,8 @@ enum Spells
 {
     SPELL_MORTAL_WOUND      = 30641,
     SPELL_SURGE             = 34645,
-    SPELL_RETALIATION       = 22857
+    SPELL_RETALIATION       = 22857,
+    SPELL_FRENZY            = 28131
 };
 
 enum Misc
@@ -48,6 +49,8 @@ struct boss_watchkeeper_gargolmar : public BossAI
     boss_watchkeeper_gargolmar(Creature* creature) : BossAI(creature, DATA_WATCHKEEPER_GARGOLMAR)
     {
         _taunted = false;
+        _hasSpoken = false;
+        _frenzied = false;
         scheduler.SetValidator([this]
         {
             return !me->HasUnitState(UNIT_STATE_CASTING);
@@ -57,6 +60,9 @@ struct boss_watchkeeper_gargolmar : public BossAI
     void Reset() override
     {
         _Reset();
+        _taunted = false;
+        _hasSpoken = false;
+        _frenzied = false;
         ScheduleHealthCheckEvent(50, [&]{
             Talk(SAY_HEAL);
             std::list<Creature*> clist;
@@ -88,12 +94,19 @@ struct boss_watchkeeper_gargolmar : public BossAI
         }).Schedule(3s, [this](TaskContext context)
         {
             Talk(SAY_SURGE);
-            if (Unit* target = SelectTarget(SelectTargetMethod::MinDistance, 0))
-            {
-                me->CastSpell(target, SPELL_SURGE);
-            }
+            CastSpellOnRandomTarget(SPELL_SURGE, 60.0f);
             context.Repeat(11s);
         });
+        scheduler.Schedule(1s, [this](TaskContext context)
+            {
+                if (!_frenzied && BothHealersDead())
+                {
+                    _frenzied = true;
+                    DoCastSelf(SPELL_FRENZY, true);
+                    return;
+                }
+                context.Repeat(1s);
+            });
     }
 
     void MoveInLineOfSight(Unit* who) override
@@ -143,7 +156,49 @@ struct boss_watchkeeper_gargolmar : public BossAI
 private:
     bool _taunted;
     bool _hasSpoken;
+    bool _frenzied;
 
+    void CastSpellOnRandomTarget(uint32 spellId, float range)
+    {
+        std::list<Unit*> targets;
+        Acore::AnyUnitInObjectRangeCheck check(me, range);
+        Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, targets, check);
+        Cell::VisitObjects(me, searcher, range);
+
+        targets.remove_if([this](Unit* unit) -> bool
+            {
+                if (!unit || !unit->IsAlive())
+                    return true;
+
+                bool isPlayer = unit->GetTypeId() == TYPEID_PLAYER;
+                bool isNpcBot = (unit->GetTypeId() == TYPEID_UNIT) && unit->ToCreature() && unit->ToCreature()->IsNPCBot();
+                if (!isPlayer && !isNpcBot)
+                    return true;
+
+                if (!me->IsValidAttackTarget(unit))
+                    return true;
+
+                return false;
+            });
+
+        if (!targets.empty())
+        {
+            Unit* target = Acore::Containers::SelectRandomContainerElement(targets);
+            DoCast(target, spellId);
+        }
+    }
+    bool BothHealersDead()
+    {
+        std::list<Creature*> watchers;
+        me->GetCreaturesWithEntryInRange(watchers, 100.0f, NPC_HELLFIRE_WATCHER);
+
+        uint8 alive = 0u;
+        for (Creature* c : watchers)
+            if (c && c->IsAlive() && !c->isDead())
+                ++alive;
+
+        return alive == 0u && !watchers.empty(); 
+    }
 };
 
 class spell_gargolmar_retalliation : public AuraScript

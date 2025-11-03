@@ -70,7 +70,7 @@ public:
             if ((liveTimer += diff) >= SPIRITWOLF_DURATION)
             {
                 canUpdate = false;
-                me->ToTempSummon()->UnSummon(1);
+                me->ToTempSummon()->UnSummon(1ms);
                 return;
             }
 

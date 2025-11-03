@@ -208,7 +208,7 @@ public:
                         float dist = CONTACT_DISTANCE + me->GetCombatReach() * frand(1.0f, 3.0f);
                         float angle = frand(0.001f, float(M_PI * 2));
                         Position nearpos = u->GetNearPosition(dist, angle);
-                        me->GetMotionMaster()->MovePoint(1, nearpos, false);
+                        me->GetMotionMaster()->MovePoint(1, nearpos, FORCED_MOVEMENT_NONE, 0.0f, false);
                     }
                     return;
                 }
@@ -236,7 +236,7 @@ public:
                     if (expired)
                     {
                         canUpdate = false;
-                        me->ToTempSummon()->UnSummon(1);
+                        me->ToTempSummon()->UnSummon(1ms);
                         return;
                     }
                 }
@@ -281,7 +281,7 @@ public:
                     float dist = (expired || is_full) ? 0.0f : frand(3.0f, 20.0f);
                     float angle = frand(0.001f, float(M_PI * 2));
                     Position nearpos = petOwner->GetNearPosition(dist, angle);
-                    me->GetMotionMaster()->MovePoint(1, nearpos, false);
+                    me->GetMotionMaster()->MovePoint(1, nearpos, FORCED_MOVEMENT_NONE, 0.0f, false);
                 }
             }
         }

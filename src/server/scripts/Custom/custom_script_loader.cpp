@@ -36,6 +36,22 @@ void AddSC_spell_remove_banish_instance_only();
 void AddSC_mod_speed_commands();
 void AddSC_invisible_stasis_bunny();
 void AddSC_mod_timecycle();
+void AddSC_MapCreatureRates_World();
+void AddSC_MapCreatureRates_Apply();
+void AddSC_custom_anubrekhan_director();
+void AddSC_boss_custom_anubrekhan_40();
+void AddSC_boss_custom_faerlina_40();
+void AddSC_boss_custom_maexxna_40();
+void AddSC_grobbulus_director();
+void AddSC_gluth_director();
+void AddSC_boss_custom_thaddius_40();
+void AddSC_custom_npc_obedience_crystal();
+void AddSC_boss_custom_four_horsemen_40();
+void AddSC_boss_custom_heigan_40();
+void AddSC_boss_custom_sapphiron_40();
+void AddSC_boss_custom_kelthuzad_40();
+void AddSC_npcbot_unbind_nonparty();
+void AddSC_mod_spectral_repop_mounts();
 
 void AddCustomScripts()
 {
@@ -54,4 +70,20 @@ void AddCustomScripts()
     AddSC_mod_speed_commands();
     AddSC_invisible_stasis_bunny();
     AddSC_mod_timecycle();
+    AddSC_MapCreatureRates_World();
+    AddSC_MapCreatureRates_Apply();
+    AddSC_custom_anubrekhan_director();
+    AddSC_boss_custom_anubrekhan_40();
+    AddSC_boss_custom_faerlina_40();
+    AddSC_boss_custom_maexxna_40();
+    AddSC_grobbulus_director();
+    AddSC_gluth_director();
+    AddSC_boss_custom_thaddius_40();
+    AddSC_custom_npc_obedience_crystal();
+    AddSC_boss_custom_four_horsemen_40();
+    AddSC_boss_custom_heigan_40();
+    AddSC_boss_custom_sapphiron_40();
+    AddSC_boss_custom_kelthuzad_40();
+    AddSC_npcbot_unbind_nonparty();
+    AddSC_mod_spectral_repop_mounts();
 }
