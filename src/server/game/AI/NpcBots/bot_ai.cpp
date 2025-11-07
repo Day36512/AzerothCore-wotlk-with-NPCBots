@@ -5311,7 +5311,7 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
         scanGoEntry(GO_LIQUID_FIRE_2, SCAN, BASE);
         scanGoEntry(GO_LIQUID_FIRE_3, SCAN, BASE);
     }
-    // The Shattered Halls — Proximity Bombs
+    // The Blood Furnace — Proximity Bombs
     else if (unit->GetMapId() == 542)
     {
         static constexpr uint32 GO_PROXIMITY_BOMB_A = 181877;
