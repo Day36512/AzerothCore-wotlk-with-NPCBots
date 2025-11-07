@@ -5279,6 +5279,67 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
             spots.emplace_back(*creature, radius);
         }
     }
+    // Hellfire Ramparts — Liquid Fire puddles
+    if (unit->GetMapId() == 543) // Hellfire Ramparts
+    {
+        // GO entries to avoid
+        static constexpr uint32 GO_LIQUID_FIRE_1 = 180125;
+        static constexpr uint32 GO_LIQUID_FIRE_2 = 181890;
+        static constexpr uint32 GO_LIQUID_FIRE_3 = 182533;
+
+        auto scanGoEntry = [unit, &spots](uint32 entry, float scanRange, float baseRadius)
+            {
+                std::list<GameObject*> list;
+                Bcore::AllGameObjectsWithEntryInRange check(unit, entry, scanRange);
+                Bcore::GameObjectListSearcher<Bcore::AllGameObjectsWithEntryInRange> searcher(unit, list, check);
+                Cell::VisitObjects(unit, searcher, scanRange);
+
+                for (GameObject* go : list)
+                {
+                    if (!go)
+                        continue;
+
+                    float radius = baseRadius + go->GetObjectSize() + DEFAULT_COMBAT_REACH * 1.2f;
+                    spots.emplace_back(*go, radius);
+                }
+            };
+
+        constexpr float SCAN = 40.f;
+        constexpr float BASE = 12.0f;
+
+        scanGoEntry(GO_LIQUID_FIRE_1, SCAN, BASE);
+        scanGoEntry(GO_LIQUID_FIRE_2, SCAN, BASE);
+        scanGoEntry(GO_LIQUID_FIRE_3, SCAN, BASE);
+    }
+    // The Shattered Halls — Proximity Bombs
+    else if (unit->GetMapId() == 542)
+    {
+        static constexpr uint32 GO_PROXIMITY_BOMB_A = 181877;
+        static constexpr uint32 GO_PROXIMITY_BOMB_B = 182607;
+
+        auto scanBombs = [unit, &spots](uint32 entry, float scanRange, float baseRadius)
+            {
+                std::list<GameObject*> bombs;
+                Bcore::AllGameObjectsWithEntryInRange check(unit, entry, scanRange);
+                Bcore::GameObjectListSearcher<Bcore::AllGameObjectsWithEntryInRange> searcher(unit, bombs, check);
+                Cell::VisitObjects(unit, searcher, scanRange);
+
+                for (GameObject* go : bombs)
+                {
+                    if (!go)
+                        continue;
+
+                    float radius = baseRadius + go->GetObjectSize() + DEFAULT_COMBAT_REACH * 1.5f;
+                    spots.emplace_back(*go, radius);
+                }
+            };
+
+        constexpr float SCAN_RANGE = 40.f;
+        constexpr float BOMB_BASE_RADIUS = 10.0f;
+
+        scanBombs(GO_PROXIMITY_BOMB_A, SCAN_RANGE, BOMB_BASE_RADIUS);
+        scanBombs(GO_PROXIMITY_BOMB_B, SCAN_RANGE, BOMB_BASE_RADIUS);
+    }
     //Magister's Terrace
     else if (unit->GetMapId() == 585)
     {
