@@ -7,9 +7,8 @@
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
- * more details.
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU Affero General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
@@ -21,6 +20,9 @@
 #include "hellfire_ramparts.h"
 #include "Containers.h"       // Acore::Containers helpers
 #include "SpellAuras.h"       // Aura, SetDuration/SetMaxDuration
+#include "ObjectAccessor.h"
+
+#include <unordered_set>
 
 enum Says
 {
@@ -34,21 +36,26 @@ enum Says
 
 enum Spells
 {
-    SPELL_SHADOW_BOLT = 30686, // single target nuke
-    SPELL_SUMMON_FIENDISH_HOUND = 30707, // summons 1 hound
-    SPELL_TREACHEROUS_AURA = 30695, // classic Omor curse
-    SPELL_DEMONIC_SHIELD = 31901  // damage reduction shield (base 10s)
+    SPELL_SHADOW_BOLT = 30686,   // single target nuke
+    SPELL_SUMMON_FIENDISH_HOUND = 30707,   // summons 1 hound
+    SPELL_TREACHEROUS_AURA = 30695,   // classic Omor curse
+    SPELL_DEMONIC_SHIELD = 31901,   // damage reduction shield (base 10s)
+    SPELL_BERSERK = 300362   // custom Berserk that stacks (DB-side effect)
 };
 
 // Tunables
-static constexpr float HOUND_FIXATE_THREAT = 8000.0f;
+static constexpr float  HOUND_FIXATE_THREAT = 8000.0f;
 static constexpr uint32 HOUND_HP_NORMAL = 21220; // normal 5-man
 static constexpr uint32 HOUND_HP_HEROIC = 38750; // heroic 5-man
-static constexpr float HOUND_SCALE_MULT = 2.0f;
+static constexpr float  HOUND_SCALE_MULT = 2.0f;
+
+// Re-application window after summon to beat late init/model resets
+static constexpr Milliseconds HOUND_TUNE_REAPPLY_DELAY = 150ms;
 
 struct boss_omor_the_unscarred : public BossAI
 {
-    boss_omor_the_unscarred(Creature* creature) : BossAI(creature, DATA_OMOR_THE_UNSCARRED), _hasSpoken(false)
+    boss_omor_the_unscarred(Creature* creature)
+        : BossAI(creature, DATA_OMOR_THE_UNSCARRED), _hasSpoken(false), _shieldActive(false)
     {
         me->SetCombatMovement(false);
         scheduler.SetValidator([this]
@@ -65,6 +72,11 @@ struct boss_omor_the_unscarred : public BossAI
         _lastCurseTarget.Clear();
         _shieldActive = false;
 
+        // Clear berserk stacks & tracking
+        _activeHounds.clear();
+        me->RemoveAurasDueToSpell(SPELL_BERSERK);
+
+        // Health checkpoints for shield cycles
         ScheduleHealthCheckEvent(66, [&] { StartShieldCycle(); });
         ScheduleHealthCheckEvent(33, [&] { StartShieldCycle(); });
     }
@@ -74,6 +86,7 @@ struct boss_omor_the_unscarred : public BossAI
         Talk(SAY_AGGRO);
         _JustEngagedWith();
 
+        // Tank-targeted single Shadow Bolt cadence
         scheduler.Schedule(5s, [this](TaskContext context)
             {
                 if (Unit* v = me->GetVictim())
@@ -81,6 +94,7 @@ struct boss_omor_the_unscarred : public BossAI
                 context.Repeat(6s, 8s);
             });
 
+        // Treacherous Aura: cast, then 6s later spread to up to 2 nearby within 8y
         scheduler.Schedule(7s, [this](TaskContext context)
             {
                 if (roll_chance_i(40))
@@ -101,16 +115,11 @@ struct boss_omor_the_unscarred : public BossAI
                 context.Repeat(13s, 17s);
             });
 
+        // Fiend summon cadence (also drives Berserk stacks)
         scheduler.Schedule(10s, [this](TaskContext context)
             {
                 DoCastSelf(SPELL_SUMMON_FIENDISH_HOUND, true);
-                context.Repeat(20s, 24s);
-            });
-
-        scheduler.Schedule(12s, [this](TaskContext context)
-            {
-                LaunchShadowVolley(3 /*bolts*/, 1200ms /*gap*/, 60.0f /*range*/);
-                context.Repeat(22s, 28s);
+                context.Repeat(24s, 30s);
             });
     }
 
@@ -133,13 +142,22 @@ struct boss_omor_the_unscarred : public BossAI
         summons.Summon(summon);
         summon->SetInCombatWithZone();
 
-        summon->SetObjectScale(summon->GetObjectScale() * HOUND_SCALE_MULT);
+        // 1) Apply initial tuning immediately
+        ApplyHoundTuning(summon);
 
-        bool heroic = me->GetMap() && me->GetMap()->IsHeroic();
-        uint32 hp = heroic ? HOUND_HP_HEROIC : HOUND_HP_NORMAL;
-        summon->SetMaxHealth(hp);
-        summon->SetHealth(hp);
+        // 2) Re-apply once more after a short delay to beat late init/model resets
+        ObjectGuid sguid = summon->GetGUID();
+        scheduler.Schedule(HOUND_TUNE_REAPPLY_DELAY, [this, sguid](TaskContext /*ctx*/)
+            {
+                if (Creature* s = ObjectAccessor::GetCreature(*me, sguid))
+                    ApplyHoundTuning(s);
+            });
 
+        // Track for Berserk stack logic
+        _activeHounds.insert(summon->GetGUID());
+        UpdateBerserkStacks();
+
+        // Fixate logic
         Unit* target = SelectRandomEligibleTarget(60.0f, /*preferNonVictim=*/true);
         if (!target)
             target = me->GetVictim();
@@ -157,9 +175,25 @@ struct boss_omor_the_unscarred : public BossAI
         }
     }
 
+    void SummonedCreatureDespawn(Creature* summon) override
+    {
+        _activeHounds.erase(summon->GetGUID());
+        UpdateBerserkStacks();
+        summons.Despawn(summon);
+    }
+
+    void SummonedCreatureDies(Creature* summon, Unit* /*killer*/) override
+    {
+        _activeHounds.erase(summon->GetGUID());
+        UpdateBerserkStacks();
+        summons.Despawn(summon);
+    }
+
     void JustDied(Unit* /*killer*/) override
     {
         Talk(SAY_DIE);
+        _activeHounds.clear();
+        me->RemoveAurasDueToSpell(SPELL_BERSERK);
         _JustDied();
     }
 
@@ -195,6 +229,25 @@ private:
     bool _hasSpoken;
     bool _shieldActive;
     ObjectGuid _lastCurseTarget;
+
+    std::unordered_set<ObjectGuid> _activeHounds;
+
+    // --- Consistent hound tuning ---
+    void ApplyHoundTuning(Creature* hound)
+    {
+        if (!hound || !hound->IsAlive())
+            return;
+
+        // Always set scale from native to avoid cumulative double-scaling on re-apply
+        float nativeScale = hound->GetNativeObjectScale();
+        hound->SetObjectScale(nativeScale * HOUND_SCALE_MULT);
+
+        // Set HP deterministically
+        bool heroic = me->GetMap() && me->GetMap()->IsHeroic();
+        uint32 hp = heroic ? HOUND_HP_HEROIC : HOUND_HP_NORMAL;
+        hound->SetMaxHealth(hp);
+        hound->SetHealth(hp);
+    }
 
     Unit* SelectRandomEligibleTarget(float range, bool preferNonVictim = false)
     {
@@ -261,18 +314,6 @@ private:
             DoCast(u, SPELL_TREACHEROUS_AURA, true);
     }
 
-    void LaunchShadowVolley(uint8 bolts, Milliseconds gap, float range)
-    {
-        for (uint8 i = 0; i < bolts; ++i)
-        {
-            scheduler.Schedule(gap * i, [this, range](TaskContext /*ctx*/)
-                {
-                    if (Unit* tgt = SelectRandomEligibleTarget(range, /*preferNonVictim=*/true))
-                        DoCast(tgt, SPELL_SHADOW_BOLT, true);
-                });
-        }
-    }
-
     void StartShieldCycle()
     {
         if (_shieldActive || !me->IsAlive())
@@ -283,7 +324,6 @@ private:
         me->SetCombatMovement(false);
         me->StopMoving();
 
-        // Cast shield (base 10s), then extend to 12s by setting durations on the aura.
         DoCastSelf(SPELL_DEMONIC_SHIELD, true);
 
         scheduler.Schedule(200ms, [this](TaskContext /*ctx*/)
@@ -295,8 +335,8 @@ private:
                 }
             });
 
+        // Summon a hound during shield (tuning will apply twice, as in JustSummoned)
         DoCastSelf(SPELL_SUMMON_FIENDISH_HOUND, true);
-        LaunchShadowVolley(2, 1200ms, 60.0f);
 
         scheduler.Schedule(12s, [this](TaskContext /*ctx*/)
             {
@@ -305,6 +345,27 @@ private:
                 if (Unit* v = me->GetVictim())
                     me->GetMotionMaster()->MoveChase(v);
             });
+    }
+
+    void UpdateBerserkStacks()
+    {
+        uint32 stacks = static_cast<uint32>(_activeHounds.size());
+        if (stacks == 0)
+        {
+            me->RemoveAurasDueToSpell(SPELL_BERSERK);
+            return;
+        }
+
+        if (Aura* aura = me->GetAura(SPELL_BERSERK))
+        {
+            aura->SetStackAmount(stacks);
+        }
+        else
+        {
+            me->CastSpell(me, SPELL_BERSERK, true);
+            if (Aura* a2 = me->GetAura(SPELL_BERSERK))
+                a2->SetStackAmount(stacks);
+        }
     }
 };
 

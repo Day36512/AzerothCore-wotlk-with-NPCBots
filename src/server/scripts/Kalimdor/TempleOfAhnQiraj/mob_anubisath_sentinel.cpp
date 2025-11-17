@@ -56,7 +56,7 @@ enum Spells
 class npc_anubisath_sentinel : public CreatureScript
 {
 public:
-    npc_anubisath_sentinel() : CreatureScript("npc_anubisath_sentinel") { }
+    npc_anubisath_sentinel() : CreatureScript("npc_anubisath_sentinel") {}
 
     CreatureAI* GetAI(Creature* creature) const override
     {
@@ -65,6 +65,9 @@ public:
 
     struct aqsentinelAI : public ScriptedAI
     {
+        // NEW: local constant for full self-heal
+        static constexpr uint32 SPELL_SELF_FULL_HEAL = 17683;
+
         uint32 ability;
         int abselected;
 
@@ -72,40 +75,22 @@ public:
         {
             switch (asel)
             {
-                case 0:
-                    ability = SPELL_MENDING_BUFF;
-                    break;
-                case 1:
-                    ability = SPELL_KNOCK_BUFF;
-                    break;
-                case 2:
-                    ability = SPELL_MANAB_BUFF;
-                    break;
-                case 3:
-                    ability = SPELL_REFLECTAF_BUFF;
-                    break;
-                case 4:
-                    ability = SPELL_REFLECTSFr_BUFF;
-                    break;
-                case 5:
-                    ability = SPELL_THORNS_BUFF;
-                    break;
-                case 6:
-                    ability = SPELL_THUNDER_BUFF;
-                    break;
-                case 7:
-                    ability = SPELL_MSTRIKE_BUFF;
-                    break;
-                case 8:
-                    ability = SPELL_STORM_BUFF;
-                    break;
+            case 0: ability = SPELL_MENDING_BUFF;    break;
+            case 1: ability = SPELL_KNOCK_BUFF;      break;
+            case 2: ability = SPELL_MANAB_BUFF;      break;
+            case 3: ability = SPELL_REFLECTAF_BUFF;  break;
+            case 4: ability = SPELL_REFLECTSFr_BUFF; break;
+            case 5: ability = SPELL_THORNS_BUFF;     break;
+            case 6: ability = SPELL_THUNDER_BUFF;    break;
+            case 7: ability = SPELL_MSTRIKE_BUFF;    break;
+            case 8: ability = SPELL_STORM_BUFF;      break;
             }
         }
 
         aqsentinelAI(Creature* creature) : ScriptedAI(creature)
         {
             ClearBuddyList();
-            abselected = 0;                                     // just initialization of variable
+            abselected = 0;
         }
 
         ObjectGuid NearbyGUID[3];
@@ -169,13 +154,13 @@ public:
         void AddSentinelsNear(Unit* /*nears*/)
         {
             std::list<Creature*> assistList;
-            me->GetCreatureListWithEntryInGrid(assistList, 15264, 100.0f);
+            me->GetCreatureListWithEntryInGrid(assistList, 15264, 100.0f); // Anubisath Sentinel
 
             if (assistList.empty())
                 return;
 
-            for (std::list<Creature*>::const_iterator iter = assistList.begin(); iter != assistList.end(); ++iter)
-                AddBuddyToList((*iter)->GetGUID());
+            for (Creature* c : assistList)
+                AddBuddyToList(c->GetGUID());
         }
 
         int pickAbilityRandom(bool* chosenAbilities)
@@ -191,7 +176,7 @@ public:
                     }
                 }
             }
-            return 0;                                           // should never happen
+            return 0;
         }
 
         void GetOtherSentinels(Unit* who)
@@ -216,8 +201,6 @@ public:
                 CAST_AI(aqsentinelAI, pNearby->AI())->gatherOthersWhenAggro = false;
                 CAST_AI(aqsentinelAI, pNearby->AI())->selectAbility(pickAbilityRandom(chosenAbilities));
             }
-            /*if (bli < 3)
-                DoYell("I dont have enough buddies.", LANG_NEUTRAL, 0);*/
             SendMyListToBuddies();
             CallBuddiesToAttack(who);
 
@@ -267,9 +250,7 @@ public:
                 if (Creature* sentinel = target->ToCreature())
                 {
                     if (sentinel->IsAIEnabled)
-                    {
                         CAST_AI(aqsentinelAI, sentinel->AI())->GainSentinelAbility(ability);
-                    }
                 }
             }
         }
@@ -277,6 +258,7 @@ public:
         void JustDied(Unit* /*killer*/) override
         {
             bool cast = false;
+
             for (int ni = 0; ni < 3; ++ni)
             {
                 Creature* sent = ObjectAccessor::GetCreature(*me, NearbyGUID[ni]);
@@ -284,15 +266,18 @@ public:
                     continue;
                 if (sent->isDead())
                     continue;
+
                 cast = true;
-                DoCast(sent, SPELL_HEAL_BRETHEN, true);
+
+                // CHANGE: make each *living* sentinel heal itself with 17683
+                sent->CastSpell(sent, SPELL_SELF_FULL_HEAL, true);
+
+                // Keep buff sharing behavior
                 DoCast(sent, SPELL_TRANSFER_POWER, true);
             }
 
             if (cast)
-            {
                 Talk(TALK_SHARE_BUFFS);
-            }
 
             DoCastSelf(SPELL_SUMMON_SMALL_OBSIDIAN_CHUNK, true);
         }

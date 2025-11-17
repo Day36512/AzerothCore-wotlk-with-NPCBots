@@ -325,14 +325,15 @@ public:
 
         bool GossipHello(Player* player, bool reportUse) override
         {
-            if (reportUse)
+            if (reportUse && _instance)
             {
-                if (_instance->GetBossState(DATA_CHROMAGGUS) != DONE && _instance->GetBossState(DATA_CHROMAGGUS) != IN_PROGRESS)
+                if (_instance->GetBossState(DATA_CHROMAGGUS) != DONE &&
+                    _instance->GetBossState(DATA_CHROMAGGUS) != IN_PROGRESS)
                 {
                     if (Creature* creature = _instance->GetCreature(DATA_CHROMAGGUS))
                     {
                         creature->SetHomePosition(homePos);
-                        creature->GetMotionMaster()->MovePath(creature->GetEntry() * 10, false);
+                        creature->GetMotionMaster()->MoveWaypoint(creature->GetEntry() * 10, false);
                         creature->AI()->SetGUID(player->GetGUID(), GUID_LEVER_USER);
                     }
 
@@ -356,6 +357,7 @@ public:
         return GetBlackwingLairAI<go_chromaggus_leverAI>(go);
     }
 };
+
 
 enum ElementalShieldSpells
 {
@@ -437,6 +439,57 @@ class spell_gen_brood_power : public SpellScript
         OnEffectHitTarget += SpellEffectFn(spell_gen_brood_power::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
     }
 };
+// Spells: Frost Burn (23187 rank 1, 23189 rank 2)
+class chromaggus_spell_frostburn_custom : public SpellScript
+{
+    PrepareSpellScript(chromaggus_spell_frostburn_custom);
+
+    // Cached config lookup (first use). 1.0 = no change.
+    static float GetMultiplier()
+    {
+        static float sMult = []() -> float
+            {
+                float v = sConfigMgr->GetOption<float>("Chromaggus.Frostburn.DamageMultiplier", 1.0f);
+                // Safety: no negative scaling
+                if (v < 0.0f)
+                    v = 0.0f;
+                return v;
+            }();
+        return sMult;
+    }
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        // Validate the IDs we intend to bind to (won't crash if a DBC is missing; simply returns false to skip loading)
+        return ValidateSpellInfo({ 23187u, 23189u });
+    }
+
+    void HandleHit()
+    {
+        float mult = GetMultiplier();
+        if (mult == 1.0f)
+            return;
+
+        int32 dmg = GetHitDamage();
+        if (dmg <= 0)
+            return;
+
+        // Scale and clamp to int32 range
+        double scaled = static_cast<double>(dmg) * static_cast<double>(mult);
+        if (scaled < 0.0)
+            scaled = 0.0;
+
+        if (scaled > static_cast<double>(std::numeric_limits<int32>::max()))
+            SetHitDamage(std::numeric_limits<int32>::max());
+        else
+            SetHitDamage(static_cast<int32>(scaled + 0.5)); // round half-up
+    }
+
+    void Register() override
+    {
+        OnHit += SpellHitFn(chromaggus_spell_frostburn_custom::HandleHit);
+    }
+};
 
 void AddSC_boss_chromaggus()
 {
@@ -444,4 +497,5 @@ void AddSC_boss_chromaggus()
     new go_chromaggus_lever();
     RegisterSpellScript(spell_gen_elemental_shield);
     RegisterSpellScript(spell_gen_brood_power);
+    RegisterSpellScript(chromaggus_spell_frostburn_custom);
 }

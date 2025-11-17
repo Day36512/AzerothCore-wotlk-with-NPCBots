@@ -21,39 +21,128 @@
 #include "SpellScriptLoader.h"
 #include "temple_of_ahnqiraj.h"
 
+#include "GridNotifiers.h"             
+#include "GridNotifiersImpl.h"
+#include "CellImpl.h"
+#include "bot_ai.h"
+
 enum Yells
 {
-    SAY_AGGRO                   = 0,
-    SAY_SLAY                    = 1,
-    SAY_SPLIT                   = 2,
-    SAY_DEATH                   = 3
+    SAY_AGGRO = 0,
+    SAY_SLAY = 1,
+    SAY_SPLIT = 2,
+    SAY_DEATH = 3
 };
 
 enum Spells
 {
-    SPELL_ARCANE_EXPLOSION      = 26192,
-    SPELL_EARTH_SHOCK           = 26194,
-    SPELL_TRUE_FULFILLMENT      = 785,
-    SPELL_INITIALIZE_IMAGE      = 3730,
-    SPELL_SUMMON_IMAGES         = 747,
-    SPELL_BIRTH                 = 34115
+    SPELL_ARCANE_EXPLOSION = 26192,
+    SPELL_EARTH_SHOCK = 26194,
+    SPELL_TRUE_FULFILLMENT = 785,    // Mind Control
+    SPELL_INITIALIZE_IMAGE = 3730,
+    SPELL_SUMMON_IMAGES = 747,
+    SPELL_BIRTH = 34115
 };
 
 enum Events
 {
-    EVENT_ARCANE_EXPLOSION      = 1,
-    EVENT_FULLFILMENT           = 2,
-    EVENT_BLINK                 = 3,
-    EVENT_EARTH_SHOCK           = 4,
-    EVENT_TELEPORT              = 5,
-    EVENT_INIT_IMAGE            = 6
+    EVENT_ARCANE_EXPLOSION = 1,
+    EVENT_FULLFILMENT = 2,      // (spelling as in original)
+    EVENT_BLINK = 3,
+    EVENT_EARTH_SHOCK = 4,
+    EVENT_TELEPORT = 5,
+    EVENT_INIT_IMAGE = 6
 };
 
-uint32 const BlinkSpells[3] = { 4801, 8195, 20449 };
+static uint32 const BlinkSpells[3] = { 4801, 8195, 20449 };
+
+static bool UseCycloneMode()
+{
+    static bool sUse = sConfigMgr->GetOption<bool>("TempleOfAQ.Skeram.UseCyclone", false);
+    return sUse;
+}
+
+static uint32 CycloneSpellId()
+{
+    static uint32 sId = sConfigMgr->GetOption<uint32>("TempleOfAQ.Skeram.CycloneSpell", 33786u);
+    return sId;
+}
+
+static uint32 CycloneMaxTargets()
+{
+    static uint32 sN = []()
+        {
+            uint32 v = sConfigMgr->GetOption<uint32>("TempleOfAQ.Skeram.CycloneCount", 3u);
+            if (v < 1u) v = 1u;
+            if (v > 5u) v = 5u; // sanity cap
+            return v;
+        }();
+    return sN;
+}
+
+static float CycloneRange()
+{
+    static float sR = sConfigMgr->GetOption<float>("TempleOfAQ.Skeram.CycloneRange", 100.0f);
+    return sR;
+}
+
+static inline bool IsUnitNPCBot(Unit* u)
+{
+    if (!u || u->GetTypeId() != TYPEID_UNIT)
+        return false;
+    if (Creature* c = u->ToCreature())
+        return c->IsNPCBot();
+    return false;
+}
+
+static void CollectCycloneTargets(Unit* center, float range, std::vector<Unit*>& out)
+{
+    out.clear();
+
+    std::list<Unit*> mem;
+    Acore::AnyUnitInObjectRangeCheck check(center, range);
+    Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(center, mem, check);
+    Cell::VisitObjects(center, searcher, range);
+
+    Unit* currentVictim = center ? center->GetVictim() : nullptr;
+
+    for (Unit* u : mem)
+    {
+        if (!u || !u->IsAlive())
+            continue;
+
+        if (u == currentVictim)
+            continue;
+
+        if (!(u->IsPlayer() || IsUnitNPCBot(u)))
+            continue;
+
+        if (IsUnitNPCBot(u))
+        {
+            if (Creature* bc = u->ToCreature())
+            {
+                if (bot_ai* bai = bc->GetBotAI())
+                {
+                    uint32 const roles = bai->GetBotRoles();
+                    if (bai->IsTank() || (roles & (BOT_ROLE_TANK | BOT_ROLE_TANK_OFF)))
+                        continue;
+                }
+            }
+        }
+
+        if (!center->IsHostileTo(u) || !center->IsValidAttackTarget(u))
+            continue;
+
+        if (!center->IsWithinLOSInMap(u))
+            continue;
+
+        out.push_back(u);
+    }
+}
 
 struct boss_skeram : public BossAI
 {
-    boss_skeram(Creature* creature) : BossAI(creature, DATA_SKERAM) { }
+    boss_skeram(Creature* creature) : BossAI(creature, DATA_SKERAM) {}
 
     void Reset() override
     {
@@ -89,8 +178,8 @@ struct boss_skeram : public BossAI
         else
             ImageHealthPct = 0.10f;
 
-        creature->SetMaxHealth(me->GetMaxHealth() * ImageHealthPct);
-        creature->SetHealth(creature->GetMaxHealth() * (me->GetHealthPct() / 100.0f));
+        creature->SetMaxHealth(uint32(me->GetMaxHealth() * ImageHealthPct));
+        creature->SetHealth(uint32(creature->GetMaxHealth() * (me->GetHealthPct() / 100.0f)));
 
         creature->CastSpell(creature, SPELL_BIRTH, true);
         creature->SetControlled(true, UNIT_STATE_ROOT);
@@ -102,7 +191,6 @@ struct boss_skeram : public BossAI
 
     void DoTeleport(Creature* creature)
     {
-        // Shift the boss and images (Get it? *Shift*?)
         uint8 rand = 0;
         if (_flag != 0)
         {
@@ -153,9 +241,7 @@ struct boss_skeram : public BossAI
         events.ScheduleEvent(EVENT_EARTH_SHOCK, 1200ms);
 
         if (!me->IsSummon())
-        {
             Talk(SAY_AGGRO);
-        }
     }
 
     void UpdateAI(uint32 diff) override
@@ -169,40 +255,63 @@ struct boss_skeram : public BossAI
         {
             switch (eventId)
             {
-                case EVENT_ARCANE_EXPLOSION:
-                    DoCastAOE(SPELL_ARCANE_EXPLOSION, false);
-                    events.ScheduleEvent(EVENT_ARCANE_EXPLOSION, 8s, 18s);
-                    break;
-                case EVENT_FULLFILMENT:
-                    DoCast(SelectTarget(SelectTargetMethod::MinDistance, 1, 0.0f, true), SPELL_TRUE_FULFILLMENT, false);
-                    events.ScheduleEvent(EVENT_FULLFILMENT, 20s, 30s);
-                    break;
-                case EVENT_BLINK:
-                    DoCast(me, BlinkSpells[urand(0, 2)]);
-                    DoResetThreatList();
-                    events.ScheduleEvent(EVENT_BLINK, 10s, 30s);
-                    break;
-                case EVENT_EARTH_SHOCK:
-                    DoCastVictim(SPELL_EARTH_SHOCK);
-                    events.ScheduleEvent(EVENT_EARTH_SHOCK, 1200ms);
-                    break;
-                case EVENT_TELEPORT:
-                    me->SetReactState(REACT_AGGRESSIVE);
-                    me->SetImmuneToAll(false);
-                    me->SetControlled(false, UNIT_STATE_ROOT);
-                    for (ObjectGuid const& guid : _copiesGUIDs)
+            case EVENT_ARCANE_EXPLOSION:
+                DoCastAOE(SPELL_ARCANE_EXPLOSION, false);
+                events.ScheduleEvent(EVENT_ARCANE_EXPLOSION, 8s, 18s);
+                break;
+
+            case EVENT_FULLFILMENT:
+            {
+                if (UseCycloneMode())
+                {
+                    std::vector<Unit*> pool;
+                    CollectCycloneTargets(me, CycloneRange(), pool);
+
+                    if (!pool.empty())
                     {
-                        if (Creature* image = ObjectAccessor::GetCreature(*me, guid))
-                        {
-                            DoTeleport(image);
-                        }
+                        uint32 wanted = std::min<uint32>(CycloneMaxTargets(), pool.size());
+                        Acore::Containers::RandomResize(pool, wanted);
+
+                        for (Unit* t : pool)
+                            me->CastSpell(t, CycloneSpellId(), false);
                     }
-                    DoResetThreatList();
-                    events.RescheduleEvent(EVENT_BLINK, 10s, 30s);
-                    break;
-                case EVENT_INIT_IMAGE:
-                    me->CastSpell(me, SPELL_INITIALIZE_IMAGE, true);
-                    break;
+                }
+                else
+                {
+                    // Original Mind Control behavior
+                    if (Unit* tgt = SelectTarget(SelectTargetMethod::MinDistance, 1, 0.0f, true))
+                        DoCast(tgt, SPELL_TRUE_FULFILLMENT, false);
+                }
+
+                events.ScheduleEvent(EVENT_FULLFILMENT, 20s, 30s);
+                break;
+            }
+
+            case EVENT_BLINK:
+                DoCast(me, BlinkSpells[urand(0, 2)]);
+                DoResetThreatList();
+                events.ScheduleEvent(EVENT_BLINK, 10s, 30s);
+                break;
+
+            case EVENT_EARTH_SHOCK:
+                DoCastVictim(SPELL_EARTH_SHOCK);
+                events.ScheduleEvent(EVENT_EARTH_SHOCK, 1200ms);
+                break;
+
+            case EVENT_TELEPORT:
+                me->SetReactState(REACT_AGGRESSIVE);
+                me->SetImmuneToAll(false);
+                me->SetControlled(false, UNIT_STATE_ROOT);
+                for (ObjectGuid const& guid : _copiesGUIDs)
+                    if (Creature* image = ObjectAccessor::GetCreature(*me, guid))
+                        DoTeleport(image);
+                DoResetThreatList();
+                events.RescheduleEvent(EVENT_BLINK, 10s, 30s);
+                break;
+
+            case EVENT_INIT_IMAGE:
+                me->CastSpell(me, SPELL_INITIALIZE_IMAGE, true);
+                break;
             }
         }
 
@@ -227,17 +336,15 @@ struct boss_skeram : public BossAI
                 if (Unit* victimTarget = myVictim->GetVictim())
                 {
                     if (victimTarget->GetGUID() == me->GetGUID())
-                    {
                         events.RescheduleEvent(EVENT_EARTH_SHOCK, 1200ms);
-                    }
                 }
             }
         }
     }
 
 private:
-    float _hpct;
-    uint8 _flag;
+    float _hpct{ 75.0f };
+    uint8 _flag{ 0 };
     GuidVector _copiesGUIDs;
 };
 

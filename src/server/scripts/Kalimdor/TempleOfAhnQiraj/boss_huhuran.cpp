@@ -158,10 +158,69 @@ class spell_huhuran_wyvern_sting : public AuraScript
 };
 
 // 26052 - Poison Bolt
-// 26180 - Wyvern Sting
 class spell_huhuran_poison_bolt : public SpellScript
 {
     PrepareSpellScript(spell_huhuran_poison_bolt);
+
+    // Config accessor (cached) for Poison Bolt damage multiplier
+    static float GetPoisonBoltMultiplier()
+    {
+        static float sMult = []() -> float
+            {
+                float v = sConfigMgr->GetOption<float>("TempleOfAQ.Huhuran.PoisonBolt.Multiplier", 1.0f);
+                if (v < 0.0f) v = 0.0f; // no negative damage
+                return v;
+            }();
+        return sMult;
+    }
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        uint32 const maxTargets = GetSpellInfo()->MaxAffectedTargets;
+        if (targets.size() > maxTargets)
+        {
+            targets.sort(Acore::ObjectDistanceOrderPred(GetCaster()));
+            targets.resize(maxTargets);
+        }
+    }
+
+    // Scale effect_0 hit damage for Poison Bolt only.
+    void ScaleE0Damage(SpellEffIndex /*effIndex*/)
+    {
+        if (GetSpellInfo()->Id != 26052) // Poison Bolt only; leave Wyvern Sting untouched
+            return;
+
+        int32 dmg = GetHitDamage();
+        if (dmg <= 0)
+            return;
+
+        float mult = GetPoisonBoltMultiplier();
+        if (mult == 1.0f)
+            return;
+
+        double scaled = double(dmg) * double(mult);
+        if (scaled > double(std::numeric_limits<int32>::max()))
+            scaled = double(std::numeric_limits<int32>::max());
+        if (scaled < double(std::numeric_limits<int32>::min()))
+            scaled = double(std::numeric_limits<int32>::min());
+
+        SetHitDamage(int32(scaled));
+    }
+
+    void Register() override
+    {
+        // Keep your target cap behavior
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_huhuran_poison_bolt::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+
+        // Crucial change: scale damage at the EFFECT_0 hit point
+        OnEffectHitTarget += SpellEffectFn(spell_huhuran_poison_bolt::ScaleE0Damage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+    }
+};
+
+// 26180 - Wyvern Sting
+class spell_huhuran_wyvern_sting_two : public SpellScript
+{
+    PrepareSpellScript(spell_huhuran_wyvern_sting_two);
 
     void FilterTargets(std::list<WorldObject*>& targets)
     {
@@ -175,7 +234,7 @@ class spell_huhuran_poison_bolt : public SpellScript
 
     void Register() override
     {
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_huhuran_poison_bolt::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_huhuran_wyvern_sting_two::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
     }
 };
 
@@ -184,4 +243,5 @@ void AddSC_boss_huhuran()
     RegisterTempleOfAhnQirajCreatureAI(boss_huhuran);
     RegisterSpellScript(spell_huhuran_wyvern_sting);
     RegisterSpellScript(spell_huhuran_poison_bolt);
+    RegisterSpellScript(spell_huhuran_wyvern_sting_two);
 }

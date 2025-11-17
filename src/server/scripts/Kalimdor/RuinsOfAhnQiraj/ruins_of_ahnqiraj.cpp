@@ -50,10 +50,10 @@ struct npc_hivezara_stinger : public ScriptedAI
 
         scheduler.Schedule(5s, [this](TaskContext context)
         {
-            Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 20.0f, true, false, SPELL_HIVEZARA_CATALYST);
+            Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 20.0f, false, false, SPELL_HIVEZARA_CATALYST);
             if (!target)
             {
-                target = SelectTarget(SelectTargetMethod::Random, 0, 20.0f, true, false);
+                target = SelectTarget(SelectTargetMethod::Random, 0, 20.0f, false, false);
             }
 
             if (target)

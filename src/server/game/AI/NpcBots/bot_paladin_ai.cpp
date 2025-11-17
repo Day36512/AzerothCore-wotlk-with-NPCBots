@@ -24,7 +24,7 @@ enum PaladinBaseSpells// all orignals
     LAY_ON_HANDS_1                      = 633,
     REDEMPTION_1                        = 7328,
     HAND_OF_FREEDOM_1                   = 1044,
-    SACRED_SHIELD_1                     = 53601,
+    SACRED_SHIELD_1                     = 300366, // New Rank 1
     HOLY_SHOCK_1                        = 20473,
     CLEANSE_1                           = 4987,
     HAND_OF_PROTECTION_1                = 1022,
@@ -58,7 +58,7 @@ enum PaladinBaseSpells// all orignals
     HOLY_SHIELD_1                       = 20925,
     AVENGERS_SHIELD_1                   = 31935,
     HAMMER_OF_THE_RIGHTEOUS_1           = 53595,
-    SHIELD_OF_RIGHTEOUSNESS_1           = 53600,
+    SHIELD_OF_RIGHTEOUSNESS_1           = 300365, //New Rank 1
     BLESSING_OF_MIGHT_1                 = 19740,
     BLESSING_OF_WISDOM_1                = 19742,
     BLESSING_OF_KINGS_1                 = 20217,
@@ -186,8 +186,9 @@ enum PaladinSpecial
     ARDENT_DEFENDER_HEAL                = 66235,
     JUDGEMENT_OF_COMMAND_DAMAGE         = 20467,
     SPIRITUAL_ATTUNEMENT_ENERGIZE       = 31786,
-    SACRED_SHIELD_AURA_TRIGGERED        = 58597,
-
+    SACRED_SHIELD_AURA_R1               = 300368, // lvl 58+
+    SACRED_SHIELD_AURA_R2               = 300369, // lvl 68+
+    SACRED_SHIELD_AURA_R3               = 58597,  // lvl 80
     AVENGING_WRATH_MARKER_SPELL         = 61987,
     IMMUNITY_SHIELD_MARKER_SPELL        = 61988,
 
@@ -2109,16 +2110,32 @@ public:
                     bless->SetMaxDuration(dur);
                 }
             }
-            if (baseId == SACRED_SHIELD_AURA_TRIGGERED || baseId == SACRED_SHIELD_1)
+            if (baseId == SACRED_SHIELD_1 ||
+                baseId == SACRED_SHIELD_AURA_R1 || baseId == SACRED_SHIELD_AURA_R2 || baseId == SACRED_SHIELD_AURA_R3)
             {
-                //Divine Guardian (part 2): 20% increased absorb, +100% duration
+                // Choose the expected aura base for the paladin's level
+                uint32 expectedAuraBase =
+                    (lvl >= 80) ? SACRED_SHIELD_AURA_R3 :
+                    (lvl >= 68) ? SACRED_SHIELD_AURA_R2 :
+                    SACRED_SHIELD_AURA_R1;
+
+                // Try to grab whatever rank just landed, and fall back to our expected base
                 Aura* shi = target->GetAura(spellId, me->GetGUID());
+                if (!shi)
+                    shi = target->GetAura(expectedAuraBase, me->GetGUID());
+
                 if (shi)
                 {
+                    // Divine Guardian (part 2): +100% duration for every Sacred Shield rank
                     uint32 dur = shi->GetDuration() * 2;
                     shi->SetDuration(dur);
                     shi->SetMaxDuration(dur);
-                    if (baseId == SACRED_SHIELD_AURA_TRIGGERED)
+
+                    // And +20% absorb when the *triggered Sacred Shield aura* is what's being processed,
+                    // regardless of which rank (R1/R2/R3) is active.
+                    if (baseId == SACRED_SHIELD_AURA_R1 ||
+                        baseId == SACRED_SHIELD_AURA_R2 ||
+                        baseId == SACRED_SHIELD_AURA_R3)
                     {
                         if (AuraEffect* eff = shi->GetEffect(EFFECT_0))
                             eff->ChangeAmount(eff->GetAmount() * 6 / 5);
@@ -2354,13 +2371,13 @@ public:
   /*Talent*/lvl >= (isProt ? 20 : isHoly ? 70 : 99) ? InitSpellMap(DIVINE_SACRIFICE_1) : RemoveSpell(DIVINE_SACRIFICE_1);
   /*Talent*/lvl >= 30 && isProt ? InitSpellMap(BLESSING_OF_SANCTUARY_1) : RemoveSpell(BLESSING_OF_SANCTUARY_1);
   /*Talent*/lvl >= 40 && isProt ? InitSpellMap(HOLY_SHIELD_1) : RemoveSpell(HOLY_SHIELD_1);
-  /*Talent*/lvl >= 50 && isProt ? InitSpellMap(AVENGERS_SHIELD_1) : RemoveSpell(AVENGERS_SHIELD_1);
-  /*Talent*/lvl >= 60 && isProt ? InitSpellMap(HAMMER_OF_THE_RIGHTEOUS_1) : RemoveSpell(HAMMER_OF_THE_RIGHTEOUS_1);
+  /*Talent*/lvl >= 45 && isProt ? InitSpellMap(AVENGERS_SHIELD_1) : RemoveSpell(AVENGERS_SHIELD_1);
+  /*Talent*/lvl >= 50 && isProt ? InitSpellMap(HAMMER_OF_THE_RIGHTEOUS_1) : RemoveSpell(HAMMER_OF_THE_RIGHTEOUS_1);
 
   /*Talent*/lvl >= 20 && isRetr ? InitSpellMap(SEAL_OF_COMMAND_1) : RemoveSpell(SEAL_OF_COMMAND_1);
   /*Talent*/lvl >= 40 && isRetr ? InitSpellMap(REPENTANCE_1) : RemoveSpell(REPENTANCE_1);
-  /*Talent*/lvl >= 50 && isRetr ? InitSpellMap(CRUSADER_STRIKE_1) : RemoveSpell(CRUSADER_STRIKE_1);
-  /*Talent*/lvl >= 60 && isRetr ? InitSpellMap(DIVINE_STORM_1) : RemoveSpell(DIVINE_STORM_1);
+  /*Talent*/lvl >= 10 && isRetr ? InitSpellMap(CRUSADER_STRIKE_1) : RemoveSpell(CRUSADER_STRIKE_1);
+  /*Talent*/lvl >= 50 && isRetr ? InitSpellMap(DIVINE_STORM_1) : RemoveSpell(DIVINE_STORM_1);
 
             CLEANSE = InitSpell(me, CLEANSE_1) ? CLEANSE_1 : PURIFY_1;
             RemoveSpell(CLEANSE_1);

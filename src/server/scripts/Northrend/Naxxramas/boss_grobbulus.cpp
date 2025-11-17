@@ -23,16 +23,23 @@
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "naxxramas.h"
+#include <cmath>
+#include <chrono>
+#include <vector>
+#include <limits>
+#include <unordered_map>
+
+ // NPCBots
+#include "botmgr.h"
+#include "bot_ai.h"
 
 enum Spells
 {
     SPELL_POISON_CLOUD                      = 28240,
     SPELL_MUTATING_INJECTION                = 28169,
     SPELL_MUTATING_EXPLOSION                = 28206,
-    SPELL_SLIME_SPRAY_10                    = 28157,
-    SPELL_SLIME_SPRAY_25                    = 54364,
-    SPELL_POISON_CLOUD_DAMAGE_AURA_10       = 28158,
-    SPELL_POISON_CLOUD_DAMAGE_AURA_25       = 54362,
+    SPELL_SLIME_SPRAY                       = 28157,
+    SPELL_POISON_CLOUD_DAMAGE_AURA          = 28158,
     SPELL_BERSERK                           = 26662,
     SPELL_BOMBARD_SLIME                     = 28280
 };
@@ -105,14 +112,6 @@ public:
             events.ScheduleEvent(EVENT_BERSERK, RAID_MODE(720s, 540s));
         }
 
-        void SpellHitTarget(Unit* target, SpellInfo const* spellInfo) override
-        {
-            if (spellInfo->Id == RAID_MODE(SPELL_SLIME_SPRAY_10, SPELL_SLIME_SPRAY_25) && target->IsPlayer())
-            {
-                me->SummonCreature(NPC_FALLOUT_SLIME, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
-            }
-        }
-
         void JustSummoned(Creature* cr) override
         {
             if (cr->GetEntry() == NPC_FALLOUT_SLIME)
@@ -169,7 +168,7 @@ public:
                     break;
                 case EVENT_SLIME_SPRAY:
                     Talk(EMOTE_SLIME);
-                    me->CastSpell(me->GetVictim(), RAID_MODE(SPELL_SLIME_SPRAY_10, SPELL_SLIME_SPRAY_25), false);
+                    me->CastSpell(me->GetVictim(), SPELL_SLIME_SPRAY, false);
                     events.Repeat(20s);
                     break;
                 case EVENT_MUTATING_INJECTION:
@@ -223,7 +222,7 @@ public:
                 auraVisualTimer += diff;
                 if (auraVisualTimer >= 1000)
                 {
-                    me->CastSpell(me, (me->GetMap()->Is25ManRaid() ? SPELL_POISON_CLOUD_DAMAGE_AURA_25 : SPELL_POISON_CLOUD_DAMAGE_AURA_10), true);
+                    me->CastSpell(me, SPELL_POISON_CLOUD_DAMAGE_AURA, true);
                     auraVisualTimer = 0;
                 }
             }
@@ -291,10 +290,268 @@ class spell_grobbulus_mutating_injection_aura : public AuraScript
     }
 };
 
+using namespace std::chrono_literals;
+
+namespace GrobDirector
+{
+    // -------------------------------------------------------
+    // Map / Spells (Slime Spray 10/25)
+    // -------------------------------------------------------
+    constexpr uint32 MAP_NAXX = 533;
+    constexpr uint32 SPELL_SLIME_10 = 28157;
+    constexpr uint32 SPELL_SLIME_25 = 54364;
+
+    inline bool IsOurSpray(uint32 id) { return id == SPELL_SLIME_10 || id == SPELL_SLIME_25; }
+
+    // -------------------------------------------------------
+    // Movement tuning – ONE segment per spray (clockwise)
+    // -------------------------------------------------------
+    constexpr int   kSubStepsPerSegment = 3;       // micro-steps within the single segment
+    constexpr auto  kStepPeriod = 700ms;   // 3 sub-steps * 0.5s ≈ 1.5s per spray movement
+    constexpr float kMaxMoveDistance = 80.0f;   // sanity guard for MoveToSendPosition
+    constexpr float kMinAdvanceDist = 1.5f;    // if next point is closer than this, skip to the next one again
+
+    // -----------------------
+    // Helpers
+    // -----------------------
+    inline float Dist2D(Position const& a, Position const& b)
+    {
+        float dx = a.GetPositionX() - b.GetPositionX();
+        float dy = a.GetPositionY() - b.GetPositionY();
+        return std::sqrt(dx * dx + dy * dy);
+    }
+
+    inline Position Lerp(Position const& a, Position const& b, float t)
+    {
+        Position out;
+        out.Relocate(a.GetPositionX() + (b.GetPositionX() - a.GetPositionX()) * t,
+            a.GetPositionY() + (b.GetPositionY() - a.GetPositionY()) * t,
+            a.GetPositionZ() + (b.GetPositionZ() - a.GetPositionZ()) * t,
+            0.0f);
+        return out;
+    }
+
+    inline bool IsNPCTankBot(Creature* c)
+    {
+        if (!c || !c->IsAlive() || !c->IsNPCBot())
+            return false;
+        if (bot_ai* ai = c->GetBotAI())
+            return ai->HasRole(BOT_ROLE_TANK);
+        return false;
+    }
+
+    inline void SafeMoveBotTo(Creature* bot, Position const& dest)
+    {
+        if (!bot || !bot->IsAlive())
+            return;
+
+        float x = dest.GetPositionX();
+        float y = dest.GetPositionY();
+        float z = dest.GetPositionZ();
+        if (!bot->CanFly())
+            bot->UpdateAllowedPositionZ(x, y, z); // see Creature/Unit movement helpers
+
+        Position finalPos;
+        finalPos.Relocate(x, y, z, 0.0f);
+
+        if (finalPos.GetExactDist(*bot) > kMaxMoveDistance)
+            return;
+
+        if (bot_ai* ai = bot->GetBotAI())
+            ai->MoveToSendPosition(finalPos);
+    }
+
+    // -----------------------
+    // Waypoint source: REQUIRED DB table (no fallback)
+    // Table: custom_grobbulus_edge_points(idx INT PK, x FLOAT, y FLOAT, z FLOAT), ordered CCW.
+    // We traverse CLOCKWISE by decrementing index with wrap.
+    // -----------------------
+    struct EdgeCache
+    {
+        std::vector<Position> pts;
+        bool loaded = false;
+
+        void EnsureLoaded()
+        {
+            if (loaded)
+                return;
+            loaded = true;
+            pts.clear();
+
+            if (QueryResult res = WorldDatabase.Query(
+                "SELECT `x`,`y`,`z` FROM `custom_grobbulus_edge_points` ORDER BY `idx` ASC"))
+            {
+                do
+                {
+                    Field* f = res->Fetch();
+                    float x = f[0].Get<float>();
+                    float y = f[1].Get<float>();
+                    float z = f[2].Get<float>();
+                    Position p; p.Relocate(x, y, z, 0.0f);
+                    pts.push_back(p);
+                } while (res->NextRow());
+            }
+
+            if (pts.size() < 3)
+            {
+                LOG_ERROR("npcbots.grobbulus",
+                    "Director: perimeter table `custom_grobbulus_edge_points` returned < 3 points. Movement disabled.");
+            }
+            else
+            {
+                LOG_INFO("npcbots.grobbulus", "Director: loaded perimeter (%zu points) from DB.", pts.size());
+            }
+        }
+
+        int FindNearestIndex(Position const& from) const
+        {
+            float best = std::numeric_limits<float>::max();
+            int   idx = 0;
+            for (int i = 0; i < static_cast<int>(pts.size()); ++i)
+            {
+                float d = Dist2D(from, pts[i]);
+                if (d < best)
+                {
+                    best = d;
+                    idx = i;
+                }
+            }
+            return idx;
+        }
+    };
+
+    static EdgeCache g_edge;
+
+    // Persist progress per boss across casts (map-thread only usage).
+    static std::unordered_map<ObjectGuid::LowType, int> g_lastIndex;
+
+    inline int GetBossKey(Creature* boss)
+    {
+        // Use Low GUID counter as the key; stable for lifetime of the creature.
+        return static_cast<int>(boss->GetGUID().GetCounter());
+    }
+
+    // Decide the "from" index: first time -> nearest; thereafter -> last stored.
+    inline int ResolveFromIndex(Creature* boss, Creature* bot)
+    {
+        int N = static_cast<int>(g_edge.pts.size());
+        if (N < 3)
+            return 0;
+
+        int key = GetBossKey(boss);
+        auto it = g_lastIndex.find(key);
+        if (it != g_lastIndex.end())
+            return it->second % N;
+
+        // First time for this boss: snap to nearest edge point to the bot
+        return g_edge.FindNearestIndex(bot->GetPosition());
+    }
+
+    // Compute the next clockwise index, with a tiny-distance guard to avoid puddle stacking.
+    inline int ComputeNextIndex(int fromIdx, int N, Position const& botPos)
+    {
+        int toIdx = (fromIdx - 1 + N) % N;
+        if (Dist2D(botPos, g_edge.pts[toIdx]) < kMinAdvanceDist)
+            toIdx = (toIdx - 1 + N) % N; // skip one more if we’re basically already there
+        return toIdx;
+    }
+
+    // Schedule movement along ONE segment (from -> to) with micro-steps.
+    inline void ScheduleAdvanceOneSegment(Creature* bot, int fromIdx, int toIdx)
+    {
+        if (!bot || !bot->IsInWorld())
+            return;
+
+        Position from = g_edge.pts[fromIdx];
+        Position to = g_edge.pts[toIdx];
+
+        for (int s = 1; s <= kSubStepsPerSegment; ++s)
+        {
+            float t = float(s) / float(kSubStepsPerSegment);
+            Position stepPos = Lerp(from, to, t);
+
+            auto at = kStepPeriod * s;
+            bot->m_Events.AddEventAtOffset([bot, stepPos]()
+                {
+                    if (!bot || !bot->IsAlive() || !bot->IsInWorld())
+                        return;
+                    SafeMoveBotTo(bot, stepPos);
+                }, at);
+        }
+    }
+} // namespace GrobDirector
+
+// Spell hook: BEFORE CAST of Slime Spray → move tank bot ONE waypoint clockwise (persist progress)
+class spell_grobbulus_slime_spray_director : public SpellScript
+{
+    PrepareSpellScript(spell_grobbulus_slime_spray_director);
+
+    void HandleBeforeCast()
+    {
+        Unit* caster = GetCaster();
+        if (!caster || caster->GetMapId() != GrobDirector::MAP_NAXX)
+            return;
+
+        uint32 spellId = GetSpellInfo() ? GetSpellInfo()->Id : 0;
+        if (!GrobDirector::IsOurSpray(spellId))
+            return;
+
+        Creature* boss = caster->ToCreature();
+        if (!boss || !boss->IsAlive())
+            return;
+
+        Unit* victim = boss->GetVictim();
+        Creature* botTank = victim ? victim->ToCreature() : nullptr;
+        if (!GrobDirector::IsNPCTankBot(botTank))
+            return;
+
+        GrobDirector::g_edge.EnsureLoaded();
+        int N = static_cast<int>(GrobDirector::g_edge.pts.size());
+        if (N < 3)
+            return;
+
+        // Resolve from-index (persisted per boss), then compute next clockwise index.
+        int fromIdx = GrobDirector::ResolveFromIndex(boss, botTank);
+        int toIdx = GrobDirector::ComputeNextIndex(fromIdx, N, botTank->GetPosition());
+
+        // Store progress for the next spray.
+        GrobDirector::g_lastIndex[GrobDirector::GetBossKey(boss)] = toIdx;
+
+        LOG_INFO("npcbots.grobbulus",
+            "Director: BEFORE CAST Slime Spray -> bot [{}] fromIdx={} toIdx={} (N={})",
+            botTank->GetGUID().ToString().c_str(), fromIdx, toIdx, N);
+
+        // Schedule the single advance with micro-steps.
+        GrobDirector::ScheduleAdvanceOneSegment(botTank, fromIdx, toIdx);
+    }
+
+    void HandleHit()
+    {
+        if (Unit* caster = GetCaster())
+        {
+            if (Map* map = caster->GetMap())
+            {
+                if (map->IsRaid() && map->IsHeroic() && !map->Is25ManRaid())
+                    return;
+            }
+
+            if (Unit* target = GetHitUnit())
+                caster->SummonCreature(NPC_FALLOUT_SLIME, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
+        }
+    }
+
+    void Register() override
+    {
+        BeforeCast += SpellCastFn(spell_grobbulus_slime_spray_director::HandleBeforeCast);
+        OnHit += SpellHitFn(spell_grobbulus_slime_spray_director::HandleHit);
+    }
+};
+
 void AddSC_boss_grobbulus()
 {
     new boss_grobbulus();
     new boss_grobbulus_poison_cloud();
     RegisterSpellScript(spell_grobbulus_mutating_injection_aura);
     RegisterSpellScript(spell_grobbulus_poison);
+    RegisterSpellScript(spell_grobbulus_slime_spray_director);
 }

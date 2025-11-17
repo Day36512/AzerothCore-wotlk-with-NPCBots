@@ -24,7 +24,10 @@
 #include "temple_of_ahnqiraj.h"
 #include "Config.h"
 
-    enum Spells
+ // NPCBots (module)
+#include "botmgr.h" // Player::GetBotMgr(), BotMgr::GetBotMap()
+
+enum Spells
 {
     // Both
     SPELL_TWIN_EMPATHY = 1177,
@@ -32,6 +35,7 @@
     SPELL_TWIN_TELEPORT_VISUAL = 26638,
     SPELL_HEAL_BROTHER = 7393,
     SPELL_TWIN_ENRAGE = 300284,
+
     // Vek'lor
     SPELL_SHADOW_BOLT = 26006,
     SPELL_BLIZZARD = 26607,
@@ -39,13 +43,18 @@
     SPELL_ARCANE_BURST = 568,
     SPELL_EXPLODE_BUG = 804,
     SPELL_TWIN_TELEPORT_0 = 799,
+
     // Vek'nilash
     SPELL_UPPERCUT = 26007,
     SPELL_UNBALANCING_STRIKE = 26613,
     SPELL_BERSERK = 27680,
     SPELL_MUTATE_BUG = 802,
+
     // Bugs
-    SPELL_VIRULENT_POISON_PROC = 22413
+    SPELL_VIRULENT_POISON_PROC = 22413,
+
+    // Your request: Nitro Boosts
+    SPELL_NITRO_BOOSTS = 300360
 };
 
 enum Actions
@@ -85,6 +94,61 @@ enum Misc
 
 constexpr float veklorOrientationIntro = 2.241519f;
 constexpr float veknilashOrientationIntro = 1.144451f;
+
+// Helper: burst Nitro Boosts on all NPCBots near 'me'
+static void CastNitroOnNearbyBots(Creature* me)
+{
+    if (!me)
+        return;
+
+    // Config, but defaults satisfy your request exactly.
+    const bool  enable = sConfigMgr->GetOption<bool>("NpcBot.AQ40Twins.TeleportNitro.Enable", true);
+    if (!enable)
+        return;
+
+    const float radius = sConfigMgr->GetOption<float>("NpcBot.AQ40Twins.TeleportNitro.Radius", 150.0f);
+    uint32      spellId = sConfigMgr->GetOption<uint32>("NpcBot.AQ40Twins.TeleportNitro.SpellId", uint32(SPELL_NITRO_BOOSTS));
+
+    Map* map = me->GetMap();
+    if (!map)
+        return;
+
+    // Iterate players in the instance; for each, walk their bot map.
+    Map::PlayerList const& players = map->GetPlayers();
+    for (auto const& it : players)
+    {
+        Player* plr = it.GetSource();
+        if (!plr || !plr->IsInWorld() || !plr->HaveBot())
+            continue;
+
+        BotMgr* mgr = plr->GetBotMgr();
+        if (!mgr)
+            continue;
+
+        auto const* botMap = mgr->GetBotMap();
+        if (!botMap)
+            continue;
+
+        for (auto const& kv : *botMap)
+        {
+            Creature* bot = kv.second;
+            if (!bot || !bot->IsInWorld() || !bot->IsAlive())
+                continue;
+
+            if (bot->GetMapId() != me->GetMapId())
+                continue;
+
+            if (bot->GetExactDist2d(me) > radius)
+                continue;
+
+            // Don’t double-apply if both twins fire this around the same tick
+            if (bot->HasAura(spellId))
+                continue;
+
+            bot->CastSpell(bot, spellId, true);
+        }
+    }
+}
 
 struct boss_twinemperorsAI : public BossAI
 {
@@ -165,6 +229,9 @@ struct boss_twinemperorsAI : public BossAI
             me->SetReactState(REACT_PASSIVE);
             me->SetControlled(true, UNIT_STATE_ROOT);
             DoCastSelf(SPELL_TWIN_TELEPORT_VISUAL, true);
+
+            // >>> Your request: burst Nitro Boosts to nearby NPCBots <<<
+            CastNitroOnNearbyBots(me);
 
             // Wake up after the configured freeze time
             scheduler.Schedule(Milliseconds(freezeMs), [this, snapThreat](TaskContext /*context*/)
@@ -277,7 +344,7 @@ struct boss_twinemperorsAI : public BossAI
 
                     // Range: prefer LinkRange if present; fall back to HealRange for backward compatibility
                     const float linkRange = sConfigMgr->GetOption<float>(
-                        "TwinEmperors.LinkRange",
+                        "TwinEmperors.HealRange",
                         sConfigMgr->GetOption<float>("TwinEmperors.HealRange", 60.0f)
                     );
 
@@ -287,7 +354,6 @@ struct boss_twinemperorsAI : public BossAI
                         {
                             if (mode0 == 'e') // "enrage" mode
                             {
-                                // Apply/stack enrage on BOTH twins. Stacking/refresh handled by spell data.
                                 me->CastSpell(me, SPELL_TWIN_ENRAGE, true);
                                 twin->CastSpell(twin, SPELL_TWIN_ENRAGE, true);
                             }

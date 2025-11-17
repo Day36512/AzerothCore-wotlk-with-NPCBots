@@ -70,119 +70,119 @@ enum Says
 {
     // Nefarius
     // UBRS
-    SAY_CHAOS_SPELL            = 9,
-    SAY_SUCCESS                = 10,
-    SAY_FAILURE                = 11,
+    SAY_CHAOS_SPELL = 9,
+    SAY_SUCCESS = 10,
+    SAY_FAILURE = 11,
     // BWL
-    SAY_GAMESBEGIN_1           = 12,
-    SAY_GAMESBEGIN_2           = 13,
+    SAY_GAMESBEGIN_1 = 12,
+    SAY_GAMESBEGIN_2 = 13,
 
     // Nefarian
-    SAY_INTRO                  = 0,
-    SAY_RAISE_SKELETONS        = 1,
-    SAY_SLAY                   = 2,
-    SAY_DEATH                  = 3,
-    SAY_XHEALTH                = 14,
-    SAY_SHADOWFLAME            = 15,
+    SAY_INTRO = 0,
+    SAY_RAISE_SKELETONS = 1,
+    SAY_SLAY = 2,
+    SAY_DEATH = 3,
+    SAY_XHEALTH = 14,
+    SAY_SHADOWFLAME = 15,
 
-    SAY_MAGE                   = 4,
-    SAY_WARRIOR                = 5,
-    SAY_DRUID                  = 6,
-    SAY_PRIEST                 = 7,
-    SAY_PALADIN                = 8,
-    SAY_SHAMAN                 = 9,
-    SAY_WARLOCK                = 10,
-    SAY_HUNTER                 = 11,
-    SAY_ROGUE                  = 12,
-    SAY_DEATH_KNIGHT           = 13
+    SAY_MAGE = 4,
+    SAY_WARRIOR = 5,
+    SAY_DRUID = 6,
+    SAY_PRIEST = 7,
+    SAY_PALADIN = 8,
+    SAY_SHAMAN = 9,
+    SAY_WARLOCK = 10,
+    SAY_HUNTER = 11,
+    SAY_ROGUE = 12,
+    SAY_DEATH_KNIGHT = 13
 };
 
 enum Gossip
 {
-    GOSSIP_ID                   = 21332,
-    GOSSIP_OPTION_ID            = 0
+    GOSSIP_ID = 21332,
+    GOSSIP_OPTION_ID = 0
 };
 
 enum Paths
 {
-    NEFARIUS_PATH_2            = 1379671,
-    NEFARIUS_PATH_3            = 1379672,
-    NEFARIAN_PATH              = 11583
+    NEFARIUS_PATH_2 = 1379671,
+    NEFARIUS_PATH_3 = 1379672,
+    NEFARIAN_PATH = 11583
 };
 
 enum GameObjects
 {
-    GO_DRAKONID_BONES          = 179804,
-    GO_PORTCULLIS_ACTIVE       = 164726,
-    GO_PORTCULLIS_TOBOSSROOMS  = 175186
+    GO_DRAKONID_BONES = 179804,
+    GO_PORTCULLIS_ACTIVE = 164726,
+    GO_PORTCULLIS_TOBOSSROOMS = 175186
 };
 
 enum Creatures
 {
-    NPC_TOTEM_C_FIRE_NOVA      = 14662,
-    NPC_TOTEM_C_STONESKIN      = 14663,
-    NPC_TOTEM_C_HEALING        = 14664,
-    NPC_TOTEM_C_WINDFURY       = 14666,
+    NPC_TOTEM_C_FIRE_NOVA = 14662,
+    NPC_TOTEM_C_STONESKIN = 14663,
+    NPC_TOTEM_C_HEALING = 14664,
+    NPC_TOTEM_C_WINDFURY = 14666,
     // UBRS
-    NPC_GYTH                   = 10339
+    NPC_GYTH = 10339
 };
 
 enum Spells
 {
     // Victor Nefarius
     // UBRS Spells
-    SPELL_CHROMATIC_CHAOS           = 16337, // Self Cast hits 10339
-    SPELL_VAELASTRASZZ_SPAWN        = 16354, // Self Cast Depawn one sec after
+    SPELL_CHROMATIC_CHAOS = 16337, // Self Cast hits 10339
+    SPELL_VAELASTRASZZ_SPAWN = 16354, // Self Cast Depawn one sec after
     // BWL Spells
-    SPELL_SHADOWBOLT                = 22677,
-    SPELL_SHADOWBOLT_VOLLEY         = 22665,
-    SPELL_SILENCE                   = 22666,
-    SPELL_SHADOW_COMMAND            = 22667,
-    SPELL_FEAR                      = 22678,
-    SPELL_SHADOWBLINK               = 22664,
-    SPELL_RAISE_DRAKONID            = 23362,
-    SPELL_SUMMON_DRAKONID_CORPSE    = 23363,
+    SPELL_SHADOWBOLT = 22677,
+    SPELL_SHADOWBOLT_VOLLEY = 22665,
+    SPELL_SILENCE = 22666,
+    SPELL_SHADOW_COMMAND = 22667,
+    SPELL_FEAR = 22678,
+    SPELL_SHADOWBLINK = 22664,
+    SPELL_RAISE_DRAKONID = 23362,
+    SPELL_SUMMON_DRAKONID_CORPSE = 23363,
 
-    SPELL_NEFARIANS_BARRIER         = 22663,
+    SPELL_NEFARIANS_BARRIER = 22663,
 
     // Drakonid Spawner
-    SPELL_SPAWN_BLACK_DRAKONID      = 22654,
-    SPELL_SPAWN_RED_DRAKONID        = 22655,
-    SPELL_SPAWN_GREEN_DRAKONID      = 22656,
-    SPELL_SPAWN_BRONZE_DRAKONID     = 22657,
-    SPELL_SPAWN_BLUE_DRAKONID       = 22658,
-    SPELL_SPAWN_CHROMATIC_DRAKONID  = 22680,
-    SPELL_SPAWN_DRAKONID_GEN        = 22653,
+    SPELL_SPAWN_BLACK_DRAKONID = 22654,
+    SPELL_SPAWN_RED_DRAKONID = 22655,
+    SPELL_SPAWN_GREEN_DRAKONID = 22656,
+    SPELL_SPAWN_BRONZE_DRAKONID = 22657,
+    SPELL_SPAWN_BLUE_DRAKONID = 22658,
+    SPELL_SPAWN_CHROMATIC_DRAKONID = 22680,
+    SPELL_SPAWN_DRAKONID_GEN = 22653,
 
     // Nefarian
-    SPELL_SHADOWFLAME_INITIAL       = 22992,
-    SPELL_SHADOWFLAME               = 22539,
-    SPELL_BELLOWINGROAR             = 22686,
-    SPELL_VEILOFSHADOW              = 22687,
-    SPELL_CLEAVE                    = 20691,
-    SPELL_TAILLASH                  = 23364,
+    SPELL_SHADOWFLAME_INITIAL = 22992,
+    SPELL_SHADOWFLAME = 22539,
+    SPELL_BELLOWINGROAR = 22686,
+    SPELL_VEILOFSHADOW = 22687,
+    SPELL_CLEAVE = 20691,
+    SPELL_TAILLASH = 23364,
 
-    SPELL_MAGE                      = 23410,     // wild magic
-    SPELL_WARRIOR                   = 23397,     // beserk
-    SPELL_DRUID                     = 23398,     // cat form
-    SPELL_PRIEST                    = 23401,     // corrupted healing
-    SPELL_PALADIN                   = 23418,     // siphon blessing
-    SPELL_SHAMAN                    = 23425,     // totems
-    SPELL_WARLOCK                   = 23427,     // infernals
-    SPELL_HUNTER                    = 23436,     // bow broke
-    SPELL_ROGUE                     = 23414,     // Paralise
-    SPELL_DEATH_KNIGHT              = 49576,     // Death Grip
-    SPELL_ROOT_SELF                 = 17507,
+    SPELL_MAGE = 23410,     // wild magic
+    SPELL_WARRIOR = 23397,     // beserk
+    SPELL_DRUID = 23398,     // cat form
+    SPELL_PRIEST = 23401,     // corrupted healing
+    SPELL_PALADIN = 23418,     // siphon blessing
+    SPELL_SHAMAN = 23425,     // totems
+    SPELL_WARLOCK = 23427,     // infernals
+    SPELL_HUNTER = 23436,     // bow broke
+    SPELL_ROGUE = 23414,     // Paralise
+    SPELL_DEATH_KNIGHT = 49576,     // Death Grip
+    SPELL_ROOT_SELF = 17507,
 
     // Class Call effects
-    SPELL_POLYMORPH                 = 23603,
-    SPELL_BLESSING_PROTECTION       = 23415,
-    SPELL_SUMMON_INFERNALS          = 23426,
-    SPELL_WARRIOR_BERSERK           = 2458,
+    SPELL_POLYMORPH = 23603,
+    SPELL_BLESSING_PROTECTION = 23415,
+    SPELL_SUMMON_INFERNALS = 23426,
+    SPELL_WARRIOR_BERSERK = 2458,
     SPELL_CORRUPTED_FIRE_NOVA_TOTEM = 23419,
     SPELL_CORRUPTED_STONESKIN_TOTEM = 23420,
-    SPELL_CORRUPTED_HEALING_TOTEM   = 23422,
-    SPELL_CORRUPTED_WINDFURY_TOTEM  = 23423
+    SPELL_CORRUPTED_HEALING_TOTEM = 23422,
+    SPELL_CORRUPTED_WINDFURY_TOTEM = 23423
 };
 
 enum Misc
@@ -209,7 +209,7 @@ std::unordered_map<uint32, uint32> spawnerSpells =
 
 struct ClassCallSelector : public Acore::unary_function<Unit*, bool>
 {
-    ClassCallSelector(Unit const* unit, uint8 targetClass) : _me(unit), _targetClass(targetClass) { }
+    ClassCallSelector(Unit const* unit, uint8 targetClass) : _me(unit), _targetClass(targetClass) {}
 
     bool operator()(Unit const* target) const
     {
@@ -336,7 +336,7 @@ public:
                         nefarian->setActive(true);
                         nefarian->SetCanFly(true);
                         nefarian->SetDisableGravity(true);
-                        nefarian->GetMotionMaster()->MovePath(NEFARIAN_PATH, false);
+                        nefarian->GetMotionMaster()->MoveWaypoint(NEFARIAN_PATH, false);
                     }
 
                     events.Reset();
@@ -403,7 +403,7 @@ public:
                     switch (eventId)
                     {
                     case EVENT_PATH_2:
-                        me->GetMotionMaster()->MovePath(NEFARIUS_PATH_2, false);
+                        me->GetMotionMaster()->MoveWaypoint(NEFARIUS_PATH_2, false);
                         events.ScheduleEvent(EVENT_CHAOS_1, 7s);
                         break;
                     case EVENT_CHAOS_1:
@@ -435,7 +435,7 @@ public:
                         me->DespawnOrUnsummon(1s);
                         break;
                     case EVENT_PATH_3:
-                        me->GetMotionMaster()->MovePath(NEFARIUS_PATH_3, false);
+                        me->GetMotionMaster()->MoveWaypoint(NEFARIUS_PATH_3, false);
                         break;
                     case EVENT_START_EVENT:
                         BeginEvent();
@@ -767,8 +767,8 @@ enum TotemSpells
     AURA_AVOIDANCE = 23198,
 
     SPELL_STONESKIN_EFFECT = 10405,
-    SPELL_HEALING_EFFECT   = 10461,
-    SPELL_WINDFURY_EFFECT  = 8515,
+    SPELL_HEALING_EFFECT = 10461,
+    SPELL_WINDFURY_EFFECT = 8515,
     SPELL_FIRE_NOVA_EFFECT = 11307
 };
 
@@ -801,15 +801,15 @@ struct npc_corrupted_totem : public ScriptedAI
 
         switch (me->GetEntry())
         {
-            case NPC_TOTEM_C_STONESKIN:
-                spellId = SPELL_STONESKIN_EFFECT;
-                break;
-            case NPC_TOTEM_C_HEALING:
-                spellId = SPELL_HEALING_EFFECT;
-                break;
-            case NPC_TOTEM_C_WINDFURY:
-                spellId = SPELL_WINDFURY_EFFECT;
-                break;
+        case NPC_TOTEM_C_STONESKIN:
+            spellId = SPELL_STONESKIN_EFFECT;
+            break;
+        case NPC_TOTEM_C_HEALING:
+            spellId = SPELL_HEALING_EFFECT;
+            break;
+        case NPC_TOTEM_C_WINDFURY:
+            spellId = SPELL_WINDFURY_EFFECT;
+            break;
         }
 
         if (!spellId)
@@ -894,10 +894,10 @@ struct npc_corrupted_totem : public ScriptedAI
                 context.Repeat(1s);
             })
             .Schedule(me->GetEntry() == NPC_TOTEM_C_WINDFURY ? 89s : 59s, [this](TaskContext /*context*/)
-            {
-                SetAura(false);
-                me->DespawnOrUnsummon();
-            });
+                {
+                    SetAura(false);
+                    me->DespawnOrUnsummon();
+                });
     }
 
     void JustDied(Unit* /*killer*/) override
@@ -920,13 +920,13 @@ struct npc_corrupted_totem : public ScriptedAI
         scheduler.Update(diff);
     }
 
-    protected:
-        bool _auraAdded;
+protected:
+    bool _auraAdded;
 };
 
 struct npc_drakonid_spawner : public ScriptedAI
 {
-    npc_drakonid_spawner(Creature* creature) : ScriptedAI(creature) { }
+    npc_drakonid_spawner(Creature* creature) : ScriptedAI(creature) {}
 
     void DoAction(int32 action) override
     {
@@ -941,9 +941,9 @@ struct npc_drakonid_spawner : public ScriptedAI
     {
         DoCastSelf(SPELL_SPAWN_DRAKONID_GEN);
         scheduler.Schedule(10s, 60s, [this](TaskContext /*context*/)
-        {
-            DoCastSelf(SPELL_SPAWN_CHROMATIC_DRAKONID);
-        });
+            {
+                DoCastSelf(SPELL_SPAWN_CHROMATIC_DRAKONID);
+            });
 
         _owner = summoner->GetGUID();
     }
@@ -963,13 +963,13 @@ struct npc_drakonid_spawner : public ScriptedAI
         ObjectGuid summonGuid = summon->GetGUID();
 
         scheduler.Schedule(1s, [this, summonGuid](TaskContext /*context*/)
-        {
-            if (Creature* construct = ObjectAccessor::GetCreature(*me, summonGuid))
             {
-                construct->SetVisible(false);
-                construct->CastSpell(construct, SPELL_SUMMON_DRAKONID_CORPSE, true);
-            }
-        });
+                if (Creature* construct = ObjectAccessor::GetCreature(*me, summonGuid))
+                {
+                    construct->SetVisible(false);
+                    construct->CastSpell(construct, SPELL_SUMMON_DRAKONID_CORPSE, true);
+                }
+            });
     }
 
 protected:
@@ -1003,21 +1003,21 @@ class spell_class_call_handler : public SpellScript
         if (SpellInfo const* spellInfo = GetSpellInfo())
         {
             targets.remove_if([spellInfo](WorldObject const* target) -> bool
-            {
-                Player const* player = target->ToPlayer();
-                if (!player || player->IsClass(CLASS_DEATH_KNIGHT)) // ignore all death knights from whatever spell, for some reason the condition below is not working x.x
                 {
-                    return true;
-                }
+                    Player const* player = target->ToPlayer();
+                    if (!player || player->IsClass(CLASS_DEATH_KNIGHT)) // ignore all death knights from whatever spell, for some reason the condition below is not working x.x
+                    {
+                        return true;
+                    }
 
-                auto it = classCallSpells.find(spellInfo->Id);
-                if (it != classCallSpells.end()) // should never happen but only to be sure.
-                {
-                    return target->ToPlayer()->getClass() != it->second;
-                }
+                    auto it = classCallSpells.find(spellInfo->Id);
+                    if (it != classCallSpells.end()) // should never happen but only to be sure.
+                    {
+                        return target->ToPlayer()->getClass() != it->second;
+                    }
 
-                return false;
-            });
+                    return false;
+                });
         }
     }
 

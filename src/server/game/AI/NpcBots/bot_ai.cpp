@@ -6215,39 +6215,29 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
 {
     std::list<WorldObject*> doList;
     NearbyHostileAoEDynobjectCheck check(unit, 60.f);
-    Bcore::WorldObjectListSearcher<NearbyHostileAoEDynobjectCheck> searcher(unit, doList, check, GRID_MAP_TYPE_MASK_DYNAMICOBJECT);
-    //unit->VisitNearbyObject(60.f, searcher);
+    Bcore::WorldObjectListSearcher searcher(unit, doList, check, GRID_MAP_TYPE_MASK_DYNAMICOBJECT);
     Cell::VisitObjects(unit, searcher, 60.f);
 
-    //if (!doList.empty())
-    //    BOT_LOG_ERROR("scripts", "CalculateAoeSpots %u aoes around %s", uint32(doList.size()), unit->GetName().c_str());
-
-    //filter and add to list
-    DynamicObject const* dObj;
+    // filter and add to list
     SpellInfo const* spellInfo;
-    for (std::list<WorldObject*>::const_iterator ci = doList.begin(); ci != doList.end(); ++ci)
+    for (WorldObject const* wObj : doList)
     {
-        dObj = (*ci)->ToDynObject();
+        DynamicObject const* dObj = wObj->ToDynObject();
         ASSERT_NODEBUGINFO(dObj);
         ASSERT_NODEBUGINFO(dObj->GetSpellId());
         spellInfo = sSpellMgr->GetSpellInfo(dObj->GetSpellId());
         if (IsPeriodicDynObjAOEDamage(spellInfo))
         {
-            //BOT_LOG_ERROR("scripts", "CalculateAoeSpots found %s's aoe %s (%u) radius %.2f size %.2f",
-            //    dObj->GetCaster()->GetName().c_str(), spellInfo->SpellName[0], spellInfo->Id, dObj->GetRadius(), dObj->GetObjectSize());
-
             float radius = dObj->GetRadius() + DEFAULT_WORLD_OBJECT_SIZE;
             radius += (unit->GetVehicle() ? unit->GetVehicleBase()->GetCombatReach() : DEFAULT_COMBAT_REACH) * 1.2f;
-            spots.push_back(AoeSpotsVec::value_type(*dObj, radius));
+            spots.emplace_back(*dObj, radius);
         }
     }
 
     if (unit->IsNPCBot() && unit->ToCreature()->IsFreeBot())
         return;
 
-    //Additional: aoe coming from spawned npcs
-
-    // Hellfire Ramparts (TBC) — Liquid Fire puddles
+    // Hellfire Ramparts — Liquid Fire puddles
     if (unit->GetMapId() == 543) // Hellfire Ramparts
     {
         // GO entries to avoid
@@ -6255,7 +6245,6 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
         static constexpr uint32 GO_LIQUID_FIRE_2 = 181890;
         static constexpr uint32 GO_LIQUID_FIRE_3 = 182533;
 
-        // Helper to scan a single GO entry
         auto scanGoEntry = [unit, &spots](uint32 entry, float scanRange, float baseRadius)
             {
                 std::list<GameObject*> list;
@@ -6268,22 +6257,91 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
                     if (!go)
                         continue;
 
-                    // Pad radius with object size and bot reach so they don't skim edges.
                     float radius = baseRadius + go->GetObjectSize() + DEFAULT_COMBAT_REACH * 1.2f;
                     spots.emplace_back(*go, radius);
                 }
             };
 
-        constexpr float SCAN = 60.f;
+        constexpr float SCAN = 40.f;
         constexpr float BASE = 12.0f;
 
         scanGoEntry(GO_LIQUID_FIRE_1, SCAN, BASE);
         scanGoEntry(GO_LIQUID_FIRE_2, SCAN, BASE);
         scanGoEntry(GO_LIQUID_FIRE_3, SCAN, BASE);
     }
-    else if (unit->GetMapId() == 409)
+    // The Blood Furnace — Proximity Bombs + Broggok Poison Clouds
+    else if (unit->GetMapId() == 542)
     {
-        // Hot Coals 
+        static constexpr uint32 GO_PROXIMITY_BOMB_A = 181877;
+        static constexpr uint32 GO_PROXIMITY_BOMB_B = 182607;
+
+        auto scanBombs = [unit, &spots](uint32 entry, float scanRange, float baseRadius)
+            {
+                std::list<GameObject*> bombs;
+                Bcore::AllGameObjectsWithEntryInRange check(unit, entry, scanRange);
+                Bcore::GameObjectListSearcher<Bcore::AllGameObjectsWithEntryInRange> searcher(unit, bombs, check);
+                Cell::VisitObjects(unit, searcher, scanRange);
+
+                for (GameObject* go : bombs)
+                {
+                    if (!go)
+                        continue;
+
+                    float radius = baseRadius + go->GetObjectSize() + DEFAULT_COMBAT_REACH * 1.5f;
+                    spots.emplace_back(*go, radius);
+                }
+            };
+
+        constexpr float SCAN_RANGE = 40.f;
+        constexpr float BOMB_BASE_RADIUS = 10.0f;
+
+        scanBombs(GO_PROXIMITY_BOMB_A, SCAN_RANGE, BOMB_BASE_RADIUS);
+        scanBombs(GO_PROXIMITY_BOMB_B, SCAN_RANGE, BOMB_BASE_RADIUS);
+
+        // Broggok Poison Clouds 
+        static constexpr uint32 BROGGOK_POISON_CLOUD_IDS[] = { 17662u, 18602u };
+
+        auto poisonCloudCheck = [](Creature const* c) -> bool
+            {
+                if (!c || !c->IsAlive())
+                    return false;
+                uint32 e = c->GetEntry();
+                return e == BROGGOK_POISON_CLOUD_IDS[0] || e == BROGGOK_POISON_CLOUD_IDS[1];
+            };
+
+        std::list<Creature*> clouds;
+        Bcore::CreatureListSearcher cloudSearcher(unit, clouds, poisonCloudCheck);
+        Cell::VisitObjects(unit, cloudSearcher, 50.f);
+
+        for (Creature* c : clouds)
+        {
+            if (!c)
+                continue;
+
+            float radius = 12.0f + c->GetObjectScale() * 2.0f + DEFAULT_COMBAT_REACH * 1.5f;
+            spots.emplace_back(*c, radius);
+        }
+    }
+    // Dinkle Zul'Gurub
+    else if (unit->GetMapId() == 309)
+    {
+        std::list<GameObject*> gListZG;
+        Bcore::AllGameObjectsWithEntryInRange checkZG(unit, 180125, 40.f);  // GameObject ID for LIQUID_FIRE
+        Bcore::GameObjectListSearcher<Bcore::AllGameObjectsWithEntryInRange> searcherZG(unit, gListZG, checkZG);
+        Cell::VisitObjects(unit, searcherZG, 40.f);
+
+        for (auto* gameObject : gListZG)
+        {
+            if (!gameObject)
+                continue;
+
+            float radius = 15.0f + DEFAULT_COMBAT_REACH * 2.0f;
+            spots.emplace_back(*gameObject, radius);
+        }
+    }
+    else if (unit->GetMapId() == 409) // Molten Core
+    {
+        // Hot Coals
         {
             std::list<GameObject*> gListMC;
             Bcore::AllGameObjectsWithEntryInRange checkMC(unit, GAMEOBJECT_HOT_COAL, 60.f);
@@ -6292,7 +6350,7 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
 
             float radius = 15.0f + DEFAULT_COMBAT_REACH;
             for (std::list<GameObject*>::const_iterator ci = gListMC.cbegin(); ci != gListMC.cend(); ++ci)
-                spots.push_back(AoeSpotsVec::value_type(*(*ci), radius));
+                spots.emplace_back(*(*ci), radius);
         }
         // Baron Geddon (Inferno)
         {
@@ -6312,7 +6370,7 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
             if (unit->IsNPCBot())
             {
                 if (Creature const* bc = unit->ToCreature())
-                    thatBotAI = const_cast<Creature*>(bc)->GetBotAI(); 
+                    thatBotAI = const_cast<Creature*>(bc)->GetBotAI();
             }
 
             bool const skipGeddonInfernoForThisUnit = (thatBotAI && thatBotAI->HasRole(BOT_ROLE_TANK));
@@ -6323,7 +6381,7 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
                     continue;
 
                 if (skipGeddonInfernoForThisUnit)
-                    continue; 
+                    continue;
 
                 float infernoRadius = 25.0f + g->GetObjectScale() + DEFAULT_COMBAT_REACH * 1.5f;
                 spots.emplace_back(*g, infernoRadius);
@@ -6378,6 +6436,34 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
             }
         }
 
+        std::list<Creature*> toxicSlimeList;
+        Bcore::AllCreaturesOfEntryInRange checkToxicSlime(unit, 15925, 60.f);  // Toxic Slime entry ID
+        Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> searcherToxicSlime(unit, toxicSlimeList, checkToxicSlime);
+        Cell::VisitObjects(unit, searcherToxicSlime, 60.f);
+
+        for (Creature* slime : toxicSlimeList)
+        {
+            if (slime)
+            {
+                float slimeRadius = DEFAULT_COMBAT_REACH + 10.5f;
+                spots.emplace_back(*slime, slimeRadius);
+            }
+        }
+
+        std::list<Creature*> battleguardSaturaList;
+        Bcore::AllCreaturesOfEntryInRange checkBattleguardSatura(unit, 15516, 60.f);  // Battleguard Satura entry ID
+        Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> searcherBattleguardSatura(unit, battleguardSaturaList, checkBattleguardSatura);
+        Cell::VisitObjects(unit, searcherBattleguardSatura, 60.f);
+
+        for (Creature* battleguardSatura : battleguardSaturaList)
+        {
+            if (battleguardSatura && battleguardSatura->HasAura(26083))  // Check for whirlwind
+            {
+                float saturaRadius = DEFAULT_COMBAT_REACH + 25.0f;
+                spots.emplace_back(*battleguardSatura, saturaRadius);
+            }
+        }
+
         // ---------------------------------------
         // 2) Ouro's Dirt Mounds — avoid the cone
         // ---------------------------------------
@@ -6394,7 +6480,6 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
             Cell::VisitObjects(unit, moundSearcher, 80.f);
 
             // Radius: generous buffer around the mound eruption/sweep zone.
-            // Tuned to keep melee and pets out of harm’s way without pathing chaos.
             float moundRadius = 15.0f + DEFAULT_COMBAT_REACH * 1.5f;
 
             for (Creature* m : mounds)
@@ -6475,7 +6560,7 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
                 if (!f)
                     continue;
 
-                float radius = 10.0f
+                float radius = 12.0f
                     + f->GetObjectScale() * 2.0f
                     + DEFAULT_COMBAT_REACH * 1.2f;
 
@@ -6483,124 +6568,139 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
             }
         }
     }
-    //Aucheai Crypts
+    // Auchenai Crypts
     else if (unit->GetMapId() == 558)
     {
         Creature* creature = nullptr;
-        static const auto focus_fire_check = [](Creature const* c) {
-            return (c->GetEntry() == CREATURE_FOCUS_FIRE_N || c->GetEntry() == CREATURE_FOCUS_FIRE_H);
-        };
+        static const auto focus_fire_check = [](Creature const* c)
+            {
+                return (c->GetEntry() == CREATURE_FOCUS_FIRE_N || c->GetEntry() == CREATURE_FOCUS_FIRE_H);
+            };
         Bcore::CreatureSearcher searcher2(unit, creature, focus_fire_check);
         Cell::VisitObjects(unit, searcher2, 50.f);
 
         if (creature)
         {
-            spellInfo = sSpellMgr->GetSpellInfo(32302); //Fiery Blast
+            spellInfo = sSpellMgr->GetSpellInfo(32302); // Fiery Blast
             float radius = spellInfo->Effects[0].CalcRadius() + DEFAULT_COMBAT_REACH * 2.0f;
-            spots.push_back(AoeSpotsVec::value_type(*creature, radius));
+            spots.emplace_back(*creature, radius);
         }
     }
-    //Magister's Terrace
+    // Magister's Terrace
     else if (unit->GetMapId() == 585)
     {
         std::list<Creature*> cList;
-        static const auto kael_aoe_check = [](Creature const* c) {
-            return (c->GetEntry() == CREATURE_MT_PHOENIX || c->GetEntry() == CREATURE_MT_ARCANE_SPHERE_N || c->GetEntry() == CREATURE_MT_ARCANE_SPHERE_H);
-        };
+        static const auto kael_aoe_check = [](Creature const* c)
+            {
+                return (c->GetEntry() == CREATURE_MT_PHOENIX || c->GetEntry() == CREATURE_MT_ARCANE_SPHERE_N || c->GetEntry() == CREATURE_MT_ARCANE_SPHERE_H);
+            };
         Bcore::CreatureListSearcher searcher3(unit, cList, kael_aoe_check);
         Cell::VisitObjects(unit, searcher3, 40.f);
 
         if (!cList.empty())
         {
-            spellInfo = sSpellMgr->GetSpellInfo(44198); //Burn damage (44197 -> 44198)
+            spellInfo = sSpellMgr->GetSpellInfo(44198); // Burn damage (44197 -> 44198)
             float radius = spellInfo->Effects[0].CalcRadius() + DEFAULT_COMBAT_REACH * 3.0f;
-            for (Creature* c : cList)
+            for (Creature const* c : cList)
                 spots.emplace_back(*c, radius);
         }
     }
-    //The Eye of Eternity
+    // Kara
+    else if (unit->GetMapId() == 532)
+    {
+        // Void Zones
+        std::list<Creature*> voidZones;
+        Bcore::AllCreaturesOfEntryInRange checkVoidZone(unit, 16697, 40.f);
+        Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> searcherVoidZone(unit, voidZones, checkVoidZone);
+        Cell::VisitObjects(unit, searcherVoidZone, 40.f);
+
+        for (Creature* voidZone : voidZones)
+        {
+            if (voidZone)
+            {
+                float voidZoneRadius = DEFAULT_COMBAT_REACH + 5.0f;
+                spots.emplace_back(*voidZone, voidZoneRadius);
+            }
+        }
+        // Malchezaar's Infernals
+        std::list<Creature*> malInfernals;
+        Acore::AllCreaturesOfEntryInRange checkMalInfernal(unit, 17646, 60.f);
+        Acore::CreatureListSearcher<Acore::AllCreaturesOfEntryInRange> searcherMalInfernal(unit, malInfernals, checkMalInfernal);
+        Cell::VisitObjects(unit, searcherMalInfernal, 60.f);
+
+        for (Creature* infernal : malInfernals)
+        {
+            if (infernal)
+            {
+                float infernalRadius = DEFAULT_COMBAT_REACH + 22.0f;
+                spots.emplace_back(*infernal, infernalRadius);
+            }
+        }
+    }
+    // The Eye of Eternity
     else if (unit->GetMapId() == 616 && unit->GetVehicle())
     {
         std::list<Creature*> cList;
         Bcore::AllCreaturesOfEntryInRange check2(unit->GetVehicleBase(), CREATURE_EOE_STATIC_FIELD, 60.f);
-        Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> searcher2(unit->GetVehicleBase(), cList, check2);
-        //unit->GetVehicleBase()->VisitNearbyObject(60.f, searcher2);
+        Bcore::CreatureListSearcher searcher2(unit->GetVehicleBase(), cList, check2);
         Cell::VisitObjects(unit->GetVehicleBase(), searcher2, 60.f);
 
-        spellInfo = sSpellMgr->GetSpellInfo(57429); //Static Field damage
-        float radius = spellInfo->Effects[0].CalcRadius() + unit->GetVehicleBase()->GetCombatReach() * 1.2f;
-        for (std::list<Creature*>::const_iterator ci = cList.begin(); ci != cList.end(); ++ci)
-            spots.push_back(AoeSpotsVec::value_type(*(*ci), radius));
+        if (!cList.empty())
+        {
+            spellInfo = sSpellMgr->GetSpellInfo(57429); // Static Field damage
+            float radius = spellInfo->Effects[0].CalcRadius() + unit->GetVehicleBase()->GetCombatReach() * 1.2f;
+            for (Creature const* c : cList)
+                spots.emplace_back(*c, radius);
+        }
     }
-    //Zul'Aman
+    // Zul'Aman
     else if (unit->GetMapId() == 568)
     {
         std::list<Creature*> cList;
         Bcore::AllCreaturesOfEntryInRange check2(unit, CREATURE_ZA_FIRE_BOMB, 40.f);
-        Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> searcher2(unit, cList, check2);
-        //unit->VisitNearbyObject(40.f, searcher2);
+        Bcore::CreatureListSearcher searcher2(unit, cList, check2);
         Cell::VisitObjects(unit, searcher2, 40.f);
 
-        spellInfo = sSpellMgr->GetSpellInfo(42630); //Fire Bomb
-        float radius = spellInfo->Effects[0].CalcRadius() + DEFAULT_COMBAT_REACH * 1.2f;
-        for (std::list<Creature*>::const_iterator ci = cList.begin(); ci != cList.end(); ++ci)
-            spots.push_back(AoeSpotsVec::value_type(*(*ci), radius));
+        if (!cList.empty())
+        {
+            spellInfo = sSpellMgr->GetSpellInfo(42630); // Fire Bomb
+            float radius = spellInfo->Effects[0].CalcRadius() + DEFAULT_COMBAT_REACH * 1.2f;
+            for (Creature const* c : cList)
+                spots.emplace_back(*c, radius);
+        }
     }
-    //Uthgarde Keep
+    // Utgarde Keep
     else if (unit->GetMapId() == 574)
     {
         Creature* creature = nullptr;
-        static const auto shadow_axe_check = [](Creature const* c) {
-            return (c->GetEntry() == CREATURE_UK_SHADOW_AXE_N || c->GetEntry() == CREATURE_UK_SHADOW_AXE_H);
-        };
+        static const auto shadow_axe_check = [](Creature const* c)
+            {
+                return (c->GetEntry() == CREATURE_UK_SHADOW_AXE_N || c->GetEntry() == CREATURE_UK_SHADOW_AXE_H);
+            };
         Bcore::CreatureSearcher searcher2(unit, creature, shadow_axe_check);
         Cell::VisitObjects(unit, searcher2, 40.f);
 
         if (creature)
         {
-            spellInfo = sSpellMgr->GetSpellInfo(42751); //Shadow Axe
+            spellInfo = sSpellMgr->GetSpellInfo(42751); // Shadow Axe
             float radius = spellInfo->Effects[0].CalcRadius() + DEFAULT_COMBAT_REACH * 2.0f;
-            spots.push_back(AoeSpotsVec::value_type(*creature, radius));
+            spots.emplace_back(*creature, radius);
         }
     }
-    //Icecrown Citadel
+    // Icecrown Citadel
     else if (unit->GetMapId() == 631)
     {
         std::list<Creature*> cList;
         Bcore::AllCreaturesOfEntryInRange check2(unit, CREATURE_ICC_OOZE_PUDDLE, 50.f);
-        Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> searcher2(unit, cList, check2);
-        //unit->VisitNearbyObject(50.f, searcher2);
+        Bcore::CreatureListSearcher searcher2(unit, cList, check2);
         Cell::VisitObjects(unit, searcher2, 50.f);
 
-        for (std::list<Creature*>::const_iterator ci = cList.begin(); ci != cList.end(); ++ci)
+        for (Creature const* c : cList)
         {
-            float radius = (*ci)->GetObjectScale() * 2.5f + DEFAULT_COMBAT_REACH * 3.f; //grows
-            spots.push_back(AoeSpotsVec::value_type(*(*ci), radius));
+            float radius = c->GetObjectScale() * 2.5f + DEFAULT_COMBAT_REACH * 3.f; // grows
+            spots.emplace_back(*c, radius);
         }
     }
-
-    //STUB
-    //if (!unit->IsPlayer() || !unit->ToPlayer()->HaveBot())
-    //    return;
-
-    //switch (unit->GetMapId())
-    //{
-    //    case 409: //Molten Core
-    //        break;
-    //    default:
-    //        return;
-    //}
-
-    //BotMap const* bmap = unit->ToPlayer()->GetBotMgr()->GetBotMap();
-    //for (BotMap::const_iterator itr = bmap->begin(); itr != bmap->end(); ++itr)
-    //{
-    //    if (itr->second && itr->second->IsInWorld() && itr->second->IsAlive())
-    //    {
-    //        // Living Bomb
-    //        if (unit->GetMapId() == 409 && !!itr->second->GetAuraEffect(SPELL_AURA_PERIODIC_TRIGGER_SPELL, SPELLFAMILY_GENERIC, 1646, 0))
-    //            spots.push_back(AoeSpotsVec::value_type(itr->second->GetPosition(), 18.0));
-    //    }
-    //}
 }
 
 void bot_ai::CalculateAoeSafeSpots(Unit* target, float maxdist, AoeSafeSpotsVec& safespots) const
@@ -6730,6 +6830,20 @@ bool bot_ai::_canSwitchToTarget(Unit const* from, Unit const* newTarget, int8 by
 
     return false;
 }
+static inline float Bot_GetMasterLeashDistance(uint8 followdist)
+{
+    // Applies when followdist > 30 (the “long follow” branch). Default 60 keeps stock behavior.
+    float v = sConfigMgr->GetOption<float>("NpcBot.Leash.MaxDistance", 60.0f);
+    // Sanity clamp so admins can't foot-gun too hard.
+    if (v < 10.0f)  v = 10.0f;
+    if (v > 200.0f) v = 200.0f;
+
+    if (followdist > 30u)
+        return v;
+    if (followdist < 10u)
+        return 20.0f;
+    return float(followdist * 2u);
+}
 //Ranged attack position
 void bot_ai::CalculateAttackPos(Unit* target, Position& pos, bool& force) const
 {
@@ -6741,7 +6855,7 @@ void bot_ai::CalculateAttackPos(Unit* target, Position& pos, bool& force) const
     float angle = target->GetAbsoluteAngle(me);
     if (_botclass == BOT_CLASS_SPHYNX && target->GetVictim() == me && me->GetExactDist(target) < 30.0f)
         dist = me->GetExactDist(target);
-    if ((target->m_movementInfo.GetMovementFlags() & MOVEMENTFLAG_FORWARD) && target->HasInArc(float(M_PI)/1.5f, me))
+    if ((target->m_movementInfo.GetMovementFlags() & MOVEMENTFLAG_FORWARD) && target->HasInArc(float(M_PI) / 1.5f, me))
         dist = std::min<float>(dist + 4.f, 30.f);
 
     //if ranged try to acquire a position in the back (will be ignored if too far away from master)
@@ -6754,8 +6868,8 @@ void bot_ai::CalculateAttackPos(Unit* target, Position& pos, bool& force) const
     }
 
     float clockwise = (me->GetEntry() % 2) ? 1.f : -1.f;
-    float angleDelta1 = ((IsTank(master) && !IsTank(me)) ? frand(float(M_PI)*0.40f, float(M_PI)*0.60f) : frand(0.0f, float(M_PI)*0.15f)) * clockwise;
-    float angleDelta2 = frand(0.0f, float(M_PI)*0.08f) * clockwise;
+    float angleDelta1 = ((IsTank(master) && !IsTank(me)) ? frand(float(M_PI) * 0.40f, float(M_PI) * 0.60f) : frand(0.0f, float(M_PI) * 0.15f)) * clockwise;
+    float angleDelta2 = frand(0.0f, float(M_PI) * 0.08f) * clockwise;
 
     Position ppos;
 
@@ -6780,7 +6894,7 @@ void bot_ai::CalculateAttackPos(Unit* target, Position& pos, bool& force) const
             if (me->GetVehicleBase()->CanFly())
             {
                 //collision point bug, distance shinked to 0, so use GetNearPoint
-                float &tx = ppos.m_positionX, &ty = ppos.m_positionY, &tz = ppos.m_positionZ;
+                float& tx = ppos.m_positionX, & ty = ppos.m_positionY, & tz = ppos.m_positionZ;
                 target->GetNearPoint(me->GetVehicleBase(), tx, ty, tz, 0.f, dist, Position::NormalizeOrientation(angle));
                 if (!target->IsWithinLOS(tx, ty, tz))
                     dist *= i >= 3 ? 0.2f : i >= 2 ? 0.5f : 0.75f;
@@ -6789,7 +6903,9 @@ void bot_ai::CalculateAttackPos(Unit* target, Position& pos, bool& force) const
                 ppos = target->GetFirstCollisionPosition(dist, Position::NormalizeOrientation(angle - target->GetOrientation()));
             //target->GetNearPoint(me->GetVehicleBase(), x, y, z, 0.f, dist, Position::NormalizeOrientation(angle));
 
-            bool toofar = master->GetDistance(ppos) > (followdist > 30.f ? 60.f : followdist < 10 ? 20.f : float(followdist*2));
+            // CHANGED: replace the 60y hard cap with a config-driven leash
+            bool toofar = master->GetDistance(ppos) > Bot_GetMasterLeashDistance(followdist);
+
             bool isinaoe = (i == 0 && me->GetVehicleBase()->GetDistance(ppos) < 4.f && IsWithinAoERadius(*me->GetVehicleBase())) || IsWithinAoERadius(ppos);
             if (!toofar && !isinaoe)
                 break;
@@ -6797,7 +6913,7 @@ void bot_ai::CalculateAttackPos(Unit* target, Position& pos, bool& force) const
             if (toofar)
             {
                 if (i >= 1)
-                    angle += -(clockwise) * angleDelta1/* * i*/;
+                    angle += -(clockwise)*angleDelta1/* * i*/;
                 if (i >= 2)
                     dist = std::max(0.f, dist - 5.f);
             }
@@ -6826,6 +6942,7 @@ void bot_ai::CalculateAttackPos(Unit* target, Position& pos, bool& force) const
     if (!aoespots.empty())
     {
         ppos.Relocate(me);
+        // unchanged: AoE envelope caps (38/20/followdist)
         toofaraway = master->GetDistance(ppos) > (followdist > 38 ? 38.f : followdist < 20 ? 20.f : float(followdist));
         bool outoflos = !target->IsWithinLOS(ppos.m_positionX, ppos.m_positionY, ppos.m_positionZ);
         bool isinaoe = IsWithinAoERadius(ppos);
@@ -6848,6 +6965,7 @@ void bot_ai::CalculateAttackPos(Unit* target, Position& pos, bool& force) const
     for (uint8 i = 0; i < 5; ++i)
     {
         ppos = target->GetFirstCollisionPosition(dist, Position::NormalizeOrientation(angle - target->GetOrientation()));
+        // unchanged: non-vehicle collision cap path
         toofaraway = master->GetDistance(ppos) > (followdist > collision_dist_max ? float(collision_dist_max) : followdist < 20 ? 20.f : float(followdist));
         if (!toofaraway)
             break;
@@ -6954,6 +7072,7 @@ void bot_ai::CalculateAttackPos(Unit* target, Position& pos, bool& force) const
     if (!me->IsWithinLOSInMap(target, VMAP::ModelIgnoreFlags::M2, LINEOFSIGHT_ALL_CHECKS))
         force = true;
 }
+
 // Forces bot to chase opponent (if ranged then distance depends on follow distance)
 void bot_ai::GetInPosition(bool force, Unit* newtarget, Position* mypos)
 {
@@ -6987,7 +7106,7 @@ void bot_ai::GetInPosition(bool force, Unit* newtarget, Position* mypos)
         attackpos.m_positionZ = newtarget->GetPositionZ();
         if (me->GetExactDist2d(&attackpos) > 3.5f)
             BotMovement(BOT_MOVE_POINT, &attackpos);
-            //me->GetMotionMaster()->MovePoint(newtarget->GetMapId(), attackpos);
+        //me->GetMotionMaster()->MovePoint(newtarget->GetMapId(), attackpos);
         return;
     }
 
@@ -6996,7 +7115,7 @@ void bot_ai::GetInPosition(bool force, Unit* newtarget, Position* mypos)
     {
         //do not allow constant runaway from player
         if (!force && newtarget->GetTypeId() == TYPEID_PLAYER &&
-            me->GetDistance(newtarget) < float(6 + urand(followdist/4, followdist/3)))
+            me->GetDistance(newtarget) < float(6 + urand(followdist / 4, followdist / 3)))
             return;
 
         if (!mypos)
@@ -7023,7 +7142,7 @@ void bot_ai::GetInPosition(bool force, Unit* newtarget, Position* mypos)
     {
         if (!JumpingOrFalling() && ((!mover->HasUnitState(UNIT_STATE_CHASE) && !mover->isMoving()) || (!mover->HasUnitState(UNIT_STATE_CHASE_MOVE) && mover->GetDistance(newtarget) > 1.5f)))
             BotMovement(BOT_MOVE_CHASE, nullptr, newtarget);
-            //me->GetMotionMaster()->MoveChase(newtarget);
+        //me->GetMotionMaster()->MoveChase(newtarget);
     }
 
     if (newtarget != me->GetVictim() && (mover == me || CanBotAttackOnVehicle()))
@@ -9401,6 +9520,7 @@ bool bot_ai::OnGossipHello(Player* player, uint32 /*option*/)
                     break;
             }
 
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, LocalizedNpcText(player, BOT_TEXT_RENAME_BOT), GOSSIP_SENDER_RENAME_BOT, GOSSIP_ACTION_INFO_DEF + 1);
             std::ostringstream astr;
             astr << LocalizedNpcText(player, BOT_TEXT_ABANDON_WARN_1) << me->GetName() << "? " << (BotMgr::IsEnrageOnDimissEnabled() ? LocalizedNpcText(player, BOT_TEXT_ABANDON_WARN_2) : "");
             player->PlayerTalkClass->GetGossipMenu().AddMenuItem(-1, GOSSIP_ICON_TAXI, LocalizedNpcText(player, BOT_TEXT_UR_DISMISSED),
@@ -12568,6 +12688,17 @@ bool bot_ai::OnGossipSelect(Player* player, Creature* creature/* == me*/, uint32
             }
             break;
         }
+        case GOSSIP_SENDER_RENAME_BOT:
+        {
+            // Show input dialog for renaming
+            player->PlayerTalkClass->SendCloseGossip();
+            player->PlayerTalkClass->GetGossipMenu().AddMenuItem(-1, GOSSIP_ICON_CHAT,
+                LocalizedNpcText(player, BOT_TEXT_RENAME_BOT_INPUT),
+                GOSSIP_SENDER_RENAME_BOT, GOSSIP_ACTION_INFO_DEF + 1,
+                LocalizedNpcText(player, BOT_TEXT_RENAME_BOT_INPUT), 0, true);
+            player->PlayerTalkClass->SendGossipMenu(gossipTextId, me->GetGUID());
+            return true;
+        }
         case GOSSIP_SENDER_TROUBLESHOOTING:
         {
             subMenu = true;
@@ -12827,6 +12958,65 @@ bool bot_ai::OnGossipSelectCode(Player* player, Creature* creature/* == me*/, ui
 
     switch (sender)
     {
+    case GOSSIP_SENDER_RENAME_BOT:
+    {
+        std::string newName(code);
+        ChatHandler ch(player->GetSession());
+
+        // Validate name length (2–36 bytes to support Chinese characters)
+        if (newName.length() < 2 || newName.length() > 36)
+        {
+            ch.PSendSysMessage(LocalizedNpcText(player, BOT_TEXT_RENAME_INVALID_LENGTH).c_str());
+            player->PlayerTalkClass->SendCloseGossip();
+            return true;
+        }
+
+        // Validate characters – block dangerous SQL characters
+        bool valid = true;
+        for (char c : newName)
+        {
+            if (c == '\'' || c == '\"' || c == '\\' || c == ';' || c == '<' || c == '>')
+            {
+                valid = false;
+                break;
+            }
+        }
+
+        if (!valid)
+        {
+            ch.PSendSysMessage(LocalizedNpcText(player, BOT_TEXT_RENAME_INVALID_CHARS).c_str());
+            player->PlayerTalkClass->SendCloseGossip();
+            return true;
+        }
+
+        // Update database – both main and locale tables
+        try
+        {
+            WorldDatabase.Execute("UPDATE creature_template SET name = '{}' WHERE entry = {}", newName, me->GetEntry());
+
+            const char* locales[] = { "zhCN", "zhTW", "enUS", "koKR", "frFR", "deDE", "esES", "esMX", "ruRU" };
+            for (const char* locale : locales)
+            {
+                WorldDatabase.Execute("REPLACE INTO creature_template_locale (entry, locale, Name, Title) VALUES ('{}', '{}', '{}', NULL)",
+                    me->GetEntry(), locale, newName);
+            }
+
+            if (CreatureTemplate const* cInfo = const_cast<CreatureTemplate*>(me->GetCreatureTemplate()))
+            {
+                const_cast<CreatureTemplate*>(cInfo)->Name = newName;
+            }
+
+            me->SetName(newName);
+            ch.PSendSysMessage(LocalizedNpcText(player, BOT_TEXT_RENAME_SUCCESS).c_str());
+        }
+        catch (const std::exception& e)
+        {
+            ch.PSendSysMessage("Database update failed: %s", e.what());
+        }
+
+        player->PlayerTalkClass->SendCloseGossip();
+        return true;
+    }
         case GOSSIP_SENDER_FORMATION_FOLLOW_DISTANCE_SET:
         {
             char* dist = strtok((char*)code, "");
@@ -16273,6 +16463,9 @@ void bot_ai::ApplyRacials()
 {
     if (me->IsAlive() && !me->HasAura(300171))
         me->AddAura(300171, me);
+
+    if (me->IsAlive() && !me->HasAura(22683)) //Ony Cloak
+        me->AddAura(22683, me);
 
     uint8 myrace = me->GetRace();
     switch (myrace)

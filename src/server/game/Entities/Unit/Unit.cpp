@@ -14325,7 +14325,7 @@ void Unit::Mount(uint32 mount, uint32 VehicleId, uint32 creatureEntry)
                 SendMessageToSet(&data, true);
 
                 data.Initialize(SMSG_ON_CANCEL_EXPECTED_RIDE_VEHICLE_AURA, 0);
-                player->GetSession()->SendPacket(&data);
+                player->SendDirectMessage(&data);
 
                 // mounts can also have accessories
                 GetVehicleKit()->InstallAllAccessories(false);
@@ -14353,7 +14353,7 @@ void Unit::Mount(uint32 mount, uint32 VehicleId, uint32 creatureEntry)
         data << GetPackGUID();
         data << player->GetSession()->GetOrderCounter(); // movement counter
         data << player->GetCollisionHeight();
-        player->GetSession()->SendPacket(&data);
+        player->SendDirectMessage(&data);
         player->GetSession()->IncrementOrderCounter();
     }
 
@@ -14374,7 +14374,7 @@ void Unit::Dismount()
         data << GetPackGUID();
         data << player->GetSession()->GetOrderCounter(); // movement counter
         data << player->GetCollisionHeight();
-        player->GetSession()->SendPacket(&data);
+        player->SendDirectMessage(&data);
         player->GetSession()->IncrementOrderCounter();
     }
 
@@ -15510,116 +15510,55 @@ void Unit::SetSpeed(UnitMoveType mtype, float rate, bool forced)
 
     propagateSpeedChange();
 
-    WorldPacket data;
-    if (!forced)
-    {
-        switch (mtype)
-        {
-            case MOVE_WALK:
-                data.Initialize(MSG_MOVE_SET_WALK_SPEED, 8 + 4 + 2 + 4 + 4 + 4 + 4 + 4 + 4 + 4);
-                break;
-            case MOVE_RUN:
-                data.Initialize(MSG_MOVE_SET_RUN_SPEED, 8 + 4 + 2 + 4 + 4 + 4 + 4 + 4 + 4 + 4);
-                break;
-            case MOVE_RUN_BACK:
-                data.Initialize(MSG_MOVE_SET_RUN_BACK_SPEED, 8 + 4 + 2 + 4 + 4 + 4 + 4 + 4 + 4 + 4);
-                break;
-            case MOVE_SWIM:
-                data.Initialize(MSG_MOVE_SET_SWIM_SPEED, 8 + 4 + 2 + 4 + 4 + 4 + 4 + 4 + 4 + 4);
-                break;
-            case MOVE_SWIM_BACK:
-                data.Initialize(MSG_MOVE_SET_SWIM_BACK_SPEED, 8 + 4 + 2 + 4 + 4 + 4 + 4 + 4 + 4 + 4);
-                break;
-            case MOVE_TURN_RATE:
-                data.Initialize(MSG_MOVE_SET_TURN_RATE, 8 + 4 + 2 + 4 + 4 + 4 + 4 + 4 + 4 + 4);
-                break;
-            case MOVE_FLIGHT:
-                data.Initialize(MSG_MOVE_SET_FLIGHT_SPEED, 8 + 4 + 2 + 4 + 4 + 4 + 4 + 4 + 4 + 4);
-                break;
-            case MOVE_FLIGHT_BACK:
-                data.Initialize(MSG_MOVE_SET_FLIGHT_BACK_SPEED, 8 + 4 + 2 + 4 + 4 + 4 + 4 + 4 + 4 + 4);
-                break;
-            case MOVE_PITCH_RATE:
-                data.Initialize(MSG_MOVE_SET_PITCH_RATE, 8 + 4 + 2 + 4 + 4 + 4 + 4 + 4 + 4 + 4);
-                break;
-            default:
-                LOG_ERROR("entities.unit", "Unit::SetSpeed: Unsupported move type ({}), data not sent to client.", mtype);
-                return;
-        }
+    SpeedOpcodePair const& speedOpcodes = SetSpeed2Opc_table[mtype];
 
+    if (forced && IsClientControlled())
+    {
+        Player* player = const_cast<Player*>(GetClientControlling());
+        uint32 const counter = player->GetSession()->GetOrderCounter();
+
+        // register forced speed changes for WorldSession::HandleForceSpeedChangeAck
+        // and do it only for real sent packets and use run for run/mounted as client expected
+        ++player->m_forced_speed_changes[mtype];
+
+        WorldPacket data(speedOpcodes[static_cast<size_t>(SpeedOpcodeIndex::PC)], 18);
         data << GetPackGUID();
-        BuildMovementPacket(&data);
+        data << counter;
+        if (mtype == MOVE_RUN)
+            data << uint8(0);                           // new 2.1.0
+
+        data << GetSpeed(mtype);
+        player->GetSession()->SendPacket(&data);
+        player->GetSession()->IncrementOrderCounter();
+    }
+    else if (forced)
+    {
+        WorldPacket data(speedOpcodes[static_cast<size_t>(SpeedOpcodeIndex::NPC)], 12);
+        data << GetPackGUID();
         data << float(GetSpeed(mtype));
         SendMessageToSet(&data, true);
     }
-    else
+
+    if (IsPlayer())
     {
-        if (IsPlayer())
+        // Xinef: update speed of pet also
+        if (!IsInCombat())
         {
-            // register forced speed changes for WorldSession::HandleForceSpeedChangeAck
-            // and do it only for real sent packets and use run for run/mounted as client expected
-            ++ToPlayer()->m_forced_speed_changes[mtype];
+            Unit* pet = ToPlayer()->GetPet();
+            if (!pet)
+                pet = GetCharm();
 
-            // Xinef: update speed of pet also
-            if (!IsInCombat())
-            {
-                Unit* pet = ToPlayer()->GetPet();
-                if (!pet)
-                    pet = GetCharm();
+            // xinef: do not affect vehicles and possesed pets
+            if (pet && (pet->HasUnitFlag(UNIT_FLAG_POSSESSED) || pet->IsVehicle()))
+                pet = nullptr;
 
-                // xinef: do not affect vehicles and possesed pets
-                if (pet && (pet->HasUnitFlag(UNIT_FLAG_POSSESSED) || pet->IsVehicle()))
-                    pet = nullptr;
+            if (pet && pet->IsCreature() && !pet->IsInCombat() && pet->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
+                pet->UpdateSpeed(mtype, forced);
 
-                if (pet && pet->IsCreature() && !pet->IsInCombat() && pet->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
-                    pet->UpdateSpeed(mtype, forced);
-                if (Unit* critter = ObjectAccessor::GetUnit(*this, GetCritterGUID()))
-                    critter->UpdateSpeed(mtype, forced);
-            }
-            ToPlayer()->SetCanTeleport(true);
+            if (Unit* critter = ObjectAccessor::GetUnit(*this, GetCritterGUID()))
+                critter->UpdateSpeed(mtype, forced);
         }
-
-        switch (mtype)
-        {
-            case MOVE_WALK:
-                data.Initialize(SMSG_FORCE_WALK_SPEED_CHANGE, 16);
-                break;
-            case MOVE_RUN:
-                data.Initialize(SMSG_FORCE_RUN_SPEED_CHANGE, 17);
-                break;
-            case MOVE_RUN_BACK:
-                data.Initialize(SMSG_FORCE_RUN_BACK_SPEED_CHANGE, 16);
-                break;
-            case MOVE_SWIM:
-                data.Initialize(SMSG_FORCE_SWIM_SPEED_CHANGE, 16);
-                break;
-            case MOVE_SWIM_BACK:
-                data.Initialize(SMSG_FORCE_SWIM_BACK_SPEED_CHANGE, 16);
-                break;
-            case MOVE_TURN_RATE:
-                data.Initialize(SMSG_FORCE_TURN_RATE_CHANGE, 16);
-                break;
-            case MOVE_FLIGHT:
-                data.Initialize(SMSG_FORCE_FLIGHT_SPEED_CHANGE, 16);
-                break;
-            case MOVE_FLIGHT_BACK:
-                data.Initialize(SMSG_FORCE_FLIGHT_BACK_SPEED_CHANGE, 16);
-                break;
-            case MOVE_PITCH_RATE:
-                data.Initialize(SMSG_FORCE_PITCH_RATE_CHANGE, 16);
-                break;
-            default:
-                LOG_ERROR("entities.unit", "Unit::SetSpeed: Unsupported move type ({}), data not sent to client.", mtype);
-                return;
-        }
-        data << GetPackGUID();
-        data << (IsPlayer() ? ToPlayer()->GetSession()->GetOrderCounter() : uint32(0)); // movement counter
-        if (mtype == MOVE_RUN)
-            data << uint8(0);                               // new 2.1.0
-        data << float(GetSpeed(mtype));
-        SendMessageToSet(&data, true);
-        if (IsPlayer()) // TODO: Resolve this mess
-            ToPlayer()->GetSession()->IncrementOrderCounter();
+        ToPlayer()->SetCanTeleport(true);
     }
 }
 
@@ -17805,7 +17744,7 @@ void Unit::SendPetActionFeedback(uint8 msg) const
 
     WorldPacket data(SMSG_PET_ACTION_FEEDBACK, 1);
     data << uint8(msg);
-    owner->ToPlayer()->GetSession()->SendPacket(&data);
+    owner->ToPlayer()->SendDirectMessage(&data);
 }
 
 void Unit::SendPetActionSound(PetAction action) const
@@ -17828,7 +17767,7 @@ void Unit::SendPetAIReaction(ObjectGuid guid) const
     WorldPacket data(SMSG_AI_REACTION, 8 + 4);
     data << guid;
     data << uint32(AI_REACTION_HOSTILE);
-    owner->ToPlayer()->GetSession()->SendPacket(&data);
+    owner->ToPlayer()->SendDirectMessage(&data);
 }
 
 ///----------End of Pet responses methods----------
@@ -17934,7 +17873,7 @@ void Unit::SetStandState(uint8 state)
     {
         WorldPacket data(SMSG_STANDSTATE_UPDATE, 1);
         data << (uint8)state;
-        ToPlayer()->GetSession()->SendPacket(&data);
+        ToPlayer()->SendDirectMessage(&data);
     }
 }
 
@@ -19565,7 +19504,7 @@ void Unit::SendMoveRoot(bool apply)
     // Wrath+ force root: when unit is controlled by a player
     else
     {
-        auto const counter = client->GetSession()->GetOrderCounter();
+        uint32 const counter = client->GetSession()->GetOrderCounter();
 
         WorldPacket data(apply ? SMSG_FORCE_MOVE_ROOT : SMSG_FORCE_MOVE_UNROOT, guid.size() + 4);
         data << guid;
@@ -20558,7 +20497,7 @@ void Unit::KnockbackFrom(float x, float y, float speedXY, float speedZ)
         data << float(speedXY);                                 // Horizontal speed
         data << float(-speedZ);                                 // Z Movement speed (vertical)
 
-        player->GetSession()->SendPacket(&data);
+        player->SendDirectMessage(&data);
         player->GetSession()->IncrementOrderCounter();
 
         player->SetCanKnockback(true);
@@ -20839,7 +20778,7 @@ void Unit::JumpTo(float speedXY, float speedZ, bool forward)
         data << float(speedXY);                                 // Horizontal speed
         data << float(-speedZ);                                 // Z Movement speed (vertical)
 
-        ToPlayer()->GetSession()->SendPacket(&data);
+        ToPlayer()->SendDirectMessage(&data);
     }
 }
 
@@ -20997,7 +20936,7 @@ void Unit::_EnterVehicle(Vehicle* vehicle, int8 seatId, AuraApplication const* a
             bg->EventPlayerDroppedFlag(player);
 
         WorldPacket data(SMSG_ON_CANCEL_EXPECTED_RIDE_VEHICLE_AURA, 0);
-        player->GetSession()->SendPacket(&data);
+        player->SendDirectMessage(&data);
     }
 
     ASSERT(!m_vehicle);
@@ -21090,6 +21029,9 @@ void Unit::_ExitVehicle(Position const* exitPosition)
 
     if (!vehicleBase)
         return;
+
+    if (IsPlayer())
+        ToPlayer()->SetExpectingChangeTransport(true);
 
     SetControlled(false, UNIT_STATE_ROOT);      // SMSG_MOVE_FORCE_UNROOT, ~MOVEMENTFLAG_ROOT
 
@@ -21887,22 +21829,39 @@ bool Unit::SetWalk(bool enable)
     return true;
 }
 
-bool Unit::SetDisableGravity(bool disable, bool /*packetOnly = false*/, bool /*updateAnimationTier = true*/)
+void Unit::SetDisableGravity(bool enable)
 {
-    if (disable == IsLevitating())
-        return false;
+    bool isClientControlled = IsClientControlled();
 
-    if (disable)
+    if (!isClientControlled)
     {
-        AddUnitMovementFlag(MOVEMENTFLAG_DISABLE_GRAVITY);
-        RemoveUnitMovementFlag(MOVEMENTFLAG_FALLING);
-    }
-    else
-    {
-        RemoveUnitMovementFlag(MOVEMENTFLAG_DISABLE_GRAVITY);
+        if (enable)
+            m_movementInfo.AddMovementFlag(MOVEMENTFLAG_DISABLE_GRAVITY);
+        else
+            m_movementInfo.RemoveMovementFlag(MOVEMENTFLAG_DISABLE_GRAVITY);
     }
 
-    return true;
+    if (!IsInWorld()) // is sent on add to map
+        return;
+
+    if (isClientControlled)
+    {
+        if (Player const* player = GetClientControlling())
+        {
+            uint32 const counter = player->GetSession()->GetOrderCounter();
+
+            WorldPacket data(enable ? SMSG_MOVE_GRAVITY_DISABLE : SMSG_MOVE_GRAVITY_ENABLE, GetPackGUID().size() + 4);
+            data << GetPackGUID();
+            data << counter;
+            player->GetSession()->SendPacket(&data);
+            player->GetSession()->IncrementOrderCounter();
+            return;
+        }
+    }
+
+    WorldPacket data(enable ? SMSG_SPLINE_MOVE_GRAVITY_DISABLE : SMSG_SPLINE_MOVE_GRAVITY_ENABLE, 9);
+    data << GetPackGUID();
+    SendMessageToSet(&data, true);
 }
 
 bool Unit::SetSwim(bool enable)
@@ -21949,12 +21908,13 @@ void Unit::SetCanFly(bool enable)
     {
         if (Player const* player = GetClientControlling())
         {
-            auto const counter = player->GetSession()->GetOrderCounter();
+            uint32 const counter = player->GetSession()->GetOrderCounter();
+            const_cast<Player*>(player)->SetPendingFlightChange(counter);
 
             WorldPacket data(enable ? SMSG_MOVE_SET_CAN_FLY : SMSG_MOVE_UNSET_CAN_FLY, GetPackGUID().size() + 4);
             data << GetPackGUID();
             data << counter;
-            player->GetSession()->SendPacket(&data);
+            player->SendDirectMessage(&data);
             player->GetSession()->IncrementOrderCounter();
             return;
         }
@@ -21984,13 +21944,13 @@ void Unit::SetFeatherFall(bool enable)
     {
         if (Player const* player = GetClientControlling())
         {
-            auto const counter = player->GetSession()->GetOrderCounter();
+            uint32 const counter = player->GetSession()->GetOrderCounter();
 
             WorldPacket data(enable ? SMSG_MOVE_FEATHER_FALL : SMSG_MOVE_NORMAL_FALL, GetPackGUID().size() + 4);
 
             data << GetPackGUID();
             data << counter;
-            player->GetSession()->SendPacket(&data);
+            player->SendDirectMessage(&data);
             player->GetSession()->IncrementOrderCounter();
 
             // start fall from current height
@@ -22044,11 +22004,11 @@ void Unit::SetHover(bool enable)
         {
             WorldPacket data(enable ? SMSG_MOVE_SET_HOVER : SMSG_MOVE_UNSET_HOVER, GetPackGUID().size() + 4);
 
-            auto const counter = player->GetSession()->GetOrderCounter();
+            uint32 const counter = player->GetSession()->GetOrderCounter();
 
             data << GetPackGUID();
             data << counter;
-            player->GetSession()->SendPacket(&data);
+            player->SendDirectMessage(&data);
             player->GetSession()->IncrementOrderCounter();
             return;
         }
@@ -22078,12 +22038,12 @@ void Unit::SetWaterWalking(bool enable)
     {
         if (Player const* player = GetClientControlling())
         {
-            auto const counter = player->GetSession()->GetOrderCounter();
+            uint32 const counter = player->GetSession()->GetOrderCounter();
 
             WorldPacket data(enable ? SMSG_MOVE_WATER_WALK : SMSG_MOVE_LAND_WALK, GetPackGUID().size() + 4);
             data << GetPackGUID();
             data << counter;
-            player->GetSession()->SendPacket(&data);
+            player->SendDirectMessage(&data);
             player->GetSession()->IncrementOrderCounter();
             return;
         }

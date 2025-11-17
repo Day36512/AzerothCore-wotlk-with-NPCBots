@@ -70,7 +70,7 @@ enum Emotes
 enum Points
 {
     POINT_AIR                               = 0,
-    POINT_GROUND                            = 2,
+    POINT_GROUND                            = 3,
     POINT_PARALYZE                          = 2
 };
 
@@ -87,16 +87,15 @@ struct boss_ayamiss : public BossAI
         me->SetCombatMovement(false);
         me->SetReactState(REACT_AGGRESSIVE);
 
-        ScheduleHealthCheckEvent(70, [&]
-            {
-                me->ClearUnitState(UNIT_STATE_ROOT);
-                me->SetReactState(REACT_PASSIVE);
-                me->SetCanFly(false);
-                me->SetDisableGravity(false);
-                me->GetMotionMaster()->MovePath(me->GetEntry() * 10, false);
-                DoResetThreatList();
-                scheduler.CancelGroup(GROUP_AIR);
-            });
+        ScheduleHealthCheckEvent(70, [&] {
+            me->ClearUnitState(UNIT_STATE_ROOT);
+            me->SetReactState(REACT_PASSIVE);
+            me->SetCanFly(false);
+            me->SetDisableGravity(false);
+            me->GetMotionMaster()->MoveWaypoint(me->GetEntry() * 10, false);
+            DoResetThreatList();
+            scheduler.CancelGroup(GROUP_AIR);
+        });
 
         ScheduleHealthCheckEvent(20, [&]
             {
@@ -377,7 +376,7 @@ class spell_ayamiss_swarmer_teleport_trigger : public SpellScript
         uint32 pathId = data.pathId;
         caster->m_Events.AddEventAtOffset([caster, pathId]()
         {
-            caster->GetMotionMaster()->MovePath(pathId, false);
+            caster->GetMotionMaster()->MoveWaypoint(pathId, false);
         }, 1s);
     }
 
@@ -447,7 +446,7 @@ public:
     void HandleScript(SpellEffIndex /*effIndex*/)
     {
         GetCaster()->ToCreature()->GetMotionMaster()->Clear();
-        GetCaster()->ToCreature()->GetMotionMaster()->MovePath(_pathId, false);
+        GetCaster()->ToCreature()->GetMotionMaster()->MoveWaypoint(_pathId, false);
     }
 
     void Register() override
