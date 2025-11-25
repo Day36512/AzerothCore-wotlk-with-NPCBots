@@ -1200,8 +1200,6 @@ void BotMgr::Update(uint32 diff)
         return;
 
     //ObjectGuid guid;
-    Creature* bot;
-    bot_ai* ai;
     bool partyCombat = IsPartyInCombat(false);
     bool restrictBots = RestrictBots(_bots.begin()->second, false);
 
@@ -1214,8 +1212,8 @@ void BotMgr::Update(uint32 diff)
     for (BotMap::const_iterator itr = _bots.begin(); itr != _bots.end(); ++itr)
     {
         //guid = itr->first;
-        bot = itr->second;
-        ai = bot->GetBotAI();
+        Creature* bot = itr->second;
+        bot_ai* ai = bot->GetBotAI();
 
         if (ai->IAmFree())
             continue;
@@ -1578,13 +1576,11 @@ void BotMgr::OnOwnerSetGameMaster(bool on)
 void BotMgr::OnTeleportFar(uint32 mapId, float x, float y, float z, float ori)
 {
     Map* newMap = sMapMgr->CreateBaseMap(mapId);
-    Creature* bot;
-    Position pos;
-    pos.Relocate(x, y, z, ori);
+    Position pos{ x, y, z, ori };
 
     for (BotMap::const_iterator itr = _bots.begin(); itr != _bots.end(); ++itr)
     {
-        bot = itr->second;
+        Creature* bot = itr->second;
 
         if (bot->IsTempBot())
             continue;

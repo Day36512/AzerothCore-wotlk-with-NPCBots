@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -78,6 +78,7 @@
 #include "TicketMgr.h"
 #include "Tokenize.h"
 #include "Transport.h"
+#include "Unit.h"
 #include "UpdateData.h"
 #include "Util.h"
 #include "Vehicle.h"
@@ -4513,28 +4514,6 @@ void Player::DeleteOldRecoveryItems(uint32 keepDays)
     }
 }
 
-void Player::SetMovement(PlayerMovementType pType)
-{
-    WorldPacket data;
-    const PackedGuid& guid = GetPackGUID();
-    switch (pType)
-    {
-        case MOVE_WATER_WALK:
-            data.Initialize(SMSG_MOVE_WATER_WALK, guid.size() + 4);
-            break;
-        case MOVE_LAND_WALK:
-            data.Initialize(SMSG_MOVE_LAND_WALK, guid.size() + 4);
-            break;
-        default:
-            LOG_ERROR("entities.player", "Player::SetMovement: Unsupported move type ({}), data not sent to client.", pType);
-            return;
-    }
-    data << guid;
-    data << GetSession()->GetOrderCounter(); // movement counter
-    SendDirectMessage(&data);
-    GetSession()->IncrementOrderCounter();
-}
-
 /* Preconditions:
   - a resurrectable corpse must not be loaded for the player (only bones)
   - the player must be in world
@@ -4570,7 +4549,6 @@ void Player::BuildPlayerRepop()
     }
     GetMap()->AddToMap(corpse);
     SetHealth(1); // convert player body to ghost
-    SetMovement(MOVE_WATER_WALK);
     SetWaterWalking(true);
 
     if (!IsImmobilizedState())
@@ -4611,7 +4589,6 @@ void Player::ResurrectPlayer(float restore_percent, bool applySickness)
         SetDynamicFlag(UNIT_DYNFLAG_REFER_A_FRIEND);
 
     setDeathState(DeathState::Alive);
-    SetMovement(MOVE_LAND_WALK);
     SendMoveRoot(false);
     SetWaterWalking(false);
     m_deathTimer = 0;
@@ -6743,13 +6720,13 @@ void Player::_ApplyItemMods(Item* item, uint8 slot, bool apply)
 
     LOG_DEBUG("entities.player", "applying mods for item {} ", item->GetGUID().ToString());
 
-    uint8 attacktype = Player::GetAttackBySlot(slot);
+    WeaponAttackType attacktype = Player::GetAttackBySlot(slot);
 
     if (item->HasSocket())                              //only (un)equipping of items with sockets can influence metagems, so no need to waste time with normal items
         CorrectMetaGemEnchants(slot, apply);
 
     if (attacktype < MAX_ATTACK)
-        _ApplyWeaponDependentAuraMods(item, WeaponAttackType(attacktype), apply);
+        _ApplyWeaponDependentAuraMods(item, attacktype, apply);
 
     _ApplyItemBonuses(proto, slot, apply);
 
@@ -7036,7 +7013,7 @@ void Player::_ApplyItemBonuses(ItemTemplate const* proto, uint8 slot, bool apply
     if (proto->ArcaneRes)
         HandleStatModifier(UNIT_MOD_RESISTANCE_ARCANE, BASE_VALUE, float(proto->ArcaneRes), apply);
 
-    uint8 attType = Player::GetAttackBySlot(slot);
+    WeaponAttackType attType = Player::GetAttackBySlot(slot);
     if (attType != MAX_ATTACK)
     {
         _ApplyWeaponDamage(slot, proto, ssv, apply);
@@ -7083,7 +7060,7 @@ void Player::_ApplyWeaponDamage(uint8 slot, ItemTemplate const* proto, ScalingSt
         ssv = ScalingStatValue ? sScalingStatValuesStore.LookupEntry(ssd_level) : nullptr;
     }
 
-    uint8 attType = Player::GetAttackBySlot(slot);
+    WeaponAttackType attType = Player::GetAttackBySlot(slot);
     if (!IsInFeralForm() && apply && !CanUseAttackType(attType))
     {
         return;
@@ -7114,12 +7091,12 @@ void Player::_ApplyWeaponDamage(uint8 slot, ItemTemplate const* proto, ScalingSt
 
             if (minDamage > 0.f)
             {
-                SetBaseWeaponDamage(WeaponAttackType(attType), MINDAMAGE, minDamage, i);
+                SetBaseWeaponDamage(attType, MINDAMAGE, minDamage, i);
             }
 
             if (maxDamage > 0.f)
             {
-                SetBaseWeaponDamage(WeaponAttackType(attType), MAXDAMAGE, maxDamage, i);
+                SetBaseWeaponDamage(attType, MAXDAMAGE, maxDamage, i);
             }
         }
     }
@@ -7128,8 +7105,8 @@ void Player::_ApplyWeaponDamage(uint8 slot, ItemTemplate const* proto, ScalingSt
     {
         for (uint8 i = 0; i < MAX_ITEM_PROTO_DAMAGES; ++i)
         {
-            SetBaseWeaponDamage(WeaponAttackType(attType), MINDAMAGE, 0.f, i);
-            SetBaseWeaponDamage(WeaponAttackType(attType), MAXDAMAGE, 0.f, i);
+            SetBaseWeaponDamage(attType, MINDAMAGE, 0.f, i);
+            SetBaseWeaponDamage(attType, MAXDAMAGE, 0.f, i);
         }
 
         if (attType == BASE_ATTACK)
@@ -7153,8 +7130,8 @@ void Player::_ApplyWeaponDamage(uint8 slot, ItemTemplate const* proto, ScalingSt
     if (IsInFeralForm())
         return;
 
-    if (CanModifyStats() && (GetWeaponDamageRange(WeaponAttackType(attType), MAXDAMAGE) || proto->Delay))
-        UpdateDamagePhysical(WeaponAttackType(attType));
+    if (CanModifyStats() && (GetWeaponDamageRange(attType, MAXDAMAGE) || proto->Delay))
+        UpdateDamagePhysical(attType);
 }
 
 void Player::CastAllObtainSpells()
@@ -7747,9 +7724,9 @@ void Player::_RemoveAllItemMods()
             if (!proto)
                 continue;
 
-            uint32 attacktype = Player::GetAttackBySlot(i);
+            WeaponAttackType attacktype = Player::GetAttackBySlot(i);
             if (attacktype < MAX_ATTACK)
-                _ApplyWeaponDependentAuraMods(m_items[i], WeaponAttackType(attacktype), false);
+                _ApplyWeaponDependentAuraMods(m_items[i], attacktype, false);
 
             _ApplyItemBonuses(proto, i, false);
 
@@ -7776,9 +7753,9 @@ void Player::_ApplyAllItemMods()
             if (!proto)
                 continue;
 
-            uint32 attacktype = Player::GetAttackBySlot(i);
+            WeaponAttackType attacktype = Player::GetAttackBySlot(i);
             if (attacktype < MAX_ATTACK)
-                _ApplyWeaponDependentAuraMods(m_items[i], WeaponAttackType(attacktype), true);
+                _ApplyWeaponDependentAuraMods(m_items[i], attacktype, true);
 
             _ApplyItemBonuses(proto, i, true);
 
@@ -8006,7 +7983,10 @@ void Player::SendLoot(ObjectGuid guid, LootType loot_type)
         // And permit out of range GO with no owner in case fishing hole
         if (!go || (loot_type != LOOT_FISHINGHOLE && ((loot_type != LOOT_FISHING && loot_type != LOOT_FISHING_JUNK) || go->GetOwnerGUID() != GetGUID()) && !go->IsWithinDistInMap(this)) || (loot_type == LOOT_CORPSE && go->GetRespawnTime() && go->isSpawnedByDefault()))
         {
-            go->ForceValuesUpdateAtIndex(GAMEOBJECT_BYTES_1);
+            // *** Dinkle: guard the call ***
+            if (go)
+                go->ForceValuesUpdateAtIndex(GAMEOBJECT_BYTES_1);
+
             SendLootRelease(guid);
             return;
         }
@@ -9564,11 +9544,7 @@ void Player::Say(std::string_view text, Language language, WorldObject const* /*
 {
     std::string _text(text);
     if (!sScriptMgr->OnPlayerCanUseChat(this, CHAT_MSG_SAY, language, _text))
-    {
         return;
-    }
-
-    sScriptMgr->OnPlayerChat(this, CHAT_MSG_SAY, language, _text);
 
     WorldPacket data;
     ChatHandler::BuildChatPacket(data, CHAT_MSG_SAY, language, this, this, _text);
@@ -9590,11 +9566,7 @@ void Player::Yell(std::string_view text, Language language, WorldObject const* /
     std::string _text(text);
 
     if (!sScriptMgr->OnPlayerCanUseChat(this, CHAT_MSG_YELL, language, _text))
-    {
         return;
-    }
-
-    sScriptMgr->OnPlayerChat(this, CHAT_MSG_YELL, language, _text);
 
     WorldPacket data;
     ChatHandler::BuildChatPacket(data, CHAT_MSG_YELL, language, this, this, _text);
@@ -9616,11 +9588,7 @@ void Player::TextEmote(std::string_view text, WorldObject const* /*= nullptr*/, 
     std::string _text(text);
 
     if (!sScriptMgr->OnPlayerCanUseChat(this, CHAT_MSG_EMOTE, LANG_UNIVERSAL, _text))
-    {
         return;
-    }
-
-    sScriptMgr->OnPlayerChat(this, CHAT_MSG_EMOTE, LANG_UNIVERSAL, _text);
 
     WorldPacket data;
     ChatHandler::BuildChatPacket(data, CHAT_MSG_EMOTE, LANG_UNIVERSAL, this, this, _text);
@@ -9649,11 +9617,7 @@ void Player::Whisper(std::string_view text, Language language, Player* target, b
     std::string _text(text);
 
     if (!sScriptMgr->OnPlayerCanUseChat(this, CHAT_MSG_WHISPER, language, _text, target))
-    {
         return;
-    }
-
-    sScriptMgr->OnPlayerChat(this, CHAT_MSG_WHISPER, language, _text, target);
 
     WorldPacket data;
     ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, language, this, this, _text);
@@ -11872,7 +11836,7 @@ void Player::SendInitialPacketsAfterAddToMap()
         GetSession()->IncrementOrderCounter();
     }
 
-    if (HasAuraType(SPELL_AURA_WATER_WALK))
+    if (HasAuraType(SPELL_AURA_WATER_WALK) || HasAura(8326))
     {
         uint32 const counter = GetSession()->GetOrderCounter();
         setCompoundState << uint8(2 + GetPackGUID().size() + 4);
@@ -12278,18 +12242,6 @@ void Player::GetAurasForTarget(Unit* target, bool force /*= false*/)
 {
     if (!target || (!force && target->GetVisibleAuras()->empty()))    // speedup things
         return;
-
-    /*! Blizz sends certain movement packets sometimes even before CreateObject
-        These movement packets are usually found in SMSG_COMPRESSED_MOVES
-    */
-    if (target->HasFeatherFallAura())
-        target->SendMovementFeatherFall(this);
-
-    if (target->HasWaterWalkAura())
-        target->SendMovementWaterWalking(this);
-
-    if (target->HasHoverAura())
-        target->SendMovementHover(this);
 
     WorldPacket data(SMSG_AURA_UPDATE_ALL);
     data<< target->GetPackGUID();

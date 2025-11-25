@@ -188,12 +188,14 @@ class bot_ai : public CreatureAI
         WanderNode const* GetClosestWanderNode() const;
         WanderNode const* GetNextWanderNode(Position const* fromPos, uint8 lvl, bool random) const;
         WanderNode const* GetNextTravelNode(Position const* from, bool random) const;
+        // Zangarmarsh tower helper: if near a tower capture point, sometimes move to it
+        bool TryZangarmarshTowerMove() const;
         WanderNode const* GetNextBGTravelNode() const;
         void OnWanderNodeReached();
         void OnBotEnterBattleground();
-
+        bool TryZangarmarshTowerMove();
         Group* GetGroup() { return _group.getTarget(); }
-        Group const* GetGroup() const { return const_cast<Group const*>(_group.getTarget()); }
+        Group const* GetGroup() const { return _group.getTarget(); }
         void SetGroup(Group* group, int8 subgroup);
         uint8 GetSubGroup() const { return _group.getSubGroup(); }
         void SetSubGroup(uint8 subgroup) { _group.setSubGroup(subgroup); }
@@ -652,6 +654,7 @@ class bot_ai : public CreatureAI
         bool _canCombineWeapons(ItemTemplate const* mh, ItemTemplate const* oh) const;
         bool _canEquip(ItemTemplate const* newProto, uint8 slot, bool ignoreItemLevel, Item const* newItem = nullptr, bool ignore_combine = false) const;
         void _removeEquipment(uint8 slot);
+        bool _isItemFitForWanderingBot(uint8 slot, ItemTemplate const* proto) const;
         [[nodiscard]] BotEquipResult _unequip(uint8 slot, ObjectGuid receiver, bool store_to_bank, bool on_equip_from_bank = false);
         [[nodiscard]] BotEquipResult _equip(uint8 slot, Item* newItem, ObjectGuid receiver, bool store_to_bank, bool from_bank = false);
         [[nodiscard]] BotEquipResult _resetEquipment(uint8 slot, ObjectGuid receiver, bool store_to_bank);
@@ -723,6 +726,7 @@ class bot_ai : public CreatureAI
         uint32 outdoorsTimer;
         uint32 _contestedPvPTimer;
         uint32 _groupUpdateTimer;
+        uint32 _towerHoldTimer;
         //save timers
         uint32 _saveDisabledSpellsTimer;
         uint32 _saveMiscValuesTimer;

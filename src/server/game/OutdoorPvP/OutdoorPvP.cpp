@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -25,6 +25,12 @@
 #include "ObjectMgr.h"
 #include "OutdoorPvPMgr.h"
 #include "WorldPacket.h"
+
+ // NPCBots
+#include "botmgr.h"
+#include "botdatamgr.h"
+#include "Creature.h"
+#include "Unit.h"
 
 OPvPCapturePoint::OPvPCapturePoint(OutdoorPvP* pvp) :
     _pvp(pvp)
@@ -318,82 +324,118 @@ bool OPvPCapturePoint::Update(uint32 diff)
     if (!_capturePoint)
         return false;
 
-    auto radius = (float)_capturePoint->GetGOInfo()->capturePoint.radius;
+    float radius = (float)_capturePoint->GetGOInfo()->capturePoint.radius;
 
-    for (auto const& activePlayer : _activePlayers)
+    // Clean up players who moved out / are no longer active
+    for (auto const& activePlayerSet : _activePlayers)
     {
-        for (auto itr = activePlayer.begin(); itr != activePlayer.end();)
+        for (auto itr = activePlayerSet.begin(); itr != activePlayerSet.end();)
         {
             ObjectGuid playerGuid = *itr;
             ++itr;
 
             if (Player* player = ObjectAccessor::FindPlayer(playerGuid))
+            {
                 if (!_capturePoint->IsWithinDistInMap(player, radius) || !player->IsOutdoorPvPActive())
                     HandlePlayerLeave(player);
+            }
         }
     }
 
+    // Scan for players in range and add them to active sets
     std::list<Player*> players;
     Acore::AnyPlayerInObjectRangeCheck checker(_capturePoint, radius);
     Acore::PlayerListSearcher<Acore::AnyPlayerInObjectRangeCheck> searcher(_capturePoint, players, checker);
     Cell::VisitObjects(_capturePoint, searcher, radius);
 
-    for (auto& itr : players)
+    for (Player* player : players)
     {
-        Player* const player = itr;
         if (player->IsOutdoorPvPActive())
         {
             if (_activePlayers[player->GetTeamId()].insert(player->GetGUID()).second)
-                HandlePlayerEnter(itr);
+                HandlePlayerEnter(player);
         }
     }
 
-    // get the difference of numbers
-    float factDiff = ((float)_activePlayers[0].size() - (float)_activePlayers[1].size()) * float(diff) / OUTDOORPVP_OBJECTIVE_UPDATE_INTERVAL;
-    if (factDiff == 0.f)
-        return false;
+    // Base difference from REAL players
+    float factDiff = ((float)_activePlayers[TEAM_ALLIANCE].size() - (float)_activePlayers[TEAM_HORDE].size()) *
+        float(diff) / OUTDOORPVP_OBJECTIVE_UPDATE_INTERVAL;
 
-    //npcbots - count bots as players but 2 times less affect and only if there is a players difference
-    uint32 botsCount[2];
+    // 1) OWNED bots: count as 0.5 of a player each for their owner's team
+    uint32 ownedBotsCount[2] = { 0, 0 };
 
     for (uint8 team = 0; team != 2; ++team)
     {
-        botsCount[team] = 0;
-
         for (GuidSet::iterator itr = _activePlayers[team].begin(); itr != _activePlayers[team].end(); ++itr)
         {
             if (Player* player = ObjectAccessor::FindPlayer(*itr))
-                botsCount[team] += player->GetNpcBotsCount();
+                ownedBotsCount[team] += player->GetNpcBotsCount();
         }
     }
 
-    factDiff += 0.5f * ((float)botsCount[0] - (float)botsCount[1]) * diff / OUTDOORPVP_OBJECTIVE_UPDATE_INTERVAL;
-    //end npcbot
+    factDiff += 0.5f * ((float)ownedBotsCount[TEAM_ALLIANCE] - (float)ownedBotsCount[TEAM_HORDE]) *
+        float(diff) / OUTDOORPVP_OBJECTIVE_UPDATE_INTERVAL;
 
-    TeamId ChallengerId = TEAM_NEUTRAL;
+    // 2) WANDERING world bots (no owner): also count as 0.5 of a player each
+    uint32 wanderBotsCount[2] = { 0, 0 };
+
+    {
+        std::list<Unit*> units;
+        Acore::AnyUnitInObjectRangeCheck uChecker(_capturePoint, radius);
+        Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> uSearcher(_capturePoint, units, uChecker);
+        Cell::VisitObjects(_capturePoint, uSearcher, radius);
+
+        for (Unit* unit : units)
+        {
+            Creature* creature = unit->ToCreature();
+            if (!creature)
+                continue;
+
+            if (!creature->IsNPCBot())
+                continue;
+
+            // Only count free world-wander bots, to avoid double-counting owned bots
+            if (!BotMgr::IsWanderingWorldBot(creature))
+                continue;
+
+            TeamId botTeam = BotDataMgr::GetTeamIdForFaction(creature->GetFaction());
+            if (botTeam == TEAM_ALLIANCE || botTeam == TEAM_HORDE)
+                ++wanderBotsCount[botTeam];
+        }
+    }
+
+    // Wandering bots count exactly like players (no 0.5)
+    factDiff += ((float)wanderBotsCount[TEAM_ALLIANCE] - (float)wanderBotsCount[TEAM_HORDE]) *
+        float(diff) / OUTDOORPVP_OBJECTIVE_UPDATE_INTERVAL;
+
+    // After including bots: if nothing is pushing the slider, bail out
+    if (factDiff == 0.0f)
+        return false;
+
+    TeamId challengerId = TEAM_NEUTRAL;
     float maxDiff = _maxSpeed * float(diff);
 
-    if (factDiff < 0.f)
+    if (factDiff < 0.0f)
     {
-        // horde is in majority, but it's already horde-controlled -> no change
+        // horde already fully controls and is still majority -> no change
         if (_state == OBJECTIVESTATE_HORDE && _value <= -_maxValue)
             return false;
 
         if (factDiff < -maxDiff)
             factDiff = -maxDiff;
 
-        ChallengerId = TEAM_HORDE;
+        challengerId = TEAM_HORDE;
     }
     else
     {
-        // ally is in majority, but it's already ally-controlled -> no change
+        // alliance already fully controls and is still majority -> no change
         if (_state == OBJECTIVESTATE_ALLIANCE && _value >= _maxValue)
             return false;
 
         if (factDiff > maxDiff)
             factDiff = maxDiff;
 
-        ChallengerId = TEAM_ALLIANCE;
+        challengerId = TEAM_ALLIANCE;
     }
 
     float oldValue = _value;
@@ -402,48 +444,40 @@ bool OPvPCapturePoint::Update(uint32 diff)
     _oldState = _state;
     _value += factDiff;
 
-    if (_value < -_minValue) // red
+    if (_value < -_minValue) // red (Horde side)
     {
         if (_value < -_maxValue)
-        {
             _value = -_maxValue;
-        }
 
         _state = OBJECTIVESTATE_HORDE;
         _team = TEAM_HORDE;
     }
-    else if (_value > _minValue) // blue
+    else if (_value > _minValue) // blue (Alliance side)
     {
         if (_value > _maxValue)
-        {
             _value = _maxValue;
-        }
 
         _state = OBJECTIVESTATE_ALLIANCE;
         _team = TEAM_ALLIANCE;
     }
-    else if (oldValue * _value <= 0) // grey, go through mid-point
+    else if (oldValue * _value <= 0.0f) // passed through neutral mid-point
     {
-        // if challenger is ally, then n->a challenge
-        if (ChallengerId == TEAM_ALLIANCE)
-        {
+        if (challengerId == TEAM_ALLIANCE)
             _state = OBJECTIVESTATE_NEUTRAL_ALLIANCE_CHALLENGE;
-        }
-        else if (ChallengerId == TEAM_HORDE) // if challenger is horde, then n->h challenge
-        {
+        else if (challengerId == TEAM_HORDE)
             _state = OBJECTIVESTATE_NEUTRAL_HORDE_CHALLENGE;
-        }
 
         _team = TEAM_NEUTRAL;
     }
-    else // grey, did not go through mid-point
+    else // still on same side but now in a challenge state
     {
-        // old phase and current are on the same side, so one team challenges the other
-        if (ChallengerId == TEAM_ALLIANCE && (_oldState == OBJECTIVESTATE_HORDE || _oldState == OBJECTIVESTATE_NEUTRAL_HORDE_CHALLENGE))
+        if (challengerId == TEAM_ALLIANCE &&
+            (_oldState == OBJECTIVESTATE_HORDE || _oldState == OBJECTIVESTATE_NEUTRAL_HORDE_CHALLENGE))
         {
             _state = OBJECTIVESTATE_HORDE_ALLIANCE_CHALLENGE;
         }
-        else if (ChallengerId == TEAM_HORDE && (_oldState == OBJECTIVESTATE_ALLIANCE || _oldState == OBJECTIVESTATE_NEUTRAL_ALLIANCE_CHALLENGE))
+        else if (challengerId == TEAM_HORDE &&
+            (_oldState == OBJECTIVESTATE_ALLIANCE || _oldState == OBJECTIVESTATE_NEUTRAL_ALLIANCE_CHALLENGE))
         {
             _state = OBJECTIVESTATE_ALLIANCE_HORDE_CHALLENGE;
         }
@@ -452,16 +486,12 @@ bool OPvPCapturePoint::Update(uint32 diff)
     }
 
     if (_value != oldValue)
-    {
         SendChangePhase();
-    }
 
     if (_oldState != _state)
     {
         if (oldTeam != _team)
-        {
             ChangeTeam(oldTeam);
-        }
 
         ChangeState();
         return true;

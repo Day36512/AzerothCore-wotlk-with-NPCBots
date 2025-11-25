@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -219,12 +219,10 @@ void WorldSession::HandleWhoOpcode(WorldPacket& recvData)
     std::array<uint32, 10> zoneids = {};                    // 10 is client limit
     std::string packetPlayerName, packetGuildName;
 
-    recvData >> levelMin;                                   // maximal player level, default 0
-    recvData >> levelMax;                                   // minimal player level, default 100 (MAX_LEVEL)
+    recvData >> levelMin;                                   // minimal player level, default 0
+    recvData >> levelMax;                                   // maximal player level, default 100 (MAX_LEVEL)
     recvData >> packetPlayerName;                           // player name, case sensitive...
-
     recvData >> packetGuildName;                            // guild name, case sensitive...
-
     recvData >> racemask;                                   // race mask
     recvData >> classmask;                                  // class mask
     recvData >> zonesCount;                                 // zones count, client limit = 10 (2.0.10)
@@ -285,6 +283,7 @@ void WorldSession::HandleWhoOpcode(WorldPacket& recvData)
     data << uint32(matchCount);         // placeholder, count of players matching criteria
     data << uint32(displaycount);       // placeholder, count of players displayed
 
+    // Retrieve real players matching the criteria
     for (auto const& target : sWhoListCacheMgr->GetWhoList())
     {
         if (AccountMgr::IsPlayerAccount(security))
@@ -406,6 +405,127 @@ void WorldSession::HandleWhoOpcode(WorldPacket& recvData)
         data << uint32(playerZoneId);                     // player zone id
 
         ++displaycount;
+    }
+
+    // Check the config option for including fake players
+    if (sWorld->getBoolConfig(CONFIG_INCLUDE_FAKE_PLAYERS))
+    {
+        // Retrieve fake players from custom table
+        QueryResult result = CharacterDatabase.Query("SELECT name, guild, level, class, race, gender, zone FROM custom_fake_players");
+
+        if (result)
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                std::string fakePlayerName = fields[0].Get<std::string>();
+                std::string fakeGuildName = fields[1].Get<std::string>();
+                uint8 fakeLevel = fields[2].Get<uint32>();
+                uint8 fakeClass = fields[3].Get<uint32>();
+                uint8 fakeRace = fields[4].Get<uint32>();
+                uint8 fakeGender = fields[5].Get<uint32>();
+                uint32 fakeZoneId = fields[6].Get<uint32>();
+
+                // Check if fake player's level is in level range
+                if (fakeLevel < levelMin || fakeLevel > levelMax)
+                {
+                    continue;
+                }
+
+                // Check if class matches classmask
+                if (!(classmask & (1 << fakeClass)))
+                {
+                    continue;
+                }
+
+                // Check if race matches racemask
+                if (!(racemask & (1 << fakeRace)))
+                {
+                    continue;
+                }
+
+                bool showZones = true;
+                for (uint32 i = 0; i < zonesCount; ++i)
+                {
+                    if (zoneids[i] == fakeZoneId)
+                    {
+                        showZones = true;
+                        break;
+                    }
+
+                    showZones = false;
+                }
+
+                if (!showZones)
+                {
+                    continue;
+                }
+
+                std::wstring wfakePlayerName;
+                std::wstring wfakeGuildName;
+                if (!(Utf8toWStr(fakePlayerName, wfakePlayerName) && Utf8toWStr(fakeGuildName, wfakeGuildName)))
+                    continue;
+
+                wstrToLower(wfakePlayerName);
+                wstrToLower(wfakeGuildName);
+
+                if (!(wpacketPlayerName.empty() || wfakePlayerName.find(wpacketPlayerName) != std::wstring::npos))
+                {
+                    continue;
+                }
+
+                if (!(wpacketGuildName.empty() || wfakeGuildName.find(wpacketGuildName) != std::wstring::npos))
+                {
+                    continue;
+                }
+
+                std::string aname;
+                if (AreaTableEntry const* areaEntry = sAreaTableStore.LookupEntry(fakeZoneId))
+                {
+                    aname = areaEntry->area_name[GetSessionDbcLocale()];
+                }
+
+                bool s_show = true;
+                for (uint32 i = 0; i < strCount; ++i)
+                {
+                    if (!str[i].empty())
+                    {
+                        if (wfakeGuildName.find(str[i]) != std::wstring::npos ||
+                            wfakePlayerName.find(str[i]) != std::wstring::npos ||
+                            Utf8FitTo(aname, str[i]))
+                        {
+                            s_show = true;
+                            break;
+                        }
+
+                        s_show = false;
+                    }
+                }
+
+                if (!s_show)
+                {
+                    continue;
+                }
+
+                // 49 is maximum player count sent to client - can be overridden
+                // through config, but is unstable
+                if ((matchCount++) >= sWorld->getIntConfig(CONFIG_MAX_WHO_LIST_RETURN))
+                {
+                    continue;
+                }
+
+                data << fakePlayerName;                        // fake player name
+                data << fakeGuildName;                         // fake guild name
+                data << uint32(fakeLevel);                     // fake player level
+                data << uint32(fakeClass);                     // fake player class
+                data << uint32(fakeRace);                      // fake player race
+                data << uint8(fakeGender);                     // fake player gender
+                data << uint32(fakeZoneId);                    // fake player zone id
+
+                ++displaycount;
+
+            } while (result->NextRow());
+        }
     }
 
     data.put(0, displaycount);                            // insert right count, count displayed

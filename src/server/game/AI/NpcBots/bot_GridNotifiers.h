@@ -706,10 +706,9 @@ class CastingUnitCheck
                     (u->ToCreature()->GetCreatureTemplate()->MechanicImmuneMask & (1 << (MECHANIC_INTERRUPT - 1))))
                     return false;
 
-                Spell* curSpell;
                 for (uint8 i = CURRENT_FIRST_NON_MELEE_SPELL; i != CURRENT_AUTOREPEAT_SPELL; ++i)
                 {
-                    curSpell = u->GetCurrentSpell(i);
+                    Spell const* curSpell = u->GetCurrentSpell(i);
                     if (!curSpell)
                         continue;
 
@@ -738,10 +737,9 @@ class CastingUnitCheck
                     (u->ToCreature()->GetCreatureTemplate()->MechanicImmuneMask & (1 << (MECHANIC_SILENCE - 1))))
                     return false;
 
-                Spell* curSpell;
                 for (uint8 i = CURRENT_FIRST_NON_MELEE_SPELL; i != CURRENT_AUTOREPEAT_SPELL; ++i)
                 {
-                    curSpell = u->GetCurrentSpell(i);
+                    Spell const* curSpell = u->GetCurrentSpell(i);
                     if (curSpell && curSpell->GetSpellInfo()->PreventionType != SPELL_PREVENTION_TYPE_SILENCE)
                         return false;
                 }

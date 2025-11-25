@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -2147,10 +2147,11 @@ void Unit::DealMeleeDamage(CalcDamageInfo* damageInfo, bool durabilityLoss)
             Probability = 0.65f * victim->GetLevel() + 0.5f;
 
         uint32 VictimDefense = victim->GetDefenseSkillValue();
+        uint32 VictimAuraDefense = -victim->GetTotalAuraModifier(SPELL_AURA_MOD_ATTACKER_MELEE_CRIT_CHANCE) * 25;
         uint32 AttackerMeleeSkill = GetUnitMeleeSkill();
 
         // xinef: fix daze mechanics
-        Probability -= ((float)VictimDefense - AttackerMeleeSkill) * 0.1428f;
+        Probability -= ((float)VictimDefense + (float)VictimAuraDefense - AttackerMeleeSkill) * 0.1428f;
 
         if (Probability > 40.0f)
             Probability = 40.0f;
@@ -8647,7 +8648,7 @@ bool Unit::HandleDummyAuraProc(Unit* victim, uint32 damage, AuraEffect* triggere
                             if (triggeredByAura->GetBase() && castItem->GetGUID() != triggeredByAura->GetBase()->GetCastItemGUID())
                                 return false;
 
-                            WeaponAttackType attType = WeaponAttackType(player->GetAttackBySlot(castItem->GetSlot()));
+                            WeaponAttackType attType = player->GetAttackBySlot(castItem->GetSlot());
                             if ((attType != BASE_ATTACK && attType != OFF_ATTACK)
                                     || (attType == BASE_ATTACK && procFlag & PROC_FLAG_DONE_OFFHAND_ATTACK)
                                     || (attType == OFF_ATTACK && procFlag & PROC_FLAG_DONE_MAINHAND_ATTACK))
@@ -8872,7 +8873,7 @@ bool Unit::HandleDummyAuraProc(Unit* victim, uint32 damage, AuraEffect* triggere
                     if (!IsPlayer() || !victim || !victim->IsAlive() || !castItem || !castItem->IsEquipped())
                         return false;
 
-                    WeaponAttackType attType = WeaponAttackType(Player::GetAttackBySlot(castItem->GetSlot()));
+                    WeaponAttackType attType = Player::GetAttackBySlot(castItem->GetSlot());
                     if ((attType != BASE_ATTACK && attType != OFF_ATTACK)
                             || (attType == BASE_ATTACK && procFlag & PROC_FLAG_DONE_OFFHAND_ATTACK)
                             || (attType == OFF_ATTACK && procFlag & PROC_FLAG_DONE_MAINHAND_ATTACK))
@@ -11636,7 +11637,11 @@ void Unit::SetCharm(Unit* charm, bool apply)
             charm->SetUnitFlag(UNIT_FLAG_PLAYER_CONTROLLED);
         }
         else
+        {
             charm->m_ControlledByPlayer = false;
+            if (!HasUnitFlag(UNIT_FLAG_PLAYER_CONTROLLED))
+                charm->RemoveUnitFlag(UNIT_FLAG_PLAYER_CONTROLLED);
+        }
 
         // PvP, FFAPvP
         charm->SetByteValue(UNIT_FIELD_BYTES_2, 1, GetByteValue(UNIT_FIELD_BYTES_2, 1));
@@ -17833,6 +17838,13 @@ void Unit::StopMovingOnCurrentPos()
 
 void Unit::SendMovementFlagUpdate(bool self /* = false */)
 {
+    if (IsRooted())
+    {
+        // each case where this occurs has to be examined and reported and dealt with.
+        LOG_ERROR("Unit", "Attempted sending heartbeat with root flag for guid {}", GetGUID().ToString());
+        return;
+    }
+
     WorldPacket data;
     BuildHeartBeatMsg(&data);
     SendMessageToSet(&data, self);
@@ -21062,12 +21074,6 @@ void Unit::_ExitVehicle(Position const* exitPosition)
         player->SetFallInformation(GameTime::GetGameTime().count(), GetPositionZ());
 
         sScriptMgr->AnticheatSetUnderACKmount(player);
-    }
-    else if (HasUnitMovementFlag(MOVEMENTFLAG_ROOT))
-    {
-        WorldPacket data(SMSG_SPLINE_MOVE_UNROOT, 8);
-        data << GetPackGUID();
-        SendMessageToSet(&data, false);
     }
 
     // xinef: hack for flameleviathan seat vehicle

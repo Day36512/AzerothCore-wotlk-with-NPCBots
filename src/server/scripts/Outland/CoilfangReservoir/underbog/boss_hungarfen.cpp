@@ -1,18 +1,18 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
- * more details.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "CreatureScript.h"
@@ -23,29 +23,84 @@
 #include "TaskScheduler.h"
 #include "the_underbog.h"
 
+ // NPCBots
+#include "bot_ai.h"
+#include "botmgr.h"
+
+#include <chrono>
+#include <vector>
+
+using namespace std::chrono_literals;
+
 enum Spells
 {
     // Hungarfen
-    SPELL_SPAWN_MUSHROOMS   = 31692,
+    SPELL_SPAWN_MUSHROOMS = 31692,
     SPELL_DESPAWN_MUSHROOMS = 34874,
-    SPELL_FOUL_SPORES       = 31673,
-    SPELL_ACID_GEYSER       = 38739,
+    SPELL_FOUL_SPORES = 31673,
+    SPELL_ACID_GEYSER = 38739,
 
     // Underbog Mushroom
-    SPELL_SHRINK            = 31691,
-    SPELL_GROW              = 31698,
-    SPELL_SPORE_CLOUD       = 34168
+    SPELL_SHRINK = 31691,
+    SPELL_GROW = 31698,
+    SPELL_SPORE_CLOUD = 34168
 };
 
 enum Misc
 {
-    MAX_GROW_REPEAT         = 9,
-    EMOTE_ROARS             = 0
+    MAX_GROW_REPEAT = 9,
+    EMOTE_ROARS = 0
 };
 
 struct boss_hungarfen : public BossAI
 {
-    boss_hungarfen(Creature* creature) : BossAI(creature, DATA_HUNGARFEN) { }
+    boss_hungarfen(Creature* creature) : BossAI(creature, DATA_HUNGARFEN) {}
+
+    // -------- Bot-aware helpers --------
+    static bool IsPlayerOrNPCBot(Unit* u)
+    {
+        if (!u || !u->IsAlive())
+            return false;
+
+        if (u->GetTypeId() == TYPEID_PLAYER)
+            return true;
+
+        if (u->GetTypeId() == TYPEID_UNIT)
+        {
+            if (Creature* c = u->ToCreature())
+                return c->IsNPCBot();
+        }
+
+        return false;
+    }
+
+    // Random threat target: players + NPCBots, optionally excluding current victim
+    Unit* SelectRandomPlayerOrNPCBotFromThreat(bool excludeVictim = true)
+    {
+        std::vector<Unit*> pool;
+        auto const& tlist = me->GetThreatMgr().GetThreatList();
+        pool.reserve(tlist.size());
+
+        for (auto const* ref : tlist)
+        {
+            Unit* u = ref ? ref->getTarget() : nullptr;
+            if (!u || !u->IsAlive())
+                continue;
+
+            if (excludeVictim && u == me->GetVictim())
+                continue;
+
+            if (!IsPlayerOrNPCBot(u))
+                continue;
+
+            pool.push_back(u);
+        }
+
+        if (pool.empty())
+            return nullptr;
+
+        return pool[urand(0u, static_cast<uint32>(pool.size() - 1))];
+    }
 
     void Reset() override
     {
@@ -53,16 +108,17 @@ struct boss_hungarfen : public BossAI
         _scheduler.CancelAll();
         DoCastAOE(SPELL_DESPAWN_MUSHROOMS, true);
 
-        ScheduleHealthCheckEvent(20, [&] {
-            me->AddUnitState(UNIT_STATE_ROOT);
-            Talk(EMOTE_ROARS);
-            DoCastSelf(SPELL_FOUL_SPORES);
-            _scheduler.DelayAll(11s);
-            _scheduler.Schedule(11s, [this](TaskContext /*context*/)
+        ScheduleHealthCheckEvent(20, [&]
             {
-                me->ClearUnitState(UNIT_STATE_ROOT);
+                me->AddUnitState(UNIT_STATE_ROOT);
+                Talk(EMOTE_ROARS);
+                DoCastSelf(SPELL_FOUL_SPORES);
+                _scheduler.DelayAll(11s);
+                _scheduler.Schedule(11s, [this](TaskContext /*context*/)
+                    {
+                        me->ClearUnitState(UNIT_STATE_ROOT);
+                    });
             });
-        });
     }
 
     void JustEngagedWith(Unit* /*who*/) override
@@ -71,9 +127,16 @@ struct boss_hungarfen : public BossAI
 
         _scheduler.Schedule(IsHeroic() ? randtime(2400ms, 3600ms) : 10s, [this](TaskContext context)
             {
-                if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 0, true))
+                // Bot-aware mushroom spawn target selection
+                if (Unit* target = SelectRandomPlayerOrNPCBotFromThreat(false))
                 {
                     target->CastSpell(target, SPELL_SPAWN_MUSHROOMS, true);
+                }
+                else
+                {
+                    // Fallback to original behavior if something weird happens
+                    if (Unit* fallback = SelectTarget(SelectTargetMethod::Random, 0, 0.0f, true))
+                        fallback->CastSpell(fallback, SPELL_SPAWN_MUSHROOMS, true);
                 }
 
                 context.Repeat();
@@ -106,7 +169,7 @@ private:
 
 struct npc_underbog_mushroom : public ScriptedAI
 {
-    npc_underbog_mushroom(Creature* creature) : ScriptedAI(creature) { }
+    npc_underbog_mushroom(Creature* creature) : ScriptedAI(creature) {}
 
     void InitializeAI() override
     {

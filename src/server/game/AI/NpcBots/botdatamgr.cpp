@@ -251,6 +251,9 @@ private:
     WanderingBotsGenerator()
     {
         next_bot_id = BOT_ENTRY_CREATE_BEGIN - 1;
+        // Dinkle fix interger overflow issue
+        CharacterDatabase.DirectExecute(
+            "DELETE FROM worldstates WHERE entry = {}", uint32(BOT_GIVER_ENTRY));
         QueryResult result = CharacterDatabase.Query("SELECT value FROM worldstates WHERE entry = {}", uint32(BOT_GIVER_ENTRY));
         if (!result)
         {
@@ -2347,7 +2350,7 @@ void BotDataMgr::CreateWanderingBotsSortedGear()
     BOT_LOG_INFO("server.loading", ">> Sorted wandering bots gear in {} ms", GetMSTimeDiffToNow(oldMSTime));
 }
 
-Item* BotDataMgr::GenerateWanderingBotItem(uint8 slot, uint8 botclass, uint8 level, std::function<bool(ItemTemplate const*)>&& check)
+Item* BotDataMgr::GenerateWanderingBotItem(uint8 slot, uint8 botclass, uint8 level, std::function<bool(uint8, ItemTemplate const*)> const& check)
 {
     ASSERT(slot < BOT_INVENTORY_SIZE);
     ASSERT(botclass < BOT_CLASS_END);
@@ -2375,7 +2378,7 @@ Item* BotDataMgr::GenerateWanderingBotItem(uint8 slot, uint8 botclass, uint8 lev
             for (uint32 iid : *itemIdVec)
             {
                 ItemTemplate const* proto = sObjectMgr->GetItemTemplate(iid);
-                if ((!maxLvl || proto->ItemLevel <= maxLvl) && check(proto))
+                if ((!maxLvl || proto->ItemLevel <= maxLvl) && check(slot, proto))
                     validVec.push_back(iid);
             }
         }
@@ -2977,17 +2980,60 @@ void BotDataMgr::ResetNpcBotTransmogData(uint32 entry, bool update_db)
 
 void BotDataMgr::RegisterBot(Creature const* bot)
 {
+    if (!bot)
+        return;
+
     if (_existingBots.find(bot) != _existingBots.end())
     {
-        BOT_LOG_ERROR("entities.unit", "BotDataMgr::RegisterBot: bot {} ({}) already registered!",
+        BOT_LOG_ERROR("entities.unit",
+            "BotDataMgr::RegisterBot: bot {} ({}) already registered!",
             bot->GetEntry(), bot->GetName().c_str());
         return;
     }
 
     std::unique_lock<std::shared_mutex> lock(*GetLock());
-
     _existingBots.insert(bot);
-    //BOT_LOG_ERROR("entities.unit", "BotDataMgr::RegisterBot: registered bot %u (%s)", bot->GetEntry(), bot->GetName().c_str());
+
+    uint8 botClass = bot->GetBotClass();
+    std::string Botname = bot->GetName();
+    uint8 Botlevel = bot->GetLevel();
+    uint8 Botrace = bot->getRace();
+    uint8 Botgender = bot->GetGender();
+    uint32 Botzone = bot->GetZoneId();
+
+    std::string Botguild;
+    switch (botClass)
+    {
+    case CLASS_HUNTER:       Botguild = "Fat Kids Lag IRL";      break;
+    case CLASS_WARLOCK:      Botguild = "Shadow Covenant";       break;
+    case CLASS_MAGE:         Botguild = "Arcane Pinnacle";       break;
+    case CLASS_PALADIN:      Botguild = "The Silver Hand";       break;
+    case CLASS_PRIEST:       Botguild = "Holy Hymn";             break;
+    case CLASS_DEATH_KNIGHT: Botguild = "Ebon Blade Vanguard";   break;
+    case CLASS_DRUID:        Botguild = "Breath of Nature";      break;
+    case CLASS_WARRIOR:      Botguild = "Ironblood Vanguard";    break;
+    case CLASS_ROGUE:        Botguild = "Rogues' League";        break;   // <-- apostrophe now safe
+    case CLASS_SHAMAN:       Botguild = "Wrath of the Elements"; break;
+    default:                 Botguild = "Nameless Clan";         break;
+    }
+
+    // --- Escape BEFORE fmt formatting ---
+    CharacterDatabase.EscapeString(Botname);
+    CharacterDatabase.EscapeString(Botguild);
+
+    // ---- Build safe SQL using fmt ----
+    std::string query = fmt::format(
+        "INSERT INTO `custom_fake_players` "
+        "(`name`, `guild`, `level`, `class`, `race`, `gender`, `zone`) "
+        "VALUES ('{}', '{}', {}, {}, {}, {}, {}) "
+        "ON DUPLICATE KEY UPDATE "
+        "`guild`='{}', `level`={}, `class`={}, `race`={}, `gender`={}, `zone`={}",
+        Botname, Botguild, Botlevel, botClass, Botrace, Botgender, Botzone,
+        Botguild, Botlevel, botClass, Botrace, Botgender, Botzone
+    );
+
+    if (sWorld->getBoolConfig(CONFIG_INCLUDE_FAKE_PLAYERS))
+        CharacterDatabase.Execute(query);
 }
 void BotDataMgr::UnregisterBot(Creature const* bot)
 {
