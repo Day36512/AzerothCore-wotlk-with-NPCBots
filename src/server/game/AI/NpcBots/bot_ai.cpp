@@ -6609,30 +6609,13 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
             }
         }
     }
-    // Hellfire Ramparts — Liquid Fire puddles
-    if (unit->GetMapId() == 543) // Hellfire Ramparts
-    {
-        std::list<GameObject*> liquidFireList;
-        static const std::array<uint32, 3> LiquidFireIds = { GAMEOBJECT_LIQUID_FIRE_1, GAMEOBJECT_LIQUID_FIRE_2, GAMEOBJECT_LIQUID_FIRE_3 };
-        auto fire_check = [](GameObject const* go) { return go && std::ranges::find(LiquidFireIds, go->GetEntry()) != LiquidFireIds.cend(); };
-        Bcore::GameObjectListSearcher fireSearcher(unit, liquidFireList, fire_check);
-        Cell::VisitObjects(unit, fireSearcher, 40.f);
-
-        if (!liquidFireList.empty())
-        {
-            for (GameObject const* go : liquidFireList)
-            {
-                float radius = 10.0f + go->GetObjectSize() + DEFAULT_COMBAT_REACH * 1.5f;
-                spots.emplace_back(*go, radius);
-            }
-        }
-    }
-    // The Underbog — Hungarfen's Mushrooms (normal & heroic)
+    // The Underbog — Hungarfen's Mushrooms + Muselek's Freezing Trap
     else if (unit->GetMapId() == 546)
     {
         static constexpr uint32 UNDERBOG_MUSHROOM_ENTRY_NORMAL = 17990; // Underbog Mushroom
         static constexpr uint32 UNDERBOG_MUSHROOM_ENTRY_HEROIC = 20189; // Underbog Mushroom (Heroic)
 
+        // 1) Underbog Mushrooms
         std::list<Creature*> mushrooms;
 
         auto mushCheck = [=](Creature const* c) -> bool
@@ -6662,6 +6645,29 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
                     + DEFAULT_COMBAT_REACH * 1.5f;
 
                 spots.emplace_back(*mush, radius);
+            }
+        }
+
+        // 2) Swamplord Muselek — Freezing Trap (GO 182145)
+        {
+            static constexpr uint32 GO_FREEZING_TRAP_UNDERBOG = 182145;
+            std::list<GameObject*> traps;
+
+            Bcore::AllGameObjectsWithEntryInRange trapCheck(unit, GO_FREEZING_TRAP_UNDERBOG, 40.f);
+            Bcore::GameObjectListSearcher<Bcore::AllGameObjectsWithEntryInRange> trapSearcher(unit, traps, trapCheck);
+            Cell::VisitObjects(unit, trapSearcher, 40.f);
+
+            if (!traps.empty())
+            {
+                for (GameObject const* go : traps)
+                {
+                    if (!go)
+                        continue;
+
+                    // Freezing Trap radius is fairly small; pad it so bots don't skim the edge
+                    float radius = 6.0f + go->GetObjectSize() + DEFAULT_COMBAT_REACH * 1.5f;
+                    spots.emplace_back(*go, radius);
+                }
             }
         }
     }

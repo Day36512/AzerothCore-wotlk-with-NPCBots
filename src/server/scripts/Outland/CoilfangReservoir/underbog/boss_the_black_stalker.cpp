@@ -6,20 +6,30 @@
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "CreatureScript.h"
+#include "Player.h"
 #include "ScriptedCreature.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "the_underbog.h"
+
+ // NPCBots
+#include "bot_ai.h"
+#include "botmgr.h"
+
+#include <chrono>
+#include <vector>
+
+using namespace std::chrono_literals;
 
 /*
 How levitation sequence works: boss casts Levitate and it triggers a chain of spells, target(any target, player or pet, any position in
@@ -37,18 +47,18 @@ Of course as was said above player can be pulled towards 2 times in a row but th
 
 enum eBlackStalker
 {
-    SPELL_LEVITATE                  = 31704,
-    SPELL_CHAIN_LIGHTNING           = 31717,
-    SPELL_STATIC_CHARGE             = 31715,
-    SPELL_SUMMON_SPORE_STRIDER      = 38755,
+    SPELL_LEVITATE = 31704,
+    SPELL_CHAIN_LIGHTNING = 31717,
+    SPELL_STATIC_CHARGE = 31715,
+    SPELL_SUMMON_SPORE_STRIDER = 38755,
 
-    SPELL_LEVITATION_PULSE          = 31701,
-    SPELL_SOMEONE_GRAB_ME           = 31702,
-    SPELL_MAGNETIC_PULL             = 31703,
-    SPELL_SUSPENSION_PRIMER         = 31720,
-    SPELL_SUSPENSION                = 31719,
+    SPELL_LEVITATION_PULSE = 31701,
+    SPELL_SOMEONE_GRAB_ME = 31702,
+    SPELL_MAGNETIC_PULL = 31703,
+    SPELL_SUSPENSION_PRIMER = 31720,
+    SPELL_SUSPENSION = 31719,
 
-    ENTRY_SPORE_STRIDER             = 22299
+    ENTRY_SPORE_STRIDER = 22299
 };
 
 struct boss_the_black_stalker : public BossAI
@@ -56,43 +66,103 @@ struct boss_the_black_stalker : public BossAI
     boss_the_black_stalker(Creature* creature) : BossAI(creature, DATA_BLACK_STALKER)
     {
         scheduler.SetValidator([this]
+            {
+                return !me->HasUnitState(UNIT_STATE_CASTING);
+            });
+    }
+
+    // ---------- Bot-aware helpers ----------
+    static bool IsPlayerOrNPCBot(Unit* u)
+    {
+        if (!u || !u->IsAlive())
+            return false;
+
+        if (u->GetTypeId() == TYPEID_PLAYER)
+            return true;
+
+        if (u->GetTypeId() == TYPEID_UNIT)
         {
-            return !me->HasUnitState(UNIT_STATE_CASTING);
-        });
+            if (Creature* c = u->ToCreature())
+                return c->IsNPCBot();
+        }
+
+        return false;
+    }
+
+    Unit* SelectRandomPlayerOrNPCBotFromThreat(bool excludeVictim = false)
+    {
+        std::vector<Unit*> pool;
+        auto const& tlist = me->GetThreatMgr().GetThreatList();
+        pool.reserve(tlist.size());
+
+        for (auto const* ref : tlist)
+        {
+            Unit* u = ref ? ref->getTarget() : nullptr;
+            if (!u || !u->IsAlive())
+                continue;
+
+            if (excludeVictim && u == me->GetVictim())
+                continue;
+
+            if (!IsPlayerOrNPCBot(u))
+                continue;
+
+            pool.push_back(u);
+        }
+
+        if (pool.empty())
+            return nullptr;
+
+        return pool[urand(0u, static_cast<uint32>(pool.size() - 1))];
     }
 
     void JustEngagedWith(Unit* /*who*/) override
     {
+        // Levitate (retail behavior, boss-self cast)
         scheduler.Schedule(8s, 12s, [this](TaskContext context)
-        {
-            DoCastSelf(SPELL_LEVITATE);
-            context.Repeat(18s, 24s);
-        }).Schedule(6s, [this](TaskContext context)
-        {
-            DoCastRandomTarget(SPELL_CHAIN_LIGHTNING, false);
-            context.Repeat(9s);
-        }).Schedule(10s, [this](TaskContext context)
-        {
-            DoCastRandomTarget(SPELL_STATIC_CHARGE, false);
-            context.Repeat(10s);
-        }).Schedule(5s, [this](TaskContext /*context*/)
-        {
-            float x, y, z, o = 0.f;
-            me->GetHomePosition(x, y, z, o);
-            if (!me->IsWithinDist3d(x, y, z, 60.0f))
             {
-                EnterEvadeMode();
-                return;
-            }
-        });
+                DoCastSelf(SPELL_LEVITATE);
+                context.Repeat(18s, 24s);
+            })
+            // Chain Lightning – target players + bots from threat list
+            .Schedule(6s, [this](TaskContext context)
+                {
+                    if (Unit* target = SelectRandomPlayerOrNPCBotFromThreat(false))
+                        me->CastSpell(target, SPELL_CHAIN_LIGHTNING, false);
+                    else
+                        DoCastRandomTarget(SPELL_CHAIN_LIGHTNING, false); // fallback, just in case
+
+                    context.Repeat(9s);
+                })
+            // Static Charge – target players + bots from threat list
+            .Schedule(10s, [this](TaskContext context)
+                {
+                    if (Unit* target = SelectRandomPlayerOrNPCBotFromThreat(false))
+                        me->CastSpell(target, SPELL_STATIC_CHARGE, false);
+                    else
+                        DoCastRandomTarget(SPELL_STATIC_CHARGE, false); // fallback
+
+                    context.Repeat(10s);
+                })
+            // Leash check
+            .Schedule(5s, [this](TaskContext /*context*/)
+                {
+                    float x, y, z, o = 0.f;
+                    me->GetHomePosition(x, y, z, o);
+                    if (!me->IsWithinDist3d(x, y, z, 60.0f))
+                    {
+                        EnterEvadeMode();
+                        return;
+                    }
+                });
 
         if (IsHeroic())
         {
             scheduler.Schedule(10s, 15s, [this](TaskContext context)
-            {
-                DoCastSelf(SPELL_SUMMON_SPORE_STRIDER, false);
-                context.Repeat(10s, 15s);
-            });
+                {
+                    DoCastSelf(SPELL_SUMMON_SPORE_STRIDER, false);
+                    context.Repeat(10s, 15s);
+                });
         }
 
         _JustEngagedWith();
@@ -100,7 +170,8 @@ struct boss_the_black_stalker : public BossAI
 
     void JustSummoned(Creature* summon) override
     {
-        if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 0.0f, false, false))
+        // Spore Striders should also prioritize players + NPCBots
+        if (Unit* target = SelectRandomPlayerOrNPCBotFromThreat(false))
             summon->AI()->AttackStart(target);
         else if (me->GetVictim())
             summon->AI()->AttackStart(me->GetVictim());
@@ -136,7 +207,8 @@ class spell_the_black_stalker_levitate : public SpellScript
 
     void HandleScript(SpellEffIndex /*effIndex*/)
     {
-        GetHitUnit()->CastSpell(GetHitUnit(), SPELL_LEVITATION_PULSE, true);
+        if (Unit* hit = GetHitUnit())
+            hit->CastSpell(hit, SPELL_LEVITATION_PULSE, true);
     }
 
     void Register() override
@@ -157,7 +229,8 @@ class spell_the_black_stalker_levitation_pulse : public SpellScript
 
     void HandleScript(SpellEffIndex /*effIndex*/)
     {
-        GetCaster()->CastSpell(GetCaster(), SPELL_SOMEONE_GRAB_ME, true);
+        if (Unit* caster = GetCaster())
+            caster->CastSpell(caster, SPELL_SOMEONE_GRAB_ME, true);
     }
 
     void Register() override
@@ -178,8 +251,13 @@ class spell_the_black_stalker_someone_grab_me : public SpellScript
 
     void HandleScript(SpellEffIndex /*effIndex*/)
     {
-        if (!GetCaster()->HasAura(SPELL_SUSPENSION))
-            GetHitUnit()->CastSpell(GetCaster(), SPELL_MAGNETIC_PULL);
+        Unit* caster = GetCaster();
+        Unit* target = GetHitUnit();
+        if (!caster || !target)
+            return;
+
+        if (!caster->HasAura(SPELL_SUSPENSION))
+            target->CastSpell(caster, SPELL_MAGNETIC_PULL);
     }
 
     void Register() override
@@ -200,7 +278,8 @@ class spell_the_black_stalker_magnetic_pull : public SpellScript
 
     void HandleScript(SpellEffIndex /*effIndex*/)
     {
-        GetHitUnit()->CastSpell(GetHitUnit(), SPELL_SUSPENSION_PRIMER, true);
+        if (Unit* hit = GetHitUnit())
+            hit->CastSpell(hit, SPELL_SUSPENSION_PRIMER, true);
     }
 
     void Register() override

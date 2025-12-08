@@ -6,42 +6,54 @@
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "CreatureScript.h"
+#include "Player.h"
 #include "ScriptedCreature.h"
+#include "ObjectAccessor.h"
 #include "TaskScheduler.h"
 #include "the_underbog.h"
 
+ // NPCBots
+#include "bot_ai.h"
+#include "botmgr.h"
+
+#include <chrono>
+#include <vector>
+
+using namespace std::chrono_literals;
+
 enum Spells
 {
-    SPELL_SHOOT               = 22907,
-    SPELL_KNOCKAWAY           = 18813,
-    SPELL_RAPTOR_STRIKE       = 31566,
-    SPELL_MULTISHOT           = 34974,
+    SPELL_SHOOT = 22907,
+    SPELL_KNOCKAWAY = 18813,
+    SPELL_RAPTOR_STRIKE = 31566,
+    SPELL_MULTISHOT = 34974,
     SPELL_THROW_FREEZING_TRAP = 31946,
-    SPELL_AIMED_SHOT          = 31623,
-    SPELL_HUNTERS_MARK        = 31615,
+    SPELL_AIMED_SHOT = 31623,
+    SPELL_HUNTERS_MARK = 31615,
+    SPELL_ELECTRIFIED_NET = 11820   // new: random root on a target
 };
 
 enum Text
 {
-    SAY_AGGRO       = 1,
-    SAY_KILL        = 2,
-    SAY_JUST_DIED   = 3
+    SAY_AGGRO = 1,
+    SAY_KILL = 2,
+    SAY_JUST_DIED = 3
 };
 
 enum Misc
 {
     RANGED_GROUP = 1,
-    RANGE_CHECK  = 2
+    RANGE_CHECK = 2
 };
 
 struct boss_swamplord_muselek : public BossAI
@@ -49,9 +61,60 @@ struct boss_swamplord_muselek : public BossAI
     boss_swamplord_muselek(Creature* creature) : BossAI(creature, DATA_MUSELEK)
     {
         scheduler.SetValidator([this]
+            {
+                return !me->HasUnitState(UNIT_STATE_CASTING);
+            });
+    }
+
+    // ---------- Bot-aware helpers ----------
+    static bool IsPlayerOrNPCBot(Unit* u)
+    {
+        if (!u || !u->IsAlive())
+            return false;
+
+        if (u->GetTypeId() == TYPEID_PLAYER)
+            return true;
+
+        if (u->GetTypeId() == TYPEID_UNIT)
         {
-            return !me->HasUnitState(UNIT_STATE_CASTING);
-        });
+            if (Creature* c = u->ToCreature())
+                return c->IsNPCBot();
+        }
+
+        return false;
+    }
+
+    Unit* SelectRandomPlayerOrNPCBotInRange(float maxRange, bool requireLos = true, bool excludeVictim = false)
+    {
+        std::vector<Unit*> pool;
+        auto const& tlist = me->GetThreatMgr().GetThreatList();
+        pool.reserve(tlist.size());
+
+        for (auto const* ref : tlist)
+        {
+            Unit* u = ref ? ref->getTarget() : nullptr;
+            if (!u || !u->IsAlive())
+                continue;
+
+            if (excludeVictim && u == me->GetVictim())
+                continue;
+
+            if (!IsPlayerOrNPCBot(u))
+                continue;
+
+            if (!me->IsWithinDistInMap(u, maxRange))
+                continue;
+
+            if (requireLos && !me->IsWithinLOSInMap(u))
+                continue;
+
+            pool.push_back(u);
+        }
+
+        if (pool.empty())
+            return nullptr;
+
+        return pool[urand(0u, static_cast<uint32>(pool.size() - 1))];
     }
 
     void Reset() override
@@ -101,82 +164,99 @@ struct boss_swamplord_muselek : public BossAI
         _JustEngagedWith();
         Talk(SAY_AGGRO);
 
+        // Basic ranged vs chase logic
         scheduler.Schedule(3s, [this](TaskContext context)
-        {
-            if (CanShootVictim())
             {
-                me->LoadEquipment(1, true);
-                DoCastVictim(SPELL_SHOOT);
-                me->GetMotionMaster()->Clear();
-                me->StopMoving();
-                _canChase = false;
-            }
-            else if (_canChase)
-            {
-                me->GetMotionMaster()->MoveChase(me->GetVictim());
-            }
-
-            context.Repeat();
-        }).Schedule(15s, 30s, [this](TaskContext context)
-        {
-            if (me->GetVictim() && me->IsWithinMeleeRange(me->GetVictim()))
-            {
-                DoCastVictim(SPELL_KNOCKAWAY);
-            }
-
-            context.Repeat();
-        }).Schedule(10s, 15s, [this](TaskContext context)
-        {
-            DoCastVictim(SPELL_MULTISHOT);
-            context.Repeat(20s, 30s);
-        }).Schedule(30s, 40s, [this](TaskContext context)
-        {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 40.0f, false, true))
-            {
-                _markTarget = target->GetGUID();
-                _canChase = false;
-                DoCastVictim(SPELL_THROW_FREEZING_TRAP);
-
-                scheduler.Schedule(3s, [this, target](TaskContext)
+                if (CanShootVictim())
                 {
-                    if (target && me->GetVictim())
-                    {
-                        if (me->IsWithinMeleeRange(me->GetVictim()))
-                        {
-                            me->GetMotionMaster()->Clear();
-                            me->GetMotionMaster()->MoveForwards(me->GetVictim(), 10.0f);
-                            _canChase = false;
-                        }
-
-                        me->m_Events.AddEventAtOffset([this]()
-                        {
-                            if (Unit* marktarget = ObjectAccessor::GetUnit(*me, _markTarget))
-                            {
-                                DoCast(marktarget, SPELL_HUNTERS_MARK);
-                            }
-                        }, 3s);
-                    }
-                });
-
-                scheduler.Schedule(5s, [this, target](TaskContext)
+                    me->LoadEquipment(1, true);
+                    DoCastVictim(SPELL_SHOOT);
+                    me->GetMotionMaster()->Clear();
+                    me->StopMoving();
+                    _canChase = false;
+                }
+                else if (_canChase)
                 {
-                    if (target)
-                    {
-                        me->m_Events.AddEventAtOffset([this]()
-                        {
-                            if (Unit* marktarget = ObjectAccessor::GetUnit(*me, _markTarget))
-                            {
-                                scheduler.DelayAll(5s);
-                                DoCast(marktarget, SPELL_AIMED_SHOT);
-                                _canChase = true;
-                            }
-                        }, 3s);
-                    }
-                });
-            }
+                    me->GetMotionMaster()->MoveChase(me->GetVictim());
+                }
 
-            context.Repeat(12s, 16s);
-        });
+                context.Repeat();
+            })
+            // Knockaway in melee
+            .Schedule(15s, 30s, [this](TaskContext context)
+                {
+                    if (me->GetVictim() && me->IsWithinMeleeRange(me->GetVictim()))
+                    {
+                        DoCastVictim(SPELL_KNOCKAWAY);
+                    }
+
+                    context.Repeat();
+                })
+            // Multishot on victim
+            .Schedule(10s, 15s, [this](TaskContext context)
+                {
+                    DoCastVictim(SPELL_MULTISHOT);
+                    context.Repeat(20s, 30s);
+                })
+            // Freezing Trap + Hunter's Mark + Aimed Shot sequence
+            .Schedule(30s, 40s, [this](TaskContext context)
+                {
+                    if (Unit* target = SelectRandomPlayerOrNPCBotInRange(40.0f, true, false))
+                    {
+                        _markTarget = target->GetGUID();
+                        _canChase = false;
+                        DoCastVictim(SPELL_THROW_FREEZING_TRAP);
+
+                        // After throwing trap, reposition and apply Hunter's Mark
+                        scheduler.Schedule(3s, [this, target](TaskContext)
+                            {
+                                if (target && me->GetVictim())
+                                {
+                                    if (me->IsWithinMeleeRange(me->GetVictim()))
+                                    {
+                                        me->GetMotionMaster()->Clear();
+                                        me->GetMotionMaster()->MoveForwards(me->GetVictim(), 10.0f);
+                                        _canChase = false;
+                                    }
+
+                                    me->m_Events.AddEventAtOffset([this]()
+                                        {
+                                            if (Unit* marktarget = ObjectAccessor::GetUnit(*me, _markTarget))
+                                            {
+                                                DoCast(marktarget, SPELL_HUNTERS_MARK);
+                                            }
+                                        }, 3s);
+                                }
+                            });
+
+                        // Aimed Shot follow-up
+                        scheduler.Schedule(5s, [this, target](TaskContext)
+                            {
+                                if (target)
+                                {
+                                    me->m_Events.AddEventAtOffset([this]()
+                                        {
+                                            if (Unit* marktarget = ObjectAccessor::GetUnit(*me, _markTarget))
+                                            {
+                                                scheduler.DelayAll(5s);
+                                                DoCast(marktarget, SPELL_AIMED_SHOT);
+                                                _canChase = true;
+                                            }
+                                        }, 3s);
+                                }
+                            });
+                    }
+
+                    context.Repeat(12s, 16s);
+                })
+            // Electrified Net – new: every 20s on random player/bot
+            .Schedule(6s, [this](TaskContext context)
+                {
+                    if (Unit* target = SelectRandomPlayerOrNPCBotInRange(40.0f, true, false))
+                        me->CastSpell(target, SPELL_ELECTRIFIED_NET, true);
+
+                    context.Repeat(20s);
+                });
     }
 
 private:

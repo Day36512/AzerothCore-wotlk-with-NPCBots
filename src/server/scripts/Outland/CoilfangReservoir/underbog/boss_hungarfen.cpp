@@ -39,6 +39,7 @@ enum Spells
     SPELL_DESPAWN_MUSHROOMS = 34874,
     SPELL_FOUL_SPORES = 31673,
     SPELL_ACID_GEYSER = 38739,
+    SPELL_ENTANGLING_ROOTS = 339,    // new: random root on mushroom targets
 
     // Underbog Mushroom
     SPELL_SHRINK = 31691,
@@ -130,13 +131,23 @@ struct boss_hungarfen : public BossAI
                 // Bot-aware mushroom spawn target selection
                 if (Unit* target = SelectRandomPlayerOrNPCBotFromThreat(false))
                 {
+                    // Spawn mushrooms on the target
                     target->CastSpell(target, SPELL_SPAWN_MUSHROOMS, true);
+
+                    // 40% chance to have Hungarfen root that target
+                    if (urand(1, 100) <= 40)
+                        me->CastSpell(target, SPELL_ENTANGLING_ROOTS, true);
                 }
                 else
                 {
                     // Fallback to original behavior if something weird happens
                     if (Unit* fallback = SelectTarget(SelectTargetMethod::Random, 0, 0.0f, true))
+                    {
                         fallback->CastSpell(fallback, SPELL_SPAWN_MUSHROOMS, true);
+
+                        if (urand(1, 100) <= 40)
+                            me->CastSpell(fallback, SPELL_ENTANGLING_ROOTS, false);
+                    }
                 }
 
                 context.Repeat();
