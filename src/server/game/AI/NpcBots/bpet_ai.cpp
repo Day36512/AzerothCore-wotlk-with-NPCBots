@@ -891,7 +891,7 @@ void bot_pet_ai::SetPetStats(bool force)
         default:
             break;
     }
-    me->SetModifierValue(UNIT_MOD_ATTACK_POWER, BASE_VALUE, atpower);
+    me->SetStatFlatModifier(UNIT_MOD_ATTACK_POWER, BASE_VALUE, atpower);
     me->UpdateAttackPowerAndDamage();
     //armor
     myarmor = std::max<uint32>(myarmor, level*50);
@@ -920,7 +920,7 @@ void bot_pet_ai::SetPetStats(bool force)
     {
         myarmor /= 3;
     }
-    me->SetModifierValue(UNIT_MOD_ARMOR, BASE_VALUE, float(myarmor));
+    me->SetStatFlatModifier(UNIT_MOD_ARMOR, BASE_VALUE, float(myarmor));
     me->UpdateArmor();
     //resistances
     for (uint8 i = SPELL_SCHOOL_HOLY; i != MAX_SPELL_SCHOOL; ++i)
@@ -942,7 +942,7 @@ void bot_pet_ai::SetPetStats(bool force)
                 petResist = (petOwner->GetBotAI()->GetBotResistanceBonus(SpellSchools(i)) + petOwner->GetResistance(SpellSchools(i)))*0.4f;
                 break;
         }
-        me->SetModifierValue(UnitMods(UNIT_MOD_RESISTANCE_START + i), BASE_VALUE, petResist);
+        me->SetStatFlatModifier(UnitMods(UNIT_MOD_RESISTANCE_START + i), BASE_VALUE, petResist);
         me->UpdateResistances(i);
     }
     //crit physical
@@ -1324,7 +1324,7 @@ void bot_pet_ai::SetPetStats(bool force)
     //BOT_LOG_ERROR("entities.player", "SetPetStat(): hp stamval %.1f, stammult %.1f, base %u, total %.2f", stamValue, stamMult, botPet->GetCreateHealth(), m_totalhp);
     bool fullhp = me->GetHealth() == me->GetMaxHealth();
     float pct = fullhp ? 100.f : me->GetHealthPct(); // needs for regeneration
-    me->SetModifierValue(UNIT_MOD_HEALTH, BASE_VALUE, m_totalhp);
+    me->SetStatFlatModifier(UNIT_MOD_HEALTH, BASE_VALUE, m_totalhp);
     me->UpdateMaxHealth();
     me->SetHealth(fullhp ? me->GetMaxHealth() : uint32(0.5f + float(me->GetMaxHealth()) * pct / 100.f)); //restore pct
     //mana
@@ -1355,7 +1355,7 @@ void bot_pet_ai::SetPetStats(bool force)
         //BOT_LOG_ERROR("entities.player", "SetPetStat(): mana intValue %.1f, intMult %.1f, base %u, total %.2f", intValue, intMult, botPet->GetCreatePowerValue(POWER_MANA), m_totalmana);
         bool fullmana = me->GetPower(POWER_MANA) == me->GetMaxPower(POWER_MANA);
         pct = fullmana ? 100.f : (float(me->GetPower(POWER_MANA)) * 100.f) / float(me->GetMaxPower(POWER_MANA));
-        me->SetModifierValue(UNIT_MOD_MANA, BASE_VALUE, m_totalmana);
+        me->SetStatFlatModifier(UNIT_MOD_MANA, BASE_VALUE, m_totalmana);
         me->UpdateMaxPower(POWER_MANA);
         me->SetPower(POWER_MANA, fullmana ? me->GetMaxPower(POWER_MANA) :
             uint32(0.5f + float(me->GetMaxPower(POWER_MANA)) * pct / 100.f)); //restore pct
