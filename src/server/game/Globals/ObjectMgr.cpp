@@ -3463,6 +3463,75 @@ void ObjectMgr::LoadItemTemplates()
         ++count;
     } while (result->NextRow());
 
+    {
+        uint32 modStartMSTime = getMSTime();
+        uint32 modCount = 0;
+
+        QueryResult modResult = WorldDatabase.Query(
+            "SELECT `entry`, `damage_pct` FROM `custom_item_damage_mod`");
+
+        if (modResult)
+        {
+            do
+            {
+                Field* fields = modResult->Fetch();
+
+                uint32 entry = fields[0].Get<uint32>();
+                float  damagePct = fields[1].Get<float>();
+
+                if (damagePct <= 0.0f)
+                {
+                    LOG_ERROR("sql.sql",
+                        "custom_item_damage_mod: entry {} has non-positive damage_pct {} – skipping.",
+                        entry, damagePct);
+                    continue;
+                }
+
+                ItemTemplateContainer::iterator it = _itemTemplateStore.find(entry);
+                if (it == _itemTemplateStore.end())
+                {
+                    LOG_ERROR("sql.sql",
+                        "custom_item_damage_mod: entry {} does not exist in `item_template` – skipping.",
+                        entry);
+                    continue;
+                }
+
+                ItemTemplate& proto = it->second;
+
+                // Only make sense for weapons; if you want to affect anything with damage,
+                // you can remove this check.
+                if (proto.Class != ITEM_CLASS_WEAPON)
+                {
+                    LOG_WARN("sql.sql",
+                        "custom_item_damage_mod: entry {} is not a weapon (class {}) – skipping.",
+                        entry, proto.Class);
+                    continue;
+                }
+
+                float multiplier = damagePct / 100.0f;
+
+                for (uint8 i = 0; i < MAX_ITEM_PROTO_DAMAGES; ++i)
+                {
+                    float& dmgMin = proto.Damage[i].DamageMin;
+                    float& dmgMax = proto.Damage[i].DamageMax;
+
+                    // If damage is zero, leave it (covers most non-weapon entries anyway).
+                    if (dmgMin == 0.0f && dmgMax == 0.0f)
+                        continue;
+
+                    dmgMin *= multiplier;
+                    dmgMax *= multiplier;
+                }
+
+                ++modCount;
+            } while (modResult->NextRow());
+        }
+
+        LOG_INFO("server.loading",
+            ">> Applied {} custom weapon damage modifiers in {} ms",
+            modCount, GetMSTimeDiffToNow(modStartMSTime));
+    }
+
     // pussywizard:
     {
         uint32 max = 0;

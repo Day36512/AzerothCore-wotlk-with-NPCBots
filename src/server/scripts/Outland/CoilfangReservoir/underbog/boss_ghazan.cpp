@@ -261,7 +261,7 @@ private:
 
 // ---------------- Venom Fangs SpellScript (initial hit) ----------------
 // EFFECT_1: SCHOOL_DAMAGE
-//  - If target HP >= 50%: deals 35% of MAX HP.
+//  - If target HP >= 50%: deals 30% of MAX HP.
 //  - If target HP <  50%: deals 12% of MAX HP.
 class spell_ghazan_venom_fangs : public SpellScript
 {
@@ -275,7 +275,7 @@ class spell_ghazan_venom_fangs : public SpellScript
         if (!target || !target->IsAlive())
             return;
 
-        float pct = target->HealthBelowPct(50) ? 0.12f : 0.35f;
+        float pct = target->HealthBelowPct(50) ? 0.12f : 0.3f;
         float raw = float(target->GetMaxHealth()) * pct;
         int32 damage = int32(raw);
 

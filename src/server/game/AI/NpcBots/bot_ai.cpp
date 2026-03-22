@@ -6689,6 +6689,34 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
             spots.emplace_back(*creature, radius);
         }
     }
+    // Mana-Tombs — Tavarok's Crystal Pillars
+    else if (unit->GetMapId() == 557)
+    {
+        static constexpr uint32 NPC_TAVAROK_CRYSTAL_PILLAR = 819188;
+
+        std::list<Creature*> pillars;
+
+        auto pillarCheck = [](Creature const* c) -> bool
+            {
+                return c && c->IsAlive() && c->GetEntry() == NPC_TAVAROK_CRYSTAL_PILLAR;
+            };
+
+        Bcore::CreatureListSearcher pillarSearcher(unit, pillars, pillarCheck);
+        Cell::VisitObjects(unit, pillarSearcher, 60.f);
+
+        for (Creature* p : pillars)
+        {
+            if (!p)
+                continue;
+
+            // Pad the radius so bots don't skim the edge of the explosion
+            float radius = 13.0f
+                + p->GetObjectScale() * 2.0f
+                + DEFAULT_COMBAT_REACH * 1.5f;
+
+            spots.emplace_back(*p, radius);
+        }
+    }
     // Magister's Terrace
     else if (unit->GetMapId() == 585)
     {
