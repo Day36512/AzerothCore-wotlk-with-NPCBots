@@ -255,6 +255,26 @@ public:
             return 0;
         }
 
+        void Counter(uint32 diff)
+        {
+            if (Rand() > 50 || me->HasAuraType(SPELL_AURA_MOD_STEALTH))
+                return;
+
+            if (Unit const* u = me->GetVictim(); u && u->IsNonMeleeSpellCast(false,false,true))
+            {
+                if (IsSpellReady(KICK_1, diff, false) && Rand() && !HasQueuedSpellAction(KICK_1))
+                    if (EnqueueCounterSpellAction(u->GetGUID(), KICK_1, true))
+                        return;
+                if (IsSpellReady(GOUGE_1, diff, false) && HasRole(BOT_ROLE_DPS) && !HasQueuedSpellAction(GOUGE_1) && u->HasInArc(float(M_PI), me))
+                    if (EnqueueCounterSpellAction(u->GetGUID(), GOUGE_1, true))
+                        return;
+            }
+            if (IsSpellReady(BLIND_1, diff, false) && !HasQueuedSpellAction(BLIND_1))
+                if (Unit const* target = FindCastingTarget(CalcSpellMaxRange(BLIND_1), 0, BLIND_1))
+                    if (EnqueueCounterSpellAction(target->GetGUID(), BLIND_1, true))
+                        return;
+        }
+
         void UpdateAI(uint32 diff) override
         {
             if (combopointsSpent)
@@ -282,6 +302,8 @@ public:
 
             if (!me->IsInCombat())
                 DoNonCombatActions(diff);
+
+            Counter(diff);
 
             if (IsCasting())
                 return;
@@ -357,13 +379,6 @@ public:
                 if (doCast(mytar, GetSpell(PREMEDITATION_1)))
                 {}
             }
-            //Kick
-            if (IsSpellReady(KICK_1, diff, false) && !stealthed && dist <= 5 && Rand() < 70 &&
-                energy >= ecost(KICK_1) && mytar->IsNonMeleeSpellCast(false,false,true))
-            {
-                if (doCast(mytar, GetSpell(KICK_1)))
-                    getenergy();
-            }
             //Killing Spree
             if (IsSpellReady(KILLING_SPREE_1, diff) && !stealthed && !shadowdance && HasRole(BOT_ROLE_DPS) &&
                 Rand() < (70 - energy) && dist < 10 && GetHealthPCT(me) > 25 && (!CCed(mytar) || dist > 5) &&
@@ -375,9 +390,8 @@ public:
             }
              //Gouge: if mytar is trying to attack/cast on us he will always try to face us
             if (IsSpellReady(GOUGE_1, diff) && !stealthed && !shadowdance && HasRole(BOT_ROLE_DPS) && dist <= 5 &&
-                Rand() < 30 && !CCed(mytar) && energy >= ecost(GOUGE_1) &&
-                ((energy < 55 && mytar->getAttackers().size() <= 1 && !mytar->HasAuraType(SPELL_AURA_PERIODIC_DAMAGE)) ||
-                mytar->IsNonMeleeSpellCast(false,false,true)) && mytar->HasInArc(float(M_PI), me))
+                Rand() < 30 && !CCed(mytar) && energy >= ecost(GOUGE_1) && energy < 55 && mytar->getAttackers().size() <= 1 &&
+                !mytar->HasAuraType(SPELL_AURA_PERIODIC_DAMAGE) && mytar->HasInArc(float(M_PI), me))
             {
                 if (doCast(mytar, GetSpell(GOUGE_1)))
                     return;
@@ -385,12 +399,8 @@ public:
             //Blind: in pvp only for restealth
             if (IsSpellReady(BLIND_1, diff) && !stealthed && !shadowdance && dist <= 15 && Rand() < 30 &&
                 !CCed(mytar) && !mytar->IsTotem() && energy >= ecost(BLIND_1) &&
-                ((energy <= 30 && mytar->GetTarget() == me->GetGUID() &&
-                mytar->getAttackers().size() <= 1 &&
-                !mytar->HasAuraType(SPELL_AURA_PERIODIC_DAMAGE) &&
-                !me->HasAuraType(SPELL_AURA_PERIODIC_DAMAGE)) ||
-                (mytar->IsCreature() && !IsSpellReady(KICK_1, diff) && !IsSpellReady(GOUGE_1, diff) &&
-                mytar->IsNonMeleeSpellCast(false,false,true))))
+                ((energy <= 30 && mytar->GetTarget() == me->GetGUID() && mytar->getAttackers().size() <= 1 &&
+                !mytar->HasAuraType(SPELL_AURA_PERIODIC_DAMAGE) && !me->HasAuraType(SPELL_AURA_PERIODIC_DAMAGE))))
             {
                 if (doCast(mytar, GetSpell(BLIND_1)))
                     return;
@@ -455,7 +465,7 @@ public:
             //Deadly Throw
             if (IsSpellReady(DEADLY_THROW_1, diff) && !stealthed && !shadowdance && HasRole(BOT_ROLE_DPS) &&
                 comboPoints > 0 && Rand() < 55 && dist < 30 && dist > 5 && energy >= ecost(DEADLY_THROW_1) &&
-                ((_spec != BOT_SPEC_ROGUE_COMBAT) || mytar->IsNonMeleeSpellCast(false,false,true)))
+                (_spec != BOT_SPEC_ROGUE_COMBAT || mytar->IsNonMeleeSpellCast(false,false,true)))
             {
                 Item const* thrown = GetEquips(BOT_SLOT_RANGED);
                 if (thrown && thrown->GetTemplate()->Class == ITEM_CLASS_WEAPON &&
