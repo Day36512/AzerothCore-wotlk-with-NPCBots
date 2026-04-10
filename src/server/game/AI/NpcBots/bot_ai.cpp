@@ -485,7 +485,7 @@ void bot_ai::ResetBotAI(uint8 resetType)
     if (spawned)
         ReturnHome();
 
-    if (!me->IsInWorld() || resetType == BOTAI_RESET_FORCERECALL)
+    if ((!me->IsInWorld() || resetType == BOTAI_RESET_FORCERECALL) && !me->IsSummon())
     {
         TeleportHomeStart(resetType != BOTAI_RESET_UNBIND);
     }
