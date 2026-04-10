@@ -1504,7 +1504,7 @@ void bot_ai::ResurrectGroup(uint32 spell_id)
         Player* player = master;
         if (!player->IsAlive() && !player->isResurrectRequested() && !player->GetUInt32Value(PLAYER_SELF_RES_SPELL))
         {
-            Unit* target = player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST) ? player->ToUnit() : (Unit*)player->GetCorpse();
+            Unit* target = !player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST) ? player->ToUnit() : (Unit*)player->GetCorpse();
             if (target && target->IsInWorld() && me->GetMap() == target->FindMap() &&
                 !player->GetBotMgr()->IsBeingResurrected(target))
             {
@@ -1545,7 +1545,7 @@ void bot_ai::ResurrectGroup(uint32 spell_id)
                 Bots = true;
             if (player->IsAlive() || player->isResurrectRequested() || player->GetUInt32Value(PLAYER_SELF_RES_SPELL)) continue;
 
-            Unit* target = player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST) ? player->ToUnit() : (Unit*)player->GetCorpse();
+            Unit* target = !player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST) ? player->ToUnit() : (Unit*)player->GetCorpse();
 
             if (!target || !target->IsInWorld()) continue;
             if (target->GetTypeId() != player->GetTypeId() && me->GetMap() != target->FindMap()) continue;
