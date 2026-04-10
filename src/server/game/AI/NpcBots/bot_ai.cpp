@@ -9171,6 +9171,7 @@ bool bot_ai::OnGossipSelect(Player* player, Creature* creature/* == me*/, uint32
                             if (BotCfg::SendEquipListItems())
                                 BotWhisper(name.view(), player);
                             AddGossipItemFor(player, GOSSIP_ICON_CHAT, name.str(), GOSSIP_SENDER_EQUIP + slot, GOSSIP_ACTION_INFO_DEF + pItem->GetGUID().GetCounter());
+                            name.str("");
                             ++counter;
                             return true;
                         }
@@ -9399,6 +9400,7 @@ bool bot_ai::OnGossipSelect(Player* player, Creature* creature/* == me*/, uint32
                                 if (BotCfg::SendEquipListItems())
                                     BotWhisper(name.view(), player);
                                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, name.str(), GOSSIP_SENDER_EQUIP_AUTOEQUIP_EQUIP + slot, GOSSIP_ACTION_INFO_DEF + guidlow);
+                                name.str("");
                                 ++counter;
                                 return true;
                             }
