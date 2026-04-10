@@ -205,7 +205,7 @@ void BotMgr::Update(uint32 diff)
         if (ai->IAmFree())
             continue;
 
-        if (!bot->IsInWorld())
+        if (!bot->IsInWorld() || (bot->IsSummon() && !bot->IsInMap(_owner)))
         {
             ai->CommonTimers(diff);
             continue;
@@ -536,8 +536,13 @@ void BotMgr::OnTeleportFar(uint32 mapId, float x, float y, float z, float ori)
 
     for (auto const& [_, bot] : _bots)
     {
-        if (bot->IsTempBot() || bot->IsSummon())
+        if (bot->IsTempBot())
             continue;
+        else if (bot->IsSummon())
+        {
+            bot->GetBotAI()->canUpdate = false;
+            continue;
+        }
 
         //_owner->m_Controlled.erase(bot);
         TeleportBot(bot, newMap, &pos);
@@ -787,6 +792,7 @@ void BotMgr::RemoveBot(ObjectGuid guid, uint8 removetype)
     {
         RemoveBotFromBGQueue(bot);
         RemoveBotFromGroup(bot);
+        bot->SetCreator(nullptr);
         BotDataMgr::DespawnDungeonBot(bot->GetEntry());
         _bots.erase(itr);
         return;

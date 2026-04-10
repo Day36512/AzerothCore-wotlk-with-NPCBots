@@ -26,9 +26,12 @@
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "SharedDefines.h"
+
+//npcbot
 #include "botconfig.h"
 #include "botdatamgr.h"
 #include "botmgr.h"
+//end npcbot
 
 namespace lfg
 {
@@ -156,10 +159,11 @@ namespace lfg
                 //end npcbot
                     group->Disband();
 
-        //npcbot
-        player->GetBotMgr()->RemoveAllSummonedBots();
-        //end npcbot
-
+            //npcbot
+            if (Group* group = player->GetGroup(); group && group->isLFGGroup())
+                if (sLFGMgr->GetState(group->GetGUID()) >= LFG_STATE_FINISHED_DUNGEON)
+                    player->GetBotMgr()->RemoveAllSummonedBots();
+            //end npcbot
         }
     }
 
