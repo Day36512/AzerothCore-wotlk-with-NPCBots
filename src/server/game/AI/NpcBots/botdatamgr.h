@@ -4,7 +4,7 @@
 #include "botcommon.h"
 #include "DatabaseEnvFwd.h"
 #include "DBCEnums.h"
- 
+
 #include <algorithm>
 #include <functional>
 #include <map>
