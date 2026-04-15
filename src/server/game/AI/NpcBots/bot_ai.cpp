@@ -4049,7 +4049,7 @@ std::pair<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool &res
 
     if (gr && IsOffTank())
     {
-        if (_primaryIconTank >= 0 && BotCfg::GetOffTankTargetIconFlags() & (1u << _primaryIconTank))
+        if (_primaryIconTank >= 0 && BotMgr::GetOffTankTargetIconFlags() & (1u << _primaryIconTank))
         {
             if (ObjectGuid guid = gr->GetTargetIcons()[_primaryIconTank])
             {
@@ -4059,7 +4059,8 @@ std::pair<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool &res
                 if (Unit* unit = ObjectAccessor::GetUnit(*me, guid))
                 {
                     if (unit->IsVisible() && unit->isTargetableForAttack(false) && me->IsValidAttackTarget(unit) &&
-                        (unit->IsInCombat() || me->IsInCombat() || master->IsInCombat()) && (CanSeeEveryone() || (me->CanSeeOrDetect(unit) && unit->InSamePhase(me))))
+                        (unit->IsInCombat() || me->IsInCombat() || master->IsInCombat()) &&
+                        (CanSeeEveryone() || (me->CanSeeOrDetect(unit) && unit->InSamePhase(me))))
                     {
                         return { unit, unit };
                     }
@@ -4068,12 +4069,12 @@ std::pair<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool &res
         }
 
         Unit* tankTar = nullptr;
-        for (auto i : NPCBots::index_array_rev<uint8, TARGET_ICONS_COUNT>)
+        for (int8 i = TARGETICONCOUNT - 1; i >= 0; --i)
         {
             if (i == _primaryIconTank)
                 continue;
 
-            if (BotCfg::GetOffTankTargetIconFlags() & GroupIconsFlags[i])
+            if (BotMgr::GetOffTankTargetIconFlags() & GroupIconsFlags[i])
             {
                 if (ObjectGuid guid = gr->GetTargetIcons()[i])
                 {
@@ -4094,7 +4095,7 @@ std::pair<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool &res
                             Unit* tVic = unit->GetVictim();
                             if (!tVic || (tVic != me && tVic->GetVictim() == unit && IsTank(tVic) && IsInBotParty(tVic)))
                             {
-                                //BOT_LOG_ERROR("entities.unit", "_getTarget: %s skipped %s (%s)", me->GetName().c_str(), unit->GetName().c_str(), tVic->GetName().c_str());
+                                //BOT_LOG_ERROR("entities.unit", "_getTarget: %s skipped %s (%s)", me->GetName().c_str(), unit->GetName().c_str(), tVic ? tVic->GetName().c_str() : "nullptr");
                                 tankTar = tempTar;
                                 continue;
                             }
@@ -4103,11 +4104,141 @@ std::pair<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool &res
                 }
             }
         }
+
         if (tankTar)
         {
             //BOT_LOG_ERROR("entities.unit", "_getTarget: %s returning %s", me->GetName().c_str(), tankTar->GetName().c_str());
             return { tankTar, tankTar };
         }
+
+        float const peelScanDist = std::max<float>(35.0f, InitAttackRange(float(master->GetBotMgr()->GetBotFollowDist() + 10), ranged));
+        Unit* peelSearchSource = HasBotCommandState(BOT_COMMAND_STAY) ? me->ToUnit() : master->ToUnit();
+
+        std::list<Unit*> peelList;
+        NearestHostileUnitCheck peelCheck(me, peelScanDist, byspell, this);
+        Bcore::UnitListSearcher peelSearcher(peelSearchSource, peelList, peelCheck);
+        Cell::VisitObjects(peelSearchSource, peelSearcher, peelScanDist);
+
+        auto scorePeelVictim = [this](Unit const* victim) -> int32
+        {
+            if (!victim || !victim->IsAlive())
+                return -100000;
+
+            int32 score = 0;
+
+            if (victim == master)
+                score += 350;
+            else if (IsInBotParty(victim))
+                score += 500;
+            else
+                return -50000;
+
+            if (IsTank(victim))
+                score -= 1200;
+            else
+                score += 150;
+
+            if (victim == me)
+                score += 500;
+
+            if (Creature const* bot = victim->ToCreature())
+            {
+                if (bot->IsNPCBot())
+                {
+                    if (bot_ai const* ai = bot->GetBotAI())
+                    {
+                        if (ai->HasRole(BOT_ROLE_HEAL))
+                            score += 700;
+                        if (ai->HasRole(BOT_ROLE_RANGED))
+                            score += 500;
+                        else if (ai->HasRole(BOT_ROLE_DPS))
+                            score += 100;
+                    }
+                }
+            }
+            else if (Player const* player = victim->ToPlayer())
+            {
+                if (!IsTank(player))
+                    score += 200;
+
+                switch (player->GetClass())
+                {
+                    case CLASS_PRIEST:
+                    case CLASS_MAGE:
+                    case CLASS_WARLOCK:
+                        score += 250;
+                        break;
+                    case CLASS_DRUID:
+                    case CLASS_SHAMAN:
+                    case CLASS_PALADIN:
+                        score += 125;
+                        break;
+                    case CLASS_HUNTER:
+                        score += 100;
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            return score;
+        };
+
+        auto scorePeelTarget = [this, mytar, byspell, &scorePeelVictim](Unit const* unit) -> int32
+        {
+            if (!unit || !unit->IsAlive())
+                return -100000;
+            if (!CanBotAttack(unit, byspell))
+                return -100000;
+
+            Unit* victim = unit->GetVictim();
+            if (!victim || !victim->IsAlive())
+                return -100000;
+
+            int32 score = scorePeelVictim(victim);
+
+            if (victim->GetVictim() == unit && IsTank(victim) && IsInBotParty(victim))
+                score -= 2500;
+
+            if (unit == master->GetVictim())
+                score -= 200;
+
+            if (IsPointedOffTankingTarget(unit))
+                score += 400;
+            if (IsPointedTankingTarget(unit))
+                score -= 1200;
+            if (IsPointedNoDPSTarget(unit))
+                score -= 200;
+
+            if (mytar && unit == mytar)
+                score += 75;
+
+            float dist = me->GetDistance(unit);
+            if (dist < 10.0f)
+                score += 100;
+            else if (dist < 20.0f)
+                score += 50;
+            else if (dist < 30.0f)
+                score += 25;
+
+            return score;
+        };
+
+        Unit* peelTar = nullptr;
+        int32 bestPeelScore = -1000000;
+
+        for (Unit* unit : peelList)
+        {
+            int32 score = scorePeelTarget(unit);
+            if (!peelTar || score > bestPeelScore)
+            {
+                peelTar = unit;
+                bestPeelScore = score;
+            }
+        }
+
+        if (peelTar && bestPeelScore > 0)
+            return { peelTar, peelTar };
     }
     if (gr && IsTank())
     {
@@ -6693,15 +6824,123 @@ Unit* bot_ai::FindDistantTauntTarget(float maxdist, bool ally) const
     std::list<Unit*> unitList;
 
     FarTauntUnitCheck check(me, maxdist, ally, this);
-    Bcore::UnitListSearcher <FarTauntUnitCheck> searcher(me, unitList, check);
+    Bcore::UnitListSearcher<FarTauntUnitCheck> searcher(me, unitList, check);
     Cell::VisitObjects(me, searcher, maxdist);
     //me->VisitNearbyObject(maxdist, searcher);
 
     if (unitList.empty())
         return nullptr;
 
-    Unit* unit = unitList.size() == 1 ? *unitList.begin() : Bcore::Containers::SelectRandomContainerElement(unitList);
-    return ally ? unit->GetVictim() : unit;
+    auto scoreVictim = [this](Unit const* victim) -> int32
+    {
+        if (!victim || !victim->IsAlive())
+            return -100000;
+
+        int32 score = 0;
+
+        if (victim == master)
+            score += 900;
+        else if (IsInBotParty(victim))
+            score += 1000;
+        else
+            score -= 500;
+
+        if (IsTank(victim))
+            score -= 900;
+        else
+            score += 150;
+
+        if (victim == me)
+            score += 250;
+
+        if (Creature const* bot = victim->ToCreature())
+        {
+            if (bot->IsNPCBot())
+            {
+                if (bot_ai const* ai = bot->GetBotAI())
+                {
+                    if (ai->HasRole(BOT_ROLE_HEAL))
+                        score += 500;
+                    if (ai->HasRole(BOT_ROLE_RANGED))
+                        score += 350;
+                    else if (ai->HasRole(BOT_ROLE_DPS))
+                        score += 100;
+                }
+            }
+        }
+        else if (Player const* player = victim->ToPlayer())
+        {
+            if (!IsTank(player))
+                score += 200;
+
+            switch (player->GetClass())
+            {
+                case CLASS_PRIEST:
+                case CLASS_MAGE:
+                case CLASS_WARLOCK:
+                    score += 300;
+                    break;
+                case CLASS_DRUID:
+                case CLASS_SHAMAN:
+                case CLASS_PALADIN:
+                    score += 150;
+                    break;
+                case CLASS_HUNTER:
+                    score += 120;
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        return score;
+    };
+
+    auto scoreCandidate = [this, ally, &scoreVictim](Unit const* unit) -> int32
+    {
+        if (!unit || !unit->IsAlive())
+            return -100000;
+
+        Unit const* victim = unit->GetVictim();
+        if (!victim || !victim->IsAlive())
+            return -100000;
+
+        int32 score = scoreVictim(victim);
+
+        if (victim->GetVictim() == unit && IsTank(victim) && IsInBotParty(victim))
+            score -= 1500;
+
+        float dist = me->GetDistance(unit);
+        if (dist < 10.0f)
+            score += 75;
+        else if (dist < 20.0f)
+            score += 50;
+        else if (dist < 30.0f)
+            score += 25;
+
+        if (ally && !IsInBotParty(victim) && victim != master)
+            score -= 1000;
+
+        return score;
+    };
+
+    Unit* best = nullptr;
+    int32 bestScore = -1000000;
+
+    for (Unit* unit : unitList)
+    {
+        int32 score = scoreCandidate(unit);
+        if (!best || score > bestScore)
+        {
+            best = unit;
+            bestScore = score;
+        }
+    }
+
+    if (!best)
+        return nullptr;
+
+    return ally ? best->GetVictim() : best;
 }
 //Finds target for Warlock's Mana Drain
 //Returns nearby CCed unit with most mana
