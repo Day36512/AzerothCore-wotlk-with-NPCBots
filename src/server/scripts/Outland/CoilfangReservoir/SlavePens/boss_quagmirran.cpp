@@ -84,12 +84,14 @@ struct boss_quagmirran : public BossAI
     Unit* SelectRandomPlayerOrNPCBotFromThreat(bool excludeVictim = true)
     {
         std::vector<Unit*> pool;
-        auto const& tlist = me->GetThreatMgr().GetThreatList();
-        pool.reserve(tlist.size());
+        pool.reserve(me->GetThreatMgr().GetThreatListSize());
 
-        for (auto const* ref : tlist)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            Unit* u = ref ? ref->getTarget() : nullptr;
+            if (!ref || ref->IsOffline())
+                continue;
+
+            Unit* u = ref->GetVictim();
             if (!u || !u->IsAlive())
                 continue;
 
@@ -131,14 +133,16 @@ struct boss_quagmirran : public BossAI
 
         std::vector<Unit*> players;
         std::vector<Unit*> bots;
-        auto const& tlist = me->GetThreatMgr().GetThreatList();
 
-        players.reserve(tlist.size());
-        bots.reserve(tlist.size());
+        players.reserve(me->GetThreatMgr().GetThreatListSize());
+        bots.reserve(me->GetThreatMgr().GetThreatListSize());
 
-        for (auto const* ref : tlist)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            Unit* u = ref ? ref->getTarget() : nullptr;
+            if (!ref || ref->IsOffline())
+                continue;
+
+            Unit* u = ref->GetVictim();
             if (!u || !u->IsAlive())
                 continue;
 
@@ -171,7 +175,7 @@ struct boss_quagmirran : public BossAI
         // 2) Otherwise prefer 1 player + 1 bot (if at least 1 player alive)
         else if (!players.empty() && !bots.empty())
         {
-            first = players[0]; // only player
+            first = players[0];
             second = bots[urand(0u, static_cast<uint32>(bots.size() - 1))];
         }
         // 3) Otherwise no players alive: use two bots

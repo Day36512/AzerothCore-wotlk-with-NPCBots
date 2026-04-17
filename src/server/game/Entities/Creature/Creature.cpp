@@ -22,6 +22,7 @@
 #include "CreatureAI.h"
 #include "CreatureAISelector.h"
 #include "CreatureGroups.h"
+#include "MoveSpline.h"
 #include "DatabaseEnv.h"
 #include "Formulas.h"
 #include "GameEventMgr.h"
@@ -88,15 +89,6 @@ std::string CreatureMovementData::ToString() const
     return str.str();
 }
 
-TrainerSpell const* TrainerSpellData::Find(uint32 spell_id) const
-{
-    TrainerSpellMap::const_iterator itr = spellList.find(spell_id);
-    if (itr != spellList.end())
-        return &itr->second;
-
-    return nullptr;
-}
-
 bool VendorItemData::RemoveItem(uint32 item_id)
 {
     bool found = false;
@@ -104,7 +96,7 @@ bool VendorItemData::RemoveItem(uint32 item_id)
     {
         if ((*i)->item == item_id)
         {
-            i = m_items.erase(i++);
+            i = m_items.erase(i);
             found = true;
         }
         else
@@ -236,16 +228,12 @@ bool AssistDelayEvent::Execute(uint64 /*e_time*/, uint32 /*p_time*/)
             if (assistant && assistant->CanAssistTo(m_owner, victim))
             {
                 assistant->SetNoCallAssistance(true);
-                assistant->CombatStart(victim);
-                if (assistant->IsAIEnabled)
-                {
-                    assistant->AI()->AttackStart(victim);
+                assistant->EngageWithTarget(victim);
 
-                    // When nearby mobs aggro from another mob's initial call for assistance
-                    // their leash timers become linked and attacking one will keep the rest from evading.
-                    if (assistant->GetVictim())
-                        assistant->SetLastLeashExtensionTimePtr(m_owner->GetLastLeashExtensionTimePtr());
-                }
+                // When nearby mobs aggro from another mob's initial call for assistance
+                // their leash timers become linked and attacking one will keep the rest from evading.
+                if (assistant->IsEngaged())
+                    assistant->SetLastLeashExtensionTimePtr(m_owner->GetLastLeashExtensionTimePtr());
             }
         }
     }
@@ -281,8 +269,8 @@ Creature::Creature(): Unit(), MovableMapObject(), m_groupLootTimer(0), lootingGr
     m_corpseRemoveTime(0), m_respawnTime(0), m_respawnDelay(300), m_corpseDelay(60), m_wanderDistance(0.0f), m_boundaryCheckTime(2500),
     m_transportCheckTimer(1000), lootPickPocketRestoreTime(0), m_combatPulseTime(0), m_combatPulseDelay(0), m_reactState(REACT_AGGRESSIVE), m_defaultMovementType(IDLE_MOTION_TYPE),
     m_spawnId(0), m_equipmentId(0), m_originalEquipmentId(0), m_alreadyCallForHelp(false), m_AlreadyCallAssistance(false),
-    m_AlreadySearchedAssistance(false), m_regenHealth(true), m_regenPower(true), m_AI_locked(false), m_meleeDamageSchoolMask(SPELL_SCHOOL_MASK_NORMAL), m_originalEntry(0), m_moveInLineOfSightDisabled(false), m_moveInLineOfSightStrictlyDisabled(false),
-    m_homePosition(), m_transportHomePosition(), m_creatureInfo(nullptr), m_creatureData(nullptr), m_detectionDistance(20.0f),_sparringPct(0.0f), m_waypointID(0), m_path_id(0), m_formation(nullptr), m_lastLeashExtensionTime(nullptr), m_cannotReachTimer(0),
+    m_AlreadySearchedAssistance(false), m_regenHealth(true), m_regenPower(true), m_AI_locked(false), m_meleeDamageSchoolMask(SPELL_SCHOOL_MASK_NORMAL), m_originalEntry(0), _gossipMenuId(0), m_moveInLineOfSightDisabled(false), m_moveInLineOfSightStrictlyDisabled(false),
+    m_homePosition(), m_transportHomePosition(), m_creatureInfo(nullptr), m_creatureData(nullptr), m_detectionDistance(20.0f),_sparringPct(0.0f), m_waypointID(0), m_path_id(0), m_formation(nullptr), m_lastLeashExtensionTime(nullptr),
     _isMissingSwimmingFlagOutOfCombat(false), m_assistanceTimer(0), _playerDamageReq(0), _damagedByPlayer(false), _isCombatMovementAllowed(true)
 {
     m_regenTimer = CREATURE_REGEN_INTERVAL;
@@ -554,6 +542,8 @@ bool Creature::InitEntry(uint32 Entry, const CreatureData* data)
     for (uint8 i = 0; i < MAX_CREATURE_SPELLS; ++i)
         m_spells[i] = GetCreatureTemplate()->spells[i];
 
+    GetThreatMgr().Initialize();
+
     return true;
 }
 
@@ -790,6 +780,8 @@ void Creature::Update(uint32 diff)
             if (!IsAlive())
                 break;
 
+            GetThreatMgr().Update(diff);
+
             // if creature is charmed, switch to charmed AI
             if (NeedChangeAI)
             {
@@ -938,45 +930,7 @@ void Creature::Update(uint32 diff)
                 m_regenTimer += CREATURE_REGEN_INTERVAL;
             }
 
-            if (CanNotReachTarget() && !IsInEvadeMode())
-            {
-                m_cannotReachTimer += diff;
-                if (m_cannotReachTimer >= (sWorld->getIntConfig(CONFIG_NPC_EVADE_IF_NOT_REACHABLE) * IN_MILLISECONDS))
-                {
-                    Player* cannotReachPlayer = ObjectAccessor::GetPlayer(*this, m_cannotReachTarget);
-                    if (cannotReachPlayer && IsEngagedBy(cannotReachPlayer) && IsAIEnabled && AI()->OnTeleportUnreacheablePlayer(cannotReachPlayer))
-                    {
-                        SetCannotReachTarget();
-                    }
-                    else if (!GetMap()->IsRaid())
-                    {
-                        auto EnterEvade = [&]()
-                        {
-                            if (CreatureAI* ai = AI())
-                            {
-                                ai->EnterEvadeMode(CreatureAI::EvadeReason::EVADE_REASON_NO_PATH);
-                            }
-                        };
-
-                        if (GetThreatMgr().GetThreatListSize() <= 1)
-                        {
-                            EnterEvade();
-                        }
-                        else
-                        {
-                            if (HostileReference* ref = GetThreatMgr().GetOnlineContainer().getReferenceByTarget(m_cannotReachTarget))
-                            {
-                                ref->removeReference();
-                                SetCannotReachTarget();
-                            }
-                            else
-                            {
-                                EnterEvade();
-                            }
-                        }
-                    }
-                }
-            }
+            // Evade timer is now handled by CombatManager::Update() which calls UnitAI::EvadeTimerExpired()
             break;
         }
         default:
@@ -1170,8 +1124,7 @@ bool Creature::AIM_Initialize(CreatureAI* ai)
 
     UnitAI* oldAI = i_AI;
 
-    // Xinef: called in add to world
-    //Motion_Initialize();
+    Motion_Initialize();
 
     //npcbot: prevent overriding bot_AI
     if (bot_AI || bot_pet_AI)
@@ -1199,7 +1152,19 @@ void Creature::Motion_Initialize()
         GetMotionMaster()->Initialize();
     }
     else if (m_formation->IsFormed())
+    {
+        // If the leader is already moving, start following immediately
+        // instead of waiting for the next waypoint signal.
+        if (Creature* leader = m_formation->GetLeader())
+        {
+            if (leader->IsAlive() && !leader->movespline->Finalized())
+            {
+                m_formation->LeaderStartedMoving();
+                return;
+            }
+        }
         GetMotionMaster()->MoveIdle(); //wait the order of leader
+    }
     else
         GetMotionMaster()->Initialize();
 }
@@ -1337,52 +1302,13 @@ bool Creature::isCanInteractWithBattleMaster(Player* player, bool msg) const
     return true;
 }
 
-bool Creature::isCanTrainingAndResetTalentsOf(Player* player) const
+bool Creature::CanResetTalents(Player* player) const
 {
-    return player->GetLevel() >= 10
-        && GetCreatureTemplate()->trainer_type == TRAINER_TYPE_CLASS
-        && player->IsClass((Classes)GetCreatureTemplate()->trainer_class, CLASS_CONTEXT_CLASS_TRAINER);
-}
-
-bool Creature::IsValidTrainerForPlayer(Player* player, uint32* npcFlags /*= nullptr*/) const
-{
-    if (!IsTrainer())
-    {
+    Trainer::Trainer const* trainer = sObjectMgr->GetTrainer(GetEntry());
+    if (!trainer)
         return false;
-    }
 
-    switch (m_creatureInfo->trainer_type)
-    {
-        case TRAINER_TYPE_CLASS:
-        case TRAINER_TYPE_PETS:
-            if (m_creatureInfo->trainer_class && !player->IsClass((Classes)m_creatureInfo->trainer_class, CLASS_CONTEXT_CLASS_TRAINER))
-            {
-                if (npcFlags)
-                    *npcFlags &= ~UNIT_NPC_FLAG_TRAINER_CLASS;
-
-                return false;
-            }
-            break;
-        case TRAINER_TYPE_MOUNTS:
-            if (m_creatureInfo->trainer_race && m_creatureInfo->trainer_race != player->getRace())
-            {
-                return false;
-            }
-            break;
-        case TRAINER_TYPE_TRADESKILLS:
-            if (m_creatureInfo->trainer_spell && !player->HasSpell(m_creatureInfo->trainer_spell))
-            {
-                if (npcFlags)
-                    *npcFlags &= ~UNIT_NPC_FLAG_TRAINER_PROFESSION;
-
-                return false;
-            }
-            break;
-        default:
-            break;
-    }
-
-    return true;
+    return player->GetLevel() >= 10 && trainer->IsTrainerValidForPlayer(player);
 }
 
 Player* Creature::GetLootRecipient() const
@@ -2048,49 +1974,47 @@ bool Creature::IsAlwaysDetectableFor(WorldObject const* seer) const
     return false;
 }
 
-bool Creature::CanStartAttack(Unit const* who) const
+bool Creature::CanStartAttack(Unit const* who, bool force) const
 {
     if (IsCivilian())
         return false;
 
     // This set of checks is should be done only for creatures
-    if ((IsImmuneToNPC() && !who->IsPlayer()) ||      // flag is valid only for non player characters
-        (IsImmuneToPC() && who->IsPlayer()))         // immune to PC and target is a player, return false
-    {
+    //npcbot
+    /*
+    //end npcbot
+    if ((IsImmuneToNPC() && !who->IsPlayer()) ||
+        (IsImmuneToPC() && who->IsPlayer()))
         //npcbot: allow attacking PvP free bots
-        /*
         return false;
-        */
-        Unit const* bot = (who->IsNPCBotOrPet() && who->ToCreature()->IsFreeBot()) ? who->IsNPCBotPet() ? who->GetCreator() : who : nullptr;
-        if (!(bot && bot->ToCreature()->GetBotAI()->IsContestedPvP() && IsContestedGuard()))
-            return false;
-        //end npcbot
-    }
+    //npcbot
+    */
+    if ((IsImmuneToNPC() && !(who->IsPlayer() || who->IsNPCBotOrPet())) ||
+        (IsImmuneToPC() && (who->IsPlayer() || who->IsNPCBotOrPet())))
+        return false;
+    //end npcbot
 
     if (Unit* owner = who->GetOwner())
-        if (owner->IsPlayer() && IsImmuneToPC())     // immune to PC and target has player owner
+        if (owner->IsPlayer() && IsImmuneToPC())
             return false;
 
     // Do not attack non-combat pets
     if (who->IsCreature() && who->GetCreatureType() == CREATURE_TYPE_NON_COMBAT_PET)
         return false;
 
-    if (!CanFly() && (GetDistanceZ(who) > CREATURE_Z_ATTACK_RANGE + m_CombatDistance))                    // too much Z difference, skip very costy vmap calculations here
+    if (!CanFly() && (GetDistanceZ(who) > CREATURE_Z_ATTACK_RANGE + m_CombatDistance))
         return false;
 
-    if (!_IsTargetAcceptable(who))
-        return false;
+    if (!force)
+    {
+        if (!_IsTargetAcceptable(who))
+            return false;
 
-    if (IsNeutralToAll() || !IsWithinDistInMap(who, GetAggroRange(who) + m_CombatDistance, true, false, false)) // pussywizard: +m_combatDistance for turrets and similar
-        return false;
+        if (IsNeutralToAll() || !IsWithinDistInMap(who, GetAggroRange(who) + m_CombatDistance, true, false, false))
+            return false;
+    }
 
     if (!CanCreatureAttack(who))
-        return false;
-
-    if (HasUnitState(UNIT_STATE_STUNNED))
-        return false;
-
-    if (!IsHostileTo(who))
         return false;
 
     return IsWithinLOSInMap(who);
@@ -2622,20 +2546,18 @@ void Creature::CallAssistance(Unit* target /*= nullptr*/)
 
 void Creature::CallForHelp(float radius, Unit* target /*= nullptr*/)
 {
-    if (radius <= 0.0f || IsPet() || IsCharmed())
-    {
+    if (radius <= 0.0f || !IsEngaged() || !IsAlive() || IsPet() || IsCharmed())
         return;
-    }
 
     if (!target)
-    {
-        target = GetVictim();
-    }
+        target = GetThreatMgr().GetCurrentVictim();
+    if (!target)
+        target = GetThreatMgr().GetAnyTarget();
+    if (!target)
+        target = GetCombatManager().GetAnyTarget();
 
     if (!target)
-    {
         return;
-    }
 
     if (m_alreadyCallForHelp) // avoid recursive call for help for any reason
         return;
@@ -3007,6 +2929,76 @@ void Creature::SetInCombatWithZone()
         AI()->DoZoneInCombat();
 }
 
+void Creature::AtEngage(Unit* target)
+{
+    Unit::AtEngage(target);
+
+    if (!IsStandState())
+        SetStandState(UNIT_STAND_STATE_STAND);
+
+    if (!(GetCreatureTemplate()->type_flags & CREATURE_TYPE_FLAG_ALLOW_MOUNTED_COMBAT))
+        Dismount();
+
+    RefreshSwimmingFlag();
+
+    if (IsPet() || IsGuardian()) // update pets' speed for catchup OOC speed
+    {
+        UpdateSpeed(MOVE_RUN, true);
+        UpdateSpeed(MOVE_SWIM, true);
+        UpdateSpeed(MOVE_FLIGHT, true);
+    }
+
+    MovementGeneratorType const movetype = GetMotionMaster()->GetCurrentMovementGeneratorType();
+    if (movetype == WAYPOINT_MOTION_TYPE || movetype == ESCORT_MOTION_TYPE || (IsAIEnabled && AI()->IsEscorted()))
+    {
+        SetHomePosition(GetPosition());
+
+        // if its a vehicle, set the home position of every creature passenger at engage
+        // so that they are in combat range if hostile
+        if (Vehicle* vehicle = GetVehicleKit())
+        {
+            for (auto& seat : vehicle->Seats)
+                if (Unit* passenger = ObjectAccessor::GetUnit(*this, seat.second.Passenger.Guid))
+                    if (Creature* creature = passenger->ToCreature())
+                        creature->SetHomePosition(GetPosition());
+        }
+    }
+
+    if (CreatureAI* ai = AI())
+    {
+        ai->JustEngagedWith(target);
+        UpdateLeashExtensionTime();
+
+        if (CreatureGroup* formation = GetFormation())
+            formation->MemberEngagingTarget(this, target);
+
+        sScriptMgr->OnUnitEnterCombat(this, target);
+    }
+}
+
+void Creature::AtDisengage()
+{
+    Unit::AtDisengage();
+
+    ClearUnitState(UNIT_STATE_ATTACK_PLAYER);
+    if (IsAlive() && HasDynamicFlag(UNIT_DYNFLAG_TAPPED))
+        ReplaceAllDynamicFlags(GetCreatureTemplate()->dynamicflags);
+
+    if (IsPet() || IsGuardian()) // update pets' speed for catchup OOC speed
+    {
+        UpdateSpeed(MOVE_RUN, true);
+        UpdateSpeed(MOVE_SWIM, true);
+        UpdateSpeed(MOVE_FLIGHT, true);
+    }
+}
+
+bool Creature::IsEngaged() const
+{
+    if (CreatureAI const* ai = AI())
+        return ai->IsEngaged();
+    return false;
+}
+
 void Creature::ProhibitSpellSchool(SpellSchoolMask idSchoolMask, uint32 unTimeMs)
 {
     for (uint8 i = SPELL_SCHOOL_NORMAL; i < MAX_SPELL_SCHOOL; ++i)
@@ -3334,11 +3326,6 @@ uint32 Creature::UpdateVendorItemCurrentCount(VendorItem const* vItem, uint32 us
     return vCount->count;
 }
 
-TrainerSpellData const* Creature::GetTrainerSpells() const
-{
-    return sObjectMgr->GetNpcTrainerSpells(GetEntry());
-}
-
 // overwrite WorldObject function for proper name localization
 std::string const& Creature::GetNameForLocaleIdx(LocaleConstant loc_idx) const
 {
@@ -3655,7 +3642,9 @@ void Creature::SetDisplayFromModel(uint32 modelIdx)
 
 void Creature::SetTarget(ObjectGuid guid)
 {
-    if (!_focusSpell)
+    if (_focusSpell)
+        _spellFocusTarget = guid;
+    else
         SetGuidValue(UNIT_FIELD_TARGET, guid);
 }
 
@@ -3666,6 +3655,7 @@ void Creature::FocusTarget(Spell const* focusSpell, WorldObject const* target)
         return;
 
     _focusSpell = focusSpell;
+    _spellFocusTarget = GetGuidValue(UNIT_FIELD_TARGET);
 
     SetGuidValue(UNIT_FIELD_TARGET, this == target ? ObjectGuid::Empty : target->GetGUID());
     if (focusSpell->GetSpellInfo()->HasAttribute(SPELL_ATTR5_AI_DOESNT_FACE_TARGET))
@@ -3695,10 +3685,8 @@ void Creature::ReleaseFocus(Spell const* focusSpell)
         return;
 
     _focusSpell = nullptr;
-    if (Unit* victim = GetVictim())
-        SetGuidValue(UNIT_FIELD_TARGET, victim->GetGUID());
-    else
-        SetGuidValue(UNIT_FIELD_TARGET, ObjectGuid::Empty);
+    SetGuidValue(UNIT_FIELD_TARGET, _spellFocusTarget);
+    _spellFocusTarget.Clear();
 
     if (focusSpell->GetSpellInfo()->HasAttribute(SPELL_ATTR5_AI_DOESNT_FACE_TARGET))
         ClearUnitState(UNIT_STATE_ROTATING);
@@ -3771,16 +3759,19 @@ bool Creature::IsMovementPreventedByCasting() const
 void Creature::SetCannotReachTarget(ObjectGuid const& cannotReach)
 {
     if (cannotReach == m_cannotReachTarget)
-    {
         return;
-    }
 
     m_cannotReachTarget = cannotReach;
-    m_cannotReachTimer = 0;
 
     if (cannotReach)
     {
-        LOG_DEBUG("entities.unit", "Creature::SetCannotReachTarget() called with true. Details: {}", GetDebugInfo());
+        LOG_DEBUG("entities.unit", "Creature::SetCannotReachTarget() called with target {}. Details: {}", cannotReach.ToString(), GetDebugInfo());
+        if (!GetCombatManager().IsInEvadeMode())
+            GetCombatManager().StartEvadeTimer();
+    }
+    else
+    {
+        GetCombatManager().StopEvade();
     }
 }
 
@@ -3791,12 +3782,7 @@ bool Creature::CanNotReachTarget() const
 
 bool Creature::IsNotReachableAndNeedRegen() const
 {
-    if (CanNotReachTarget())
-    {
-        return m_cannotReachTimer >= (sWorld->getIntConfig(CONFIG_NPC_REGEN_TIME_IF_NOT_REACHABLE_IN_RAID) * IN_MILLISECONDS);
-    }
-
-    return false;
+    return CanNotReachTarget() && GetCombatManager().IsEvadeRegen();
 }
 
 std::shared_ptr<time_t> const& Creature::GetLastLeashExtensionTimePtr() const

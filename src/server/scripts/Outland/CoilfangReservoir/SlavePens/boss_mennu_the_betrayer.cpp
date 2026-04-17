@@ -101,12 +101,14 @@ struct boss_mennu_the_betrayer : public BossAI
     Unit* SelectRandomPlayerOrNPCBotFromThreat(bool excludeVictim = true)
     {
         std::vector<Unit*> pool;
-        auto const& tlist = me->GetThreatMgr().GetThreatList();
-        pool.reserve(tlist.size());
+        pool.reserve(me->GetThreatMgr().GetThreatListSize());
 
-        for (auto const* ref : tlist)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            Unit* u = ref ? ref->getTarget() : nullptr;
+            if (!ref || ref->IsOffline())
+                continue;
+
+            Unit* u = ref->GetVictim();
             if (!u || !u->IsAlive())
                 continue;
 
@@ -128,12 +130,14 @@ struct boss_mennu_the_betrayer : public BossAI
     Unit* SelectRandomManaUserFromThreat(bool excludeVictim = true)
     {
         std::vector<Unit*> pool;
-        auto const& tlist = me->GetThreatMgr().GetThreatList();
-        pool.reserve(tlist.size());
+        pool.reserve(me->GetThreatMgr().GetThreatListSize());
 
-        for (auto const* ref : tlist)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            Unit* u = ref ? ref->getTarget() : nullptr;
+            if (!ref || ref->IsOffline())
+                continue;
+
+            Unit* u = ref->GetVictim();
             if (!u || !u->IsAlive())
                 continue;
 

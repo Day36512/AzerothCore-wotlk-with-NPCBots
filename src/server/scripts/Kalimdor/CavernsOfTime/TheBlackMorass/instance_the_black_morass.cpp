@@ -15,11 +15,29 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Config.h"
 #include "InstanceMapScript.h"
 #include "InstanceScript.h"
+#include "Log.h"
 #include "Player.h"
 #include "WorldStateDefines.h"
 #include "the_black_morass.h"
+
+namespace BlackMorassConfig
+{
+    // Delay after Chrono Lord Deja / Temporus before portal spawning resumes.
+    // Default preserves the current behavior: 2m30s = 150000 ms.
+    inline Milliseconds GetPostBossGateRespawnDelay()
+    {
+        uint32 delayMs = sConfigMgr->GetOption<uint32>("BlackMorass.GateRespawnDelayMs", 150000);
+
+        // Safety clamp: allow instant resume, but avoid absurdly large values from config mistakes.
+        if (delayMs > 30 * MINUTE * IN_MILLISECONDS)
+            delayMs = 30 * MINUTE * IN_MILLISECONDS;
+
+        return Milliseconds(delayMs);
+    }
+}
 
 const Position PortalLocation[4] =
 {
@@ -38,7 +56,7 @@ ObjectData const creatureData[] =
 class instance_the_black_morass : public InstanceMapScript
 {
 public:
-    instance_the_black_morass() : InstanceMapScript("instance_the_black_morass", MAP_OPENING_OF_THE_DARK_PORTAL) { }
+    instance_the_black_morass() : InstanceMapScript("instance_the_black_morass", MAP_OPENING_OF_THE_DARK_PORTAL) {}
 
     InstanceScript* GetInstanceScript(InstanceMap* map) const override
     {
@@ -52,6 +70,7 @@ public:
             SetHeaders(DataHeader);
             SetBossNumber(EncounterCount);
             LoadObjectData(creatureData, nullptr);
+
             _currentRift = 0;
             _shieldPercent = 100;
             _encounterNPCs.clear();
@@ -68,25 +87,21 @@ public:
             _scheduler.CancelAll();
 
             for (Position const& pos : PortalLocation)
-            {
                 _availableRiftPositions.push_back(pos);
-            }
 
-            // prevent getting stuck if event fails during boss break
+            // Prevent getting stuck if event fails during boss break.
             _noBossSpawnDelay = true;
 
             if (Creature* medivh = GetCreature(DATA_MEDIVH))
-            {
                 medivh->Respawn();
-            }
+
             for (ObjectGuid const& guid : _encounterNPCs)
             {
                 if (guid.GetEntry() == NPC_DP_BEAM_STALKER)
                 {
                     if (Creature* creature = instance->GetCreature(guid))
-                    {
-                            creature->Respawn();
-                    }
+                        creature->Respawn();
+
                     break;
                 }
             }
@@ -95,91 +110,89 @@ public:
         bool SetBossState(uint32 type, EncounterState state) override
         {
             if (!InstanceScript::SetBossState(type, state))
-            {
                 return false;
-            }
 
             if (state == DONE)
             {
                 switch (type)
                 {
-                    case DATA_AEONUS:
-                    {
-                        if (Creature* medivh = GetCreature(DATA_MEDIVH))
-                        {
-                            medivh->AI()->DoAction(ACTION_OUTRO);
-                        }
+                case DATA_AEONUS:
+                {
+                    if (Creature* medivh = GetCreature(DATA_MEDIVH))
+                        medivh->AI()->DoAction(ACTION_OUTRO);
 
-                        instance->DoForAllPlayers([&](Player* player)
+                    instance->DoForAllPlayers([&](Player* player)
                         {
                             if (player->GetQuestStatus(QUEST_OPENING_PORTAL) == QUEST_STATUS_INCOMPLETE)
-                            {
                                 player->AreaExploredOrEventHappens(QUEST_OPENING_PORTAL);
-                            }
 
                             if (player->GetQuestStatus(QUEST_MASTER_TOUCH) == QUEST_STATUS_INCOMPLETE)
-                            {
                                 player->AreaExploredOrEventHappens(QUEST_MASTER_TOUCH);
-                            }
                         });
 
-                        for (ObjectGuid const& guid : _encounterNPCs)
+                    for (ObjectGuid const& guid : _encounterNPCs)
+                    {
+                        if (Creature* creature = instance->GetCreature(guid))
                         {
-                            if (Creature* creature = instance->GetCreature(guid))
+                            switch (creature->GetEntry())
                             {
-                                switch (creature->GetEntry())
-                                {
-                                    case NPC_RIFT_KEEPER_WARLOCK:
-                                    case NPC_RIFT_KEEPER_MAGE:
-                                    case NPC_RIFT_LORD:
-                                    case NPC_RIFT_LORD_2:
-                                    case NPC_TIME_RIFT:
-                                    case NPC_INFINITE_ASSASSIN:
-                                    case NPC_INFINITE_ASSASSIN_2:
-                                    case NPC_INFINITE_WHELP:
-                                    case NPC_INFINITE_CHRONOMANCER:
-                                    case NPC_INFINITE_CHRONOMANCER_2:
-                                    case NPC_INFINITE_EXECUTIONER:
-                                    case NPC_INFINITE_EXECUTIONER_2:
-                                    case NPC_INFINITE_VANQUISHER:
-                                    case NPC_INFINITE_VANQUISHER_2:
-                                        creature->DespawnOrUnsummon(1ms);
-                                        break;
-                                    default:
-                                        break;
-                                }
+                            case NPC_RIFT_KEEPER_WARLOCK:
+                            case NPC_RIFT_KEEPER_MAGE:
+                            case NPC_RIFT_LORD:
+                            case NPC_RIFT_LORD_2:
+                            case NPC_INFINITE_ASSASSIN:
+                            case NPC_INFINITE_ASSASSIN_2:
+                            case NPC_INFINITE_WHELP:
+                            case NPC_INFINITE_CHRONOMANCER:
+                            case NPC_INFINITE_CHRONOMANCER_2:
+                            case NPC_INFINITE_EXECUTIONER:
+                            case NPC_INFINITE_EXECUTIONER_2:
+                            case NPC_INFINITE_VANQUISHER:
+                            case NPC_INFINITE_VANQUISHER_2:
+                                creature->DespawnOrUnsummon(1ms);
+                                break;
+                            default:
+                                break;
                             }
                         }
-
-                        break;
                     }
-                    case DATA_CHRONO_LORD_DEJA:
-                    case DATA_TEMPORUS:
-                    {
-                        _noBossSpawnDelay = false;
 
-                        _scheduler.Schedule(2min + 30s, [this](TaskContext)
+                    break;
+                }
+                case DATA_CHRONO_LORD_DEJA:
+                case DATA_TEMPORUS:
+                {
+                    _noBossSpawnDelay = false;
+
+                    Milliseconds const delay = BlackMorassConfig::GetPostBossGateRespawnDelay();
+
+                    _scheduler.Schedule(delay, [this](TaskContext)
                         {
                             _noBossSpawnDelay = true;
                             ScheduleNextPortal(0s, Position(0.0f, 0.0f, 0.0f, 0.0f));
                         });
 
-                        break;
-                    }
-                    default:
-                        break;
+                    break;
+                }
+                default:
+                    break;
                 }
             }
 
             return true;
         }
 
+        void FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet) override
+        {
+            packet.Worldstates.emplace_back(WORLD_STATE_BLACK_MORASS, _eventStatus);
+            packet.Worldstates.emplace_back(WORLD_STATE_BLACK_MORASS_SHIELD, _shieldPercent);
+            packet.Worldstates.emplace_back(WORLD_STATE_BLACK_MORASS_RIFT, _currentRift);
+        }
+
         void OnPlayerEnter(Player* player) override
         {
             if (instance->GetPlayersCountExceptGMs() <= 1 && GetBossState(DATA_AEONUS) != DONE && _eventStatus != EVENT_IN_PROGRESS)
-            {
                 CleanupInstance();
-            }
 
             player->SendUpdateWorldState(WORLD_STATE_BLACK_MORASS, _eventStatus);
             player->SendUpdateWorldState(WORLD_STATE_BLACK_MORASS_SHIELD, _shieldPercent);
@@ -188,79 +201,81 @@ public:
 
         void ScheduleNextPortal(Milliseconds time, Position lastPosition)
         {
-            // only one rift can be scheduled at any time
+            // Only one rift can be scheduled at any time.
             _scheduler.CancelGroup(CONTEXT_GROUP_RIFTS);
 
             _scheduler.Schedule(time, [this, lastPosition](TaskContext context)
-            {
-                if (GetCreature(DATA_MEDIVH))
                 {
-                    // Spawning prevented: after-boss-delay or event failed/not started or last portal spawned
-                    if (!_noBossSpawnDelay || _eventStatus == EVENT_PREPARE || _currentRift >= 18)
+                    if (GetCreature(DATA_MEDIVH))
                     {
-                        return;
-                    }
+                        // Spawning prevented: after-boss-delay or event failed/not started or last portal spawned.
+                        if (!_noBossSpawnDelay || _eventStatus == EVENT_PREPARE || _currentRift >= 18)
+                            return;
 
-                    Position spawnPos;
-                    if (!_availableRiftPositions.empty())
-                    {
-                        if (_availableRiftPositions.size() > 1)
+                        Position spawnPos;
+                        if (!_availableRiftPositions.empty())
                         {
-                            auto spawnPosItr = Acore::Containers::SelectRandomContainerElementIf(_availableRiftPositions, [&](Position const& pos) -> bool
+                            if (_availableRiftPositions.size() > 1)
                             {
-                                return pos != lastPosition;
-                            });
-                            if (spawnPosItr != _availableRiftPositions.end())
-                                spawnPos = *spawnPosItr;
+                                auto spawnPosItr = Acore::Containers::SelectRandomContainerElementIf(_availableRiftPositions, [&](Position const& pos) -> bool
+                                    {
+                                        return pos != lastPosition;
+                                    });
+
+                                if (spawnPosItr != _availableRiftPositions.end())
+                                    spawnPos = *spawnPosItr;
+                            }
+                            else
+                            {
+                                spawnPos = Acore::Containers::SelectRandomContainerElement(_availableRiftPositions);
+                            }
+
+                            _availableRiftPositions.remove(spawnPos);
+
+                            DoUpdateWorldState(WORLD_STATE_BLACK_MORASS_RIFT, ++_currentRift);
+
+                            instance->SummonCreature(NPC_TIME_RIFT, spawnPos);
+
+                            // Queue next portal if group doesn't kill keepers fast enough.
+                            context.Repeat((_currentRift >= 13 ? 2min : 90s));
                         }
-                        else
-                        {
-                            spawnPos = Acore::Containers::SelectRandomContainerElement(_availableRiftPositions);
-                        }
-
-                        _availableRiftPositions.remove(spawnPos);
-
-                        DoUpdateWorldState(WORLD_STATE_BLACK_MORASS_RIFT, ++_currentRift);
-
-                        instance->SummonCreature(NPC_TIME_RIFT, spawnPos);
-
-                        // queue next portal if group doesn't kill keepers fast enough
-                        context.Repeat((_currentRift >= 13 ? 2min : 90s));
+                        // If no rift positions are available, the next rift will be scheduled in OnCreatureRemove.
                     }
-                    // if no rift positions are available, the next rift will be scheduled in OnCreatureRemove
-                }
 
-                context.SetGroup(CONTEXT_GROUP_RIFTS);
-            });
+                    context.SetGroup(CONTEXT_GROUP_RIFTS);
+                });
         }
 
         void OnCreatureCreate(Creature* creature) override
         {
             switch (creature->GetEntry())
             {
-                case NPC_TIME_RIFT:
-                case NPC_CHRONO_LORD_DEJA:
-                case NPC_INFINITE_CHRONO_LORD:
-                case NPC_TEMPORUS:
-                case NPC_INFINITE_TIMEREAVER:
-                case NPC_AEONUS:
-                case NPC_RIFT_KEEPER_WARLOCK:
-                case NPC_RIFT_KEEPER_MAGE:
-                case NPC_RIFT_LORD:
-                case NPC_RIFT_LORD_2:
-                case NPC_INFINITE_ASSASSIN:
-                case NPC_INFINITE_ASSASSIN_2:
-                case NPC_INFINITE_WHELP:
-                case NPC_INFINITE_CHRONOMANCER:
-                case NPC_INFINITE_CHRONOMANCER_2:
-                case NPC_INFINITE_EXECUTIONER:
-                case NPC_INFINITE_EXECUTIONER_2:
-                case NPC_INFINITE_VANQUISHER:
-                case NPC_INFINITE_VANQUISHER_2:
-                case NPC_DP_BEAM_STALKER:
-                case NPC_DP_EMITTER_STALKER:
-                    _encounterNPCs.insert(creature->GetGUID());
-                    break;
+            case NPC_TIME_RIFT:
+            case NPC_CHRONO_LORD_DEJA:
+            case NPC_INFINITE_CHRONO_LORD:
+            case NPC_TEMPORUS:
+            case NPC_INFINITE_TIMEREAVER:
+            case NPC_AEONUS:
+            case NPC_RIFT_KEEPER_WARLOCK:
+            case NPC_RIFT_KEEPER_MAGE:
+            case NPC_RIFT_LORD:
+            case NPC_RIFT_LORD_2:
+            case NPC_INFINITE_ASSASSIN:
+            case NPC_INFINITE_ASSASSIN_2:
+            case NPC_INFINITE_WHELP:
+            case NPC_INFINITE_CHRONOMANCER:
+            case NPC_INFINITE_CHRONOMANCER_2:
+            case NPC_INFINITE_EXECUTIONER:
+            case NPC_INFINITE_EXECUTIONER_2:
+            case NPC_INFINITE_VANQUISHER:
+            case NPC_INFINITE_VANQUISHER_2:
+            case NPC_DP_EMITTER_STALKER:
+            case NPC_DP_CRYSTAL_STALKER:
+            case NPC_DP_BEAM_STALKER:
+                _encounterNPCs.insert(creature->GetGUID());
+                break;
+            default:
+                break;
             }
 
             InstanceScript::OnCreatureCreate(creature);
@@ -270,42 +285,39 @@ public:
         {
             switch (creature->GetEntry())
             {
-                case NPC_TIME_RIFT:
-                    if (_currentRift < 18 && _noBossSpawnDelay && _eventStatus == EVENT_IN_PROGRESS)
-                    {
-                        if (_availableRiftPositions.size() < 3)
-                        {
-                            ScheduleNextPortal((_currentRift >= 13 ? 2min : 90s), creature->GetHomePosition());
-                        }
-                        else
-                        {
-                            ScheduleNextPortal(1s, creature->GetHomePosition());
-                        }
-                    }
+            case NPC_TIME_RIFT:
+            {
+                _availableRiftPositions.push_back(creature->GetHomePosition());
 
-                    _availableRiftPositions.push_back(creature->GetHomePosition());
-                    [[fallthrough]];
-                case NPC_CHRONO_LORD_DEJA:
-                case NPC_INFINITE_CHRONO_LORD:
-                case NPC_TEMPORUS:
-                case NPC_INFINITE_TIMEREAVER:
-                case NPC_AEONUS:
-                case NPC_RIFT_KEEPER_WARLOCK:
-                case NPC_RIFT_KEEPER_MAGE:
-                case NPC_RIFT_LORD:
-                case NPC_RIFT_LORD_2:
-                case NPC_INFINITE_ASSASSIN:
-                case NPC_INFINITE_ASSASSIN_2:
-                case NPC_INFINITE_WHELP:
-                case NPC_INFINITE_CHRONOMANCER:
-                case NPC_INFINITE_CHRONOMANCER_2:
-                case NPC_INFINITE_EXECUTIONER:
-                case NPC_INFINITE_EXECUTIONER_2:
-                case NPC_INFINITE_VANQUISHER:
-                case NPC_INFINITE_VANQUISHER_2:
-                case NPC_DP_EMITTER_STALKER:
-                    _encounterNPCs.erase(creature->GetGUID());
-                    break;
+                if (_eventStatus == EVENT_IN_PROGRESS && _noBossSpawnDelay)
+                    ScheduleNextPortal(0s, creature->GetHomePosition());
+
+                _encounterNPCs.erase(creature->GetGUID());
+                break;
+            }
+            case NPC_CHRONO_LORD_DEJA:
+            case NPC_INFINITE_CHRONO_LORD:
+            case NPC_TEMPORUS:
+            case NPC_INFINITE_TIMEREAVER:
+            case NPC_AEONUS:
+            case NPC_RIFT_KEEPER_WARLOCK:
+            case NPC_RIFT_KEEPER_MAGE:
+            case NPC_RIFT_LORD:
+            case NPC_RIFT_LORD_2:
+            case NPC_INFINITE_ASSASSIN:
+            case NPC_INFINITE_ASSASSIN_2:
+            case NPC_INFINITE_WHELP:
+            case NPC_INFINITE_CHRONOMANCER:
+            case NPC_INFINITE_CHRONOMANCER_2:
+            case NPC_INFINITE_EXECUTIONER:
+            case NPC_INFINITE_EXECUTIONER_2:
+            case NPC_INFINITE_VANQUISHER:
+            case NPC_INFINITE_VANQUISHER_2:
+            case NPC_DP_EMITTER_STALKER:
+                _encounterNPCs.erase(creature->GetGUID());
+                break;
+            default:
+                break;
             }
 
             InstanceScript::OnCreatureRemove(creature);
@@ -315,127 +327,115 @@ public:
         {
             switch (type)
             {
-                case DATA_MEDIVH:
+            case DATA_MEDIVH:
+            {
+                _eventStatus = EVENT_IN_PROGRESS;
+
+                DoUpdateWorldState(WORLD_STATE_BLACK_MORASS, _eventStatus);
+                DoUpdateWorldState(WORLD_STATE_BLACK_MORASS_SHIELD, _shieldPercent);
+                DoUpdateWorldState(WORLD_STATE_BLACK_MORASS_RIFT, _currentRift);
+
+                ScheduleNextPortal(3s, Position(0.0f, 0.0f, 0.0f, 0.0f));
+                break;
+            }
+            case DATA_DAMAGE_SHIELD:
+            {
+                if (_shieldPercent <= 0)
+                    return;
+
+                _shieldPercent -= data;
+                if (_shieldPercent < 0)
+                    _shieldPercent = 0;
+
+                DoUpdateWorldState(WORLD_STATE_BLACK_MORASS_SHIELD, _shieldPercent);
+
+                if (!_shieldPercent)
                 {
-                    _eventStatus = EVENT_IN_PROGRESS;
+                    _eventStatus = EVENT_PREPARE;
 
-                    DoUpdateWorldState(WORLD_STATE_BLACK_MORASS, _eventStatus);
-                    DoUpdateWorldState(WORLD_STATE_BLACK_MORASS_SHIELD, _shieldPercent);
-                    DoUpdateWorldState(WORLD_STATE_BLACK_MORASS_RIFT, _currentRift);
-
-                    ScheduleNextPortal(3s, Position(0.0f, 0.0f, 0.0f, 0.0f));
-
-                    break;
-                }
-                case DATA_DAMAGE_SHIELD:
-                {
-                    if (_shieldPercent <= 0)
+                    if (Creature* medivh = GetCreature(DATA_MEDIVH))
                     {
-                        return;
-                    }
-
-                    _shieldPercent -= data;
-                    if (_shieldPercent < 0)
-                    {
-                        _shieldPercent = 0;
-                    }
-
-                    DoUpdateWorldState(WORLD_STATE_BLACK_MORASS_SHIELD, _shieldPercent);
-
-                    if (!_shieldPercent)
-                    {
-                        _eventStatus = EVENT_PREPARE;
-
-                        if (Creature* medivh = GetCreature(DATA_MEDIVH))
+                        if (medivh->IsAlive() && medivh->IsAIEnabled)
                         {
-                            if (medivh->IsAlive() && medivh->IsAIEnabled)
+                            medivh->SetImmuneToNPC(true);
+                            medivh->AI()->Talk(SAY_MEDIVH_DEATH);
+
+                            for (ObjectGuid const& guid : _encounterNPCs)
                             {
-                                medivh->SetImmuneToNPC(true);
-                                medivh->AI()->Talk(SAY_MEDIVH_DEATH);
+                                if (Creature* creature = instance->GetCreature(guid))
+                                    creature->InterruptNonMeleeSpells(true);
+                            }
 
-                                for (ObjectGuid const& guid : _encounterNPCs)
-                                {
-                                    if (Creature* creature = instance->GetCreature(guid))
-                                    {
-                                        creature->InterruptNonMeleeSpells(true);
-                                    }
-                                }
-
-                                // Step 1 - Medivh loses all auras.
-                                _scheduler.Schedule(4s, [this](TaskContext)
+                            // Step 1 - Medivh loses all auras.
+                            _scheduler.Schedule(4s, [this](TaskContext)
                                 {
                                     if (Creature* medivh = GetCreature(DATA_MEDIVH))
-                                    {
                                         medivh->RemoveAllAuras();
-                                    }
 
                                     // Step 2 - Medivh dies and visual effect NPCs are despawned.
                                     _scheduler.Schedule(500ms, [this](TaskContext)
-                                    {
-                                        if (Creature* medivh = GetCreature(DATA_MEDIVH))
                                         {
-                                            medivh->KillSelf(false);
-
-                                            GuidSet encounterNPCSCopy = _encounterNPCs;
-                                            for (ObjectGuid const& guid : encounterNPCSCopy)
+                                            if (Creature* medivh = GetCreature(DATA_MEDIVH))
                                             {
-                                                switch (guid.GetEntry())
+                                                medivh->KillSelf(false);
+
+                                                GuidSet encounterNPCSCopy = _encounterNPCs;
+                                                for (ObjectGuid const& guid : encounterNPCSCopy)
                                                 {
+                                                    switch (guid.GetEntry())
+                                                    {
                                                     case NPC_TIME_RIFT:
                                                     case NPC_DP_EMITTER_STALKER:
                                                     case NPC_DP_CRYSTAL_STALKER:
                                                     case NPC_DP_BEAM_STALKER:
                                                         if (Creature* creature = instance->GetCreature(guid))
-                                                        {
                                                             creature->DespawnOrUnsummon();
-                                                        }
                                                         break;
                                                     default:
                                                         break;
-                                                }
-                                            }
-                                        }
-
-                                        // Step 3 - All summoned creatures despawn
-                                        _scheduler.Schedule(2s, [this](TaskContext)
-                                        {
-                                            GuidSet encounterNPCSCopy = _encounterNPCs;
-                                            for (ObjectGuid const& guid : encounterNPCSCopy)
-                                            {
-                                                // Don't despawn permanent visual effect NPC twice or it won't respawn correctly
-                                                if (guid.GetEntry() == NPC_DP_BEAM_STALKER)
-                                                {
-                                                    continue;
-                                                }
-
-                                                if (Creature* creature = instance->GetCreature(guid))
-                                                {
-                                                    creature->CastSpell(creature, SPELL_TELEPORT_VISUAL, true);
-                                                    creature->DespawnOrUnsummon(1200ms, 0s);
+                                                    }
                                                 }
                                             }
 
-                                            _scheduler.CancelAll();
+                                            // Step 3 - All summoned creatures despawn.
+                                            _scheduler.Schedule(2s, [this](TaskContext)
+                                                {
+                                                    GuidSet encounterNPCSCopy = _encounterNPCs;
+                                                    for (ObjectGuid const& guid : encounterNPCSCopy)
+                                                    {
+                                                        // Don't despawn permanent visual effect NPC twice or it won't respawn correctly.
+                                                        if (guid.GetEntry() == NPC_DP_BEAM_STALKER)
+                                                            continue;
 
-                                            // Step 4 - Schedule instance cleanup without player interaction
-                                            _scheduler.Schedule(300s, [this](TaskContext)
-                                            {
-                                                CleanupInstance();
+                                                        if (Creature* creature = instance->GetCreature(guid))
+                                                        {
+                                                            creature->CastSpell(creature, SPELL_TELEPORT_VISUAL, true);
+                                                            creature->DespawnOrUnsummon(1200ms, 0s);
+                                                        }
+                                                    }
 
-                                                DoUpdateWorldState(WORLD_STATE_BLACK_MORASS, _eventStatus);
-                                                DoUpdateWorldState(WORLD_STATE_BLACK_MORASS_SHIELD, _shieldPercent);
-                                                DoUpdateWorldState(WORLD_STATE_BLACK_MORASS_RIFT, _currentRift);
-                                            });
+                                                    _scheduler.CancelAll();
+
+                                                    // Step 4 - Schedule instance cleanup without player interaction.
+                                                    _scheduler.Schedule(300s, [this](TaskContext)
+                                                        {
+                                                            CleanupInstance();
+
+                                                            DoUpdateWorldState(WORLD_STATE_BLACK_MORASS, _eventStatus);
+                                                            DoUpdateWorldState(WORLD_STATE_BLACK_MORASS_SHIELD, _shieldPercent);
+                                                            DoUpdateWorldState(WORLD_STATE_BLACK_MORASS_RIFT, _currentRift);
+                                                        });
+                                                });
                                         });
-                                    });
                                 });
-                            }
                         }
                     }
-                    break;
                 }
-                default:
-                    break;
+
+                break;
+            }
+            default:
+                break;
             }
         }
 
@@ -443,11 +443,14 @@ public:
         {
             switch (type)
             {
-                case DATA_SHIELD_PERCENT:
-                    return _shieldPercent;
-                case DATA_RIFT_NUMBER:
-                    return _currentRift;
+            case DATA_SHIELD_PERCENT:
+                return _shieldPercent;
+            case DATA_RIFT_NUMBER:
+                return _currentRift;
+            default:
+                break;
             }
+
             return 0;
         }
 

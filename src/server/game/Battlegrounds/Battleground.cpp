@@ -361,6 +361,9 @@ inline void Battleground::_CheckSafePositions(uint32 diff)
 
         for (auto const& [playerGuid, player] : GetPlayers())
         {
+            if (player->IsGameMaster())
+                continue;
+
             Position pos = player->GetPosition();
             Position const* startPos = GetTeamStartPosition(player->GetBgTeamId());
 
@@ -1007,7 +1010,7 @@ void Battleground::EndBattleground(PvPTeamId winnerTeamId)
         {
             //needed cause else in av some creatures will kill the players at the end
             player->CombatStop();
-            player->getHostileRefMgr().deleteReferences();
+            player->GetThreatMgr().RemoveMeFromThreatLists();
         }
 
         uint32 winner_kills = player->GetRandomWinner() ? sWorld->getIntConfig(CONFIG_BG_REWARD_WINNER_HONOR_LAST) : sWorld->getIntConfig(CONFIG_BG_REWARD_WINNER_HONOR_FIRST);
@@ -1027,6 +1030,33 @@ void Battleground::EndBattleground(PvPTeamId winnerTeamId)
 
                 if (!player->GetRandomWinner())
                     player->SetRandomWinner(true);
+
+                // Achievement 908 / 909 "Call to Arms!"
+                switch (GetBgTypeID(true))
+                {
+                    case BATTLEGROUND_AB:
+                        // Call to Arms: Arathi Basin
+                        player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_QUEST, 11335);
+                        player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_QUEST, 11339);
+                        break;
+                    case BATTLEGROUND_AV:
+                        // Call to Arms: Alterac Valley
+                        player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_QUEST, 11336);
+                        player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_QUEST, 11340);
+                        break;
+                    case BATTLEGROUND_EY:
+                        // Call to Arms: Eye of the Storm
+                        player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_QUEST, 11337);
+                        player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_QUEST, 11341);
+                        break;
+                    case BATTLEGROUND_WS:
+                        // Call to Arms: Warsong Gulch
+                        player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_QUEST, 11338);
+                        player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_QUEST, 11342);
+                        break;
+                    default:
+                        break;
+                }
             }
 
             player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_WIN_BG, player->GetMapId());

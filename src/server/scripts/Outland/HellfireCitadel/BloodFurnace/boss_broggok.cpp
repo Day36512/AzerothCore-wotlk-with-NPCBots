@@ -164,12 +164,14 @@ struct boss_broggok : public BossAI
     Unit* SelectRandomPlayerOrNPCBotFromThreat(bool excludeVictim = true)
     {
         std::vector<Unit*> pool;
-        auto const& tlist = me->GetThreatMgr().GetThreatList();
-        pool.reserve(tlist.size());
+        pool.reserve(me->GetThreatMgr().GetThreatListSize());
 
-        for (ThreatReference* ref : tlist)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            Unit* u = ref ? ref->getTarget() : nullptr;
+            if (!ref || ref->IsOffline())
+                continue;
+
+            Unit* u = ref->GetVictim();
             if (!u || !u->IsAlive())
                 continue;
 
@@ -189,12 +191,14 @@ struct boss_broggok : public BossAI
     Unit* SelectRandomPlayerOrNPCBotBeyond(float minDist, bool excludeVictim = true)
     {
         std::vector<Unit*> pool;
-        auto const& tlist = me->GetThreatMgr().GetThreatList();
-        pool.reserve(tlist.size());
+        pool.reserve(me->GetThreatMgr().GetThreatListSize());
 
-        for (ThreatReference* ref : tlist)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            Unit* u = ref ? ref->getTarget() : nullptr;
+            if (!ref || ref->IsOffline())
+                continue;
+
+            Unit* u = ref->GetVictim();
             if (!u || !u->IsAlive())
                 continue;
 
@@ -227,7 +231,9 @@ struct boss_broggok : public BossAI
         {
             uint8 r = urand(i, 3);
             // swap idx[i] and idx[r] (manual swap to avoid requiring headers)
-            int tmp = idx[i]; idx[i] = idx[r]; idx[r] = tmp;
+            int tmp = idx[i];
+            idx[i] = idx[r];
+            idx[r] = tmp;
 
             me->SummonCreature(entry, kHealerSpawn[idx[i]], TEMPSUMMON_MANUAL_DESPAWN);
         }
@@ -236,10 +242,12 @@ struct boss_broggok : public BossAI
     // ---------- TELEPORT GATE: scan threat list and warp intruders (with visual) ----------
     void TeleportGateScan()
     {
-        auto const& tlist = me->GetThreatMgr().GetThreatList();
-        for (ThreatReference* ref : tlist)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            Unit* u = ref ? ref->getTarget() : nullptr;
+            if (!ref || ref->IsOffline())
+                continue;
+
+            Unit* u = ref->GetVictim();
             if (!u || !u->IsAlive())
                 continue;
 

@@ -25,6 +25,7 @@
 #include "ObjectMgr.h"
 #include "OutdoorPvPMgr.h"
 #include "WorldPacket.h"
+#include "World.h"
 
  // NPCBots
 #include "botmgr.h"
@@ -376,7 +377,7 @@ bool OPvPCapturePoint::Update(uint32 diff)
     factDiff += 0.5f * ((float)ownedBotsCount[TEAM_ALLIANCE] - (float)ownedBotsCount[TEAM_HORDE]) *
         float(diff) / OUTDOORPVP_OBJECTIVE_UPDATE_INTERVAL;
 
-    // 2) WANDERING world bots (no owner): also count as 0.5 of a player each
+    // 2) WANDERING world bots (no owner): count like players
     uint32 wanderBotsCount[2] = { 0, 0 };
 
     {
@@ -404,16 +405,18 @@ bool OPvPCapturePoint::Update(uint32 diff)
         }
     }
 
-    // Wandering bots count exactly like players (no 0.5)
     factDiff += ((float)wanderBotsCount[TEAM_ALLIANCE] - (float)wanderBotsCount[TEAM_HORDE]) *
         float(diff) / OUTDOORPVP_OBJECTIVE_UPDATE_INTERVAL;
+
+    // Apply global OutdoorPvP capture-rate modifier after all contributors are counted
+    factDiff *= sWorld->getFloatConfig(CONFIG_OUTDOOR_PVP_CAPTURE_RATE);
 
     // After including bots: if nothing is pushing the slider, bail out
     if (factDiff == 0.0f)
         return false;
 
     TeamId challengerId = TEAM_NEUTRAL;
-    float maxDiff = _maxSpeed * float(diff);
+    float maxDiff = (_maxSpeed * float(diff)) * sWorld->getFloatConfig(CONFIG_OUTDOOR_PVP_CAPTURE_RATE);
 
     if (factDiff < 0.0f)
     {

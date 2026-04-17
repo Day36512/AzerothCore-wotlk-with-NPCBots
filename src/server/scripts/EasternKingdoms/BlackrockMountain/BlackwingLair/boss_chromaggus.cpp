@@ -26,8 +26,6 @@
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "blackwing_lair.h"
-
-#include "ThreatMgr.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "CellImpl.h"

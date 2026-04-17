@@ -45,7 +45,7 @@ void Totem::Update(uint32 time)
 
     if (botOwner)
     {
-        if (!botOwner->IsAlive() || !IsAlive() || m_duration <= time)
+        if (!IsAlive() || m_duration <= time || (!botOwner->IsAlive() && !(m_Properties && m_Properties->Type == SUMMON_TYPE_LIGHTWELL)))
         {
             UnSummon();
             return;
@@ -53,9 +53,16 @@ void Totem::Update(uint32 time)
     }
     else
     //end npcbot
-    if (!owner || !owner->IsAlive() || !IsAlive() || m_duration <= time)
+    if (!owner || !IsAlive() || m_duration <= time)
     {
         UnSummon();                                         // remove self
+        return;
+    }
+
+    // If owner is dead and this is not a lightwell, despawn
+    if (!owner->IsAlive() && !(m_Properties && m_Properties->Type == SUMMON_TYPE_LIGHTWELL))
+    {
+        UnSummon();
         return;
     }
 

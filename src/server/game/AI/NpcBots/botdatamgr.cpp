@@ -458,16 +458,12 @@ public:
             {
                 if (wp->HasFlag(BotWPFlags::BOTWP_FLAG_SPAWN))
                 {
-                    if (wp->HasFlag(BotWPFlags::BOTWP_FLAG_ALLIANCE_ONLY))
+                    if (bot_ai::IsWanderNodeAvailableForBotFaction(wp, FACTION_TEMPLATE_ALLIANCE_DEFAULT, false, true))
                         spawns_a.push_back(wp);
-                    else if (wp->HasFlag(BotWPFlags::BOTWP_FLAG_HORDE_ONLY))
+                    else if (bot_ai::IsWanderNodeAvailableForBotFaction(wp, FACTION_TEMPLATE_HORDE_DEFAULT, false, true))
                         spawns_h.push_back(wp);
-                    else
-                    {
-                        spawns_a.push_back(wp);
-                        spawns_h.push_back(wp);
+                    if (bot_ai::IsWanderNodeAvailableForBotFaction(wp, FACTION_TEMPLATE_NEUTRAL_HOSTILE, false, true))
                         spawns_n.push_back(wp);
-                    }
                 }
             }
         });
@@ -840,13 +836,13 @@ void BotDataMgr::LoadNpcBots(bool spawn)
     else
         BOT_LOG_INFO("server.loading", ">> Bots transmog data is not loaded. Table `characters_npcbot_transmog` is empty!");
 
-    //                                       0      1      2      3     4        5
-    result = CharacterDatabase.Query("SELECT entry, owner, roles, spec, faction, UNIX_TIMESTAMP(hire_time), "
-    //   6          7          8          9               10          11          12         13         14
+    //                                       0      1      2      3     4        5                          6
+    result = CharacterDatabase.Query("SELECT entry, owner, roles, spec, faction, UNIX_TIMESTAMP(hire_time), shared_owners, "
+    //   7          8          9          10              11          12          13         14         15
         "equipMhEx, equipOhEx, equipRhEx, equipHead, equipShoulders, equipChest, equipWaist, equipLegs, equipFeet, "
-    //   15          16          17         18         19            20            21             22             23
+    //   16          17          18         19         20            21            22             23             24
         "equipWrist, equipHands, equipBack, equipBody, equipFinger1, equipFinger2, equipTrinket1, equipTrinket2, equipNeck, "
-    //   24               25
+    //   25               26
         "spells_disabled, miscvalues FROM characters_npcbot");
 
     std::vector<uint32> entryList;
@@ -879,6 +875,20 @@ void BotDataMgr::LoadNpcBots(bool spawn)
             botData->spec =         field[++index].Get<uint8>();
             botData->faction =      field[++index].Get<uint32>();
             botData->hire_time =    field[++index].Get<uint64>();
+
+            for (std::string_view shared_owner_sv : Bcore::Tokenize(field[++index].Get<std::string_view>(), ' ', false))
+            {
+                if (Optional<uint32> showner_guid = Bcore::StringTo<uint32>(shared_owner_sv))
+                {
+                    const ObjectGuid showner_pguid = ObjectGuid::Create<HighGuid::Player>(*showner_guid);
+                    if (!sCharacterCache->HasCharacterCacheEntry(showner_pguid))
+                    {
+                        BOT_LOG_WARN("server.loading", "Bot entry {} has shared owner {} which doesn't exist! Skipped.", entry, *showner_guid);
+                        continue;
+                    }
+                    botData->shared_owners.insert(*showner_guid);
+                }
+            }
 
             for (uint8 i = BOT_SLOT_MAINHAND; i != BOT_INVENTORY_SIZE; ++i)
                 botData->equips[i] = field[++index].Get<uint32>();
@@ -1327,7 +1337,7 @@ void BotDataMgr::LoadWanderMap(bool reload, bool force_all_maps)
     BOT_LOG_INFO("server.loading", "Setting up wander map...");
 
     //                                             0  1     2 3 4 5 6      7      8        9        10    11   12
-    QueryResult wres = WorldDatabase.Query("SELECT id,mapid,x,y,z,o,zoneId,areaId,minlevel,maxlevel,flags,name,links FROM creature_template_npcbot_wander_nodes ORDER BY mapid,id");
+    QueryResult wres = WorldDatabase.Query("SELECT id,mapid,x,y,z,o,zoneId,areaId,minlevel,maxlevel,flags,name,links,minwaittime,maxwaittime,proximity FROM creature_template_npcbot_wander_nodes ORDER BY mapid,id");
     if (!wres)
     {
         BOT_LOG_FATAL("server.loading", "Failed to load wander points: table `creature_template_npcbot_wander_nodes` is empty!");
@@ -1367,6 +1377,9 @@ void BotDataMgr::LoadWanderMap(bool reload, bool force_all_maps)
         uint32 flags          = fields[++index].Get<uint32>();
         std::string name      = fields[++index].Get<std::string>();
         std::string_view lstr = fields[++index].Get<std::string_view>();
+        uint32 minwaittime    = fields[++index].Get<uint32>();
+        uint32 maxwaittime    = fields[++index].Get<uint32>();
+        float proximity       = fields[++index].Get<float>();
 
         WanderNode::nextWPId = std::max<uint32>(WanderNode::nextWPId, id);
 
@@ -1435,9 +1448,16 @@ void BotDataMgr::LoadWanderMap(bool reload, bool force_all_maps)
         WanderNode* wp = new WanderNode(id, mapId, x, y, z, o, zoneId, areaId, name);
         wp->SetLevels(minLevel, maxLevel);
         wp->SetFlags(BotWPFlags(flags));
+        wp->SetWaitTime(minwaittime, maxwaittime);
+        wp->SetProximity(proximity);
 
         if (wp->HasFlag(BotWPFlags::BOTWP_FLAG_SPAWN) && !lstr.empty())
+        {
             all_spawn_nodes.push_back(wp);
+
+            if (!wp->HasFlag(BotWPFlags::BOTWP_FLAG_ALLIANCE_OR_HORDE_ONLY) && wp->GetLevels().second <= 10)
+                BOT_LOG_WARN("server.loading", "WP {} is a start location but has no HORDE or ALLIANCE flag assigned! Only Neutral bots will spawn there!", id);
+        }
 
         if (lstr.empty())
         {
@@ -1468,9 +1488,9 @@ void BotDataMgr::LoadWanderMap(bool reload, bool force_all_maps)
         uint32 mapId = wp->GetMapId();
         auto [minLevel, maxLevel] = wp->GetLevels();
 
-        spawn_node_exists_a[mapId] |= (maxLevel >= maxof_minclasslvl_nr && !wp->HasFlag(BotWPFlags::BOTWP_FLAG_HORDE_ONLY));
-        spawn_node_exists_h[mapId] |= (maxLevel >= maxof_minclasslvl_nr && !wp->HasFlag(BotWPFlags::BOTWP_FLAG_ALLIANCE_ONLY));
-        spawn_node_exists_n[mapId] |= (maxLevel >= maxof_minclasslvl_ex && !wp->HasFlag(BotWPFlags::BOTWP_FLAG_ALLIANCE_OR_HORDE_ONLY));
+        spawn_node_exists_a[mapId] |= (maxLevel >= maxof_minclasslvl_nr && bot_ai::IsWanderNodeAvailableForBotFaction(wp, FACTION_TEMPLATE_ALLIANCE_DEFAULT, false, true));
+        spawn_node_exists_h[mapId] |= (maxLevel >= maxof_minclasslvl_nr && bot_ai::IsWanderNodeAvailableForBotFaction(wp, FACTION_TEMPLATE_HORDE_DEFAULT, false, true));
+        spawn_node_exists_n[mapId] |= (maxLevel >= maxof_minclasslvl_ex && bot_ai::IsWanderNodeAvailableForBotFaction(wp, FACTION_TEMPLATE_NEUTRAL_HOSTILE, false, true));
 
         decltype(_wpMinSpawnLevelPerMapId)::const_iterator mincit = _wpMinSpawnLevelPerMapId.find(mapId);
         _wpMinSpawnLevelPerMapId[mapId] = std::min<uint8>((mincit != _wpMinSpawnLevelPerMapId.cend()) ? mincit->second : uint8(DEFAULT_MAX_LEVEL), minLevel);
@@ -1537,9 +1557,9 @@ void BotDataMgr::LoadWanderMap(bool reload, bool force_all_maps)
             maxLevel = std::min<uint8>(maxLevel, max_spawn_level);
             for (uint8 k = 0; k < TEAMS_COUNT; ++k)
             {
-                if ((k == 0 && !wp->HasFlag(BotWPFlags::BOTWP_FLAG_HORDE_ONLY)) ||
-                    (k == 1 && !wp->HasFlag(BotWPFlags::BOTWP_FLAG_ALLIANCE_ONLY)) ||
-                    (k == 2 && !wp->HasFlag(BotWPFlags::BOTWP_FLAG_ALLIANCE_OR_HORDE_ONLY)))
+                if ((k == 0 && bot_ai::IsWanderNodeAvailableForBotFaction(wp, FACTION_TEMPLATE_ALLIANCE_DEFAULT, false, true)) ||
+                    (k == 1 && bot_ai::IsWanderNodeAvailableForBotFaction(wp, FACTION_TEMPLATE_HORDE_DEFAULT, false, true)) ||
+                    (k == 2 && bot_ai::IsWanderNodeAvailableForBotFaction(wp, FACTION_TEMPLATE_NEUTRAL_HOSTILE, false, true)))
                 {
                     for (size_t i = minLevel; i <= maxLevel; ++i)
                         spawn_node_levels[k][i - 1] = true;
@@ -2668,7 +2688,7 @@ void BotDataMgr::UpdateNpcBotData(uint32 entry, NpcBotDataUpdateType updateType,
             if (itr->second->owner == *(uint32*)(data))
                 break;
             itr->second->owner = *(uint32*)(data);
-            itr->second->hire_time = itr->second->owner ? uint64(time(0)) : 1ULL;
+            itr->second->hire_time = itr->second->owner ? uint64(std::time(0)) : 1ULL;
             bstmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_NPCBOT_OWNER);
             //"UPDATE characters_npcbot SET owner = ?, hire_time = FROM_UNIXTIME(?) WHERE entry = ?", CONNECTION_ASYNC
             bstmt->SetData(0, itr->second->owner);
@@ -2708,6 +2728,26 @@ void BotDataMgr::UpdateNpcBotData(uint32 entry, NpcBotDataUpdateType updateType,
             bstmt->SetData(1, entry);
             CharacterDatabase.Execute(bstmt);
             break;
+        case NPCBOT_UPDATE_SHARED_OWNERS:
+        {
+            NpcBotData::SharedOwnersContainer const* shared_owners = (NpcBotData::SharedOwnersContainer const*)(data);
+
+            if (std::addressof(itr->second->shared_owners) != shared_owners)
+                itr->second->shared_owners = *shared_owners;
+
+            std::vector shared_owners_v(itr->second->shared_owners.cbegin(), itr->second->shared_owners.cend());
+            std::ranges::sort(shared_owners_v);
+            std::ostringstream ss;
+            for (uint32 guid_low : shared_owners_v)
+                ss << guid_low << ' ';
+
+            bstmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_NPCBOT_SHARED_OWNERS);
+            //"UPDATE characters_npcbot SET shared_owners = ? WHERE entry = ?", CONNECTION_ASYNC
+            bstmt->SetData(0, ss.str());
+            bstmt->SetData(1, entry);
+            CharacterDatabase.Execute(bstmt);
+            break;
+        }
         case NPCBOT_UPDATE_DISABLED_SPELLS:
         {
             NpcBotData::DisabledSpellsContainer const* spells = (NpcBotData::DisabledSpellsContainer const*)(data);
@@ -2851,6 +2891,10 @@ void BotDataMgr::UpdateNpcBotDataAll(uint32 playerGuid, NpcBotDataUpdateType upd
             //"DELETE FROM characters_npcbot_transmog WHERE entry IN (SELECT entry FROM characters_npcbot WHERE owner = ?)", CONNECTION_ASYNC
             bstmt->SetData(0, playerGuid);
             trans->Append(bstmt);
+            bstmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_NPCBOT_SHARED_OWNERS_ALL);
+            //"UPDATE characters_npcbot SET shared_owners = NULL WHERE owner = ?", CONNECTION_ASYNC
+            bstmt->SetData(0, playerGuid);
+            trans->Append(bstmt);
             bstmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_NPCBOT_OWNER_ALL);
             //"UPDATE characters_npcbot SET owner = ?, hire_time = FROM_UNIXTIME(?) WHERE owner = ?", CONNECTION_ASYNC
             bstmt->SetData(0, newowner);
@@ -2867,7 +2911,7 @@ void BotDataMgr::UpdateNpcBotDataAll(uint32 playerGuid, NpcBotDataUpdateType upd
         CharacterDatabase.CommitTransaction(trans);
 }
 
-void BotDataMgr::SaveNpcBotStats(NpcBotStats const* stats)
+void BotDataMgr::SaveNpcBotStats(NpcBotStats const& stats)
 {
     CharacterDatabasePreparedStatement* bstmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_NPCBOT_STATS);
     //"REPLACE INTO characters_npcbot_stats
@@ -2877,33 +2921,33 @@ void BotDataMgr::SaveNpcBotStats(NpcBotStats const* stats)
     //(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", CONNECTION_ASYNC
 
     uint32 index = 0;
-    bstmt->SetData(  index, stats->entry);
-    bstmt->SetData(++index, stats->maxhealth);
-    bstmt->SetData(++index, stats->maxpower);
-    bstmt->SetData(++index, stats->strength);
-    bstmt->SetData(++index, stats->agility);
-    bstmt->SetData(++index, stats->stamina);
-    bstmt->SetData(++index, stats->intellect);
-    bstmt->SetData(++index, stats->spirit);
-    bstmt->SetData(++index, stats->armor);
-    bstmt->SetData(++index, stats->defense);
-    bstmt->SetData(++index, stats->resHoly);
-    bstmt->SetData(++index, stats->resFire);
-    bstmt->SetData(++index, stats->resNature);
-    bstmt->SetData(++index, stats->resFrost);
-    bstmt->SetData(++index, stats->resShadow);
-    bstmt->SetData(++index, stats->resArcane);
-    bstmt->SetData(++index, stats->blockPct);
-    bstmt->SetData(++index, stats->dodgePct);
-    bstmt->SetData(++index, stats->parryPct);
-    bstmt->SetData(++index, stats->critPct);
-    bstmt->SetData(++index, stats->attackPower);
-    bstmt->SetData(++index, stats->spellPower);
-    bstmt->SetData(++index, stats->spellPen);
-    bstmt->SetData(++index, stats->hastePct);
-    bstmt->SetData(++index, stats->hitBonusPct);
-    bstmt->SetData(++index, stats->expertise);
-    bstmt->SetData(++index, stats->armorPenPct);
+    bstmt->SetData(  index, stats.entry);
+    bstmt->SetData(++index, stats.maxhealth);
+    bstmt->SetData(++index, stats.maxpower);
+    bstmt->SetData(++index, stats.strength);
+    bstmt->SetData(++index, stats.agility);
+    bstmt->SetData(++index, stats.stamina);
+    bstmt->SetData(++index, stats.intellect);
+    bstmt->SetData(++index, stats.spirit);
+    bstmt->SetData(++index, stats.armor);
+    bstmt->SetData(++index, stats.defense);
+    bstmt->SetData(++index, stats.resHoly);
+    bstmt->SetData(++index, stats.resFire);
+    bstmt->SetData(++index, stats.resNature);
+    bstmt->SetData(++index, stats.resFrost);
+    bstmt->SetData(++index, stats.resShadow);
+    bstmt->SetData(++index, stats.resArcane);
+    bstmt->SetData(++index, stats.blockPct);
+    bstmt->SetData(++index, stats.dodgePct);
+    bstmt->SetData(++index, stats.parryPct);
+    bstmt->SetData(++index, stats.critPct);
+    bstmt->SetData(++index, stats.attackPower);
+    bstmt->SetData(++index, stats.spellPower);
+    bstmt->SetData(++index, stats.spellPen);
+    bstmt->SetData(++index, stats.hastePct);
+    bstmt->SetData(++index, stats.hitBonusPct);
+    bstmt->SetData(++index, stats.expertise);
+    bstmt->SetData(++index, stats.armorPenPct);
 
     CharacterDatabase.Execute(bstmt);
 }
@@ -3097,7 +3141,7 @@ NpcBotRegistry const& BotDataMgr::GetExistingNPCBots()
     return _existingBots;
 }
 
-void BotDataMgr::GetNPCBotGuidsByOwner(std::vector<ObjectGuid> &guids_vec, ObjectGuid owner_guid)
+void BotDataMgr::GetNPCBotGuidsByOwner(std::vector<ObjectGuid> &guids_vec, ObjectGuid owner_guid, bool count_shared)
 {
     ASSERT(AllBotsLoaded());
 
@@ -3105,7 +3149,7 @@ void BotDataMgr::GetNPCBotGuidsByOwner(std::vector<ObjectGuid> &guids_vec, Objec
 
     for (NpcBotRegistry::const_iterator ci = _existingBots.cbegin(); ci != _existingBots.cend(); ++ci)
     {
-        if (_botsData[(*ci)->GetEntry()]->owner == owner_guid.GetCounter())
+        if (_botsData.at((*ci)->GetEntry())->owner == owner_guid.GetCounter() || (count_shared && _botsData.at((*ci)->GetEntry())->shared_owners.contains(owner_guid.GetCounter())))
             guids_vec.push_back((*ci)->GetGUID());
     }
 }
@@ -3137,13 +3181,13 @@ std::vector<uint32> BotDataMgr::GetExistingNPCBotIds()
     return existing_ids;
 }
 
-uint8 BotDataMgr::GetOwnedBotsCount(ObjectGuid owner_guid, uint32 class_mask)
+uint8 BotDataMgr::GetOwnedBotsCount(ObjectGuid owner_guid, uint32 class_mask, bool count_shared)
 {
     uint8 count = 0;
     for (decltype(_botsData)::value_type const& bdata : _botsData)
-        if (bdata.second->owner == owner_guid.GetCounter() && (!class_mask || !!(class_mask & (1u << (_botsExtras[bdata.first]->bclass - 1)))))
+        if ((bdata.second->owner == owner_guid.GetCounter() || (count_shared && bdata.second->shared_owners.contains(owner_guid.GetCounter()))) &&
+            (!class_mask || !!(class_mask & (1u << (_botsExtras.at(bdata.first)->bclass - 1)))))
             ++count;
-
     return count;
 }
 

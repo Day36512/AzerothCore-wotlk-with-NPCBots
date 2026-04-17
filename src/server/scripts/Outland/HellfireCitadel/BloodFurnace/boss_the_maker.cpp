@@ -109,9 +109,6 @@ namespace Maker
     }
 } // namespace Maker
 
-// -----------------------------------------------------------------------------
-// Boss AI
-// -----------------------------------------------------------------------------
 struct boss_the_maker : public BossAI
 {
     boss_the_maker(Creature* creature) : BossAI(creature, DATA_THE_MAKER) {}
@@ -120,12 +117,14 @@ struct boss_the_maker : public BossAI
     Unit* SelectRandomPlayerOrNPCBotFromThreat(bool excludeVictim = true)
     {
         std::vector<Unit*> pool;
-        auto const& tlist = me->GetThreatMgr().GetThreatList();
-        pool.reserve(tlist.size());
+        pool.reserve(me->GetThreatMgr().GetThreatListSize());
 
-        for (ThreatReference* ref : tlist)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            Unit* u = ref ? ref->getTarget() : nullptr;
+            if (!ref || ref->IsOffline())
+                continue;
+
+            Unit* u = ref->GetVictim();
             if (!u || !u->IsAlive())
                 continue;
 
@@ -146,12 +145,14 @@ struct boss_the_maker : public BossAI
     Unit* SelectRandomPlayerOrNPCBotBeyond(float minDistance, bool excludeVictim = true)
     {
         std::vector<Unit*> pool;
-        auto const& tlist = me->GetThreatMgr().GetThreatList();
-        pool.reserve(tlist.size());
+        pool.reserve(me->GetThreatMgr().GetThreatListSize());
 
-        for (ThreatReference* ref : tlist)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            Unit* u = ref ? ref->getTarget() : nullptr;
+            if (!ref || ref->IsOffline())
+                continue;
+
+            Unit* u = ref->GetVictim();
             if (!u || !u->IsAlive())
                 continue;
 

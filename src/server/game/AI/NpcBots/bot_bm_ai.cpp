@@ -40,10 +40,7 @@ enum BlademasterSpecial
     MIRROR_COST                             = 125 * 5
 };
 
-static const uint32 Blademaster_spells_support_arr[] =
-{ MIRROR_IMAGE_1, WINDWALK_1 };
-
-static const std::vector<uint32> Blademaster_spells_support(FROM_ARRAY(Blademaster_spells_support_arr));
+static const std::vector<uint32> Blademaster_spells_support{ MIRROR_IMAGE_1, WINDWALK_1 };
 
 class blademaster_bot : public CreatureScript
 {
@@ -587,8 +584,7 @@ public:
                     ++counter;
             }
 
-            //me->GetCombatManager().EndAllPvECombat();
-            me->getHostileRefMgr().deleteReferences();
+            me->GetCombatManager().EndAllPvECombat();
 
             if (me->GetPhaseMask() != phaseMask)
                 me->SetPhaseMask(phaseMask, true);
@@ -676,15 +672,15 @@ public:
 
             target->PlayDistanceSound(SOUND_AXE_2H_IMPACT_FLESH_CRIT);
 
-            DamageInfo dinfo(*calcdinfo);
+            DamageInfo dinfo(*calcdinfo, 0);
 
             me->SendSpellNonMeleeDamageLog(target, sSpellMgr->GetSpellInfo(CRITICAL_STRIKE_1),
                 dinfo.GetDamage() + dinfo.GetAbsorb() + dinfo.GetResist() + dinfo.GetBlock(),
                 SPELL_SCHOOL_MASK_NORMAL, dinfo.GetAbsorb(), dinfo.GetResist(), false, dinfo.GetBlock(), true);
             CleanDamage cl(0, 0, BASE_ATTACK, MELEE_HIT_CRIT);
             Unit::DealDamage(me, target, dinfo.GetDamage(), &cl);
-            Unit::ProcDamageAndSpell(me, dinfo.GetVictim(), calcdinfo->procAttacker, calcdinfo->procVictim, calcdinfo->procEx, dinfo.GetDamage(), calcdinfo->attackType);
-            me->CombatStart(target);
+            Unit::ProcSkillsAndAuras((Unit*)me, calcdinfo->target, calcdinfo->procAttacker, calcdinfo->procVictim, dinfo.GetHitMask(), dinfo.GetDamage(), BASE_ATTACK, nullptr, nullptr, -1, nullptr, &dinfo, nullptr);
+            me->AtTargetAttacked(target, false);
 
             me->resetAttackTimer(BASE_ATTACK);
             Windwalk_Timer = 0;
@@ -733,8 +729,7 @@ public:
                     me->AttackStop();
 
                 //SpellEffectSanctuary
-                //me->GetCombatManager().SuppressPvPCombat();
-                me->getHostileRefMgr().UpdateVisibility(false);
+                me->GetCombatManager().SuppressPvPCombat();
                 Unit::AttackerSet const& attackers = me->getAttackers();
                 for (Unit::AttackerSet::const_iterator itr = attackers.begin(); itr != attackers.end();)
                 {

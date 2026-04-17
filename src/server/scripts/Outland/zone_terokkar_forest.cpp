@@ -237,7 +237,7 @@ enum UnkorTheRuthless
 class npc_unkor_the_ruthless : public CreatureScript
 {
 public:
-    npc_unkor_the_ruthless() : CreatureScript("npc_unkor_the_ruthless") { }
+    npc_unkor_the_ruthless() : CreatureScript("npc_unkor_the_ruthless") {}
 
     CreatureAI* GetAI(Creature* creature) const override
     {
@@ -246,84 +246,188 @@ public:
 
     struct npc_unkor_the_ruthlessAI : public ScriptedAI
     {
-        npc_unkor_the_ruthlessAI(Creature* creature) : ScriptedAI(creature) { }
+        npc_unkor_the_ruthlessAI(Creature* creature) : ScriptedAI(creature) {}
 
-        bool CanDoQuest;
-        uint32 UnkorUnfriendly_Timer;
+        bool IsFriendlySubmission;
+        uint32 FriendlyTimer;
         uint32 Pulverize_Timer;
 
         void Reset() override
         {
-            CanDoQuest = false;
-            UnkorUnfriendly_Timer = 0;
+            IsFriendlySubmission = false;
+            FriendlyTimer = 0;
             Pulverize_Timer = 3000;
+
             me->SetStandState(UNIT_STAND_STATE_STAND);
             me->SetFaction(FACTION_HOSTILE);
+            me->SetReactState(REACT_AGGRESSIVE);
         }
 
-        void JustEngagedWith(Unit* /*who*/) override { }
+        void JustEngagedWith(Unit* /*who*/) override {}
+
+        Player* NormalizeToMapPlayer(Player* player) const
+        {
+            if (!player || !me->GetMap())
+                return nullptr;
+
+            Map::PlayerList const& players = me->GetMap()->GetPlayers();
+            for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+            {
+                Player* mapPlayer = itr->GetSource();
+                if (!mapPlayer)
+                    continue;
+
+                // Important: compare pointer identity only here.
+                // Do not dereference an unvalidated raw bot owner pointer.
+                if (mapPlayer == player)
+                    return mapPlayer;
+            }
+
+            return nullptr;
+        }
+
+        Player* ResolveResponsiblePlayer(Unit* attacker) const
+        {
+            if (!attacker)
+                return nullptr;
+
+            // Direct player, pet, charm, guardian, etc.
+            if (Player* player = attacker->GetCharmerOrOwnerPlayerOrPlayerItself())
+                return NormalizeToMapPlayer(player);
+
+            // NPCBot path: validate the raw owner pointer against live players on this map
+            // before ever dereferencing it.
+            Creature* creature = attacker->ToCreature();
+            if (creature && creature->IsNPCBot())
+                return NormalizeToMapPlayer(creature->GetBotOwner());
+
+            return nullptr;
+        }
+
+        void RewardQuestCredit(Player* player)
+        {
+            player = NormalizeToMapPlayer(player);
+            if (!player)
+                return;
+
+            auto rewardIfEligible = [this](Player* target)
+                {
+                    target = NormalizeToMapPlayer(target);
+                    if (!target)
+                        return;
+
+                    if (target->GetQuestStatus(QUEST_DONTKILLTHEFATONE) == QUEST_STATUS_INCOMPLETE &&
+                        target->GetReqKillOrCastCurrentCount(QUEST_DONTKILLTHEFATONE, 18260) == 10)
+                    {
+                        target->AreaExploredOrEventHappens(QUEST_DONTKILLTHEFATONE);
+                    }
+                };
+
+            if (Group* group = player->GetGroup())
+            {
+                for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+                {
+                    Player* groupie = itr->GetSource();
+                    rewardIfEligible(groupie);
+                }
+            }
+            else
+            {
+                rewardIfEligible(player);
+            }
+        }
 
         void DoNice()
         {
+            if (IsFriendlySubmission)
+                return;
+
+            IsFriendlySubmission = true;
+            FriendlyTimer = 60000;
+
             Talk(SAY_SUBMIT);
-            me->SetFaction(FACTION_FRIENDLY);
-            me->SetStandState(UNIT_STAND_STATE_SIT);
+
+            me->AttackStop();
+            me->CombatStop(true);
             me->RemoveAllAuras();
             me->GetThreatMgr().ClearAllThreat();
-            me->CombatStop(true);
-            UnkorUnfriendly_Timer = 60000;
+
+            // Keep him stable even if he was chasing / leashing.
+            me->StopMoving();
+            me->GetMotionMaster()->Clear(false);
+            me->GetMotionMaster()->MoveIdle();
+
+            me->SetReactState(REACT_PASSIVE);
+            me->SetFaction(FACTION_FRIENDLY);
+            me->SetStandState(UNIT_STAND_STATE_SIT);
+        }
+
+        void RestoreHostileState()
+        {
+            IsFriendlySubmission = false;
+            FriendlyTimer = 0;
+
+            me->SetStandState(UNIT_STAND_STATE_STAND);
+            me->SetFaction(FACTION_HOSTILE);
+            me->SetReactState(REACT_AGGRESSIVE);
+
+            ScriptedAI::EnterEvadeMode();
+        }
+
+        void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override
+        {
+            // Never break the forced 60 second friendly window early.
+            if (IsFriendlySubmission)
+            {
+                me->AttackStop();
+                me->CombatStop(true);
+                me->GetThreatMgr().ClearAllThreat();
+                me->SetReactState(REACT_PASSIVE);
+                return;
+            }
+
+            ScriptedAI::EnterEvadeMode(why);
         }
 
         void DamageTaken(Unit* done_by, uint32& damage, DamageEffectType, SpellSchoolMask) override
         {
-            if (!done_by)
+            if (IsFriendlySubmission)
+            {
+                damage = 0;
+                return;
+            }
+
+            if (!me->HealthBelowPctDamaged(60, damage))
                 return;
 
-            Player* player = done_by->ToPlayer();
-            if (player && me->HealthBelowPctDamaged(30, damage))
-            {
-                if (Group* group = player->GetGroup())
-                {
-                    for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
-                    {
-                        Player* groupie = itr->GetSource();
-                        if (groupie && groupie->IsInMap(player) &&
-                                groupie->GetQuestStatus(QUEST_DONTKILLTHEFATONE) == QUEST_STATUS_INCOMPLETE &&
-                                groupie->GetReqKillOrCastCurrentCount(QUEST_DONTKILLTHEFATONE, 18260) == 10)
-                        {
-                            groupie->AreaExploredOrEventHappens(QUEST_DONTKILLTHEFATONE);
-                            if (!CanDoQuest)
-                                CanDoQuest = true;
-                        }
-                    }
-                }
-                else if (player->GetQuestStatus(QUEST_DONTKILLTHEFATONE) == QUEST_STATUS_INCOMPLETE &&
-                         player->GetReqKillOrCastCurrentCount(QUEST_DONTKILLTHEFATONE, 18260) == 10)
-                {
-                    player->AreaExploredOrEventHappens(QUEST_DONTKILLTHEFATONE);
-                    CanDoQuest = true;
-                }
-            }
+            // Never allow the surrender trigger hit to kill him.
+            if (damage >= me->GetHealth())
+                damage = me->GetHealth() > 1 ? me->GetHealth() - 1 : 0;
+
+            // Submit regardless of quest status or exact attacker type.
+            // Only award quest credit if we can safely resolve a live player on this map.
+            if (Player* player = ResolveResponsiblePlayer(done_by))
+                RewardQuestCredit(player);
+
+            DoNice();
         }
 
         void UpdateAI(uint32 diff) override
         {
-            if (CanDoQuest)
+            if (IsFriendlySubmission)
             {
-                if (!UnkorUnfriendly_Timer)
+                if (FriendlyTimer <= diff)
                 {
-                    //DoCast(me, SPELL_QUID9889);        //not using spell for now
-                    DoNice();
+                    RestoreHostileState();
+                    return;
                 }
-                else
-                {
-                    if (UnkorUnfriendly_Timer <= diff)
-                    {
-                        EnterEvadeMode();
-                        return;
-                    }
-                    else UnkorUnfriendly_Timer -= diff;
-                }
+
+                FriendlyTimer -= diff;
+
+                me->AttackStop();
+                me->CombatStop(true);
+                me->GetThreatMgr().ClearAllThreat();
+                return;
             }
 
             if (!UpdateVictim())
@@ -334,7 +438,10 @@ public:
                 DoCast(me, SPELL_PULVERIZE);
                 Pulverize_Timer = 9000;
             }
-            else Pulverize_Timer -= diff;
+            else
+            {
+                Pulverize_Timer -= diff;
+            }
 
             DoMeleeAttackIfReady();
         }
@@ -573,6 +680,46 @@ private:
 };
 
 /*######
+## go_ancient_skull_pile
+######*/
+
+enum AncientSkullPile
+{
+    ITEM_TIME_LOST_OFFERING = 32720,
+    SPELL_SUMMON_TEROKK     = 41004,
+
+    GOSSIP_MENU_ANCIENT_SKULL_PILE        = 8687,
+    GOSSIP_MENU_TEXT_ANCIENT_SKULL_PILE   = 11058
+};
+
+class go_ancient_skull_pile : public GameObjectScript
+{
+public:
+    go_ancient_skull_pile() : GameObjectScript("go_ancient_skull_pile") {}
+
+    bool OnGossipSelect(Player* player, GameObject* go, uint32 sender, uint32 /*action*/) override
+    {
+        ClearGossipMenuFor(player);
+
+        if (sender == GOSSIP_SENDER_MAIN)
+        {
+            CloseGossipMenuFor(player);
+            if (player->HasItemCount(ITEM_TIME_LOST_OFFERING, 1))
+                go->DespawnOrUnsummon();
+            player->CastSpell(player, SPELL_SUMMON_TEROKK);
+        }
+        return true;
+    }
+
+    bool OnGossipHello(Player* player, GameObject* go) override
+    {
+        AddGossipItemFor(player, GOSSIP_MENU_ANCIENT_SKULL_PILE, 0, GOSSIP_SENDER_MAIN, 0);
+        SendGossipMenuFor(player, GOSSIP_MENU_TEXT_ANCIENT_SKULL_PILE, go->GetGUID());
+        return true;
+    }
+};
+
+/*######
 ## npc_slim
 ######*/
 
@@ -621,5 +768,6 @@ void AddSC_terokkar_forest()
     new npc_unkor_the_ruthless();
     new npc_isla_starmane();
     new go_skull_pile();
+    new go_ancient_skull_pile();
     new npc_slim();
 }

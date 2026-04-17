@@ -7,6 +7,7 @@
 #include "Item.h"
 #include "Map.h"
 #include "Player.h"
+#include "RaceMgr.h"
 #include "ScriptMgr.h"
 #include "SpellAuraEffects.h"
 #include "SpellMgr.h"
@@ -195,18 +196,13 @@ enum PaladinSpecial
     IMPROVED_DEVOTION_AURA_SPELL        = 63514
 };
 
-static const uint32 Paladin_spells_damage_arr[] =
+static const std::vector<uint32> Paladin_spells_damage
 { AVENGERS_SHIELD_1, CONSECRATION_1, CRUSADER_STRIKE_1, DIVINE_STORM_1, EXORCISM_1, JUDGEMENT_OF_LIGHT_1,
 JUDGEMENT_OF_WISDOM_1, JUDGEMENT_OF_JUSTICE_1, HAMMER_OF_THE_RIGHTEOUS_1, HAMMER_OF_WRATH_1, HOLY_SHIELD_1,
 HOLY_SHOCK_1, HOLY_WRATH_1, SHIELD_OF_RIGHTEOUSNESS_1, HAND_OF_RECKONING_1 };
-
-static const uint32 Paladin_spells_cc_arr[] =
-{ HAMMER_OF_JUSTICE_1, HOLY_WRATH_1, REPENTANCE_1, TURN_EVIL_1 };
-
-static const uint32 Paladin_spells_heal_arr[] =
-{ BEACON_OF_LIGHT_1, FLASH_OF_LIGHT_1, HOLY_LIGHT_1, HOLY_SHOCK_1, LAY_ON_HANDS_1 };
-
-static const uint32 Paladin_spells_support_arr[] =
+static const std::vector<uint32> Paladin_spells_cc{ HAMMER_OF_JUSTICE_1, HOLY_WRATH_1, REPENTANCE_1, TURN_EVIL_1 };
+static const std::vector<uint32> Paladin_spells_heal{ BEACON_OF_LIGHT_1, FLASH_OF_LIGHT_1, HOLY_LIGHT_1, HOLY_SHOCK_1, LAY_ON_HANDS_1 };
+static const std::vector<uint32> Paladin_spells_support
 { /*DEVOTION_AURA_1, CONCENTRATION_AURA_1, FIRE_RESISTANCE_AURA_1, FROST_RESISTANCE_AURA_1, SHADOW_RESISTANCE_AURA_1,
 RETRIBUTION_AURA_1, CRUSADER_AURA_1, */AURA_MASTERY_1, AVENGING_WRATH_1, BLESSING_OF_MIGHT_1, BLESSING_OF_WISDOM_1,
 BLESSING_OF_KINGS_1, BLESSING_OF_SANCTUARY_1, CLEANSE_1, DIVINE_FAVOR_1, DIVINE_ILLUMINATION_1, DIVINE_INTERVENTION_1,
@@ -214,11 +210,6 @@ DIVINE_PLEA_1, DIVINE_PROTECTION_1, DIVINE_SACRIFICE_1, DIVINE_SHIELD_1, HAND_OF
 HAND_OF_RECKONING_1, HAND_OF_SACRIFICE_1, HAND_OF_SALVATION_1, HOLY_SHIELD_1, PURIFY_1, REDEMPTION_1,
 RIGHTEOUS_DEFENSE_1, RIGHTEOUS_FURY_1, SACRED_SHIELD_1, SEAL_OF_RIGHTEOUSNESS_1, SEAL_OF_JUSTICE_1, SEAL_OF_LIGHT_1,
 SEAL_OF_WISDOM_1, SEAL_OF_COMMAND_1, SEAL_OF_VENGEANCE_1, SEAL_OF_CORRUPTION_1 };
-
-static const std::vector<uint32> Paladin_spells_damage(FROM_ARRAY(Paladin_spells_damage_arr));
-static const std::vector<uint32> Paladin_spells_cc(FROM_ARRAY(Paladin_spells_cc_arr));
-static const std::vector<uint32> Paladin_spells_heal(FROM_ARRAY(Paladin_spells_heal_arr));
-static const std::vector<uint32> Paladin_spells_support(FROM_ARRAY(Paladin_spells_support_arr));
 
 class paladin_bot : public CreatureScript
 {
@@ -916,7 +907,7 @@ public:
             uint32 RIGHT = GetSpell(SEAL_OF_RIGHTEOUSNESS_1);
             uint32 WISDOM = GetSpell(SEAL_OF_WISDOM_1);
             uint32 JUSTICE = GetSpell(SEAL_OF_JUSTICE_1);
-            uint32 VENGEANCE = (me->GetRaceMask() & RACEMASK_ALLIANCE) ? GetSpell(SEAL_OF_VENGEANCE_1) : GetSpell(SEAL_OF_CORRUPTION_1);
+            uint32 VENGEANCE = (me->GetRaceMask() & sRaceMgr->GetAllianceRaceMask()) ? GetSpell(SEAL_OF_VENGEANCE_1) : GetSpell(SEAL_OF_CORRUPTION_1);
 
             if (VENGEANCE && victim &&
                 (victim->GetMaxHealth() > me->GetMaxHealth() * (2 + victim->getAttackers().size() / 2) ||
@@ -2357,7 +2348,7 @@ public:
             InitSpellMap(SEAL_OF_RIGHTEOUSNESS_1);
             InitSpellMap(SEAL_OF_WISDOM_1);
             InitSpellMap(SEAL_OF_JUSTICE_1);
-            InitSpellMap((me->GetRaceMask() & RACEMASK_ALLIANCE) ? SEAL_OF_VENGEANCE_1 : SEAL_OF_CORRUPTION_1);
+            InitSpellMap((me->GetRaceMask() & sRaceMgr->GetAllianceRaceMask()) ? SEAL_OF_VENGEANCE_1 : SEAL_OF_CORRUPTION_1);
             InitSpellMap(DIVINE_INTERVENTION_1);
             InitSpellMap(DIVINE_PROTECTION_1);
             InitSpellMap(DIVINE_SHIELD_1);

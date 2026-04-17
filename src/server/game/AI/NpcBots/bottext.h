@@ -428,12 +428,14 @@ enum BotTexts : uint32
     BOT_TEXT_DELETE                         = 70691, //"Delete"
     BOT_TEXT_EQUIP                          = 70692, //"Equip"
     BOT_TEXT_MISSING                        = 70693, //"missing"
-    BOT_TEXT_RENAME_BOT                     = 70694, //"Rename"
-    BOT_TEXT_RENAME_BOT_INPUT               = 70695, //"Enter new name (2–12 characters, Chinese supported)"
-    BOT_TEXT_RENAME_SUCCESS                 = 70696, //"Bot renamed successfully!"
-    BOT_TEXT_RENAME_INVALID_LENGTH          = 70697, //"Name length must be between 2–36 bytes (approx. 2–12 characters)"
-    BOT_TEXT_RENAME_INVALID_CHARS           = 70698, //"Name cannot include special characters: ' \" \\ ; < >"
-    //70694-71000 reserved for custom localization strings
+    BOT_TEXT_MANAGE_OWNERSHIP               = 70694, //"Manage ownership..."
+    BOT_TEXT_ADD_OWNER                      = 70695, //"<Add owner>"
+    BOT_TEXT_SHARED_BOT_WARN_ADD            = 70696, //"WARNING: by sharing ownership over your bot you give another player FULL control over their inventory, roles and all other settings (including sharing them with others)"
+    BOT_TEXT_REMOVE_OWNER                   = 70697, //"<Remove owner>"
+    BOT_TEXT_OWNERS_LIMIT_EXCEEDED          = 70698, //"Owners limit exceeded"
+    BOT_TEXT_SHARED_WITH                    = 70699, //"Shared with"
+    BOT_TEXT_OWNER                          = 70700, //"Owner"
+    //70701-71000 reserved for custom localization strings
 };
 
 #endif //BOTTEXT_H

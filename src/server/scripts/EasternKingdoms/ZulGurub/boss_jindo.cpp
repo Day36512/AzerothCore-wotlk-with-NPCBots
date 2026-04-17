@@ -222,16 +222,13 @@ struct boss_jindo : public BossAI
     {
         if (me->GetThreatMgr().GetThreatListSize() > 1)
         {
-            ThreatContainer::StorageType::const_iterator lastRef = me->GetThreatMgr().GetOnlineContainer().GetThreatList().end();
-            --lastRef;
-            if (Unit* lastTarget = (*lastRef)->getTarget())
+            if (Unit* currentVictim = me->GetVictim())
             {
-                if (lastTarget != target)
-                {
+                if (currentVictim != target)
                     return !target->HasAura(SPELL_HEX);
-                }
             }
         }
+
         return true;
     }
 

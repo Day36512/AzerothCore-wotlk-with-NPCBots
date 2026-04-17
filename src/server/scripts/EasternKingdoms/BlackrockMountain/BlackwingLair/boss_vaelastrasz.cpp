@@ -26,7 +26,6 @@
 #include "blackwing_lair.h"
 
 #include "bot_ai.h" 
-#include "ThreatMgr.h" 
 
  // Grid search helpers
 #include "GridNotifiers.h"

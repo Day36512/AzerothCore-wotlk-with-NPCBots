@@ -282,7 +282,6 @@ public:
                     summon->AI()->AttackStart(target);
                     summon->SetInCombatWithZone();
                     summon->SetReactState(REACT_AGGRESSIVE);
-                    summon->CallForHelp(150.0f);
                 }
             }
         }
@@ -407,16 +406,19 @@ public:
                     events.Repeat(15s);
                     break;
                 case EVENT_TELEPORT:
+                {
                     me->AttackStop();
                     if (IN_LIVE_SIDE(me))
-                    {
                         me->CastSpell(me, SPELL_TELEPORT_DEAD, false);
-                    }
                     else
-                    {
                         me->CastSpell(me, SPELL_TELEPORT_LIVE, false);
-                    }
-                    me->GetThreatMgr().resetAggro(NotOnSameSide(me));
+
+                    // Clear threat from targets not on the same side as Gothik
+                    NotOnSameSide notOnSameSide(me);
+                    for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
+                        if (notOnSameSide(ref->GetVictim()))
+                            me->GetThreatMgr().ClearThreat(ref->GetVictim());
+
                     if (Unit* pTarget = SelectTarget(SelectTargetMethod::MaxDistance, 0))
                     {
                         me->GetThreatMgr().AddThreat(pTarget, 100.0f);
@@ -424,6 +426,7 @@ public:
                     }
                     events.Repeat(20s);
                     break;
+                }
                 case EVENT_CHECK_HEALTH:
                     if (me->HealthBelowPct(30))
                     {
@@ -465,6 +468,19 @@ public:
                             go->SetGoState(GO_STATE_ACTIVE);
 
                         gateOpened = true;
+                        summons.DoForAllSummons([&](WorldObject* summon)
+                        {
+                            if (Creature* gothikMinion = summon->ToCreature())
+                                if (gothikMinion->IsAlive())
+                                {
+                                    if (Unit* target = SelectTarget(SelectTargetMethod::MinDistance, 0, 200.0f))
+                                    {
+                                        gothikMinion->AI()->AttackStart(target);
+                                        gothikMinion->SetReactState(REACT_AGGRESSIVE);
+                                        gothikMinion->SetInCombatWithZone();
+                                    }
+                                }
+                        });
                         Talk(EMOTE_GATE_OPENED);
                     }
                     break;
@@ -501,7 +517,7 @@ public:
             events.Reset();
         }
 
-        void JustEngagedWith(Unit*  /*who*/) override
+        void JustEngagedWith(Unit* /*who*/) override
         {
             switch (me->GetEntry())
             {

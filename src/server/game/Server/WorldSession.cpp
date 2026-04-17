@@ -212,6 +212,37 @@ bool WorldSession::IsGMAccount() const
     return GetSecurity() >= SEC_GAMEMASTER;
 }
 
+bool WorldSession::IsTrialAccount() const
+{
+    return HasAccountFlag(ACCOUNT_FLAG_TRIAL);
+}
+
+bool WorldSession::IsInternetGameRoomAccount() const
+{
+    return HasAccountFlag(ACCOUNT_FLAG_IGR);
+}
+
+bool WorldSession::IsRecurringBillingAccount() const
+{
+    return HasAccountFlag(ACCOUNT_FLAG_RECURRING_BILLING);
+}
+
+uint8 WorldSession::GetBillingPlanFlags() const
+{
+    uint8 flags = SESSION_NONE;
+
+    if (IsRecurringBillingAccount())
+        flags |= SESSION_RECURRING_BILL;
+
+    if (IsTrialAccount())
+        flags |= SESSION_FREE_TRIAL;
+
+    if (IsInternetGameRoomAccount())
+        flags |= SESSION_IGR;
+
+    return flags;
+}
+
 std::string const& WorldSession::GetPlayerName() const
 {
     return _player ? _player->GetName() : DefaultPlayerName;
@@ -338,8 +369,6 @@ bool WorldSession::Update(uint32 diff, PacketFilter& updater)
 
     if (updater.ProcessUnsafe())
         UpdateTimeOutTime(diff);
-
-    HandleTeleportTimeout(updater.ProcessUnsafe());
 
     ///- Retrieve packets from the receive queue and call the appropriate handlers
     /// not process packets if socket already closed
@@ -581,36 +610,6 @@ bool WorldSession::IsSocketClosed() const
     return !m_Socket || !m_Socket->IsOpen();
 }
 
-void WorldSession::HandleTeleportTimeout(bool updateInSessions)
-{
-    // pussywizard: handle teleport ack timeout
-    if (m_Socket && m_Socket->IsOpen() && GetPlayer() && GetPlayer()->IsBeingTeleported())
-    {
-        time_t currTime = GameTime::GetGameTime().count();
-        if (updateInSessions) // session update from World::UpdateSessions
-        {
-            if (GetPlayer()->IsBeingTeleportedFar() && GetPlayer()->GetSemaphoreTeleportFar() + sWorld->getIntConfig(CONFIG_TELEPORT_TIMEOUT_FAR) < currTime)
-                while (GetPlayer() && GetPlayer()->IsBeingTeleportedFar())
-                    HandleMoveWorldportAck();
-        }
-        else // session update from Map::Update
-        {
-            if (GetPlayer()->IsBeingTeleportedNear() && GetPlayer()->GetSemaphoreTeleportNear() + sWorld->getIntConfig(CONFIG_TELEPORT_TIMEOUT_NEAR) < currTime)
-                while (GetPlayer() && GetPlayer()->IsInWorld() && GetPlayer()->IsBeingTeleportedNear())
-                {
-                    Player* plMover = GetPlayer()->m_mover->ToPlayer();
-                    if (!plMover)
-                        break;
-                    WorldPacket pkt(MSG_MOVE_TELEPORT_ACK, 20);
-                    pkt << plMover->GetPackGUID();
-                    pkt << uint32(0); // flags
-                    pkt << uint32(0); // time
-                    HandleMoveTeleportAck(pkt);
-                }
-        }
-    }
-}
-
 /// %Log the player out
 void WorldSession::LogoutPlayer(bool save)
 {
@@ -639,7 +638,7 @@ void WorldSession::LogoutPlayer(bool save)
         //FIXME: logout must be delayed in case lost connection with client in time of combat
         if (_player->GetDeathTimer())
         {
-            _player->getHostileRefMgr().deleteReferences(true);
+            _player->GetThreatMgr().RemoveMeFromThreatLists();
             _player->BuildPlayerRepop();
             _player->RepopAtGraveyard();
         }

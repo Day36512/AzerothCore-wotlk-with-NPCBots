@@ -125,8 +125,8 @@ enum Misc
     ACTION_START_COMBAT         = 5
 };
 
-#define SPEED_RUNNING           1.0f
-#define SPEED_MOUNTED           1.6f
+#define SPEED_RUNNING           1.2f
+#define SPEED_MOUNTED           2.2f
 
 enum Events
 {

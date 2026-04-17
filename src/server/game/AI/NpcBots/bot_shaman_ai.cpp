@@ -10,6 +10,7 @@
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
+#include "RaceMgr.h"
 #include "ScriptMgr.h"
 #include "SpellAuraEffects.h"
 #include "Spell.h"
@@ -25,16 +26,8 @@ Unsummon elemental totems if Elementals are killed
 Aura application bug for bot in other subgroup, maybe caused by creatorGUID mismatch
 */
 
-#define MAX_WOLVES 2
-#define MAX_TOTEMS 4
-
-static constexpr uint32 TotemModelsForRace[MAX_TOTEMS][MAX_RACES-1] =
-{
-    { 0, 30758, 30754, 0, 0, 4589, 0, 30762, 0, 0, 19074 },
-    { 0, 30757, 30753, 0, 0, 4588, 0, 30761, 0, 0, 19073 },
-    { 0, 30759, 30755, 0, 0, 4587, 0, 30763, 0, 0, 19075 },
-    { 0, 30756, 30756, 0, 0, 4590, 0, 30760, 0, 0, 19071 }
-};
+constexpr uint8 MAX_WOLVES = 2;
+constexpr uint8 MAX_TOTEMS = 4;
 
 enum ShamanBaseSpells
 {
@@ -256,17 +249,12 @@ enum BotTotemType : uint32
                                     BOT_TOTEM_MASK_MY_TOTEM_WATER | BOT_TOTEM_MASK_MY_TOTEM_AIR)
 };
 
-static const uint32 Shaman_spells_damage_arr[] =
+static const std::vector<uint32> Shaman_spells_damage
 { EARTH_SHOCK_1, FLAME_SHOCK_1, FROST_SHOCK_1, STORMSTRIKE_1, CHAIN_LIGHTNING_1, LAVA_BURST_1, LIGHTNING_BOLT_1,
 FIRE_NOVA_1, MAGMA_TOTEM_1, SEARING_TOTEM_1, LIGHTNING_SHIELD_1, THUNDERSTORM_1, EARTH_ELEMENTAL_TOTEM_1, FIRE_ELEMENTAL_TOTEM_1 };
-
-static const uint32 Shaman_spells_cc_arr[] =
-{ EARTHBIND_TOTEM_1, FROST_SHOCK_1, HEX_1, WIND_SHEAR_1 };
-
-static const uint32 Shaman_spells_heal_arr[] =
-{ EARTH_SHIELD_1, CHAIN_HEAL_1, LESSER_HEALING_WAVE_1, HEALING_WAVE_1, RIPTIDE_1, HEALING_STREAM_TOTEM_1 };
-
-static const uint32 Shaman_spells_support_arr[] =
+static const std::vector<uint32> Shaman_spells_cc{ EARTHBIND_TOTEM_1, FROST_SHOCK_1, HEX_1, WIND_SHEAR_1 };
+static const std::vector<uint32> Shaman_spells_heal{ EARTH_SHIELD_1, CHAIN_HEAL_1, LESSER_HEALING_WAVE_1, HEALING_WAVE_1, RIPTIDE_1, HEALING_STREAM_TOTEM_1 };
+static const std::vector<uint32> Shaman_spells_support
 { ANCESTRAL_SPIRIT_1, GHOST_WOLF_1, FERAL_SPIRIT_1, BLOODLUST_1, HEROISM_1, CURE_TOXINS_1, CLEANSE_SPIRIT_1,
 LIGHTNING_SHIELD_1, NATURES_SWIFTNESS_1, PURGE_1, REINCARNATION_1, SHAMANISTIC_RAGE_1, TIDAL_FORCE_1,
 /*WATER_BREATHING_1, */WATER_SHIELD_1, WATER_WALKING_1, /*ELEMENTAL_MASTERY_1, STONECLAW_TOTEM_1,*/
@@ -274,11 +262,6 @@ FIRE_RESISTANCE_TOTEM_1, FROST_RESISTANCE_TOTEM_1, NATURE_RESISTANCE_TOTEM_1, FL
 /*SENTRY_TOTEM_1, STONESKIN_TOTEM_1, */STRENGTH_OF_EARTH_TOTEM_1, WINDFURY_TOTEM_1, WRATH_OF_AIR_TOTEM_1,
 CLEANSING_TOTEM_1, MANA_SPRING_TOTEM_1, TOTEM_OF_WRATH_1, MANA_TIDE_TOTEM_1, TREMOR_TOTEM_1/*, TOTEMIC_RECALL_1,
 ROCKBITER_WEAPON_1, FLAMETONGUE_WEAPON_1, FROSTBRAND_WEAPON_1, WINDFURY_WEAPON_1, EARTHLIVING_WEAPON_1*/ };
-
-static const std::vector<uint32> Shaman_spells_damage(FROM_ARRAY(Shaman_spells_damage_arr));
-static const std::vector<uint32> Shaman_spells_cc(FROM_ARRAY(Shaman_spells_cc_arr));
-static const std::vector<uint32> Shaman_spells_heal(FROM_ARRAY(Shaman_spells_heal_arr));
-static const std::vector<uint32> Shaman_spells_support(FROM_ARRAY(Shaman_spells_support_arr));
 
 class shaman_bot : public CreatureScript
 {
@@ -386,7 +369,7 @@ public:
 
             BloodlustCheckTimer = 3000;
 
-            uint32 BLOODLUST = (me->GetRaceMask() & RACEMASK_ALLIANCE) ? HEROISM_1 : BLOODLUST_1;
+            uint32 BLOODLUST = (me->GetRaceMask() & sRaceMgr->GetAllianceRaceMask()) ? HEROISM_1 : BLOODLUST_1;
             if (!IsSpellReady(BLOODLUST, diff))
                 return;
 
@@ -405,7 +388,7 @@ public:
 
             //BLOODLUST = GetSpell(BLOODLUST); //not ranked
 
-            uint32 sateSpell = (me->GetRaceMask() & RACEMASK_ALLIANCE) ? EXHAUSTION_AURA : SATED_AURA;
+            uint32 sateSpell = (me->GetRaceMask() & sRaceMgr->GetAllianceRaceMask()) ? EXHAUSTION_AURA : SATED_AURA;
             Unit::AuraEffectList const& dummies = me->GetAuraEffectsByType(SPELL_AURA_DUMMY);
             for (Unit::AuraEffectList::const_iterator itr = dummies.begin(); itr != dummies.end(); ++itr)
             {
@@ -1874,7 +1857,7 @@ public:
 
             //Shield cd
             if (baseId == LIGHTNING_SHIELD_DAMAGE_1)
-                SetSpellCooldown(LIGHTNING_SHIELD_DAMAGE_1, 3000); //is that right? from spell_proc_event
+                SetSpellCooldown(LIGHTNING_SHIELD_DAMAGE_1, 3500); //is that right? from spell_proc_event
 
             //autouse totems
             if (baseId == EARTHBIND_TOTEM_1 || baseId == STRENGTH_OF_EARTH_TOTEM_1)
@@ -2358,7 +2341,7 @@ public:
             //Without setting creator correctly it will be impossible to use summon X elemental totems
             summon->SetCreator(me);
             //summon->SetDisplayId(sObjectMgr->GetModelForTotem(SummonSlot(slot+1), Races(me->GetRace())));
-            summon->SetDisplayId(TotemModelsForRace[slot][std::min<uint8>(me->GetRace(), MAX_RACES-1)-1]);
+            summon->SetDisplayId(sObjectMgr->GetModelForTotem(SummonSlot(totem->m_Properties->Slot), Races(me->GetRace())));
             summon->SetFaction(me->GetFaction());
             summon->SetPvP(me->IsPvP());
             summon->SetOwnerGUID(master->GetGUID());
@@ -2534,7 +2517,7 @@ public:
             InitSpellMap(PURGE_1);
             InitSpellMap(WIND_SHEAR_1);
             InitSpellMap(HEX_1);
-            InitSpellMap((me->GetRaceMask() & RACEMASK_ALLIANCE) ? HEROISM_1 : BLOODLUST_1); //at least race is constant
+            InitSpellMap((me->GetRaceMask() & sRaceMgr->GetAllianceRaceMask()) ? HEROISM_1 : BLOODLUST_1); //at least race is constant
 
             InitSpellMap(GHOST_WOLF_1);
 

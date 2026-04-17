@@ -26,6 +26,7 @@
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
+#include "RaceMgr.h"
 //#include "RBAC.h"
 #include "ScriptMgr.h"
 #include "SpellInfo.h"
@@ -173,7 +174,7 @@ private:
         SOUNDSETMODEL_BLOODELF_FEMALE_3     = 15520,
     };
 
-    static constexpr size_t RaceToRaceOffset[MAX_RACES] = {
+    static constexpr size_t RaceToRaceOffset[] = {
         RACE_NONE,
         0, //RACE_HUMAN
         5, //RACE_ORC
@@ -2047,7 +2048,7 @@ public:
         if (file_str->find('.') == std::string::npos)
             *file_str += ".sql";
 
-        switch (NPCBotsDump().Load(*file_str))
+        switch (NPCBotsDump{}.Load(*file_str))
         {
             case BOT_DUMP_SUCCESS:
                 handler->SendSysMessage("Import successful.");
@@ -2088,7 +2089,7 @@ public:
         if (file_str->find('.') == std::string::npos)
             *file_str += ".sql";
 
-        switch (NPCBotsDump().Write(*file_str))
+        switch (NPCBotsDump{}.Write(*file_str))
         {
             case BOT_DUMP_SUCCESS:
                 handler->SendSysMessage("Export successful.");
@@ -3095,7 +3096,7 @@ public:
         std::vector<ObjectGuid> botvec;
         BotDataMgr::GetNPCBotGuidsByOwner(botvec, owner->GetGUID());
         if (owner->HaveBot())
-            botvec.erase(std::remove_if(botvec.begin(), botvec.end(), [=](ObjectGuid botguid) { return owner->GetBotMgr()->GetBot(botguid); }), botvec.end());
+            std::erase_if(botvec, [=](ObjectGuid botguid) { return owner->GetBotMgr()->GetBot(botguid); });
 
         uint32 recalled_count = 0;
         for (ObjectGuid botguid : botvec)
@@ -3307,8 +3308,13 @@ public:
         }
 
         BotDataMgr::UpdateNpcBotData(bot->GetEntry(), NPCBOT_UPDATE_OWNER, &guidlow);
-        bot->GetBotAI()->ReinitOwner();
-        //bot->GetBotAI()->Reset();
+        NpcBotData const* bot_data = BotDataMgr::SelectNpcBotData(bot->GetEntry());
+        if (bot_data->shared_owners.contains(guidlow))
+        {
+            NpcBotData::SharedOwnersContainer shared_owners_new = bot_data->shared_owners; //copy
+            shared_owners_new.erase(guidlow);
+            BotDataMgr::UpdateNpcBotData(bot->GetEntry(), NPCBOT_UPDATE_SHARED_OWNERS, &shared_owners_new);
+        }
 
         handler->PSendSysMessage("{}'s new owner is {} (guidlow: {})", bot->GetName(), characterName, guidlow);
         return true;
@@ -3453,7 +3459,7 @@ public:
         for (BotList::const_iterator itr = botlist.begin(); itr != botlist.end(); ++itr)
         {
             uint8 race = itr->race;
-            if (race >= MAX_RACES)
+            if (race >= sRaceMgr->GetMaxRaces())
                 race = RACE_NONE;
 
             std::string_view raceName;
@@ -3548,6 +3554,8 @@ public:
         {
             uint32 newOwner = 0;
             BotDataMgr::UpdateNpcBotData(bot->GetEntry(), NPCBOT_UPDATE_OWNER, &newOwner);
+            NpcBotData::SharedOwnersContainer sharedOwners{};
+            BotDataMgr::UpdateNpcBotData(bot->GetEntry(), NPCBOT_UPDATE_SHARED_OWNERS, &sharedOwners);
 
             if (Group* gr = bot->GetBotGroup())
                 gr->RemoveMember(bot->GetGUID());
@@ -3787,7 +3795,7 @@ public:
         if (!normalizePlayerName(namestr))
             return ret_err_invalid_arg(handler, "name");
 
-        if (race && !((1u << (*race - 1)) & RACEMASK_ALL_PLAYABLE))
+        if (race && !((1u << (*race - 1)) & sRaceMgr->GetPlayableRaceMask()))
             return ret_err_invalid_arg(handler, "race", race);
 
         if (can_change_appearance && *gender != GENDER_MALE && *gender != GENDER_FEMALE)
@@ -4536,7 +4544,7 @@ public:
             handler->SetSentErrorMessage(true);
             return false;
         }
-        if (BotDataMgr::GetOwnedBotsCount(master_guid) == 0)
+        if (BotDataMgr::GetOwnedBotsCount(master_guid, 0, true) == 0)
         {
             handler->PSendSysMessage("{} ({}) has no NpcBots!", master_name, master_guid.GetCounter());
             handler->SetSentErrorMessage(true);
@@ -4544,16 +4552,12 @@ public:
         }
 
         std::vector<ObjectGuid> guidvec;
-        BotDataMgr::GetNPCBotGuidsByOwner(guidvec, master_guid);
+        BotDataMgr::GetNPCBotGuidsByOwner(guidvec, master_guid, true);
         Player* master = ObjectAccessor::FindConnectedPlayer(master_guid);
         BotMap const* map = master ? master->GetBotMgr()->GetBotMap() : nullptr;
         uint32 map_size = map ? uint32(map->size()) : 0u;
         if (map)
-        {
-            guidvec.erase(std::remove_if(std::begin(guidvec), std::end(guidvec),
-                [bmap = map](ObjectGuid guid) { return bmap->find(guid) != bmap->end(); }
-            ), std::end(guidvec));
-        }
+            std::erase_if(guidvec, [=](ObjectGuid guid) { return map->find(guid) != map->end(); });
 
         handler->PSendSysMessage("Listing NpcBots for {}, guid {}{}:", master_name, master_guid.GetCounter(), !master ? " (offline)" : "");
         handler->PSendSysMessage("Owned NpcBots: {} (active: {})", uint32(guidvec.size()) + map_size, map_size);
@@ -4855,7 +4859,7 @@ public:
 
         Player const* owner = handler->GetSession()->GetPlayer();
 
-        if (!owner->HaveBot() && BotDataMgr::GetOwnedBotsCount(owner->GetGUID()) == 0)
+        if (!owner->HaveBot() && BotDataMgr::GetOwnedBotsCount(owner->GetGUID(), 0, true) == 0)
             return return_syntax();
 
         BotMgr* mgr = owner->GetBotMgr();
@@ -4864,7 +4868,7 @@ public:
         {
             Creature const* bot = handler->getSelectedCreature();
             if (bot && bot->IsNPCBot() && !bot->IsTempBot() && !mgr->GetBot(bot->GetGUID()) && bot->GetBotAI()->HasBotCommandState(BOT_COMMAND_UNBIND) &&
-                BotDataMgr::SelectNpcBotData(bot->GetEntry())->owner == owner->GetGUID().GetCounter())
+                bot->GetBotAI()->HasOwner(owner->GetGUID().GetCounter()))
             {
                 if (BotAddResult res = mgr->RebindBot(const_cast<Creature*>(bot)); res != BOT_ADD_SUCCESS)
                     return return_fail(res, { bot->GetName() });
@@ -4888,7 +4892,7 @@ public:
 
             Creature const* bot = BotDataMgr::FindBot(name, owner->GetSession()->GetSessionDbLocaleIndex(), &bot_ids);
             if (bot && bot->IsNPCBot() && !bot->IsTempBot() && !mgr->GetBot(bot->GetGUID()) && bot->GetBotAI()->HasBotCommandState(BOT_COMMAND_UNBIND) &&
-                BotDataMgr::SelectNpcBotData(bot->GetEntry())->owner == owner->GetGUID().GetCounter())
+                bot->GetBotAI()->HasOwner(owner->GetGUID().GetCounter()))
             {
                 if (BotAddResult res = mgr->RebindBot(const_cast<Creature*>(bot)); res != BOT_ADD_SUCCESS)
                 {
@@ -5092,7 +5096,8 @@ public:
 
         ObjectGuid::LowType guidlow = owner->GetGUID().GetCounter();
         BotDataMgr::UpdateNpcBotData(bot->GetEntry(), NPCBOT_UPDATE_OWNER, &guidlow);
-        bot->GetBotAI()->ReinitOwner();
+        NpcBotData::SharedOwnersContainer sharedOwners{};
+        BotDataMgr::UpdateNpcBotData(bot->GetEntry(), NPCBOT_UPDATE_SHARED_OWNERS, &sharedOwners);
 
         if (owner->GetBotMgr()->AddBot(bot) == BOT_ADD_SUCCESS)
         {

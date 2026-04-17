@@ -112,13 +112,12 @@ private:
 
         Unit* currentTank = skipCurrentTank ? me->GetVictim() : nullptr;
 
-        auto const& threatList = me->GetThreatMgr().GetThreatList();
-        for (auto const* ref : threatList)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            if (!ref)
+            if (!ref || ref->IsOffline())
                 continue;
 
-            Unit* target = ref->getTarget();
+            Unit* target = ref->GetVictim();
             if (!target || !target->IsAlive())
                 continue;
 
@@ -142,7 +141,6 @@ private:
         std::advance(it, index);
         return *it;
     }
-
     void DoCastOnRandomPlayerOrNPCBot(uint32 spellId, float range = 0.0f, bool skipCurrentTank = false)
     {
         if (Unit* target = SelectRandomPlayerOrNPCBot(range, skipCurrentTank))
@@ -179,18 +177,16 @@ private:
 
     void PullHostilesToBoss(float radius)
     {
-        auto const& threatList = me->GetThreatMgr().GetThreatList();
-
         float mx = me->GetPositionX();
         float my = me->GetPositionY();
         float mz = me->GetPositionZ();
 
-        for (auto const* ref : threatList)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            if (!ref)
+            if (!ref || ref->IsOffline())
                 continue;
 
-            Unit* target = ref->getTarget();
+            Unit* target = ref->GetVictim();
             if (!target || !target->IsAlive())
                 continue;
 
@@ -206,17 +202,15 @@ private:
 
     void MoveBotsToSafePositions(float desiredDist)
     {
-        auto const& threatList = me->GetThreatMgr().GetThreatList();
-
         float mx = me->GetPositionX();
         float my = me->GetPositionY();
 
-        for (auto const* ref : threatList)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            if (!ref)
+            if (!ref || ref->IsOffline())
                 continue;
 
-            Unit* u = ref->getTarget();
+            Unit* u = ref->GetVictim();
             if (!u || !u->IsAlive())
                 continue;
 
@@ -304,13 +298,12 @@ private:
     {
         // Build a pool of all valid player/bot targets in range
         std::vector<Unit*> pool;
-        auto const& threatList = me->GetThreatMgr().GetThreatList();
-        for (auto const* ref : threatList)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            if (!ref)
+            if (!ref || ref->IsOffline())
                 continue;
 
-            Unit* t = ref->getTarget();
+            Unit* t = ref->GetVictim();
             if (!t || !t->IsAlive())
                 continue;
 

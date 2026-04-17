@@ -109,8 +109,7 @@ public:
 
     ///// @todo RENAME THIS!!!!!
     bool isCanInteractWithBattleMaster(Player* player, bool msg) const;
-    bool isCanTrainingAndResetTalentsOf(Player* player) const;
-    [[nodiscard]] bool IsValidTrainerForPlayer(Player* player, uint32* npcFlags = nullptr) const;
+    bool CanResetTalents(Player* player) const;
     bool CanCreatureAttack(Unit const* victim, bool skipDistCheck = false) const;
     void LoadSpellTemplateImmunity();
     //npcbot
@@ -216,10 +215,10 @@ public:
     uint32 GetVendorItemCurrentCount(VendorItem const* vItem);
     uint32 UpdateVendorItemCurrentCount(VendorItem const* vItem, uint32 used_count);
 
-    [[nodiscard]] TrainerSpellData const* GetTrainerSpells() const;
-
     [[nodiscard]] CreatureTemplate const* GetCreatureTemplate() const { return m_creatureInfo; }
     [[nodiscard]] CreatureData const* GetCreatureData() const { return m_creatureData; }
+    [[nodiscard]] uint32 GetGossipMenuId() const { return _gossipMenuId ? _gossipMenuId : GetCreatureTemplate()->GossipMenuId; }
+    void SetGossipMenuId(uint32 gossipMenuId) { _gossipMenuId = gossipMenuId; }
     void SetDetectionDistance(float dist){ m_detectionDistance = dist; }
     [[nodiscard]] CreatureAddon const* GetCreatureAddon() const;
 
@@ -267,7 +266,7 @@ public:
     CreatureSpellCooldowns m_CreatureSpellCooldowns;
     uint32 m_ProhibitSchoolTime[7];
 
-    bool CanStartAttack(Unit const* u) const;
+    bool CanStartAttack(Unit const* u, bool force = false) const;
     float GetAggroRange(Unit const* target) const;
     float GetAttackDistance(Unit const* player) const;
     [[nodiscard]] float GetDetectionRange() const { return m_detectionDistance; }
@@ -327,6 +326,11 @@ public:
 
     void SetInCombatWithZone();
 
+    // Engagement callbacks (called from CreatureAI::EngagementStart/EngagementOver)
+    void AtEngage(Unit* target) override;
+    void AtDisengage() override;
+    [[nodiscard]] bool IsEngaged() const override;
+
     [[nodiscard]] bool hasQuest(uint32 quest_id) const override;
     [[nodiscard]] bool hasInvolvedQuest(uint32 quest_id)  const override;
 
@@ -344,6 +348,7 @@ public:
 
     void SetCannotReachTarget(ObjectGuid const& target = ObjectGuid::Empty);
     [[nodiscard]] bool CanNotReachTarget() const;
+    [[nodiscard]] ObjectGuid const& GetCannotReachTarget() const { return m_cannotReachTarget; }
     [[nodiscard]] bool IsNotReachableAndNeedRegen() const;
 
     void SetPosition(float x, float y, float z, float o);
@@ -572,6 +577,7 @@ protected:
 
     SpellSchoolMask m_meleeDamageSchoolMask;
     uint32 m_originalEntry;
+    uint32 _gossipMenuId;
 
     bool m_moveInLineOfSightDisabled;
     bool m_moveInLineOfSightStrictlyDisabled;
@@ -617,9 +623,9 @@ private:
     mutable std::shared_ptr<time_t> m_lastLeashExtensionTime;
 
     ObjectGuid m_cannotReachTarget;
-    uint32 m_cannotReachTimer;
 
     Spell const* _focusSpell;   ///> Locks the target during spell cast for proper facing
+    ObjectGuid _spellFocusTarget; ///> Saved target during spell focus for restoration
 
     CreatureTextRepeatGroup m_textRepeat;
 

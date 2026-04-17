@@ -141,6 +141,7 @@ enum Spells
     SPELL_SOUL_REAPER                   = 69409, // instant
     SPELL_SOUL_REAPER_BUFF              = 69410,
     SPELL_SUMMON_VALKYR                 = 69037, // instant
+    SPELL_SUMMON_VALKYR_PERIODIC        = 74361,
     SPELL_WINGS_OF_THE_DAMNED           = 74352,
     SPELL_VALKYR_TARGET_SEARCH          = 69030,
     SPELL_HARVEST_SOUL_VALKYR           = 68985, // vehicle aura used by Val'kyr Shadowguard and Strangulate Vehicle
@@ -497,7 +498,7 @@ public:
     bool Execute(uint64 /*time*/, uint32 /*diff*/) override
     {
         _owner->SetReactState(REACT_AGGRESSIVE);
-        if (!_owner->GetThreatMgr().isThreatListEmpty())
+        if (!_owner->GetThreatMgr().IsThreatListEmpty())
             if (Unit* target = _owner->SelectVictim())
                 _owner->AI()->AttackStart(target);
         if (!_owner->GetVictim())
@@ -1136,7 +1137,7 @@ public:
                     {
                         me->GetMap()->SetZoneMusic(AREA_THE_FROZEN_THRONE, MUSIC_SPECIAL);
                         Talk(SAY_LK_SUMMON_VALKYR);
-                        me->CastSpell((Unit*)nullptr, SPELL_SUMMON_VALKYR, false);
+                        DoCastSelf(Is25ManRaid() ? SPELL_SUMMON_VALKYR_PERIODIC : SPELL_SUMMON_VALKYR);
                         events.ScheduleEvent(EVENT_SUMMON_VALKYR, 45s, EVENT_GROUP_ABILITIES);
 
                         // schedule a defile (or reschedule it) if next defile event
@@ -1179,7 +1180,7 @@ public:
                         {
                             if (summon->GetEntry() == NPC_VILE_SPIRIT)
                             {
-                                summon->m_Events.KillAllEvents(true);
+                                summon->m_Events.KillAllEvents(false);
                                 summon->m_Events.AddEventAtOffset(new VileSpiritActivateEvent(summon), 55s);
                                 summon->GetMotionMaster()->Clear(true);
                                 summon->StopMoving();
@@ -2272,7 +2273,7 @@ public:
                     {
                         me->SetControlled(false, UNIT_STATE_ROOT);
 
-                        if (!me->GetThreatMgr().isThreatListEmpty())
+                        if (!me->GetThreatMgr().IsThreatListEmpty())
                             if (Unit* target = me->SelectVictim())
                                 AttackStart(target);
                         if (!me->GetVictim())

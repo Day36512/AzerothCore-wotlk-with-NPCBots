@@ -79,13 +79,14 @@ struct boss_ghazan : public BossAI
     Unit* SelectRandomPlayerOrNPCBotFromThreat(bool excludeVictim = true)
     {
         std::vector<Unit*> pool;
-        auto const& tlist = me->GetThreatMgr().GetThreatList();
+        pool.reserve(me->GetThreatMgr().GetThreatListSize());
 
-        pool.reserve(tlist.size());
-
-        for (auto const* ref : tlist)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            Unit* u = ref ? ref->getTarget() : nullptr;
+            if (!ref || ref->IsOffline())
+                continue;
+
+            Unit* u = ref->GetVictim();
             if (!u || !u->IsAlive())
                 continue;
 
@@ -163,12 +164,14 @@ struct boss_ghazan : public BossAI
                 {
                     // Heroic: try to hit up to two distinct targets
                     std::vector<Unit*> pool;
-                    auto const& tlist = me->GetThreatMgr().GetThreatList();
-                    pool.reserve(tlist.size());
+                    pool.reserve(me->GetThreatMgr().GetThreatListSize());
 
-                    for (auto const* ref : tlist)
+                    for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
                     {
-                        Unit* u = ref ? ref->getTarget() : nullptr;
+                        if (!ref || ref->IsOffline())
+                            continue;
+
+                        Unit* u = ref->GetVictim();
                         if (!u || !u->IsAlive())
                             continue;
 
@@ -261,8 +264,8 @@ private:
 
 // ---------------- Venom Fangs SpellScript (initial hit) ----------------
 // EFFECT_1: SCHOOL_DAMAGE
-//  - If target HP >= 50%: deals 30% of MAX HP.
-//  - If target HP <  50%: deals 12% of MAX HP.
+//  - If target HP >= 50%: deals 40% of MAX HP.
+//  - If target HP <  50%: deals 15% of MAX HP.
 class spell_ghazan_venom_fangs : public SpellScript
 {
     PrepareSpellScript(spell_ghazan_venom_fangs);
@@ -275,7 +278,7 @@ class spell_ghazan_venom_fangs : public SpellScript
         if (!target || !target->IsAlive())
             return;
 
-        float pct = target->HealthBelowPct(50) ? 0.12f : 0.3f;
+        float pct = target->HealthBelowPct(50) ? 0.15f : 0.4f;
         float raw = float(target->GetMaxHealth()) * pct;
         int32 damage = int32(raw);
 

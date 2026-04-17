@@ -38,7 +38,8 @@ enum class BotWPFlags : uint32
     BOTWP_FLAG_MOVEMENT_FORCE_JUMP_BEGIN    = 0x00010000, // movement between 2 WPs having begin and end flags is forced to be a jump (prevent casting when falling from a cliff)
     BOTWP_FLAG_MOVEMENT_FORCE_JUMP_END      = 0x00020000, // movement between 2 WPs having begin and end flags is forced to be a jump (prevent casting when falling from a cliff)
     BOTWP_FLAG_INTERACTION_MILL_RADIUS      = 0x00040000, // if chosen as a mill point, radius is reduced to INTERACTION_DISTANCE
-    BOTWP_FLAG_END                          = 0x00080000,
+    BOTWP_FLAG_NOT_A_START_POINT            = 0x00080000, // a bot can not teleport to this node, its a waypoint for moving only.
+    BOTWP_FLAG_END                          = 0x00100000,
 
     BOTWP_FLAG_ALLIANCE_OR_HORDE_ONLY       = BOTWP_FLAG_ALLIANCE_ONLY | BOTWP_FLAG_HORDE_ONLY,
     BOTWP_FLAG_ALLIANCE_SPAWN_POINT         = BOTWP_FLAG_SPAWN | BOTWP_FLAG_ALLIANCE_ONLY,
@@ -187,6 +188,11 @@ public:
     void SetLevels(std::pair<uint8, uint8> levels) { std::tie(_minLevel, _maxLevel) = levels; }
     inline void SetLevels(uint8 minLevel, uint8 maxLevel) { SetLevels(std::pair{ minLevel, maxLevel }); }
 
+    void SetWaitTime(std::pair<uint32, uint32> waitTime) { std::tie(_minWaitTime, _maxWaitTime) = waitTime; }
+    inline void SetWaitTime(uint32 minWaitTime, uint32 maxWaitTime) { SetWaitTime(std::pair{ minWaitTime, maxWaitTime }); }
+
+    void SetProximity(float proximity) { _proximity = proximity; }
+
     void SetFlags(BotWPFlags flags);
     void RemoveFlags(BotWPFlags flags);
     bool HasFlag(BotWPFlags flags) const;
@@ -204,6 +210,8 @@ public:
     uint32 GetAreaId() const { return _areaId; }
     std::string const& GetName() const { return _name; }
     std::pair<uint8, uint8> GetLevels() const { return { _minLevel, _maxLevel }; }
+    std::pair<uint32, uint32> GetWaitTime() const { return { _minWaitTime, _maxWaitTime }; }
+    float GetProximity() const { return _proximity; }
     uint32 GetFlags() const { return _flags; }
 
     void SetupLinkFromAura() const;
@@ -220,6 +228,9 @@ private:
     /*const*/ std::string _name;
     uint8 _minLevel;
     uint8 _maxLevel;
+    uint32 _minWaitTime;
+    uint32 _maxWaitTime;
+    float _proximity;
     uint32 _flags;
 
     node_lltype _links;

@@ -184,13 +184,12 @@ private:
     // Apply single-target Shadow Word: Pain (300395) to EVERY hostile player or NPCBot on the threat list.
     void CastShadowWordPainOnAllPlayersAndBots()
     {
-        auto const& threatList = me->GetThreatMgr().GetThreatList();
-        for (auto const* ref : threatList)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            if (!ref)
+            if (!ref || ref->IsOffline())
                 continue;
 
-            Unit* target = ref->getTarget();
+            Unit* target = ref->GetVictim();
             if (!target || !target->IsAlive())
                 continue;
 
@@ -208,13 +207,12 @@ private:
     {
         std::list<Unit*> targets;
 
-        auto const& threatList = me->GetThreatMgr().GetThreatList();
-        for (auto const* ref : threatList)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            if (!ref)
+            if (!ref || ref->IsOffline())
                 continue;
 
-            Unit* target = ref->getTarget();
+            Unit* target = ref->GetVictim();
             if (!target || !target->IsAlive())
                 continue;
 

@@ -52,6 +52,13 @@ void AddSC_boss_custom_sapphiron_40();
 void AddSC_boss_custom_kelthuzad_40();
 void AddSC_npcbot_unbind_nonparty();
 void AddSC_mod_spectral_repop_mounts();
+void AddSC_npcbot_paperdoll_bridge();
+void AddSC_hackfixes();
+void AddSC_mod_gearbank();
+void AddSC_custom_holy_onslaught();
+void AddSC_lockpick_game();
+void AddSC_custom_auction_command();
+
 
 void AddCustomScripts()
 {
@@ -86,4 +93,10 @@ void AddCustomScripts()
     AddSC_boss_custom_kelthuzad_40();
     AddSC_npcbot_unbind_nonparty();
     AddSC_mod_spectral_repop_mounts();
+    AddSC_npcbot_paperdoll_bridge();
+    AddSC_hackfixes();
+    AddSC_mod_gearbank();
+    AddSC_custom_holy_onslaught();
+    AddSC_lockpick_game();
+    AddSC_custom_auction_command();
 }

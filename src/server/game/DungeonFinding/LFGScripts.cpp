@@ -196,6 +196,7 @@ namespace lfg
 
         sLFGMgr->SetGroup(guid, gguid);
         sLFGMgr->AddPlayerToGroup(gguid, guid);
+        sLFGMgr->AddPlayerQueuedForRandomDungeonToGroup(gguid, guid);
 
         // pussywizard: after all necessary actions handle raid browser
         if (sLFGMgr->GetState(guid) == LFG_STATE_RAIDBROWSER)

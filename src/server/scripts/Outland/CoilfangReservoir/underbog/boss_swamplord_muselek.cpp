@@ -87,12 +87,14 @@ struct boss_swamplord_muselek : public BossAI
     Unit* SelectRandomPlayerOrNPCBotInRange(float maxRange, bool requireLos = true, bool excludeVictim = false)
     {
         std::vector<Unit*> pool;
-        auto const& tlist = me->GetThreatMgr().GetThreatList();
-        pool.reserve(tlist.size());
+        pool.reserve(me->GetThreatMgr().GetThreatListSize());
 
-        for (auto const* ref : tlist)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            Unit* u = ref ? ref->getTarget() : nullptr;
+            if (!ref || ref->IsOffline())
+                continue;
+
+            Unit* u = ref->GetVictim();
             if (!u || !u->IsAlive())
                 continue;
 

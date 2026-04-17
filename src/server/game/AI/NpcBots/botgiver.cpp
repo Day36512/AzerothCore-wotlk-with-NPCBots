@@ -9,6 +9,7 @@
 #include "Creature.h"
 #include "Log.h"
 #include "Player.h"
+#include "RaceMgr.h"
 #include "ScriptedGossip.h"
 #include "ScriptMgr.h"
 /*
@@ -105,8 +106,8 @@ public:
                         {
                             if (!bot->IsAlive() || bot->IsTempBot() || bot->IsWandererBot() || bot->GetBotAI()->GetBotOwnerGuid() || bot->HasAura(BERSERK))
                                 continue;
-                            if (BotMgr::FilterRaces() && bot->GetBotClass() < BOT_CLASS_EX_START && (bot->GetRaceMask() & RACEMASK_ALL_PLAYABLE) &&
-                                !(bot->GetRaceMask() & ((player->GetRaceMask() & RACEMASK_ALLIANCE) ? RACEMASK_ALLIANCE : RACEMASK_HORDE)))
+                            if (BotMgr::FilterRaces() && bot->GetBotClass() < BOT_CLASS_EX_START && (bot->GetRaceMask() & sRaceMgr->GetPlayableRaceMask()) &&
+                                !(bot->GetRaceMask() & ((player->GetRaceMask() & sRaceMgr->GetAllianceRaceMask()) ? sRaceMgr->GetAllianceRaceMask() : sRaceMgr->GetHordeRaceMask())))
                                 continue;
 
                             ++npcbot_count_per_class[bot->GetBotClass()];
@@ -199,8 +200,8 @@ public:
                         bot_ai const* ai = bot->GetBotAI();
                         if (bot->GetBotClass() != botclass || !bot->IsAlive() || ai->IsTempBot() || bot->IsWandererBot() || ai->GetBotOwnerGuid() || bot->HasAura(BERSERK))
                             continue;
-                        if (BotMgr::FilterRaces() && botclass < BOT_CLASS_EX_START && (bot->GetRaceMask() & RACEMASK_ALL_PLAYABLE) &&
-                            !(bot->GetRaceMask() & ((player->GetRaceMask() & RACEMASK_ALLIANCE) ? RACEMASK_ALLIANCE : RACEMASK_HORDE)))
+                        if (BotMgr::FilterRaces() && botclass < BOT_CLASS_EX_START && (bot->GetRaceMask() & sRaceMgr->GetPlayableRaceMask()) &&
+                            !(bot->GetRaceMask() & ((player->GetRaceMask() & sRaceMgr->GetAllianceRaceMask()) ? sRaceMgr->GetAllianceRaceMask() : sRaceMgr->GetHordeRaceMask())))
                             continue;
 
                         std::ostringstream message1;

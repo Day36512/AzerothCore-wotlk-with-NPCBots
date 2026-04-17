@@ -93,10 +93,12 @@ struct boss_kelidan_the_breaker : public BossAI
 
     bool AnyAliveRaidMembersOnThreat() const
     {
-        auto const& tlist = me->GetThreatMgr().GetThreatList();
-        for (ThreatReference* ref : tlist)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            Unit* u = ref ? ref->getTarget() : nullptr;
+            if (!ref || ref->IsOffline())
+                continue;
+
+            Unit* u = ref->GetVictim();
             if (!u || !u->IsAlive())
                 continue;
 
@@ -110,6 +112,7 @@ struct boss_kelidan_the_breaker : public BossAI
                     return true;
             }
         }
+
         return false;
     }
 
@@ -323,10 +326,12 @@ struct boss_kelidan_the_breaker : public BossAI
         if (_amzSpots.empty())
             return;
 
-        auto const& tlist = me->GetThreatMgr().GetThreatList();
-        for (ThreatReference* ref : tlist)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            Unit* u = ref ? ref->getTarget() : nullptr;
+            if (!ref || ref->IsOffline())
+                continue;
+
+            Unit* u = ref->GetVictim();
             if (!u || !u->IsAlive() || u->GetTypeId() != TYPEID_UNIT)
                 continue;
 
@@ -361,10 +366,12 @@ struct boss_kelidan_the_breaker : public BossAI
 
     void SetBotsToFollow()
     {
-        auto const& tlist = me->GetThreatMgr().GetThreatList();
-        for (ThreatReference* ref : tlist)
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            Unit* u = ref ? ref->getTarget() : nullptr;
+            if (!ref || ref->IsOffline())
+                continue;
+
+            Unit* u = ref->GetVictim();
             if (!u || !u->IsAlive() || u->GetTypeId() != TYPEID_UNIT)
                 continue;
 

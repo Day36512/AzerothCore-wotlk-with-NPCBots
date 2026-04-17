@@ -254,7 +254,7 @@ public:
 
         void EnterEvadeMode(EvadeReason why) override
         {
-            if (!me->GetThreatMgr().GetThreatList().empty())
+            if (!me->GetThreatMgr().IsThreatListEmpty())
             {
                 if (!_processingMagmaBurst)
                 {
@@ -271,6 +271,7 @@ public:
 
         bool CanAIAttack(Unit const* victim) const override
         {
+            // Used for Magma Blast handling to force EnterEvadeMode if there are no melee targets
             return me->IsWithinMeleeRange(victim);
         }
 
