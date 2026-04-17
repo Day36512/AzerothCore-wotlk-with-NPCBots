@@ -1,5 +1,6 @@
 #include "bot_ai.h"
 #include "bot_GridNotifiers.h"
+#include "botlogtraits.h"
 #include "botspell.h"
 #include "Creature.h"
 //#include "GridNotifiers.h"
@@ -255,7 +256,7 @@ public:
                     {
                         int32 basepoints = int32(burned);
                         //reduce amount againts ex bots
-                        if (victim->GetTypeId() == TYPEID_UNIT && victim->ToCreature()->GetBotClass() >= BOT_CLASS_EX_START)
+                        if (victim->IsCreature() && victim->ToCreature()->GetBotClass() >= BOT_CLASS_EX_START)
                             basepoints /= 10;
 
                         //CastSpellExtraArgs args(true);
@@ -352,16 +353,13 @@ public:
             DispelChargesList steal_list;
 
             bool const isFriend = IsInBotParty(target) || target->IsFriendlyTo(me);
-            static const uint32 sbDispelMask  = (1<<DISPEL_MAGIC) | (1<<DISPEL_CURSE);
+            static const uint32 sbDispelMask  = (1u<<DISPEL_MAGIC) | (1u<<DISPEL_CURSE);
             static const uint8 max_dispelled = 1;
 
             //BOT_LOG_ERROR("entities.unit", "ProcessSpellsteal: on %s, fr=%u", target->GetName().c_str(), uint32(isFriend));
 
-            Unit::AuraMap const& auras = target->GetOwnedAuras();
-            for (Unit::AuraMap::const_iterator itr = auras.begin(); itr != auras.end(); ++itr)
+            for (auto const& [_, aura] : target->GetOwnedAuras())
             {
-                Aura* aura = itr->second;
-
                 if (aura->IsPassive() || !(aura->GetSpellInfo()->GetDispelMask() & sbDispelMask) ||
                     (aura->GetSpellInfo()->AttributesEx4 & SPELL_ATTR4_CANNOT_BE_STOLEN))
                     continue;
@@ -497,24 +495,25 @@ public:
             {
                 //if target has stealed aura we should skip him if possible
                 std::list<Unit*> targetsCopy = targets;
-                targets.remove_if(BOTAI_PRED::AuraedTargetExclude(success_list.front().first->GetId()));
+                std::erase_if(targets, BOTAI_PRED::AuraedTargetExclude(success_list.front().first->GetId()));
 
                 randomTarget = Bcore::Containers::SelectRandomContainerElement(!targets.empty() ? targets : targetsCopy);
             }
 
-            for (DispelChargesList::iterator itr = success_list.begin(); itr != success_list.end(); ++itr)
+            for (auto const& [daura, _] : success_list)
             {
-                dataSuccess << uint32(itr->first->GetId());          // Spell Id
+                Aura const* aura = daura;
+                dataSuccess << uint32(aura->GetId());          // Spell Id
                 dataSuccess << uint8(0);                    // 0 - steals !=0 transfers
 
                 if (randomTarget)
                 {
                     //target->RemoveAurasDueToSpellBySteal(itr->first, itr->second, randomTarget);
-                    TransferAura(itr->first->GetId(), itr->first->GetCasterGUID(), target, randomTarget);
+                    TransferAura(aura->GetId(), aura->GetCasterGUID(), target, randomTarget);
                     randomTarget->CastSpell(randomTarget, SPELLSTEAL_VISUAL_1, true);
                 }
                 else
-                    target->RemoveAurasDueToSpellByDispel(itr->first->GetId(), SPELLSTEAL_1, itr->first->GetCasterGUID(), me, uint8(-1));
+                    target->RemoveAurasDueToSpellByDispel(aura->GetId(), SPELLSTEAL_1, aura->GetCasterGUID(), me, uint8(-1));
             }
             me->CastSpell(target, SPELLSTEAL_VISUAL_2, true);
 
@@ -535,15 +534,15 @@ public:
                     uint8 effMask = 0;
                     uint8 recalculateMask = 0;
                     Unit* caster = aura->GetCaster();
-                    for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+                    for (auto i : NPCBots::index_array<uint8, MAX_SPELL_EFFECTS>)
                     {
                         if (aura->GetEffect(i))
                         {
                             baseDamage[i] = aura->GetEffect(i)->GetBaseAmount();
                             damage[i] = aura->GetEffect(i)->GetAmount();
-                            effMask |= (1<<i);
+                            effMask |= (1u<<i);
                             if (aura->GetEffect(i)->CanBeRecalculated())
-                                recalculateMask |= (1<<i);
+                                recalculateMask |= (1u<<i);
                         }
                         else
                         {

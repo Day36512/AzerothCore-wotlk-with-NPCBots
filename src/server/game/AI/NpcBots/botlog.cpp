@@ -1,6 +1,6 @@
 #include "bot_ai.h"
+#include "botconfig.h"
 #include "botdatamgr.h"
-#include "botmgr.h"
 #include "botlog.h"
 #include "Creature.h"
 #include "DatabaseEnvFwd.h"
@@ -46,7 +46,10 @@ inline static void BotLogImpl(uint16 log_type, Creature const* bot, int32 owner,
 
 void BotLogger::Log(uint16 log_type, Creature const* bot, NPCBots::LoggableArguments auto&&... params)
 {
-    if (!BotMgr::IsNpcBotLogEnabled())
+    if (!BotCfg::IsNpcBotLogEnabled())
+        return;
+
+    if (bot->IsSummon() && !((1ull<<(log_type-1)) & NPCBOT_LOG_MASK_DUNGEON_BOT))
         return;
 
     BotLogImpl(log_type, bot, int32(bot->GetBotAI() ? bot->GetBotAI()->GetBotOwnerGuid() : -1), std::forward<decltype(params)>(params)...);
@@ -54,7 +57,7 @@ void BotLogger::Log(uint16 log_type, Creature const* bot, NPCBots::LoggableArgum
 
 void BotLogger::Log(uint16 log_type, uint32 entry,  NPCBots::LoggableArguments auto&&... params)
 {
-    if (!BotMgr::IsNpcBotLogEnabled())
+    if (!BotCfg::IsNpcBotLogEnabled())
         return;
 
     if (Creature const* bot = entry ? BotDataMgr::FindBot(entry) : nullptr)
@@ -80,4 +83,4 @@ template void BotLogger::Log(uint16, Creature const*, uint32&&, uint32&&, uint32
 template void BotLogger::Log(uint16, Creature const*, uint32&&, uint32&&, uint32&&, uint32&&, uint32&&);
 template void BotLogger::Log(uint16, uint32);
 template void BotLogger::Log(uint16, uint32, std::string_view&&);
-template void BotLogger::Log(uint16, uint32, std::string&, std::string&, std::string&, std::string&, std::string&);
+template void BotLogger::Log(uint16, uint32, std::string_view&&, std::string_view&&, std::string_view&&, std::string_view&&, std::string_view&&);

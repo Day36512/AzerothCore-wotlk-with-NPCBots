@@ -52,6 +52,7 @@ struct boss_ghazan : public BossAI
 {
     boss_ghazan(Creature* creature) : BossAI(creature, DATA_GHAZAN)
     {
+        //Dinkle custom
         scheduler.SetValidator([this]
             {
                 return !me->HasUnitState(UNIT_STATE_CASTING);

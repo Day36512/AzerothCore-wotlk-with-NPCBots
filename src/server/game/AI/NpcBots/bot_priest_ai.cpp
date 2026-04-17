@@ -1,4 +1,6 @@
 #include "bot_ai.h"
+#include "botdatamgr.h"
+#include "botlogtraits.h"
 #include "botmgr.h"
 #include "botspell.h"
 #include "bottext.h"
@@ -289,18 +291,17 @@ public:
                     return true;
                 if (!IAmFree())
                 {
-                    BotMap const* map = master->GetBotMgr()->GetBotMap();
-                    for (BotMap::const_iterator itr = map->begin(); itr != map->end(); ++itr)
+                    for (auto const& [_, bot] : *master->GetBotMgr()->GetBotMap())
                     {
-                        u = itr->second;
+                        u = bot;
                         if (u->IsAlive() && !u->getAttackers().empty() && !u->ToCreature()->IsTempBot() &&
                             (IsTank(u) || GetHealthPCT(u) < 75) && me->GetDistance(u) < 40 &&
                             ShieldTarget(u, diff))
                             return true;
                     }
-                    for (Unit::ControlSet::const_iterator itr = master->m_Controlled.begin(); itr != master->m_Controlled.end(); ++itr)
+                    for (Unit* m : master->m_Controlled)
                     {
-                        u = *itr;
+                        u = m;
                         if (!u || !u->IsPet() || me->GetMap() != u->FindMap())
                             continue;
                         if (u->IsAlive() && !u->getAttackers().empty() && (IsTank(u) || GetHealthPCT(u) < 75) && me->GetDistance(u) < 40 &&
@@ -312,7 +313,7 @@ public:
             else
             {
                 std::vector<Unit*> members = BotMgr::GetAllGroupMembers(gr);
-                for (uint8 i = 0; i < 2; ++i)
+                for (auto i : NPCBots::index_array<uint8, 2>)
                 {
                     for (Unit* member : members)
                     {
@@ -379,7 +380,7 @@ public:
         {
             //Improved Shadowform: Fade
             if (IsSpellReady(FADE_1, diff) && me->GetShapeshiftForm() == FORM_SHADOW && me->GetLevel() >= 45 &&
-                Rand() < 35 && me->HasAuraWithMechanic((1<<MECHANIC_SNARE)|(1<<MECHANIC_ROOT)))
+                Rand() < 35 && me->HasAuraWithMechanic((1u<<MECHANIC_SNARE)|(1u<<MECHANIC_ROOT)))
             {
                 if (doCast(me, GetSpell(FADE_1)))
                     return;
@@ -495,7 +496,7 @@ public:
             if (IsSpellReady(PSYCHIC_HORROR_1, diff) && can_do_shadow && Rand() < 20 &&
                 mytar->GetHealth() > me->GetMaxHealth()/8 && !CCed(mytar) &&
                 !mytar->HasAuraType(SPELL_AURA_MOD_DISARM) &&
-                (mytar->GetTypeId() == TYPEID_PLAYER ?
+                (mytar->IsPlayer() ?
                 mytar->ToPlayer()->GetWeaponForAttack(BASE_ATTACK) && mytar->ToPlayer()->GetWeaponForAttack(WeaponAttackType(BASE_ATTACK), true) :
                 mytar->GetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID) && mytar->CanUseAttackType(BASE_ATTACK)))
             {
@@ -540,7 +541,7 @@ public:
                 if (IsSpellReady(DEVOURING_PLAGUE_1, diff) && can_do_shadow && !Devcheck && Rand() < 100 &&
                     (GetSpec() == BOT_SPEC_PRIEST_SHADOW || mytar->IsControlledByPlayer()) &&
                     mytar->GetHealth() > me->GetMaxHealth()/2 * (1 + mytar->getAttackers().size()) &&
-                    !(mytar->GetTypeId() == TYPEID_UNIT && (mytar->ToCreature()->GetCreatureTemplate()->MechanicImmuneMask & (1<<(MECHANIC_INFECTED-1)))) &&
+                    !(mytar->IsCreature() && (mytar->ToCreature()->HasMechanicTemplateImmunity(1u<<(MECHANIC_INFECTED-1)))) &&
                     !mytar->GetAuraEffect(SPELL_AURA_PERIODIC_LEECH, SPELLFAMILY_PRIEST, 0x02000000, 0x0, 0x0, me->GetGUID()) &&
                     doCast(mytar, GetSpell(DEVOURING_PLAGUE_1)))
                     return;
@@ -609,7 +610,7 @@ public:
                 me->InterruptNonMeleeSpells(false);
                 if (doCast(target, GetSpell(GUARDIAN_SPIRIT_1)))
                 {
-                    if (target->GetTypeId() == TYPEID_PLAYER)
+                    if (target->IsPlayer())
                         ReportSpellCast(GUARDIAN_SPIRIT_1, LocalizedNpcText(target->ToPlayer(), BOT_TEXT__ON_YOU), target->ToPlayer());
 
                     if (!IAmFree() && target != master)
@@ -630,7 +631,7 @@ public:
                 me->InterruptNonMeleeSpells(false);
                 if (doCast(target, GetSpell(PAIN_SUPPRESSION_1)))
                 {
-                    if (target->GetTypeId() == TYPEID_PLAYER)
+                    if (target->IsPlayer())
                         ReportSpellCast(PAIN_SUPPRESSION_1, LocalizedNpcText(target->ToPlayer(), BOT_TEXT__ON_YOU), target->ToPlayer());
 
                     if (!IAmFree() && target != master)
@@ -654,7 +655,7 @@ public:
                 return false;
 
             Unit const* u = target->GetVictim();
-            bool tanking = u && IsTank(target) && u->GetTypeId() == TYPEID_UNIT && u->ToCreature()->isWorldBoss();
+            bool tanking = u && IsTank(target) && u->IsCreature() && u->ToCreature()->isWorldBoss();
 
             //Penance
             if (IsSpellReady(PENANCE_1, diff) && !target->IsCharmed() && !target->isPossessed() && hp <= 80 &&
@@ -770,17 +771,15 @@ public:
 
         void Counter(uint32 diff)
         {
-            if (ShackcheckTimer > diff || !IsSpellReady(SHACKLE_UNDEAD_1, diff) || Shackcheck || Rand() > 65 ||
+            if (ShackcheckTimer > diff || Shackcheck || Rand() > 65 ||
                 (HasRole(BOT_ROLE_HEAL) && (IsCasting() || GetManaPCT(me) < 20)))
                 return;
 
             //always glyphed so <= 0.5 sec cast time
-            if (Unit* target = FindCastingTarget(CalcSpellMaxRange(SHACKLE_UNDEAD_1), 0, SHACKLE_UNDEAD_1))
-            {
-                me->InterruptNonMeleeSpells(false);
-                if (doCast(target, GetSpell(SHACKLE_UNDEAD_1)))
-                    return;
-            }
+            if (IsSpellReady(SHACKLE_UNDEAD_1, diff, false) && !HasQueuedSpellAction(SHACKLE_UNDEAD_1))
+                if (Unit const* target = FindCastingTarget(CalcSpellMaxRange(SHACKLE_UNDEAD_1), 0, SHACKLE_UNDEAD_1))
+                    if (EnqueueCounterSpellAction(target->GetGUID(), SHACKLE_UNDEAD_1, true))
+                        return;
         }
 
         void CheckDispel(uint32 diff)
@@ -801,7 +800,7 @@ public:
 
             if (Unit* target = FindHostileDispelTarget(CalcSpellMaxRange(DISPEL_MAGIC_1)))
             {
-                uint32 dm = DM && !target->HasAuraWithMechanic(1<<MECHANIC_IMMUNE_SHIELD) ? DM : MD;
+                uint32 dm = DM && !target->HasAuraWithMechanic(1u<<MECHANIC_IMMUNE_SHIELD) ? DM : MD;
                 if (dm && doCast(target, dm))
                     return;
             }
@@ -882,7 +881,6 @@ public:
             }
 
             Group const* gr = master->GetGroup();
-            BotMap const* map;
             Unit* u = nullptr;
             if (!gr)
             {
@@ -893,10 +891,9 @@ public:
                     doCast(u, GetSpell(POWER_INFUSION_1)))
                     return;
 
-                map = master->GetBotMgr()->GetBotMap();
-                for (BotMap::const_iterator itr = map->begin(); itr != map->end(); ++itr)
+                for (auto const& [_, bot] : *master->GetBotMgr()->GetBotMap())
                 {
-                    u = itr->second;
+                    u = bot;
                     if (u->IsAlive() && u->IsInWorld() && u->ToCreature()->GetBotAI()->HasRole(BOT_ROLE_HEAL) &&
                         u->ToCreature()->GetBotClass() < BOT_CLASS_EX_START &&
                         GetManaPCT(u) < 70 && me->IsWithinDistInMap(u, 30) &&
@@ -904,9 +901,9 @@ public:
                         doCast(u, GetSpell(POWER_INFUSION_1)))
                         return;
                 }
-                for (BotMap::const_iterator itr = map->begin(); itr != map->end(); ++itr)
+                for (auto const& [_, bot] : *master->GetBotMgr()->GetBotMap())
                 {
-                    u = itr->second;
+                    u = bot;
                     if (u->IsAlive() && u->IsInWorld() && u->GetPowerType() == POWER_MANA && u->GetVictim() && !IsTank(u) &&
                         u->ToCreature()->GetBotClass() < BOT_CLASS_EX_START &&
                         GetManaPCT(u) < 70 && me->IsWithinDistInMap(u, 30) &&
@@ -932,12 +929,11 @@ public:
                 Player const* player = itr->GetSource();
                 if (!player || !player->IsInWorld() || me->GetMap() != player->FindMap() || !player->HaveBot())
                     continue;
-                map = master->GetBotMgr()->GetBotMap();
-                for (BotMap::const_iterator bitr = map->begin(); bitr != map->end(); ++bitr)
+                for (auto const& [_, bot] : *player->GetBotMgr()->GetBotMap())
                 {
-                    u = bitr->second;
+                    u = bot;
                     if (u->IsAlive() && u->IsInWorld() && u->ToCreature()->GetBotAI()->HasRole(BOT_ROLE_HEAL) &&
-                        !IsHeroExClass(u->ToCreature()->GetBotClass()) &&
+                        !BotDataMgr::IsHeroExClass(u->ToCreature()->GetBotClass()) &&
                         GetManaPCT(u) < 70 && me->IsWithinDistInMap(u, 30) &&
                         !u->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_CASTING_SPEED_NOT_STACK, SPELLFAMILY_PRIEST, 0x80000000) &&
                         doCast(u, GetSpell(POWER_INFUSION_1)))
@@ -949,10 +945,9 @@ public:
                 Player const* player = itr->GetSource();
                 if (!player || !player->IsInWorld() || me->GetMap() != player->FindMap() || !player->HaveBot())
                     continue;
-                map = master->GetBotMgr()->GetBotMap();
-                for (BotMap::const_iterator bitr = map->begin(); bitr != map->end(); ++bitr)
+                for (auto const& [_, bot] : *player->GetBotMgr()->GetBotMap())
                 {
-                    u = bitr->second;
+                    u = bot;
                     if (u->IsAlive() && u->IsInWorld() && u->GetPowerType() == POWER_MANA && u->GetVictim() && !IsTank(u) &&
                         u->ToCreature()->GetBotClass() < BOT_CLASS_EX_START &&
                         GetManaPCT(u) < 70 && me->IsWithinDistInMap(u, 30) &&
@@ -978,13 +973,13 @@ public:
                 if (!m_attackers.empty() && (!IsTank(master) || GetHealthPCT(master) < 75))
                 {
                     uint8 tCount = 0;
-                    for (Unit::AttackerSet::const_iterator iter = m_attackers.begin(); iter != m_attackers.end(); ++iter)
+                    for (Unit const* attacker : m_attackers)
                     {
-                        if (!(*iter)) continue;
-                        if ((*iter)->ToCreature() && (*iter)->GetCreatureType() == CREATURE_TYPE_UNDEAD) continue;
-                        if (me->GetExactDist((*iter)) > 7) continue;
-                        if (CCed(*iter) && me->GetExactDist((*iter)) > 5) continue;
-                        if (me->IsValidAttackTarget(*iter))
+                        if (!attacker) continue;
+                        if (attacker->ToCreature() && attacker->GetCreatureType() == CREATURE_TYPE_UNDEAD) continue;
+                        if (me->GetExactDistSq(attacker) > 7*7) continue;
+                        if (CCed(attacker) && me->GetExactDistSq(attacker) > 5*5) continue;
+                        if (me->IsValidAttackTarget(attacker))
                             ++tCount;
                     }
                     if (tCount > 1 && doCast(me, GetSpell(PSYCHIC_SCREAM_1)))
@@ -995,13 +990,13 @@ public:
                 if (!b_attackers.empty())
                 {
                     uint8 tCount = 0;
-                    for (Unit::AttackerSet::const_iterator iter = b_attackers.begin(); iter != b_attackers.end(); ++iter)
+                    for (Unit const* attacker : b_attackers)
                     {
-                        if (!(*iter)) continue;
-                        if ((*iter)->ToCreature() && (*iter)->GetCreatureType() == CREATURE_TYPE_UNDEAD) continue;
-                        if (me->GetExactDist((*iter)) > 7) continue;
-                        if (CCed(*iter) && me->GetExactDist((*iter)) > 5) continue;
-                        if (me->IsValidAttackTarget(*iter))
+                        if (!attacker) continue;
+                        if (attacker->ToCreature() && attacker->GetCreatureType() == CREATURE_TYPE_UNDEAD) continue;
+                        if (me->GetExactDistSq(attacker) > 7*7) continue;
+                        if (CCed(attacker) && me->GetExactDistSq(attacker) > 5*5) continue;
+                        if (me->IsValidAttackTarget(attacker))
                             ++tCount;
                     }
                     if (tCount > 0 && doCast(me, GetSpell(PSYCHIC_SCREAM_1)))
@@ -1013,16 +1008,15 @@ public:
             {
                 if (ShieldTarget(me, diff)) return;
 
-                if (IsSpellReady(FADE_1, diff) && me->IsInCombat())
+                if (IsSpellReady(FADE_1, diff) && me->IsInCombat() && !b_attackers.empty())
                 {
-                    if (b_attackers.empty()) return;
                     uint8 Tattackers = 0;
-                    for (Unit::AttackerSet::const_iterator iter = b_attackers.begin(); iter != b_attackers.end(); ++iter)
+                    for (Unit const* attacker : b_attackers)
                     {
-                        if (!(*iter)) continue;
-                        if (!(*iter)->IsAlive()) continue;
-                        if (!(*iter)->CanHaveThreatList()) continue;
-                        if (me->GetDistance((*iter)) < 15)
+                        if (!attacker) continue;
+                        if (!attacker->IsAlive()) continue;
+                        if (!(attacker)->CanHaveThreatList()) continue;
+                        if (me->GetExactDistSq((attacker)) < 15*15)
                             Tattackers++;
                     }
                     if (Tattackers > 0)
@@ -1061,7 +1055,7 @@ public:
             if ((me->getAttackers().size() > 3 && !IsSpellReady(FADE_1, diff, false) && GetHealthPCT(me) < 90) ||
                 (GetHealthPCT(me) < 20 && (me->HasAuraType(SPELL_AURA_PERIODIC_DAMAGE) || !me->getAttackers().empty())) ||
                 (GetManaPCT(me) < 35 && !IsPotionReady()) ||
-                (me->getAttackers().size() > 1 && (CCed(me, true) || me->HasAuraWithMechanic(1<<MECHANIC_SNARE))))
+                (me->getAttackers().size() > 1 && (CCed(me, true) || me->HasAuraWithMechanic(1u<<MECHANIC_SNARE))))
             {
                 if (doCast(me, GetSpell(DISPERSION_1)))
                     return;
@@ -1681,7 +1675,7 @@ public:
                 if (Aura* fire = me->GetAura(spellId))
                 {
                     fire->SetCharges(fire->GetCharges() + 12);
-                    for (uint8 i = 0; i != MAX_SPELL_EFFECTS; ++i)
+                    for (auto i : NPCBots::index_array<uint8, MAX_SPELL_EFFECTS>)
                         if (AuraEffect* eff = fire->GetEffect(i))
                             eff->ChangeAmount(int32(eff->GetAmount() * (i == 0 ? 1.45f*1.5f : 1.45f)));
                 }
@@ -2012,7 +2006,7 @@ public:
         uint32 Shackle_Timer, Mend_Timer, DispelcheckTimer, DevcheckTimer, ShackcheckTimer;
 /*Misc*/bool Devcheck, Shackcheck;
 
-        typedef std::unordered_map<uint32 /*baseId*/, int32 /*amount*/> HealMap;
+        using HealMap = std::unordered_map<uint32 /*baseId*/, int32 /*amount*/>;
         HealMap _heals;
     };
 };

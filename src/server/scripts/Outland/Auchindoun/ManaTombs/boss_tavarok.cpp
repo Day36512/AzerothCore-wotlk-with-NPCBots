@@ -22,6 +22,12 @@
  // NPCBots
 #include "bot_ai.h"
 
+// Grid search helpers
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
+#include "Cell.h"
+#include "CellImpl.h"
+
 #include <cmath>
 
 using namespace std::chrono_literals;
@@ -33,13 +39,13 @@ enum Spells
     SPELL_ARCING_SMASH = 8374,
 
     // Custom
-    SPELL_CRYSTAL_PILLAR_VISUAL = 300393, // visual on the pillar
-    SPELL_CRYSTAL_PILLAR_EXPLOSION = 300394  // AoE damage when pillar explodes
+    SPELL_CRYSTAL_PILLAR_VISUAL = 300393,      // visual on the pillar
+    SPELL_CRYSTAL_PILLAR_EXPLOSION = 300394    // AoE damage when pillar explodes
 };
 
 enum Misc
 {
-    NPC_CRYSTAL_PILLAR = 819188 
+    NPC_CRYSTAL_PILLAR = 819188
 };
 
 enum Groups
@@ -63,6 +69,7 @@ struct boss_tavarok : public BossAI
     void Reset() override
     {
         _Reset();
+        scheduler.CancelAll();
     }
 
     void JustEngagedWith(Unit* /*who*/) override
@@ -141,6 +148,7 @@ private:
         std::advance(it, index);
         return *it;
     }
+
     void DoCastOnRandomPlayerOrNPCBot(uint32 spellId, float range = 0.0f, bool skipCurrentTank = false)
     {
         if (Unit* target = SelectRandomPlayerOrNPCBot(range, skipCurrentTank))

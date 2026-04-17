@@ -65,13 +65,14 @@ struct boss_the_black_stalker : public BossAI
 {
     boss_the_black_stalker(Creature* creature) : BossAI(creature, DATA_BLACK_STALKER)
     {
+        //Dinkle custom
         scheduler.SetValidator([this]
             {
                 return !me->HasUnitState(UNIT_STATE_CASTING);
             });
     }
 
-    // ---------- Bot-aware helpers ----------
+    //Dinkle custom start
     static bool IsPlayerOrNPCBot(Unit* u)
     {
         if (!u || !u->IsAlive())
@@ -117,6 +118,13 @@ struct boss_the_black_stalker : public BossAI
 
         return pool[urand(0u, static_cast<uint32>(pool.size() - 1))];
     }
+    //Dinkle custom end
+
+    void Reset() override
+    {
+        scheduler.CancelAll();
+        _Reset();
+    }
 
     void JustEngagedWith(Unit* /*who*/) override
     {
@@ -129,20 +137,22 @@ struct boss_the_black_stalker : public BossAI
             // Chain Lightning – target players + bots from threat list
             .Schedule(6s, [this](TaskContext context)
                 {
+                    //Dinkle custom
                     if (Unit* target = SelectRandomPlayerOrNPCBotFromThreat(false))
                         me->CastSpell(target, SPELL_CHAIN_LIGHTNING, false);
                     else
-                        DoCastRandomTarget(SPELL_CHAIN_LIGHTNING, false); // fallback, just in case
+                        DoCastRandomTarget(SPELL_CHAIN_LIGHTNING, false);
 
                     context.Repeat(9s);
                 })
             // Static Charge – target players + bots from threat list
             .Schedule(10s, [this](TaskContext context)
                 {
+                    //Dinkle custom
                     if (Unit* target = SelectRandomPlayerOrNPCBotFromThreat(false))
                         me->CastSpell(target, SPELL_STATIC_CHARGE, false);
                     else
-                        DoCastRandomTarget(SPELL_STATIC_CHARGE, false); // fallback
+                        DoCastRandomTarget(SPELL_STATIC_CHARGE, false);
 
                     context.Repeat(10s);
                 })
@@ -172,7 +182,7 @@ struct boss_the_black_stalker : public BossAI
 
     void JustSummoned(Creature* summon) override
     {
-        // Spore Striders should also prioritize players + NPCBots
+        //Dinkle custom
         if (Unit* target = SelectRandomPlayerOrNPCBotFromThreat(false))
             summon->AI()->AttackStart(target);
         else if (me->GetVictim())
@@ -192,7 +202,6 @@ struct boss_the_black_stalker : public BossAI
             return;
 
         scheduler.Update(diff);
-
         DoMeleeAttackIfReady();
     }
 };

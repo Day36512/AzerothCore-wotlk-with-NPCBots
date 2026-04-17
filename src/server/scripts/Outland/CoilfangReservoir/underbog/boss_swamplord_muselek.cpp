@@ -60,13 +60,14 @@ struct boss_swamplord_muselek : public BossAI
 {
     boss_swamplord_muselek(Creature* creature) : BossAI(creature, DATA_MUSELEK)
     {
+        //Dinkle custom
         scheduler.SetValidator([this]
             {
                 return !me->HasUnitState(UNIT_STATE_CASTING);
             });
     }
 
-    // ---------- Bot-aware helpers ----------
+    //Dinkle custom start
     static bool IsPlayerOrNPCBot(Unit* u)
     {
         if (!u || !u->IsAlive())
@@ -118,10 +119,12 @@ struct boss_swamplord_muselek : public BossAI
 
         return pool[urand(0u, static_cast<uint32>(pool.size() - 1))];
     }
+    //Dinkle custom end
 
     void Reset() override
     {
         _Reset();
+        _markTarget.Clear();
         _canChase = true;
     }
 
@@ -188,9 +191,7 @@ struct boss_swamplord_muselek : public BossAI
             .Schedule(15s, 30s, [this](TaskContext context)
                 {
                     if (me->GetVictim() && me->IsWithinMeleeRange(me->GetVictim()))
-                    {
                         DoCastVictim(SPELL_KNOCKAWAY);
-                    }
 
                     context.Repeat();
                 })
@@ -224,9 +225,7 @@ struct boss_swamplord_muselek : public BossAI
                                     me->m_Events.AddEventAtOffset([this]()
                                         {
                                             if (Unit* marktarget = ObjectAccessor::GetUnit(*me, _markTarget))
-                                            {
                                                 DoCast(marktarget, SPELL_HUNTERS_MARK);
-                                            }
                                         }, 3s);
                                 }
                             });
@@ -263,7 +262,7 @@ struct boss_swamplord_muselek : public BossAI
 
 private:
     ObjectGuid _markTarget;
-    bool _canChase;
+    bool _canChase = true;
 };
 
 void AddSC_boss_swamplord_muselek()

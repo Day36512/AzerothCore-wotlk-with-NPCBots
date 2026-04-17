@@ -31,9 +31,9 @@ enum Texts
 enum Spells
 {
     SPELL_VOID_BLAST = 32325,
-    SPELL_DARK_SHELL = 300396,  // custom Dark Shell
-    SPELL_VEIL_OF_SHADOW = 300392,  // custom: Veil of Shadow (random single target)
-    SPELL_SHADOW_WORD_PAIN_SINGLE = 300395   // custom: SW:P applied individually to players/bots
+    SPELL_DARK_SHELL = 300396,                // custom Dark Shell
+    SPELL_VEIL_OF_SHADOW = 300392,           // custom: Veil of Shadow (random single target)
+    SPELL_SHADOW_WORD_PAIN_SINGLE = 300395  // custom: SW:P applied individually to players/bots
 };
 
 enum Groups
@@ -71,7 +71,8 @@ struct boss_pandemonius : public BossAI
     void Reset() override
     {
         BossAI::Reset();
-        _shadowWordPainStage = 0; // stages: 0..5  (85,70,55,40,25,10)
+        scheduler.CancelAll();
+        _shadowWordPainStage = 0; // stages: 0..5 (85, 70, 55, 40, 25, 10)
     }
 
     void JustEngagedWith(Unit* who) override
@@ -99,7 +100,6 @@ struct boss_pandemonius : public BossAI
                     else
                     {
                         DoCastOnRandomPlayerOrNPCBot(SPELL_VOID_BLAST);
-
                         context.Repeat(500ms);
                         context.DelayGroup(GROUP_VOID_BLAST, 500ms);
                     }
@@ -119,7 +119,8 @@ struct boss_pandemonius : public BossAI
                     // stages: 0..5 -> thresholds 85, 70, 55, 40, 25, 10
                     if (_shadowWordPainStage < SHADOW_WORD_PAIN_STAGES)
                     {
-                        int32 threshold = 85 - 15 * static_cast<int32>(_shadowWordPainStage); // 85, 70, 55, ...
+                        int32 threshold = 85 - 15 * static_cast<int32>(_shadowWordPainStage);
+
                         // HealthBelowPct triggers when health% < X.
                         // Use threshold+1 so it effectively fires at <= threshold.
                         if (me->HealthBelowPct(threshold + 1))
@@ -128,7 +129,6 @@ struct boss_pandemonius : public BossAI
                             ++_shadowWordPainStage;
                         }
 
-                        // Keep polling until we've fired all stages or we die
                         if (_shadowWordPainStage < SHADOW_WORD_PAIN_STAGES && me->IsAlive())
                             context.Repeat(1s);
                     }
@@ -171,17 +171,15 @@ struct boss_pandemonius : public BossAI
     }
 
 private:
-    // Custom Dark Shell: difficulty-based basepoints on bp0 and bp1.
     void CastDarkShellCustom()
     {
         int32 bp0 = IsHeroic() ? 38000 : 13000;
         int32 bp1 = IsHeroic() ? 250 : 100;
 
-        // Override effects 0 and 1; leave effect 2 to DB (nullptr).
+        // Override effects 0 and 1; leave effect 2 to DB.
         me->CastCustomSpell(me, SPELL_DARK_SHELL, &bp0, &bp1, nullptr, true);
     }
 
-    // Apply single-target Shadow Word: Pain (300395) to EVERY hostile player or NPCBot on the threat list.
     void CastShadowWordPainOnAllPlayersAndBots()
     {
         for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
@@ -196,13 +194,11 @@ private:
             if (!target->IsPlayer() && !target->IsNPCBot())
                 continue;
 
-            // Triggered = true so we can apply to multiple targets in one tick without GCD/cast-time blocking
+            // Triggered so we can apply to multiple targets in one tick without GCD/cast-time blocking
             DoCast(target, SPELL_SHADOW_WORD_PAIN_SINGLE, true);
         }
     }
 
-    // Select a random hostile that is either a real player or an NPCBot.
-    // range = 0 means no additional range check beyond being on the threat list.
     Unit* SelectRandomPlayerOrNPCBot(float range = 0.0f)
     {
         std::list<Unit*> targets;
@@ -216,11 +212,9 @@ private:
             if (!target || !target->IsAlive())
                 continue;
 
-            // Optional range filter
             if (range > 0.0f && !me->IsWithinDistInMap(target, range))
                 continue;
 
-            // skip pets, totems, guardians etc.
             if (!target->IsPlayer() && !target->IsNPCBot())
                 continue;
 

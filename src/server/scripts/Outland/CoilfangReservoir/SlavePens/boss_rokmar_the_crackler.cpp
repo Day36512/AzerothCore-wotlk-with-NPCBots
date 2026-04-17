@@ -35,7 +35,7 @@ enum RokmarSpells
     SPELL_FRENZY = 34970,
     SPELL_GRIEVOUS_WOUND = 31956,
     SPELL_WATER_SPIT = 35008,
-    SPELL_TELEPORT_VISUAL = 34656   
+    SPELL_TELEPORT_VISUAL = 34656
 };
 
 enum RokmarNPCs
@@ -47,12 +47,14 @@ struct boss_rokmar_the_crackler : public BossAI
 {
     explicit boss_rokmar_the_crackler(Creature* creature) : BossAI(creature, DATA_ROKMAR_THE_CRACKLER)
     {
+        //Dinkle custom
         scheduler.SetValidator([this]
             {
                 return !me->HasUnitState(UNIT_STATE_CASTING);
             });
     }
 
+    //Dinkle custom start
     bool _isClone = false;
 
     bool _clone77Done = false;
@@ -117,8 +119,7 @@ struct boss_rokmar_the_crackler : public BossAI
 
         Position clonePos = me->GetRandomNearPosition(5.0f);
 
-        if (TempSummon* clone = me->SummonCreature(me->GetEntry(), clonePos,
-            TEMPSUMMON_CORPSE_DESPAWN, 600000))
+        if (TempSummon* clone = me->SummonCreature(me->GetEntry(), clonePos, TEMPSUMMON_CORPSE_DESPAWN, 600000))
         {
             uint32 quarterMaxHealth = me->GetMaxHealth() / 4;
             if (!quarterMaxHealth)
@@ -139,11 +140,10 @@ struct boss_rokmar_the_crackler : public BossAI
         for (uint8 i = 0; i < count; ++i)
         {
             Position addPos = me->GetRandomNearPosition(8.0f);
-
-            me->SummonCreature(NPC_GREATER_BOGSTROK, addPos,
-                TEMPSUMMON_CORPSE_DESPAWN, 600000);
+            me->SummonCreature(NPC_GREATER_BOGSTROK, addPos, TEMPSUMMON_CORPSE_DESPAWN, 600000);
         }
     }
+    //Dinkle custom end
 
     void Reset() override
     {
@@ -162,6 +162,7 @@ struct boss_rokmar_the_crackler : public BossAI
     {
         BossAI::JustSummoned(summon);
 
+        //Dinkle custom
         if (summon->GetEntry() == me->GetEntry())
         {
             if (auto* ai = CAST_AI(boss_rokmar_the_crackler, summon->AI()))
@@ -175,6 +176,7 @@ struct boss_rokmar_the_crackler : public BossAI
     {
         _JustEngagedWith();
 
+        //Dinkle custom
         scheduler.Schedule(1s, [this](TaskContext ctx)
             {
                 float pct = me->GetHealthPct();
@@ -230,6 +232,7 @@ struct boss_rokmar_the_crackler : public BossAI
     {
         scheduler.CancelAll();
 
+        //Dinkle custom
         if (_isClone)
         {
             me->DespawnOrUnsummon();

@@ -17,7 +17,6 @@
 
 #include "AreaDefines.h"
 #include "Battleground.h"
-#include "CreatureScript.h"
 #include "ObjectMgr.h"
 #include "Pet.h"
 #include "Player.h"
@@ -3570,6 +3569,24 @@ class spell_item_rocket_boots : public SpellScript
     }
 };
 
+// 55001 - Flexweave Underlay (Parachute)
+class spell_item_flexweave_underlay : public SpellScript
+{
+    PrepareSpellScript(spell_item_flexweave_underlay);
+
+    SpellCastResult CheckCast()
+    {
+        if (GetCaster()->IsFlying() || GetCaster()->IsFalling())
+            return SPELL_CAST_OK;
+        return SPELL_FAILED_CANT_DO_THAT_RIGHT_NOW;
+    }
+
+    void Register() override
+    {
+        OnCheckCast += SpellCheckCastFn(spell_item_flexweave_underlay::CheckCast);
+    }
+};
+
 class spell_item_healing_injector : public SpellScript
 {
     PrepareSpellScript(spell_item_healing_injector);
@@ -4360,7 +4377,7 @@ class spell_item_luffa : public SpellScript
             for (Unit::AuraApplicationMap::const_iterator itr = auras.begin(); itr != auras.end(); ++itr)
             {
                 Aura const* aura = itr->second->GetBase();
-                if (!(aura->GetSpellInfo()->GetAllEffectsMechanicMask() & (1 << MECHANIC_BLEED)) || aura->GetCasterLevel() > 60 || aura->GetSpellInfo()->IsPositive())
+                if (!(aura->GetSpellInfo()->GetAllEffectsMechanicMask() & (1ULL << MECHANIC_BLEED)) || aura->GetCasterLevel() > 60 || aura->GetSpellInfo()->IsPositive())
                     continue;
 
                 return SPELL_CAST_OK;
@@ -4380,7 +4397,7 @@ class spell_item_luffa : public SpellScript
             for (Unit::AuraApplicationMap::const_iterator itr = auras.begin(); itr != auras.end(); ++itr)
             {
                 Aura const* aura = itr->second->GetBase();
-                if (!(aura->GetSpellInfo()->GetAllEffectsMechanicMask() & (1 << MECHANIC_BLEED)) || aura->GetCasterLevel() > 60 || aura->GetSpellInfo()->IsPositive())
+                if (!(aura->GetSpellInfo()->GetAllEffectsMechanicMask() & (1ULL << MECHANIC_BLEED)) || aura->GetCasterLevel() > 60 || aura->GetSpellInfo()->IsPositive())
                     continue;
 
                 player->RemoveAurasDueToSpell(aura->GetId(), aura->GetCasterGUID());
@@ -6332,6 +6349,7 @@ void AddSC_item_spell_scripts()
     RegisterSpellScript(spell_item_deathbringers_will_normal);
     RegisterSpellScript(spell_item_deathbringers_will_heroic);
     RegisterSpellScript(spell_item_discerning_eye_beast_dummy);
+    RegisterSpellScript(spell_item_flexweave_underlay);
     RegisterSpellScript(spell_item_frozen_shadoweave);
     RegisterSpellScript(spell_item_healing_touch_refund);
     RegisterSpellScript(spell_item_heartpierce);

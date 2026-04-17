@@ -57,8 +57,8 @@ struct boss_quagmirran : public BossAI
     ObjectGuid _linkTarget2;
     bool _linkActive = false;
 
-    static constexpr float LINK_PUNISH_DISTANCE = 25.0f;  // if closer than this, take damage
-    static constexpr float LINK_BREAK_DISTANCE = 25.0f;  // if farther than this, link breaks
+    static constexpr float LINK_PUNISH_DISTANCE = 25.0f;
+    static constexpr float LINK_BREAK_DISTANCE = 25.0f;
 
     static bool IsPlayer(Unit* u)
     {
@@ -84,7 +84,6 @@ struct boss_quagmirran : public BossAI
     Unit* SelectRandomPlayerOrNPCBotFromThreat(bool excludeVictim = true)
     {
         std::vector<Unit*> pool;
-        pool.reserve(me->GetThreatMgr().GetThreatListSize());
 
         for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
@@ -134,9 +133,6 @@ struct boss_quagmirran : public BossAI
         std::vector<Unit*> players;
         std::vector<Unit*> bots;
 
-        players.reserve(me->GetThreatMgr().GetThreatListSize());
-        bots.reserve(me->GetThreatMgr().GetThreatListSize());
-
         for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
             if (!ref || ref->IsOffline())
@@ -152,44 +148,34 @@ struct boss_quagmirran : public BossAI
                 bots.push_back(u);
         }
 
-        // Need at least 2 total valid units (players + bots)
         if (players.size() + bots.size() < 2)
             return;
 
         Unit* first = nullptr;
         Unit* second = nullptr;
 
-        // 1) Prefer two players if available
         if (players.size() >= 2)
         {
-            uint32 i1 = urand(0u, static_cast<uint32>(players.size() - 1));
+            uint32 i1 = urand(0u, players.size() - 1);
             uint32 i2;
-            do
-            {
-                i2 = urand(0u, static_cast<uint32>(players.size() - 1));
-            } while (i2 == i1 && players.size() > 1);
+            do { i2 = urand(0u, players.size() - 1); } while (i2 == i1);
 
             first = players[i1];
             second = players[i2];
         }
-        // 2) Otherwise prefer 1 player + 1 bot (if at least 1 player alive)
         else if (!players.empty() && !bots.empty())
         {
             first = players[0];
-            second = bots[urand(0u, static_cast<uint32>(bots.size() - 1))];
+            second = bots[urand(0u, bots.size() - 1)];
         }
-        // 3) Otherwise no players alive: use two bots
         else
         {
             if (bots.size() < 2)
                 return;
 
-            uint32 i1 = urand(0u, static_cast<uint32>(bots.size() - 1));
+            uint32 i1 = urand(0u, bots.size() - 1);
             uint32 i2;
-            do
-            {
-                i2 = urand(0u, static_cast<uint32>(bots.size() - 1));
-            } while (i2 == i1 && bots.size() > 1);
+            do { i2 = urand(0u, bots.size() - 1); } while (i2 == i1);
 
             first = bots[i1];
             second = bots[i2];
@@ -202,7 +188,6 @@ struct boss_quagmirran : public BossAI
         _linkTarget2 = second->GetGUID();
         _linkActive = true;
 
-        // Apply a visible poison debuff to both
         me->CastSpell(first, SPELL_TOXIC_LINK_DOT, true);
         me->CastSpell(second, SPELL_TOXIC_LINK_DOT, true);
     }
@@ -225,67 +210,69 @@ struct boss_quagmirran : public BossAI
     {
         _JustEngagedWith();
 
-        scheduler.Schedule(9100ms, [this](TaskContext context)
-            {
-                DoCastVictim(SPELL_CLEAVE);
-                context.Repeat(18800ms, 24800ms);
-            }).Schedule(20300ms, [this](TaskContext context)
+        scheduler
+            .Schedule(9100ms, [this](TaskContext ctx)
+                {
+                    DoCastVictim(SPELL_CLEAVE);
+                    ctx.Repeat(18800ms, 24800ms);
+                })
+            .Schedule(20300ms, [this](TaskContext ctx)
                 {
                     DoCastVictim(SPELL_UPPERCUT);
-                    context.Repeat(21800ms);
-                }).Schedule(25200ms, [this](TaskContext context)
+                    ctx.Repeat(21800ms);
+                })
+            .Schedule(25200ms, [this](TaskContext ctx)
+                {
+                    if (Unit* target = SelectRandomPlayerOrNPCBotFromThreat(false))
+                        me->CastSpell(target, SPELL_ACID_SPRAY, false);
+                    else
+                        DoCastRandomTarget(SPELL_ACID_SPRAY);
+
+                    ctx.Repeat(25s);
+                })
+            .Schedule(31800ms, [this](TaskContext ctx)
+                {
+                    DoCastAOE(SPELL_POISON_BOLT_VOLLEY);
+                    ctx.Repeat(24400ms);
+                });
+
+        // Toxic Link start loop
+        scheduler.Schedule(20s, [this](TaskContext ctx)
+            {
+                TryStartToxicLink();
+                ctx.Repeat(25s, 32s);
+            });
+
+        // Toxic Link heartbeat
+        scheduler.Schedule(1s, [this](TaskContext ctx)
+            {
+                if (_linkActive)
+                {
+                    Unit* a = ObjectAccessor::GetUnit(*me, _linkTarget1);
+                    Unit* b = ObjectAccessor::GetUnit(*me, _linkTarget2);
+
+                    if (!a || !b || !a->IsAlive() || !b->IsAlive() || !me->IsInCombat())
                     {
-                        if (Unit* target = SelectRandomPlayerOrNPCBotFromThreat(false))
-                            me->CastSpell(target, SPELL_ACID_SPRAY, false);
-                        else
-                            DoCastRandomTarget(SPELL_ACID_SPRAY); // fallback, just in case
+                        EndToxicLink();
+                    }
+                    else
+                    {
+                        float dist = a->GetDistance(b);
 
-                        context.Repeat(25s);
-                    }).Schedule(31800ms, [this](TaskContext context)
+                        if (dist <= LINK_PUNISH_DISTANCE)
                         {
-                            DoCastAOE(SPELL_POISON_BOLT_VOLLEY);
-                            context.Repeat(24400ms);
-                        });
-
-                    // Periodic Toxic Link
-                    scheduler.Schedule(20s, [this](TaskContext context)
+                            me->CastSpell(a, SPELL_TOXIC_LINK_TICK, true);
+                            me->CastSpell(b, SPELL_TOXIC_LINK_TICK, true);
+                        }
+                        else if (dist >= LINK_BREAK_DISTANCE)
                         {
-                            TryStartToxicLink();
-                            context.Repeat(25s, 32s);
-                        });
+                            EndToxicLink();
+                        }
+                    }
+                }
 
-                    // Toxic Link heartbeat – checks and punishes / breaks link
-                    scheduler.Schedule(1s, [this](TaskContext context)
-                        {
-                            if (_linkActive)
-                            {
-                                Unit* a = ObjectAccessor::GetUnit(*me, _linkTarget1);
-                                Unit* b = ObjectAccessor::GetUnit(*me, _linkTarget2);
-
-                                if (!a || !b || !a->IsAlive() || !b->IsAlive() || !me->IsInCombat())
-                                {
-                                    EndToxicLink();
-                                }
-                                else
-                                {
-                                    float dist = a->GetDistance(b);
-
-                                    // Too close together? Both take poison damage
-                                    if (dist <= LINK_PUNISH_DISTANCE)
-                                    {
-                                        me->CastSpell(a, SPELL_TOXIC_LINK_TICK, true);
-                                        me->CastSpell(b, SPELL_TOXIC_LINK_TICK, true);
-                                    }
-                                    // Far enough apart? Break the link
-                                    else if (dist >= LINK_BREAK_DISTANCE)
-                                    {
-                                        EndToxicLink();
-                                    }
-                                }
-                            }
-
-                            context.Repeat(1s);
-                        });
+                ctx.Repeat(1s);
+            });
     }
 };
 

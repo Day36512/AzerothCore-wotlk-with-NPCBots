@@ -31,10 +31,10 @@ enum Spells
     SPELL_FRENZY = 19451,
     SPELL_MAGMA_SPIT = 19449,
     SPELL_PANIC = 19408,
-    SPELL_LAVA_BOMB = 19411,                    // Calls dummy → 20494 → spawns GO 177704 (30s)
-    SPELL_LAVA_BOMB_EFFECT = 20494,                    // Spawns trap GO 177704 which triggers 19428
-    SPELL_LAVA_BOMB_RANGED = 20474,                    // Calls dummy → 20495 → spawns GO 177704 (60s)
-    SPELL_LAVA_BOMB_RANGED_EFFECT = 20495,                    // Spawns trap GO 177704 which triggers 19428
+    SPELL_LAVA_BOMB = 19411, // Calls dummy → 20494 → spawns GO 177704 (30s)
+    SPELL_LAVA_BOMB_EFFECT = 20494, // Spawns trap GO 177704 which triggers 19428
+    SPELL_LAVA_BOMB_RANGED = 20474, // Calls dummy → 20495 → spawns GO 177704 (60s)
+    SPELL_LAVA_BOMB_RANGED_EFFECT = 20495, // Spawns trap GO 177704 which triggers 19428
 };
 
 enum Events
@@ -47,96 +47,90 @@ enum Events
 
 constexpr float MELEE_TARGET_LOOKUP_DIST = 10.0f;
 
-class boss_magmadar : public CreatureScript
+struct boss_magmadar : public BossAI
 {
-public:
-    boss_magmadar() : CreatureScript("boss_magmadar") {}
+    boss_magmadar(Creature* creature) : BossAI(creature, DATA_MAGMADAR) {}
 
-    struct boss_magmadarAI : public BossAI
+    void JustEngagedWith(Unit* /*who*/) override
     {
-        boss_magmadarAI(Creature* creature) : BossAI(creature, DATA_MAGMADAR) {}
+        _JustEngagedWith();
+        events.ScheduleEvent(EVENT_FRENZY, 8500ms);
+        events.ScheduleEvent(EVENT_PANIC, 9500ms);
+        events.ScheduleEvent(EVENT_LAVA_BOMB, 12s);
+        events.ScheduleEvent(EVENT_LAVA_BOMB_RANGED, 15s);
+    }
 
-        void JustEngagedWith(Unit* /*who*/) override
-        {
-            _JustEngagedWith();
-            events.ScheduleEvent(EVENT_FRENZY, 8500ms);
-            events.ScheduleEvent(EVENT_PANIC, 9500ms);
-            events.ScheduleEvent(EVENT_LAVA_BOMB, 12s);
-            events.ScheduleEvent(EVENT_LAVA_BOMB_RANGED, 15s);
-        }
-
-        bool IsPlayerOrNpcBotTarget(Unit* target) const
-        {
-            if (!target || !target->IsAlive())
-                return false;
-
-            const bool isPlayer = target->GetTypeId() == TYPEID_PLAYER;
-            const bool isNpcBot = (target->GetTypeId() == TYPEID_UNIT) && target->ToCreature() && target->ToCreature()->IsNPCBot();
-            if (!isPlayer && !isNpcBot)
-                return false;
-
-            if (!me->IsValidAttackTarget(target))
-                return false;
-
-            return true;
-        }
-
-        void ExecuteEvent(uint32 eventId) override
-        {
-            switch (eventId)
-            {
-            case EVENT_FRENZY:
-            {
-                Talk(EMOTE_FRENZY);
-                DoCastSelf(SPELL_FRENZY);
-                events.Repeat(15s, 20s);
-                break;
-            }
-            case EVENT_PANIC:
-            {
-                DoCastVictim(SPELL_PANIC);
-                events.Repeat(31s, 38s);
-                break;
-            }
-            case EVENT_LAVA_BOMB:
-            {
-                std::list<Unit*> candidates;
-                SelectTargetList(candidates, 1, SelectTargetMethod::Random, 0, [this](Unit* u)
-                    {
-                        return IsPlayerOrNpcBotTarget(u) && u->GetDistance(me) <= MELEE_TARGET_LOOKUP_DIST;
-                    });
-
-                if (!candidates.empty())
-                    DoCast(candidates.front(), SPELL_LAVA_BOMB);
-
-                events.Repeat(12s, 15s);
-                break;
-            }
-            case EVENT_LAVA_BOMB_RANGED:
-            {
-                std::list<Unit*> targets;
-                SelectTargetList(targets, 1, SelectTargetMethod::Random, 1, [this](Unit* target)
-                    {
-                        if (!IsPlayerOrNpcBotTarget(target))
-                            return false;
-
-                        float d = target->GetDistance(me);
-                        return d > MELEE_TARGET_LOOKUP_DIST && d < 100.0f;
-                    });
-
-                if (!targets.empty())
-                    DoCast(targets.front(), SPELL_LAVA_BOMB_RANGED);
-
-                events.Repeat(12s, 15s);
-                break;
-            }
-            }
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
+    //Dinkle custom
+    bool IsPlayerOrNpcBotTarget(Unit* target) const
     {
-        return GetMoltenCoreAI<boss_magmadarAI>(creature);
+        if (!target || !target->IsAlive())
+            return false;
+
+        bool const isPlayer = target->GetTypeId() == TYPEID_PLAYER;
+        bool const isNpcBot = target->GetTypeId() == TYPEID_UNIT && target->ToCreature() && target->ToCreature()->IsNPCBot();
+        if (!isPlayer && !isNpcBot)
+            return false;
+
+        if (!me->IsValidAttackTarget(target))
+            return false;
+
+        return true;
+    }
+
+    void ExecuteEvent(uint32 eventId) override
+    {
+        switch (eventId)
+        {
+        case EVENT_FRENZY:
+        {
+            Talk(EMOTE_FRENZY);
+            DoCastSelf(SPELL_FRENZY);
+            events.Repeat(15s, 20s);
+            break;
+        }
+        case EVENT_PANIC:
+        {
+            DoCastVictim(SPELL_PANIC);
+            events.Repeat(31s, 38s);
+            break;
+        }
+        case EVENT_LAVA_BOMB:
+        {
+            //Dinkle custom
+            std::list<Unit*> candidates;
+            SelectTargetList(candidates, 1, SelectTargetMethod::Random, 0, [this](Unit* u)
+                {
+                    return IsPlayerOrNpcBotTarget(u) && u->GetDistance(me) <= MELEE_TARGET_LOOKUP_DIST;
+                });
+
+            if (!candidates.empty())
+                DoCast(candidates.front(), SPELL_LAVA_BOMB);
+
+            events.Repeat(12s, 15s);
+            break;
+        }
+        case EVENT_LAVA_BOMB_RANGED:
+        {
+            //Dinkle custom
+            std::list<Unit*> targets;
+            SelectTargetList(targets, 1, SelectTargetMethod::Random, 1, [this](Unit* target)
+                {
+                    if (!IsPlayerOrNpcBotTarget(target))
+                        return false;
+
+                    float d = target->GetDistance(me);
+                    return d > MELEE_TARGET_LOOKUP_DIST && d < 100.0f;
+                });
+
+            if (!targets.empty())
+                DoCast(targets.front(), SPELL_LAVA_BOMB_RANGED);
+
+            events.Repeat(12s, 15s);
+            break;
+        }
+        default:
+            break;
+        }
     }
 };
 
@@ -181,6 +175,6 @@ class spell_magmadar_lava_bomb : public SpellScript
 
 void AddSC_boss_magmadar()
 {
-    new boss_magmadar();
+    RegisterMoltenCoreCreatureAI(boss_magmadar);
     RegisterSpellScript(spell_magmadar_lava_bomb);
 }

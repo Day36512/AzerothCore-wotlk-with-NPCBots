@@ -101,7 +101,6 @@ struct boss_mennu_the_betrayer : public BossAI
     Unit* SelectRandomPlayerOrNPCBotFromThreat(bool excludeVictim = true)
     {
         std::vector<Unit*> pool;
-        pool.reserve(me->GetThreatMgr().GetThreatListSize());
 
         for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
@@ -130,7 +129,6 @@ struct boss_mennu_the_betrayer : public BossAI
     Unit* SelectRandomManaUserFromThreat(bool excludeVictim = true)
     {
         std::vector<Unit*> pool;
-        pool.reserve(me->GetThreatMgr().GetThreatListSize());
 
         for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
@@ -174,32 +172,28 @@ struct boss_mennu_the_betrayer : public BossAI
         _Reset();
         _totemicRage = false;
 
-        // Clean up any leftover fire elementals around the boss
+        // Clean up any leftover fire elementals
         DespawnNearbyFireElementals(80.0f);
 
-        // Health-based “totemic phases”
+        // Health-based phases
 
-        // 75%: control + mitigation totems – encourages totem killing early
         ScheduleHealthCheckEvent(75, [this]
             {
                 DoCastSelf(SPELL_EARTHGRAB_TOTEM);
                 DoCastSelf(SPELL_STONESKIN_TOTEM);
             });
 
-        // 60%: emergency Healing Ward
         ScheduleHealthCheckEvent(60, [this]
             {
                 DoCastSelf(SPELL_HEALING_WARD);
             });
 
-        // 40%: Earthgrab into Nova combo to pressure rooted targets
         ScheduleHealthCheckEvent(40, [this]
             {
                 DoCastSelf(SPELL_EARTHGRAB_TOTEM);
                 DoCastSelf(SPELL_NOVA_TOTEM);
             });
 
-        // 25%: “Totemic Rage” – faster Lightning Bolts and Nova spam + Bloodlust-like enrage
         ScheduleHealthCheckEvent(25, [this]
             {
                 if (_totemicRage)
@@ -208,9 +202,9 @@ struct boss_mennu_the_betrayer : public BossAI
                 _totemicRage = true;
 
                 me->Yell("The tides will drag you under!", LANG_UNIVERSAL);
-
                 me->CastSpell(me, SPELL_BLOODLUST, true);
 
+                // Lightning spam
                 scheduler.Schedule(1s, [this](TaskContext ctx)
                     {
                         Unit* target = SelectRandomPlayerOrNPCBotFromThreat(false);
@@ -223,7 +217,7 @@ struct boss_mennu_the_betrayer : public BossAI
                         ctx.Repeat(3s, 4s);
                     });
 
-                // More frequent Nova totems while enraged
+                // Faster Nova spam
                 scheduler.Schedule(2s, [this](TaskContext ctx)
                     {
                         DoCastSelf(SPELL_NOVA_TOTEM);
@@ -232,21 +226,12 @@ struct boss_mennu_the_betrayer : public BossAI
             });
     }
 
-    void JustSummoned(Creature* summon) override
-    {
-        BossAI::JustSummoned(summon);
-
-        summon->SetReactState(REACT_PASSIVE);
-        summon->GetMotionMaster()->Clear();
-    }
-
     void JustEngagedWith(Unit* /*who*/) override
     {
         _JustEngagedWith();
         Talk(SAY_AGGRO);
 
-        // Core Lightning Bolt rotation: prefers random ranged/healer/Bot, not just tank
-        scheduler.Schedule(5s, 8s, [this](TaskContext context)
+        scheduler.Schedule(5s, 8s, [this](TaskContext ctx)
             {
                 Unit* target = SelectRandomPlayerOrNPCBotFromThreat(false);
                 if (!target)
@@ -255,7 +240,7 @@ struct boss_mennu_the_betrayer : public BossAI
                 if (target)
                     me->CastSpell(target, SPELL_LIGHTNING_BOLT, false);
 
-                context.Repeat(7s, 10s);
+                ctx.Repeat(7s, 10s);
             });
 
         scheduler.Schedule(8s, 12s, [this](TaskContext ctx)
@@ -270,7 +255,6 @@ struct boss_mennu_the_betrayer : public BossAI
                 ctx.Repeat(14s, 18s);
             });
 
-        // Hex – CC a random mana user, excluding tank
         scheduler.Schedule(15s, 20s, [this](TaskContext ctx)
             {
                 if (Unit* target = SelectRandomManaUserFromThreat(true))
@@ -279,33 +263,29 @@ struct boss_mennu_the_betrayer : public BossAI
                 ctx.Repeat(22s, 30s);
             });
 
-        // Nova/Earthgrab combo: roots then punishes clumps if totem is ignored
-        scheduler.Schedule(12s, 18s, [this](TaskContext context)
+        scheduler.Schedule(12s, 18s, [this](TaskContext ctx)
             {
                 if (urand(0, 1) == 0)
                     DoCastSelf(SPELL_EARTHGRAB_TOTEM);
 
                 DoCastSelf(SPELL_NOVA_TOTEM);
-                context.Repeat(18s, 24s);
+                ctx.Repeat(18s, 24s);
             });
 
-        // Stoneskin uptime – armor/mitigation pressure if ignored
-        scheduler.Schedule(18s, 24s, [this](TaskContext context)
+        scheduler.Schedule(18s, 24s, [this](TaskContext ctx)
             {
                 DoCastSelf(SPELL_STONESKIN_TOTEM);
-                context.Repeat(26s, 32s);
+                ctx.Repeat(26s, 32s);
             });
 
-        // Healing Ward fallback: if HP is low and ward is likely dead, try to re-drop it
-        scheduler.Schedule(22s, 28s, [this](TaskContext context)
+        scheduler.Schedule(22s, 28s, [this](TaskContext ctx)
             {
                 if (me->HealthBelowPct(60))
                     DoCastSelf(SPELL_HEALING_WARD);
 
-                context.Repeat(25s, 35s);
+                ctx.Repeat(25s, 35s);
             });
 
-        // Heroic 5-man only: periodically summon fire elemental
         if (me->GetMap()->IsHeroic() && !me->GetMap()->IsRaid())
         {
             scheduler.Schedule(10s, [this](TaskContext ctx)

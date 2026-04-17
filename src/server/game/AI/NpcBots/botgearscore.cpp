@@ -1,6 +1,7 @@
 #include "bot_ai.h"
 #include "botdatamgr.h"
 #include "botgearscore.h"
+#include "botlogtraits.h"
 #include "Creature.h"
 #include "Item.h"
 
@@ -10,7 +11,7 @@
 # pragma warning(push, 4)
 #endif
 
-constexpr float GS_scale = 1.8618f;
+static constexpr float GS_scale = 1.8618f;
 
 static const std::map<uint32, float> ItemSlotMods = {
     { INVTYPE_HEAD, 1.0f },
@@ -38,7 +39,7 @@ static const std::map<uint32, float> ItemSlotMods = {
     { INVTYPE_RELIC, 0.3164f }
 };
 
-constexpr std::pair<float, float> ItemLevelFactors[2][5] = {
+static constexpr std::pair<float, float> ItemLevelFactors[2][5] = {
     {
         { 0.0f,    1.0f },
         { 0.0f,    1.0f },
@@ -57,7 +58,7 @@ constexpr std::pair<float, float> ItemLevelFactors[2][5] = {
 
 float CalculateItemGearScoreRaw(ItemTemplate const* proto)
 {
-    auto smcit = ItemSlotMods.find(proto->InventoryType);
+    decltype(ItemSlotMods)::const_iterator smcit = ItemSlotMods.find(proto->InventoryType);
     if (smcit == ItemSlotMods.cend())
         return 0.0f;
 
@@ -125,7 +126,7 @@ std::pair<float, float> CalculateBotGearScore(uint32 botentry, uint8 botlevel, u
     uint8 items_count = 0;
     float totalscore = 0.0f;
 
-    for (uint8 i = 0; i < BOT_INVENTORY_SIZE; ++i)
+    for (auto i : NPCBots::index_array<uint8, BOT_INVENTORY_SIZE>)
     {
         if (Item const* item = items[i])
         {

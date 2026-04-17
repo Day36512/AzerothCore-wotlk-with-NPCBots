@@ -79,12 +79,14 @@ struct boss_exarch_maladaar : public BossAI
     {
         _talked = false;
 
+        //Dinkle custom
         scheduler.SetValidator([this]
             {
                 return !me->HasUnitState(UNIT_STATE_CASTING);
             });
     }
 
+    //Dinkle custom start
     bool IsEncounterPlayer(Player const* player, bool aliveOnly = true) const
     {
         if (!player)
@@ -236,6 +238,7 @@ struct boss_exarch_maladaar : public BossAI
 
         return Acore::Containers::SelectRandomContainerElement(candidates);
     }
+    //Dinkle custom end
 
     void Reset() override
     {
@@ -255,6 +258,7 @@ struct boss_exarch_maladaar : public BossAI
 
     void MoveInLineOfSight(Unit* who) override
     {
+        //Dinkle custom
         if (!_talked && who && (who->IsPlayer() || who->IsNPCBot()) && me->IsWithinDistInMap(who, 150.0f))
         {
             _talked = true;
@@ -275,12 +279,14 @@ struct boss_exarch_maladaar : public BossAI
                 context.Repeat(15s, 25s);
             }).Schedule(5s, [this](TaskContext context)
                 {
+                    //Dinkle custom
                     if (Unit* target = SelectRandomEncounterTarget(100.0f))
                         DoCast(target, SPELL_RIBBON_OF_SOULS);
 
                     context.Repeat(10s, 20s);
                 }).Schedule(12s, [this](TaskContext context)
                     {
+                        //Dinkle custom
                         Unit* currentVictim = me->GetVictim();
                         if (Unit* target = SelectRandomEncounterTarget(100.0f, true, currentVictim, true))
                             DoCast(target, SPELL_CHARGE);
@@ -288,6 +294,7 @@ struct boss_exarch_maladaar : public BossAI
                         context.Repeat(15s, 22s);
                     }).Schedule(25s, [this](TaskContext context)
                         {
+                            //Dinkle custom
                             if (Unit* target = SelectRandomEncounterTarget(100.0f))
                             {
                                 Talk(SAY_ROAR);
@@ -313,6 +320,7 @@ struct boss_exarch_maladaar : public BossAI
 
     void KilledUnit(Unit* victim) override
     {
+        //Dinkle custom
         if (victim && (victim->IsPlayer() || victim->IsNPCBot()) && urand(0, 1))
             Talk(SAY_SLAY);
     }

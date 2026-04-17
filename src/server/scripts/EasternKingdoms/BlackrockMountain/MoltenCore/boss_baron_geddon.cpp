@@ -20,15 +20,15 @@
 #include "SpellAuraEffects.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
+#include "Config.h"
+#include "World.h"
 #include "molten_core.h"
 
- // Nearby search helpers
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "Cell.h"
 #include "CellImpl.h"
 
-// Optional NPCBots (safe to include if present in your tree)
 #include "bot_ai.h"
 #include "botmgr.h"
 #include "botdatamgr.h"
@@ -36,6 +36,7 @@
 #include <list>
 #include <vector>
 #include <cmath>
+#include <string>
 
 enum Emotes
 {
@@ -58,7 +59,7 @@ enum Events
     EVENT_LIVING_BOMB,
 };
 
-// Simple NPCBot checker
+//Dinkle custom start
 static inline bool IsNPCBot(Unit* u)
 {
     return u && u->GetTypeId() == TYPEID_UNIT && u->ToCreature() && u->ToCreature()->IsNPCBot();
@@ -66,113 +67,114 @@ static inline bool IsNPCBot(Unit* u)
 
 static inline void BotSay(Unit* u, char const* text)
 {
-    if (!u || !text || !*text) return;
+    if (!u || !text || !*text)
+        return;
+
     if (IsNPCBot(u))
         u->ToCreature()->Say(text, LANG_UNIVERSAL);
 }
+//Dinkle custom end
 
-class boss_baron_geddon : public CreatureScript
+struct boss_baron_geddon : public BossAI
 {
-public:
-    boss_baron_geddon() : CreatureScript("boss_baron_geddon") {}
+    boss_baron_geddon(Creature* creature) : BossAI(creature, DATA_GEDDON), armageddonCasted(false) {}
 
-    struct boss_baron_geddonAI : public BossAI
+    void Reset() override
     {
-        boss_baron_geddonAI(Creature* creature) : BossAI(creature, DATA_GEDDON), armageddonCasted(false) {}
-
-        void Reset() override
-        {
-            _Reset();
-            armageddonCasted = false;
-        }
-
-        void JustEngagedWith(Unit* /*attacker*/) override
-        {
-            _JustEngagedWith();
-            events.ScheduleEvent(EVENT_INFERNO, 13s, 15s);
-            events.ScheduleEvent(EVENT_IGNITE_MANA, 7s, 19s);
-            events.ScheduleEvent(EVENT_LIVING_BOMB, 11s, 16s);
-        }
-
-        // Random player or NPCBot (alive/hostile/in range). Uses Cell visitor (AzerothCore pattern).
-        Unit* SelectRandomPlayerOrNPCBot(float range)
-        {
-            std::list<Unit*> nearby;
-            Acore::AnyUnitInObjectRangeCheck check(me, range);
-            Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, nearby, check);
-            Cell::VisitObjects(me, searcher, range);
-
-            std::vector<Unit*> pool;
-            pool.reserve(nearby.size());
-            for (Unit* u : nearby)
-            {
-                if (!u || !u->IsAlive())
-                    continue;
-                if (!u->IsHostileTo(me))
-                    continue;
-                if (!(u->IsPlayer() || IsNPCBot(u)))
-                    continue;
-                pool.push_back(u);
-            }
-
-            if (pool.empty())
-                return nullptr;
-
-            return pool[urand(0u, uint32(pool.size() - 1))];
-        }
-
-        void DamageTaken(Unit* /*attacker*/, uint32& damage, DamageEffectType /*dmgType*/, SpellSchoolMask /*school*/) override
-        {
-            // If boss is below 2% hp - cast Armageddon
-            if (!armageddonCasted && damage < me->GetHealth() && me->HealthBelowPctDamaged(2, damage))
-            {
-                me->RemoveAurasDueToSpell(SPELL_INFERNO);
-                me->StopMoving();
-                if (me->CastSpell(me, SPELL_ARMAGEDDON, TRIGGERED_FULL_MASK) == SPELL_CAST_OK)
-                {
-                    Talk(EMOTE_SERVICE);
-                    armageddonCasted = true;
-                }
-            }
-        }
-
-        void ExecuteEvent(uint32 eventId) override
-        {
-            switch (eventId)
-            {
-            case EVENT_INFERNO:
-            {
-                DoCastAOE(SPELL_INFERNO);
-                events.Repeat(21s, 26s);
-                break;
-            }
-            case EVENT_IGNITE_MANA:
-            {
-                if (Unit* target = SelectRandomPlayerOrNPCBot(100.0f))
-                    DoCast(target, SPELL_IGNITE_MANA);
-
-                events.Repeat(27s, 32s);
-                break;
-            }
-            case EVENT_LIVING_BOMB:
-            {
-                if (Unit* target = SelectRandomPlayerOrNPCBot(100.0f))
-                    DoCast(target, SPELL_LIVING_BOMB);
-
-                events.Repeat(11s, 16s);
-                break;
-            }
-            }
-        }
-
-    private:
-        bool armageddonCasted;
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
-    {
-        return GetMoltenCoreAI<boss_baron_geddonAI>(creature);
+        _Reset();
+        armageddonCasted = false;
     }
+
+    void JustEngagedWith(Unit* /*attacker*/) override
+    {
+        _JustEngagedWith();
+        events.ScheduleEvent(EVENT_INFERNO, 13s, 15s);
+        events.ScheduleEvent(EVENT_IGNITE_MANA, 7s, 19s);
+        events.ScheduleEvent(EVENT_LIVING_BOMB, 11s, 16s);
+    }
+
+    //Dinkle custom start
+    Unit* SelectRandomPlayerOrNPCBot(float range, uint32 excludeAura = 0)
+    {
+        std::list<Unit*> nearby;
+        Acore::AnyUnitInObjectRangeCheck check(me, range);
+        Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, nearby, check);
+        Cell::VisitObjects(me, searcher, range);
+
+        std::vector<Unit*> pool;
+        pool.reserve(nearby.size());
+
+        for (Unit* u : nearby)
+        {
+            if (!u || !u->IsAlive())
+                continue;
+            if (!u->IsHostileTo(me))
+                continue;
+            if (!(u->IsPlayer() || IsNPCBot(u)))
+                continue;
+            if (excludeAura && u->HasAura(excludeAura))
+                continue;
+
+            pool.push_back(u);
+        }
+
+        if (pool.empty())
+            return nullptr;
+
+        return pool[urand(0u, uint32(pool.size() - 1))];
+    }
+    //Dinkle custom end
+
+    void DamageTaken(Unit* /*attacker*/, uint32& damage, DamageEffectType /*dmgType*/, SpellSchoolMask /*school*/) override
+    {
+        // If boss is below 2% hp - cast Armageddon
+        if (!armageddonCasted && damage < me->GetHealth() && me->HealthBelowPctDamaged(2, damage))
+        {
+            me->RemoveAurasDueToSpell(SPELL_INFERNO);
+            me->StopMoving();
+            if (me->CastSpell(me, SPELL_ARMAGEDDON, TRIGGERED_FULL_MASK) == SPELL_CAST_OK)
+            {
+                Talk(EMOTE_SERVICE);
+                armageddonCasted = true;
+            }
+        }
+    }
+
+    void ExecuteEvent(uint32 eventId) override
+    {
+        switch (eventId)
+        {
+        case EVENT_INFERNO:
+        {
+            DoCastAOE(SPELL_INFERNO);
+            events.Repeat(21s, 26s);
+            break;
+        }
+        case EVENT_IGNITE_MANA:
+        {
+            //Dinkle custom start
+            if (Unit* target = SelectRandomPlayerOrNPCBot(100.0f, SPELL_IGNITE_MANA))
+                DoCast(target, SPELL_IGNITE_MANA);
+            //Dinkle custom end
+
+            events.Repeat(27s, 32s);
+            break;
+        }
+        case EVENT_LIVING_BOMB:
+        {
+            //Dinkle custom start
+            if (Unit* target = SelectRandomPlayerOrNPCBot(100.0f))
+                DoCast(target, SPELL_LIVING_BOMB);
+            //Dinkle custom end
+
+            events.Repeat(11s, 16s);
+            break;
+        }
+        }
+    }
+
+private:
+    bool armageddonCasted;
 };
 
 class spell_geddon_inferno_aura : public AuraScript
@@ -189,6 +191,7 @@ class spell_geddon_inferno_aura : public AuraScript
                     v = 0.01f; // clamp to a sane minimum
                 return v;
             }();
+
         return sMult;
     }
 
@@ -209,9 +212,7 @@ class spell_geddon_inferno_aura : public AuraScript
     void HandleAfterRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         if (Creature* pCreatureTarget = GetTarget()->ToCreature())
-        {
             pCreatureTarget->SetReactState(REACT_AGGRESSIVE);
-        }
     }
 
     void PeriodicTick(AuraEffect const* aurEff)
@@ -224,12 +225,21 @@ class spell_geddon_inferno_aura : public AuraScript
             switch (aurEff->GetTickNumber())
             {
             case 3:
-            case 4: tickMult = 2;  break;
+            case 4:
+                tickMult = 2;
+                break;
             case 5:
-            case 6: tickMult = 4;  break;
-            case 7: tickMult = 6;  break;
-            case 8: tickMult = 10; break;
-            default: break;
+            case 6:
+                tickMult = 4;
+                break;
+            case 7:
+                tickMult = 6;
+                break;
+            case 8:
+                tickMult = 10;
+                break;
+            default:
+                break;
             }
 
             float const cfg = GetInfernoDamageMult();
@@ -271,9 +281,7 @@ class spell_geddon_armageddon_aura : public AuraScript
     void HandleAfterRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         if (Creature* pCreatureTarget = GetTarget()->ToCreature())
-        {
             pCreatureTarget->SetReactState(REACT_AGGRESSIVE);
-        }
     }
 
     void Register() override
@@ -283,6 +291,7 @@ class spell_geddon_armageddon_aura : public AuraScript
     }
 };
 
+//Dinkle custom start
 // ---------------------- Living Bomb (NPCBots) ----------------------
 // When Living Bomb is applied to an NPCBot:
 //  - The bot says a line.
@@ -297,15 +306,20 @@ class spell_geddon_living_bomb_aura : public AuraScript
     static constexpr float SAFE_CLEAR_RADIUS = 25.0f;
     static constexpr float SEARCH_RADIUS_MAX = 120.0f;
 
-    bool Validate(SpellInfo const* /*spell*/) override { return true; }
+    bool Validate(SpellInfo const* /*spell*/) override
+    {
+        return true;
+    }
 
     void CollectNearbyUnits(Unit* center, std::vector<Unit*>& out)
     {
         out.clear();
+
         std::list<Unit*> nearby;
         Acore::AnyUnitInObjectRangeCheck chk(center, SEARCH_RADIUS_MAX);
         Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> srch(center, nearby, chk);
         Cell::VisitObjects(center, srch, SEARCH_RADIUS_MAX);
+
         for (Unit* u : nearby)
             if (u && u->IsAlive())
                 out.push_back(u);
@@ -313,7 +327,8 @@ class spell_geddon_living_bomb_aura : public AuraScript
 
     void MovePetIfOwned(Unit* owner, Position const& dest)
     {
-        if (!owner) return;
+        if (!owner)
+            return;
 
         ObjectGuid ownerGuid = owner->GetGUID();
 
@@ -324,8 +339,10 @@ class spell_geddon_living_bomb_aura : public AuraScript
 
         for (Unit* u : nearby)
         {
-            if (!u->IsAlive()) continue;
-            if (u->GetOwnerGUID() != ownerGuid) continue;
+            if (!u || !u->IsAlive())
+                continue;
+            if (u->GetOwnerGUID() != ownerGuid)
+                continue;
 
             if (Creature* c = u->ToCreature())
             {
@@ -342,13 +359,18 @@ class spell_geddon_living_bomb_aura : public AuraScript
 
         for (Unit* u : crowd)
         {
-            if (u == carrier) continue;
-            if (u->GetOwnerGUID() == ownerGuid) continue;
+            if (!u)
+                continue;
+            if (u == carrier)
+                continue;
+            if (u->GetOwnerGUID() == ownerGuid)
+                continue;
 
             float d2d = u->GetDistance2d(p.GetPositionX(), p.GetPositionY());
             if (d2d < SAFE_CLEAR_RADIUS)
                 return false;
         }
+
         return true;
     }
 
@@ -359,18 +381,20 @@ class spell_geddon_living_bomb_aura : public AuraScript
         float dy = cand.GetPositionY();
         float dz = cand.GetPositionZ();
 
-        if (!map->CanReachPositionAndGetValidCoords(carrier, dx, dy, dz, /*failOnCollision*/true, /*failOnSlopes*/true)) // Map.h
-            return false;                                                                                                 // :contentReference[oaicite:3]{index=3}
+        if (!map->CanReachPositionAndGetValidCoords(carrier, dx, dy, dz, true, true))
+            return false;
 
         cand.Relocate(dx, dy, dz, cand.GetOrientation());
 
         if (!carrier->IsWithinLOS(dx, dy, dz))
             return false;
 
-        if (!map->isInLineOfSight(carrier->GetPositionX(), carrier->GetPositionY(), carrier->GetPositionZ(),
-            dx, dy, dz, carrier->GetPhaseMask(),
+        if (!map->isInLineOfSight(
+            carrier->GetPositionX(), carrier->GetPositionY(), carrier->GetPositionZ(),
+            dx, dy, dz,
+            carrier->GetPhaseMask(),
             LineOfSightChecks::LINEOFSIGHT_ALL_CHECKS,
-            VMAP::ModelIgnoreFlags::M2))                                                          // :contentReference[oaicite:4]{index=4}
+            VMAP::ModelIgnoreFlags::M2))
         {
             return false;
         }
@@ -388,19 +412,21 @@ class spell_geddon_living_bomb_aura : public AuraScript
         float bz = carrier->GetPositionZ();
 
         static constexpr float radii[] = { 30.f, 35.f, 40.f, 45.f, 50.f, 55.f, 60.f, 65.f, 70.f };
+
         for (float r : radii)
         {
-            uint32 const N = 24; 
+            uint32 const N = 24;
             for (uint32 i = 0; i < N; ++i)
             {
-                float ang = float(M_PI) * 2.f * (float(i) / float(N));
+                float ang = float(M_PI) * 2.0f * (float(i) / float(N));
                 float nx = bx + r * std::cos(ang);
                 float ny = by + r * std::sin(ang);
                 float nz = bz;
 
                 carrier->UpdateAllowedPositionZ(nx, ny, nz);
 
-                Position cand; cand.Relocate(nx, ny, nz, ang);
+                Position cand;
+                cand.Relocate(nx, ny, nz, ang);
 
                 if (IsCandidateClear(cand, carrier, crowd) && IsPathableAndInLOS(carrier, cand))
                 {
@@ -409,11 +435,15 @@ class spell_geddon_living_bomb_aura : public AuraScript
                 }
             }
         }
+
         return false;
     }
 
     void SafeMove(Unit* carrier, Position const& dest)
     {
+        if (!carrier)
+            return;
+
         if (carrier->IsPlayer())
             return;
 
@@ -463,9 +493,7 @@ class spell_geddon_living_bomb_aura : public AuraScript
             if (c->IsNPCBot())
             {
                 if (bot_ai* ai = c->GetBotAI())
-                {
                     ai->SetBotCommandState(BOT_COMMAND_FOLLOW);
-                }
             }
         }
     }
@@ -476,12 +504,14 @@ class spell_geddon_living_bomb_aura : public AuraScript
         OnEffectRemove += AuraEffectRemoveFn(spell_geddon_living_bomb_aura::OnRemove, EFFECT_0, SPELL_AURA_ANY, AURA_EFFECT_HANDLE_REAL);
     }
 };
+//Dinkle custom end
 
 void AddSC_boss_baron_geddon()
 {
-    new boss_baron_geddon();
+    RegisterMoltenCoreCreatureAI(boss_baron_geddon);
 
     RegisterSpellScript(spell_geddon_inferno_aura);
     RegisterSpellScript(spell_geddon_armageddon_aura);
+    //Dinkle custom
     RegisterSpellScript(spell_geddon_living_bomb_aura);
 }

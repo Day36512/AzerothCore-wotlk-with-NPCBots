@@ -25,7 +25,7 @@
 #include "UnitAI.h"
 
 //npcbot
-#include "botmgr.h"
+#include "botconfig.h"
 //end npcbot
 
 namespace

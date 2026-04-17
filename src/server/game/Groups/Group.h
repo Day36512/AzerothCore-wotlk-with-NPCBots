@@ -309,6 +309,7 @@ public:
     void CountTheRoll(Rolls::iterator roll, Map* allowedMap);
     bool CountRollVote(ObjectGuid playerGUID, ObjectGuid Guid, uint8 Choise);
     void EndRoll(Loot* loot, Map* allowedMap);
+    void RemovePlayerFromRolls(ObjectGuid guid);
 
     // related to disenchant rolls
     void ResetMaxEnchantingLevel();

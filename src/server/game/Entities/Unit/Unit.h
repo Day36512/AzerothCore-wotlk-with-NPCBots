@@ -1297,8 +1297,11 @@ public:
     void SetCreator(Unit* creator);
     Unit* GetCreator() const { return m_creator; }
     Unit* m_creator = nullptr;
-    //end npcbot
 
+    void SetLastSpellGoTime(TimePoint time_point) { last_spell_go_time_point = time_point; }
+    TimePoint GetLastSpellGoTime() const { return last_spell_go_time_point; }
+    TimePoint last_spell_go_time_point{};
+    //end npcbot
 
     [[nodiscard]] uint32 GetMeleeCritDamageReduction(uint32 damage) const { return GetCombatRatingDamageReduction(CR_CRIT_TAKEN_MELEE, 2.2f, 33.0f, damage); }
     [[nodiscard]] uint32 GetRangedCritDamageReduction(uint32 damage) const { return GetCombatRatingDamageReduction(CR_CRIT_TAKEN_RANGED, 2.2f, 33.0f, damage); }
@@ -1437,7 +1440,7 @@ public:
     void RemoveAurasWithInterruptFlags(uint32 flag, uint32 except = 0, bool isAutoshot = false);
     void RemoveAurasWithAttribute(uint32 flags);
     void RemoveAurasWithFamily(SpellFamilyNames family, uint32 familyFlag1, uint32 familyFlag2, uint32 familyFlag3, ObjectGuid casterGUID);
-    void RemoveAurasWithMechanic(uint32 mechanic_mask, AuraRemoveMode removemode = AURA_REMOVE_BY_DEFAULT, uint32 except = 0);
+    void RemoveAurasWithMechanic(uint64 mechanic_mask, AuraRemoveMode removemode = AURA_REMOVE_BY_DEFAULT, uint32 except = 0);
     void RemoveMovementImpairingAuras(bool withRoot);
     void RemoveAurasByShapeShift();
 
@@ -1529,7 +1532,7 @@ public:
     bool HasNegativeAuraWithInterruptFlag(uint32 flag, ObjectGuid guid = ObjectGuid::Empty);
     [[nodiscard]] bool HasVisibleAuraType(AuraType auraType) const;
     bool HasNegativeAuraWithAttribute(uint32 flag, ObjectGuid guid = ObjectGuid::Empty);
-    [[nodiscard]] bool HasAuraWithMechanic(uint32 mechanicMask) const;
+    [[nodiscard]] bool HasAuraWithMechanic(uint64 mechanicMask) const;
 
     [[nodiscard]] bool HasAuraTypeWithFamilyFlags(AuraType auraType, uint32 familyName, uint32 familyFlags) const;
 
@@ -1665,22 +1668,33 @@ public:
 
     // Spells immunities
     void ApplySpellImmune(uint32 spellId, uint32 op, uint32 type, bool apply, SpellImmuneBlockType blockType = SPELL_BLOCK_TYPE_ALL);
-    void ApplySpellDispelImmunity(SpellInfo const* spellProto, DispelType type, bool apply);
     //npcbot
     /*
     virtual bool IsImmunedToSpell(SpellInfo const* spellInfo, Spell const* spell = nullptr);
     */
     virtual bool IsImmunedToSpell(SpellInfo const* spellInfo, Spell const* spell = nullptr) const;
     //end npcbot
-    [[nodiscard]] bool IsImmunedToDamage(SpellSchoolMask meleeSchoolMask) const;
-    [[nodiscard]] bool IsImmunedToDamage(SpellInfo const* spellInfo) const;
-    [[nodiscard]] bool IsImmunedToDamage(Spell const* spell) const;
-    [[nodiscard]] bool IsImmunedToSchool(SpellSchoolMask meleeSchoolMask) const;
+    //npcbot
+    /*
+    bool IsImmunedToSpell(SpellInfo const* spellInfo, uint32 effectMask, Unit const* caster = nullptr);
+    */
+    bool IsImmunedToSpell(SpellInfo const* spellInfo, uint32 effectMask, Unit const* caster = nullptr) const;
+    //end npcbot
+    bool IgnoresSchoolImmunityFromFriendlyCaster(Unit const* caster, uint32 immunityAuraId, SpellInfo const* immunitySpellInfo) const;
+    [[nodiscard]] bool IsImmunedToDamage(SpellSchoolMask schoolMask) const;
+    [[nodiscard]] bool IsImmunedToDamage(Unit const* caster, SpellInfo const* spellInfo) const;
+    [[nodiscard]] bool IsImmunedToSchool(SpellSchoolMask schoolMask) const;
+
+    static bool IsImmuneMaskFully(SpellSchoolMask immuneMask, SpellSchoolMask schoolMask) { return (immuneMask & schoolMask) == schoolMask; }
+
+    [[nodiscard]] uint32 GetSchoolImmunityMask() const;
+    [[nodiscard]] uint32 GetDamageImmunityMask() const;
+
     [[nodiscard]] bool IsImmunedToSchool(SpellInfo const* spellInfo) const;
     [[nodiscard]] bool IsImmunedToSchool(Spell const* spell) const;
-    [[nodiscard]] bool IsImmunedToDamageOrSchool(SpellSchoolMask meleeSchoolMask) const;
-    bool IsImmunedToDamageOrSchool(SpellInfo const* spellInfo) const;
-    virtual bool IsImmunedToSpellEffect(SpellInfo const* spellInfo, uint32 index) const;
+    [[nodiscard]] bool IsImmunedToDamageOrSchool(SpellSchoolMask schoolMask) const;
+    [[nodiscard]] bool IsImmunedToAuraPeriodicTick(Unit const* caster, SpellInfo const* spellInfo) const;
+    virtual bool IsImmunedToSpellEffect(SpellInfo const* spellInfo, uint32 index, Unit const* caster = nullptr) const;
 
     // Critic chances
     bool isBlockCritical();
@@ -2129,7 +2143,8 @@ public:
 
     float m_modAttackSpeedPct[3];
 
-    SpellImmuneList m_spellImmune[MAX_SPELL_IMMUNITY];
+    typedef std::unordered_multimap<uint32 /*type*/, uint32 /*spellId*/> SpellImmuneContainer;
+    SpellImmuneContainer m_spellImmune[MAX_SPELL_IMMUNITY];
     uint32 m_lastSanctuaryTime;
 
     // pet auras

@@ -521,6 +521,7 @@ struct AcoreString
 typedef std::map<ObjectGuid, ObjectGuid> LinkedRespawnContainer;
 typedef std::unordered_map<ObjectGuid::LowType, CreatureData> CreatureDataContainer;
 typedef std::unordered_map<ObjectGuid::LowType, GameObjectData> GameObjectDataContainer;
+typedef std::unordered_map<uint32, SpawnGroupTemplateData> SpawnGroupDataContainer;
 typedef std::map<TempSummonGroupKey, std::vector<TempSummonData> > TempSummonDataContainer;
 typedef std::map<TempSummonGroupKey, std::vector<GameObjectSummonData> > GameObjectSummonDataContainer;
 typedef std::unordered_map<uint32, CreatureLocale> CreatureLocaleContainer;
@@ -826,6 +827,7 @@ public:
     void GetPlayerLevelInfo(uint32 race, uint32 class_, uint8 level, PlayerLevelInfo* info) const;
 
     uint32 GetNearestTaxiNode(float x, float y, float z, uint32 mapid, uint32 teamId);
+    uint32 GetNearestTaxiNode(WorldLocation const& loc, uint32 teamId);
     void GetTaxiPath(uint32 source, uint32 destination, uint32& path, uint32& cost);
     uint32 GetTaxiMountDisplayId(uint32 id, TeamId teamId, bool allowed_alt_team = false);
 
@@ -1285,6 +1287,14 @@ public:
         if (itr == _gameObjectDataStore.end()) return nullptr;
             return &itr->second;
     }
+    [[nodiscard]] SpawnData const* GetSpawnData(SpawnObjectType type, ObjectGuid::LowType spawnId) const;
+
+    [[nodiscard]] SpawnGroupTemplateData const* GetSpawnGroupData(uint32 groupId) const
+    {
+        auto itr = _spawnGroupDataStore.find(groupId);
+        return itr != _spawnGroupDataStore.end() ? &itr->second : nullptr;
+    }
+
     [[nodiscard]] CreatureLocale const* GetCreatureLocale(uint32 entry) const
     {
         CreatureLocaleContainer::const_iterator itr = _creatureLocaleStore.find(entry);
@@ -1437,6 +1447,7 @@ public:
     CreatureOutfitContainer const& GetCreatureOutfitMap() const { return _creatureOutfitStore; }
 
     Trainer::Trainer* GetTrainer(uint32 creatureId);
+    std::vector<Trainer::Trainer const*> const& GetClassTrainers(uint8 classId) const { return _classTrainers.at(classId); }
 
     [[nodiscard]] VendorItemData const* GetNpcVendorItemList(uint32 entry) const
     {
@@ -1662,6 +1673,7 @@ private:
     LinkedRespawnContainer _linkedRespawnStore;
     CreatureLocaleContainer _creatureLocaleStore;
     GameObjectDataContainer _gameObjectDataStore;
+    SpawnGroupDataContainer _spawnGroupDataStore;
     GameObjectLocaleContainer _gameObjectLocaleStore;
     GameObjectTemplateContainer _gameObjectTemplateStore;
     GameObjectTemplateAddonContainer _gameObjectTemplateAddonStore;
@@ -1687,6 +1699,7 @@ private:
 
     CacheVendorItemContainer _cacheVendorItemStore;
     std::unordered_map<uint32, Trainer::Trainer> _trainers;
+    std::unordered_map<uint8, std::vector<Trainer::Trainer const*>> _classTrainers;
     std::unordered_map<uint32, uint32> _creatureDefaultTrainers;
 
     std::set<uint32> _difficultyEntries[MAX_DIFFICULTY - 1]; // already loaded difficulty 1 value in creatures, used in CheckCreatureTemplate

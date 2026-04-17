@@ -25,6 +25,7 @@
 #include "SpellAuraEffects.h"
 
 //npcbot
+#include "botconfig.h"
 #include "botmgr.h"
 //end npcbot
 
@@ -122,11 +123,14 @@ void KillRewarder::_InitGroupData()
                 }
 
         //npcbot
-        if (BotMgr::GetNpcBotXpReductionBlizzlikeEnabled())
+        _bots_count_xp = 0;
+        _bots_count_honor = 0;
+        if (BotCfg::IsNpcBotXpReductionEnabled() || BotCfg::IsNpcBotHonorReductionEnabled())
         {
-            for (GroupReference* itr = _group->GetFirstMember(); itr != nullptr; itr = itr->next())
+            const float reward_dist_sq = std::pow(sWorld->getFloatConfig(CONFIG_GROUP_XP_DISTANCE), 2.f);
+            for (GroupReference const* itr = _group->GetFirstMember(); itr != nullptr; itr = itr->next())
             {
-                Player* member = itr->GetSource();
+                Player const* member = itr->GetSource();
                 if (!member || !member->IsInMap(_victim) || !member->HaveBot())
                     continue;
 
@@ -134,15 +138,23 @@ void KillRewarder::_InitGroupData()
                 for (auto const& kv : *botMap)
                 {
                     Creature const* bot = kv.second;
-                    if (bot && bot->IsAlive() && bot->IsInMap(_victim) && (_group->IsMember(kv.first) || !BotMgr::GetNpcBotXpReductionBlizzlikeGroupOnly()) &&
-                        (member->GetMap()->IsDungeon() || _victim->GetDistance(bot) <= sWorld->getFloatConfig(CONFIG_GROUP_XP_DISTANCE)))
+                    if (bot && bot->IsAlive() && bot->IsInMap(_victim) &&
+                        (member->GetMap()->IsDungeon() || _victim->GetExactDistSq(bot) <= reward_dist_sq))
                     {
-                        const uint8 lvl = bot->GetLevel();
-                        ++_count;
-                        _sumLevel += lvl;
-                        _aliveSumLevel += lvl;
-                        if (_maxLevel < lvl)
-                            _maxLevel = lvl;
+                        const bool add_for_xp = BotCfg::IsNpcBotXpReductionEnabled() && (!BotCfg::IsNpcBotXpReductionGroupOnly() || _group->IsMember(kv.first));
+                        const bool add_for_honor = BotCfg::IsNpcBotHonorReductionEnabled() && (!BotCfg::IsNpcBotHonorReductionGroupOnly() || _group->IsMember(kv.first));
+                        if (add_for_xp || add_for_honor)
+                        {
+                            if (add_for_xp)
+                                ++_bots_count_xp;
+                            if (add_for_honor)
+                                ++_bots_count_honor;
+                            const uint8 lvl = bot->GetLevel();
+                            _sumLevel += lvl;
+                            _aliveSumLevel += lvl;
+                            if (_maxLevel < lvl)
+                                _maxLevel = lvl;
+                        }
                     }
                 }
             }
@@ -177,6 +189,14 @@ void KillRewarder::_InitXP(Player* player)
 void KillRewarder::_RewardHonor(Player* player)
 {
     // Rewarded player must be alive.
+    //npcbot
+    if (BotCfg::IsNpcBotHonorReductionEnabled())
+    {
+        if (player->IsAlive())
+            player->RewardHonor(_victim, _count + _bots_count_honor, -1, true);
+    }
+    else
+    //end npcbot
     if (player->IsAlive())
         player->RewardHonor(_victim, _count, -1);
 }
@@ -203,22 +223,11 @@ void KillRewarder::_RewardXP(Player* player, float rate)
         xp *= player->GetTotalAuraMultiplier(SPELL_AURA_MOD_XP_PCT);
 
         //npcbot 4.2.2.1. Apply NpcBot XP reduction
-        uint8 bots_count = 0;
-        if (_group)
+        const uint8 xp_reduction = BotCfg::GetNpcBotXpReductionExtraAmount();
+        const uint8 xp_reduction_start = BotCfg::GetNpcBotXpReductionExtraStartingNumber();
+        if (xp_reduction_start > 0 && xp_reduction > 0 && _bots_count_xp >= xp_reduction_start)
         {
-            for (GroupReference const* itr = _group->GetFirstMember(); itr != nullptr; itr = itr->next())
-            {
-                if (Player const* gPlayer = itr->GetSource())
-                    bots_count = std::max<uint8>(bots_count, gPlayer->GetNpcBotsCount());
-            }
-        }
-        else
-            bots_count = player->GetNpcBotsCount();
-        uint8 xp_reduction = BotMgr::GetNpcBotXpReduction();
-        uint8 xp_reduction_start = BotMgr::GetNpcBotXpReductionStartingNumber();
-        if (xp_reduction_start > 0 && xp_reduction > 0 && bots_count >= xp_reduction_start)
-        {
-            uint32 ratePct = std::max<int32>(100 - ((bots_count - (xp_reduction_start - 1)) * xp_reduction), 10);
+            const uint32 ratePct = static_cast<uint32>(std::max<int32>(100 - ((_bots_count_xp - (xp_reduction_start - 1)) * xp_reduction), 10));
             xp = xp * ratePct / 100;
         }
         //end npcbot
@@ -301,6 +310,11 @@ void KillRewarder::_RewardGroup()
             {
                 // 3.1.2. Alter group rate if group is in raid (not for battlegrounds).
                 const bool isRaid = !_isPvP && sMapStore.LookupEntry(_killer->GetMapId())->IsRaid() && _group->isRaidGroup();
+                //npcbot
+                if (_bots_count_xp)
+                    _groupRate = Acore::XP::xp_in_group_rate(_count + _bots_count_xp, isRaid);
+                else
+                //end npcbot
                 _groupRate = Acore::XP::xp_in_group_rate(_count, isRaid);
             }
 

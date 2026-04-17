@@ -1,5 +1,5 @@
-#ifndef _BOTCOMMON_H
-#define _BOTCOMMON_H
+#ifndef BOTCOMMON_H
+#define BOTCOMMON_H
 
 #include "botdefine.h"
 #include "ObjectGuid.h"
@@ -14,15 +14,20 @@ NpcBot System by Trickerer (onlysuffering@gmail.com)
 Original patch from: LordPsyan https://bitbucket.org/lordpsyan/trinitycore-patches/src/3b8b9072280e/Individual/11185-BOTS-NPCBots.patch
 */
 
-constexpr std::size_t MAX_BOT_LOG_PARAMS = 5;
-constexpr std::size_t MAX_BOT_LOG_PARAM_LENGTH = 50;
-constexpr std::size_t MAX_BOT_ITEM_SET_NAME_LENGTH = 30;
-constexpr uint8 BOT_GOSSIP_MAX_ITEMS = 32; // Client limitation 3.3.5 code confirmed
+#ifdef AC_COMPILER
+# define TARGET_ICONS_COUNT TARGETICONCOUNT
+#endif
+
+inline constexpr std::size_t MAX_BOT_LOG_PARAMS = 5;
+inline constexpr std::size_t MAX_BOT_LOG_PARAM_LENGTH = 50;
+inline constexpr std::size_t MAX_BOT_ITEM_SET_NAME_LENGTH = 30;
+inline constexpr uint8 BOT_GOSSIP_MAX_ITEMS = 32; // Client limitation 3.3.5 code confirmed
+
+inline constexpr std::size_t BRACKETS_COUNT = DEFAULT_MAX_LEVEL / 10 + 1; //0-9, 10-19, 20-29, 30-39, 40-49, 50-59, 60-69, 70-79, 80-83
 
 struct Position;
 
-typedef std::vector<std::pair<Position, float> > AoeSpotsVec;
-typedef std::vector<Position> AoeSafeSpotsVec;
+using AoeSpotsVec = std::vector<std::pair<Position, float> >;
 
 enum BotCommonValues
 {
@@ -231,26 +236,26 @@ enum BotClasses : uint8
     BOT_CLASS_EX_START                  = BOT_CLASS_BM
 };
 
-constexpr uint32 ALL_BOT_CLASSES_MASK =
+inline constexpr uint32 ALL_BOT_CLASSES_MASK =
     ((1 << BOT_CLASS_WARRIOR)|(1 << BOT_CLASS_PALADIN)|(1 << BOT_CLASS_HUNTER)|(1 << BOT_CLASS_ROGUE)|(1 << BOT_CLASS_PRIEST)|
     (1 << BOT_CLASS_DEATH_KNIGHT)|(1 << BOT_CLASS_SHAMAN)|(1 << BOT_CLASS_MAGE)|(1 << BOT_CLASS_WARLOCK)|(1 << BOT_CLASS_DRUID)|
     (1 << BOT_CLASS_BM)|(1 << BOT_CLASS_SPHYNX)|(1 << BOT_CLASS_ARCHMAGE)|(1 << BOT_CLASS_DREADLORD)|(1 << BOT_CLASS_SPELLBREAKER)|
     (1 << BOT_CLASS_DARK_RANGER)|(1 << BOT_CLASS_NECROMANCER)|(1 << BOT_CLASS_SEA_WITCH)|(1 << BOT_CLASS_CRYPT_LORD));
 
-constexpr uint32 MELEE_BOT_CLASSES_MASK =
+inline constexpr uint32 MELEE_BOT_CLASSES_MASK =
     ((1 << BOT_CLASS_WARRIOR)|(1 << BOT_CLASS_PALADIN)|(1 << BOT_CLASS_ROGUE)|(1 << BOT_CLASS_DEATH_KNIGHT)|
         (1 << BOT_CLASS_BM)|(1 << BOT_CLASS_DREADLORD)|(1 << BOT_CLASS_SPELLBREAKER)|(1 << BOT_CLASS_CRYPT_LORD));
-constexpr uint32 TANKING_BOT_CLASSES_MASK =
+inline constexpr uint32 TANKING_BOT_CLASSES_MASK =
     ((1 << BOT_CLASS_WARRIOR)|(1 << BOT_CLASS_PALADIN)|(1 << BOT_CLASS_DEATH_KNIGHT)|(1 << BOT_CLASS_SPHYNX)|(1 << BOT_CLASS_SPELLBREAKER)|(1 << BOT_CLASS_CRYPT_LORD));
-constexpr uint32 BLOCKING_BOT_CLASSES_MASK =
+inline constexpr uint32 BLOCKING_BOT_CLASSES_MASK =
     ((1 << BOT_CLASS_WARRIOR)|(1 << BOT_CLASS_PALADIN)|(1 << CLASS_SHAMAN)|(1 << BOT_CLASS_SPELLBREAKER));
-constexpr uint32 CASTING_BOT_CLASSES_MASK =
+inline constexpr uint32 CASTING_BOT_CLASSES_MASK =
     ((1 << BOT_CLASS_PALADIN)|(1 << BOT_CLASS_PRIEST)|(1 << BOT_CLASS_SHAMAN)|(1 << BOT_CLASS_MAGE)|(1 << BOT_CLASS_WARLOCK)|(1 << BOT_CLASS_DRUID)|(1 << BOT_CLASS_SPHYNX)|
         (1 << BOT_CLASS_ARCHMAGE)|(1 << BOT_CLASS_DREADLORD)|(1 << BOT_CLASS_SPELLBREAKER)|(1 << BOT_CLASS_DARK_RANGER)|(1 << BOT_CLASS_NECROMANCER)|(1 << BOT_CLASS_SEA_WITCH));
-constexpr uint32 HEALING_BOT_CLASSES_MASK =
+inline constexpr uint32 HEALING_BOT_CLASSES_MASK =
     ((1 << BOT_CLASS_PALADIN)|(1 << BOT_CLASS_PRIEST)|(1 << BOT_CLASS_SHAMAN)|(1 << BOT_CLASS_DRUID)|(1 << BOT_CLASS_SPHYNX));
-constexpr uint32 HUMANOID_BOT_CLASSES_MASK = (ALL_BOT_CLASSES_MASK & ~(1 << BOT_CLASS_SPHYNX));
-constexpr uint32 HERO_BOT_CLASSES_MASK =
+inline constexpr uint32 HUMANOID_BOT_CLASSES_MASK = (ALL_BOT_CLASSES_MASK & ~(1 << BOT_CLASS_SPHYNX));
+inline constexpr uint32 HERO_BOT_CLASSES_MASK =
     ((1 << BOT_CLASS_BM)|(1 << BOT_CLASS_ARCHMAGE)|(1 << BOT_CLASS_DREADLORD)|(1 << BOT_CLASS_DARK_RANGER)|(1 << BOT_CLASS_SEA_WITCH)|(1 << BOT_CLASS_CRYPT_LORD));
 
 enum BotStances
@@ -343,8 +348,12 @@ enum BotTalentSpecs
 
     BOT_SPEC_BEGIN                      = BOT_SPEC_WARRIOR_ARMS,
     BOT_SPEC_END                        = BOT_SPEC_DEFAULT
-
 };
+
+inline constexpr uint32 BOT_SPEC_MASK_MELEE =
+    ((1 << BOT_SPEC_WARRIOR_ARMS)|(1 << BOT_SPEC_WARRIOR_FURY)|(1 << BOT_SPEC_WARRIOR_PROTECTION)|(1 << BOT_SPEC_PALADIN_PROTECTION)|(1 << BOT_SPEC_PALADIN_RETRIBUTION)|
+    (1 << BOT_SPEC_ROGUE_ASSASINATION)|(1 << BOT_SPEC_ROGUE_COMBAT)|(1 << BOT_SPEC_ROGUE_SUBTLETY)|(1 << BOT_SPEC_DK_BLOOD)|(1 << BOT_SPEC_DK_FROST)|(1 << BOT_SPEC_DK_UNHOLY)|
+    (1 << BOT_SPEC_SHAMAN_ENHANCEMENT)|(1 << BOT_SPEC_DRUID_FERAL));
 
 enum BotPetTypes
 {
@@ -491,11 +500,16 @@ enum BotEquipSlot : uint8
     BOT_SLOT_TRINKET1           = 15,
     BOT_SLOT_TRINKET2           = 16,
     BOT_SLOT_NECK               = 17,
-    BOT_INVENTORY_SIZE
+    BOT_INVENTORY_SIZE,
+
+    BOT_FIRST_NON_MELEE_SLOT   = BOT_SLOT_RANGED,
+    BOT_FIRST_NON_WEAPON_SLOT   = BOT_SLOT_RANGED + 1,
 };
 
-constexpr uint8 BOT_TRANSMOG_INVENTORY_SIZE = 13; // BOT_SLOT_BODY + 1
-constexpr uint8 MAX_BOT_EQUIPMENT_SETS = BOT_GOSSIP_MAX_ITEMS - 2;
+inline constexpr uint32 BOT_SLOT_MASK_FINGER1_OR_TRINKET1 = (1<<BOT_SLOT_FINGER1)|(1<<BOT_SLOT_TRINKET1);
+
+inline constexpr uint8 BOT_TRANSMOG_INVENTORY_SIZE = 13; // BOT_SLOT_BODY + 1
+inline constexpr uint8 MAX_BOT_EQUIPMENT_SETS = BOT_GOSSIP_MAX_ITEMS - 2;
 
 enum class BotEquipResult : uint8
 {
@@ -623,19 +637,31 @@ enum BotAwaitStates
     BOT_AWAIT_SEND                      = 0x01
 };
 
-constexpr size_t MAX_SEND_POINTS = 5u;
+inline constexpr std::size_t MAX_SEND_POINTS = 5u;
 
 //Only non-persistent types are allowed
-enum BotOrderTypes
+enum class BotActionTypes
 {
-    BOT_ORDER_NONE          = 0,
-    BOT_ORDER_SPELLCAST     = 1,
-    BOT_ORDER_PULL          = 2,
+    BOT_ACTION_SPELLCAST,
+    BOT_ACTION_PULL,
 
-    BOT_ORDER_END
+    BOT_ACTIONS_COUNT
 };
-constexpr bool DEBUG_BOT_ORDERS = false;
-constexpr size_t MAX_BOT_ORDERS_QUEUE_SIZE = 3u;
+
+inline constexpr bool DEBUG_BOT_ACTIONS = false;
+inline constexpr std::size_t MAX_BOT_ORDERS_QUEUE_SIZE = 3u;
+inline constexpr std::size_t MAX_BOT_ACTIONS_QUEUE_SIZE = 5u;
+
+inline constexpr std::pair<uint32, uint32> BOT_ACTION_COUNTERSPELL_DELAY_RANGE{ 150, 900 };
+static_assert(BOT_ACTION_COUNTERSPELL_DELAY_RANGE.first < BOT_ACTION_COUNTERSPELL_DELAY_RANGE.second);
+inline constexpr uint32 BOT_ACTION_MAX_AFTERCAST_INTERRUPT_TIME_MS = 300;
+inline constexpr uint32 BOT_ACTION_COUNTERCAST_TIME_WINDOW_EXTENSION_MS = 800;
+
+inline constexpr std::array BOT_ACTION_RETRY_DELAYS{
+    static_cast<uint32>(100),
+    static_cast<uint32>(200)
+};
+static_assert(std::size(BOT_ACTION_RETRY_DELAYS) == static_cast<std::size_t>(BotActionTypes::BOT_ACTIONS_COUNT));
 
 enum BotVehicleStrats
 {
@@ -650,6 +676,20 @@ enum BotVehicleStrats
     BOT_VEH_STRAT_ULDUAR_CHOPPER,
 
     BOT_VEH_STRAT_GENERIC
+};
+
+inline constexpr uint32 USABLE_CORPSE_CREATURE_TYPE_MASK = (1u << (CREATURE_TYPE_BEAST-1)) | (1u << (CREATURE_TYPE_DRAGONKIN-1)) | (1u << (CREATURE_TYPE_HUMANOID-1));
+
+inline constexpr uint8 GroupIconsFlags[] =
+{
+    /*STAR        = */0x001,
+    /*CIRCLE      = */0x002,
+    /*DIAMOND     = */0x004,
+    /*TRIANGLE    = */0x008,
+    /*MOON        = */0x010,
+    /*SQUARE      = */0x020,
+    /*CROSS       = */0x040,
+    /*SKULL       = */0x080
 };
 
 #endif

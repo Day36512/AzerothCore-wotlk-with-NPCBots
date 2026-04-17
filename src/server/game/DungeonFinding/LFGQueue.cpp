@@ -571,6 +571,15 @@ namespace lfg
 
     time_t LFGQueue::GetJoinTime(ObjectGuid guid)
     {
+        //npcbot: do no incur side effect
+        if (guid.IsCreature())
+        {
+            auto itr = QueueDataStore.find(guid);
+            if (itr != QueueDataStore.end())
+                return itr->second.joinTime;
+            return 0;
+        }
+        //end npcbot
         return QueueDataStore[guid].joinTime;
     }
 

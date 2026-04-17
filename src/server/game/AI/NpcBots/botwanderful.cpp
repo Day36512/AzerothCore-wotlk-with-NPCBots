@@ -28,9 +28,9 @@ WanderNode::mutex_type* WanderNode::GetLock()
 
 WanderNode* WanderNode::FindInAllWPs(uint32 wpId)
 {
-    lock_type lock(*GetLock());
+    std::shared_lock lock(*GetLock());
 
-    auto ci = std::find_if(ALL_WPS.cbegin(), ALL_WPS.cend(), [wpId = wpId](WanderNode const* wp) {
+    auto ci = std::ranges::find_if(ALL_WPS, [wpId = wpId](WanderNode const* wp) {
         return wp->GetWPId() == wpId;
     });
 
@@ -42,9 +42,9 @@ WanderNode* WanderNode::FindInAllWPs(Creature const* creature)
     if (!creature)
         return nullptr;
 
-    lock_type lock(*GetLock());
+    std::shared_lock lock(*GetLock());
 
-    auto ci = std::find_if(ALL_WPS.cbegin(), ALL_WPS.cend(), [=](WanderNode const* wp) {
+    auto ci = std::ranges::find_if(ALL_WPS, [=](WanderNode const* wp) {
         return wp->GetCreature() == creature;
     });
 
@@ -56,139 +56,138 @@ WanderNode* WanderNode::FindInMapWPs(uint32 mapId, Creature const* creature)
     if (!creature)
         return nullptr;
 
-    lock_type lock(*GetLock());
+    std::shared_lock lock(*GetLock());
 
-    auto cim = ALL_WPS_PER_MAP.find(mapId);
+    decltype(ALL_WPS_PER_MAP)::const_iterator cim = ALL_WPS_PER_MAP.find(mapId);
     if (cim == ALL_WPS_PER_MAP.cend())
         return nullptr;
-    auto ci = std::find_if(ALL_WPS_PER_MAP.at(mapId).cbegin(), ALL_WPS_PER_MAP.at(mapId).cend(), [=](WanderNode const* wp) {
+    decltype(cim->second)::const_iterator ci = std::ranges::find_if(cim->second, [=](WanderNode const* wp) {
         return wp->GetCreature() == creature;
     });
 
-    return ci == ALL_WPS_PER_MAP.at(mapId).cend() ? nullptr : *ci;
+    return ci == cim->second.cend() ? nullptr : *ci;
 }
 
 WanderNode* WanderNode::FindInMapWPs(uint32 mapId, uint32 wpId)
 {
-    lock_type lock(*GetLock());
+    std::shared_lock lock(*GetLock());
 
-    auto cim = ALL_WPS_PER_MAP.find(mapId);
+    decltype(ALL_WPS_PER_MAP)::const_iterator cim = ALL_WPS_PER_MAP.find(mapId);
     if (cim == ALL_WPS_PER_MAP.cend())
         return nullptr;
-    auto ci = std::find_if(ALL_WPS_PER_MAP.at(mapId).cbegin(), ALL_WPS_PER_MAP.at(mapId).cend(), [=](WanderNode const* wp) {
+    decltype(cim->second)::const_iterator ci = std::ranges::find_if(cim->second, [=](WanderNode const* wp) {
         return wp->GetWPId() == wpId;
     });
 
-    return ci == ALL_WPS_PER_MAP.at(mapId).cend() ? nullptr : *ci;
+    return ci == cim->second.cend() ? nullptr : *ci;
 }
 
 WanderNode* WanderNode::FindInMapWPs(uint32 mapId, node_check_ftype_c const& pred)
 {
-    lock_type lock(*GetLock());
+    std::shared_lock lock(*GetLock());
 
-    auto cim = ALL_WPS_PER_MAP.find(mapId);
+    decltype(ALL_WPS_PER_MAP)::const_iterator cim = ALL_WPS_PER_MAP.find(mapId);
     if (cim == ALL_WPS_PER_MAP.cend())
         return nullptr;
-    auto ci = std::find_if(ALL_WPS_PER_MAP.at(mapId).cbegin(), ALL_WPS_PER_MAP.at(mapId).cend(), pred);
+    decltype(cim->second)::const_iterator ci = std::ranges::find_if(cim->second, pred);
 
-    return ci == ALL_WPS_PER_MAP.at(mapId).cend() ? nullptr : *ci;
+    return ci == cim->second.cend() ? nullptr : *ci;
 }
 
 WanderNode* WanderNode::FindInZoneWPs(uint32 zoneId, node_check_ftype_c const& pred)
 {
-    lock_type lock(*GetLock());
+    std::shared_lock lock(*GetLock());
 
-    auto cim = ALL_WPS_PER_ZONE.find(zoneId);
+    decltype(ALL_WPS_PER_ZONE)::const_iterator cim = ALL_WPS_PER_ZONE.find(zoneId);
     if (cim == ALL_WPS_PER_ZONE.cend())
         return nullptr;
-    auto ci = std::find_if(ALL_WPS_PER_ZONE.at(zoneId).cbegin(), ALL_WPS_PER_ZONE.at(zoneId).cend(), pred);
+    decltype(cim->second)::const_iterator ci = std::ranges::find_if(cim->second, pred);
 
-    return ci == ALL_WPS_PER_ZONE.at(zoneId).cend() ? nullptr : *ci;
+    return ci == cim->second.cend() ? nullptr : *ci;
 }
 
 WanderNode* WanderNode::FindInAreaWPs(uint32 areaId, node_check_ftype_c const& pred)
 {
-    lock_type lock(*GetLock());
+    std::shared_lock lock(*GetLock());
 
-    auto cim = ALL_WPS_PER_AREA.find(areaId);
+    decltype(ALL_WPS_PER_AREA)::const_iterator cim = ALL_WPS_PER_AREA.find(areaId);
     if (cim == ALL_WPS_PER_AREA.cend())
         return nullptr;
-    auto ci = std::find_if(ALL_WPS_PER_AREA.at(areaId).cbegin(), ALL_WPS_PER_AREA.at(areaId).cend(), pred);
+    decltype(cim->second)::const_iterator ci = std::ranges::find_if(cim->second, pred);
 
-    return ci == ALL_WPS_PER_AREA.at(areaId).cend() ? nullptr : *ci;
+    return ci == cim->second.cend() ? nullptr : *ci;
 }
 
-void WanderNode::DoForAllWPs(node_proc_ftype&& func)
+void WanderNode::DoForAllWPs(node_proc_ftype_c&& func)
 {
-    lock_type lock(*GetLock());
+    std::shared_lock lock(*GetLock());
 
-    DoForContainerWPs(ALL_WPS, std::forward<node_proc_ftype>(func));
+    DoForContainerWPs(ALL_WPS, std::forward<node_proc_ftype_c>(func));
 }
 
 void WanderNode::DoForAllZoneWPs(uint32 zoneId, node_proc_ftype_c&& func)
 {
-    lock_type lock(*GetLock());
+    std::shared_lock lock(*GetLock());
 
-    node_mtype::const_iterator ci = ALL_WPS_PER_ZONE.find(zoneId);
-    if (ci != ALL_WPS_PER_ZONE.end())
+    decltype(ALL_WPS_PER_ZONE)::const_iterator ci = ALL_WPS_PER_ZONE.find(zoneId);
+    if (ci != ALL_WPS_PER_ZONE.cend())
         DoForContainerWPs(ci->second, std::forward<node_proc_ftype_c>(func));
 }
 
 void WanderNode::DoForAllMapWPs(uint32 mapId, node_proc_ftype_c&& func)
 {
-    lock_type lock(*GetLock());
+    std::shared_lock lock(*GetLock());
 
-    node_mtype::const_iterator ci = ALL_WPS_PER_MAP.find(mapId);
-    if (ci != ALL_WPS_PER_MAP.end())
+    decltype(ALL_WPS_PER_MAP)::const_iterator ci = ALL_WPS_PER_MAP.find(mapId);
+    if (ci != ALL_WPS_PER_MAP.cend())
         DoForContainerWPs(ci->second, std::forward<node_proc_ftype_c>(func));
 }
 
 void WanderNode::DoForAllAreaWPs(uint32 areaId, node_proc_ftype_c&& func)
 {
-    lock_type lock(*GetLock());
+    std::shared_lock lock(*GetLock());
 
-    node_mtype::const_iterator ci = ALL_WPS_PER_AREA.find(areaId);
-    if (ci != ALL_WPS_PER_AREA.end())
+    decltype(ALL_WPS_PER_AREA)::const_iterator ci = ALL_WPS_PER_AREA.find(areaId);
+    if (ci != ALL_WPS_PER_AREA.cend())
         DoForContainerWPs(ci->second, std::forward<node_proc_ftype_c>(func));
 }
 
 size_t WanderNode::GetAllWPsCount()
 {
-    lock_type lock(*GetLock());
+    std::shared_lock lock(*GetLock());
 
     return ALL_WPS.size();
 }
 
 size_t WanderNode::GetMapWPsCount(uint32 mapId)
 {
-    lock_type lock(*GetLock());
+    std::shared_lock lock(*GetLock());
 
-    node_mtype::const_iterator ci = ALL_WPS_PER_MAP.find(mapId);
-    return ci != ALL_WPS_PER_MAP.end() ? ci->second.size() : 0u;
+    decltype(ALL_WPS_PER_MAP)::const_iterator ci = ALL_WPS_PER_MAP.find(mapId);
+    return ci != ALL_WPS_PER_MAP.cend() ? ci->second.size() : 0u;
 }
 
 size_t WanderNode::GetWPMapsCount()
 {
-    lock_type lock(*GetLock());
+    std::shared_lock lock(*GetLock());
 
     return ALL_WPS_PER_MAP.size();
 }
 
-WanderNode::WanderNode(uint32 wpId, uint32 mapId, float x, float y, float z, float o, uint32 zoneId, uint32 areaId, std::string const& name)
-    : Position(x, y, z, o),
-    _wpId(wpId), _mapId(mapId), _zoneId(zoneId), _areaId(areaId), _name(name), _minLevel(1u), _maxLevel(DEFAULT_MAX_LEVEL), _flags(0), _to_links_count(0),
-    _creature(nullptr)
+WanderNode::WanderNode(uint32 wpId, uint32 mapId, float x, float y, float z, float o, uint32 zoneId, uint32 areaId, std::string&& name)
+    : Position(x, y, z, o), _wpId(wpId), _mapId(mapId), _zoneId(zoneId), _areaId(areaId),
+    _name(std::move(name)), _minLevel(1u), _maxLevel(DEFAULT_MAX_LEVEL), _flags(0), _to_links_count(0), _creature(nullptr)
 {
     ASSERT(!!sMapStore.LookupEntry(_mapId), "WanderNode::Ctr(): Invalid value for _mapId");
     ASSERT(!!sAreaTableStore.LookupEntry(_zoneId), "WanderNode::Ctr(): Invalid value for _zoneId");
     ASSERT(!!sAreaTableStore.LookupEntry(_areaId), "WanderNode::Ctr(): Invalid value for _areaId");
 
-    lock_type lock(*GetLock());
+    std::unique_lock lock(*GetLock());
 
     ALL_WPS.push_back(this);
-    ALL_WPS_PER_MAP[_mapId].push_back(this);
-    ALL_WPS_PER_ZONE[_zoneId].push_back(this);
-    ALL_WPS_PER_AREA[_areaId].push_back(this);
+    ALL_WPS_PER_MAP.try_emplace(_mapId).first->second.push_back(this);
+    ALL_WPS_PER_ZONE.try_emplace(_zoneId).first->second.push_back(this);
+    ALL_WPS_PER_AREA.try_emplace(_areaId).first->second.push_back(this);
 }
 
 WanderNode::~WanderNode()
@@ -209,13 +208,14 @@ void WanderNode::RemoveWP(WanderNode* wp)
     ALL_WPS_PER_MAP.at(wp->_mapId).remove(wp);
     ALL_WPS.remove(wp);
 
-    //WE LET THE NODE LEAK for threadsafety
+    //WP removal should only be performed during maintanence with no players online
+    //WE LET THE NODE LEAK for threadsafety - wp or creature pointer could be held ouside of sync context
     //delete wp
 }
 
 void WanderNode::RemoveAllWPs()
 {
-    lock_type lock(*GetLock());
+    std::unique_lock lock(*GetLock());
 
     while (!ALL_WPS.empty())
         RemoveWP(ALL_WPS.front());
@@ -226,7 +226,7 @@ WanderNode::node_lltype WanderNode::GetShortestPathLinks(WanderNode const* targe
     using NodeLinkList = WanderNode::node_lltype;
     using NodeLinkPList = std::vector<WanderNodeLink const*>;
 
-    ASSERT(std::all_of(base_links.cbegin(), base_links.cend(), [this](WanderNodeLink const& wpl) { return HasLink(wpl.Id()); }));
+    ASSERT(std::ranges::all_of(base_links, [this](WanderNodeLink const& wpl) { return HasLink(wpl.Id()); }));
 
     NodeLinkList retlist;
     if (this == target)
@@ -284,12 +284,12 @@ WanderNode::node_lltype WanderNode::GetShortestPathLinks(WanderNode const* targe
                 for (auto const& vlp : validLinks)
                     minlevel = std::min<decltype(minlevel)>(minlevel, vlp.first);
                 decltype(minlevel) inclevel = minlevel + AsUnderlyingType(max_level_diff);
-                validLinks.remove_if([=, this](decltype(validLinks)::value_type const& p) {
+                std::erase_if(validLinks, [=, this](decltype(validLinks)::value_type const& p) {
                     return p.first > inclevel || (p.first > minlevel && p.second->wp->GetExactDist2d(target) > GetExactDist2d(target));
                 });
             }
-            for (decltype(validLinks)::value_type const& vt : validLinks)
-                retlist.push_back(*vt.second);
+            for (auto const& kv : validLinks)
+                retlist.push_back(*kv.second); //copying 16 bytes each
         }
     }
 
@@ -333,7 +333,7 @@ uint32 WanderNode::GetAverageLinkWeight(bool exclude_0/* = false*/) const
 std::string WanderNode::FormatLinks() const
 {
     std::ostringstream lss;
-    for (WanderNodeLink const& wpl: _links)
+    for (WanderNodeLink const& wpl : _links)
         lss << uint32(wpl.Id()) << ':' << uint32(wpl.weight) << ' ';
 
     return lss.str();

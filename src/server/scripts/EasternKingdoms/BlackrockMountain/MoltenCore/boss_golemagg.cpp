@@ -23,219 +23,182 @@
 #include "ScriptMgr.h"
 #include "SpellScript.h"
 #include "SpellAuraEffects.h"
+#include "Config.h"
+
+ //Dinkle custom
 #include "bot_ai.h"
 #include "botmgr.h"
 #include "botdatamgr.h"
 
 enum Texts
 {
-    EMOTE_LOWHP                 = 0,
+    EMOTE_LOWHP = 0,
 };
 
 enum Spells
 {
     // Golemagg
-    SPELL_PYROBLAST             = 20228,
-    SPELL_EARTHQUAKE            = 19798,
-    SPELL_ATTRACK_RAGER         = 20544,
-    SPELL_MAGMASPLASH           = 13879,
-    SPELL_GOLEMAGG_TRUST_AURA   = 20556,
-    SPELL_DOUBLE_ATTACK         = 18943,
+    SPELL_PYROBLAST = 20228,
+    SPELL_EARTHQUAKE = 19798,
+    SPELL_ATTRACK_RAGER = 20544,
+    SPELL_MAGMASPLASH = 13879,
+    SPELL_GOLEMAGG_TRUST_AURA = 20556,
+    SPELL_DOUBLE_ATTACK = 18943,
 
     // Core Rager
-    SPELL_MANGLE                = 19820,
-    SPELL_FULL_HEAL             = 17683,
+    SPELL_MANGLE = 19820,
+    SPELL_FULL_HEAL = 17683,
 };
 
-class boss_golemagg : public CreatureScript
+struct boss_golemagg : public BossAI
 {
-public:
-    boss_golemagg() : CreatureScript("boss_golemagg") { }
-
-    struct boss_golemaggAI : public BossAI
+    boss_golemagg(Creature* creature) : BossAI(creature, DATA_GOLEMAGG),
+        earthquakeTimer(0),
+        pyroblastTimer(0),
+        enraged(false)
     {
-        boss_golemaggAI(Creature* creature) : BossAI(creature, DATA_GOLEMAGG),
-            earthquakeTimer(0),
-            pyroblastTimer(0),
-            enraged(false)
-        {}
+    }
 
-        void Reset() override
+    void Reset() override
+    {
+        _Reset();
+        earthquakeTimer = 0;
+        pyroblastTimer = urand(3000, 7000);
+        enraged = false;
+        DoCastSelf(SPELL_MAGMASPLASH);
+        DoCastSelf(SPELL_GOLEMAGG_TRUST_AURA);
+        DoCastSelf(SPELL_DOUBLE_ATTACK);
+    }
+
+    void DamageTaken(Unit*, uint32& damage, DamageEffectType, SpellSchoolMask) override
+    {
+        if (!enraged && me->HealthBelowPctDamaged(10, damage))
         {
-            _Reset();
-            earthquakeTimer = 0;
-            pyroblastTimer = urand(3000, 7000);
-            enraged = false;
-            DoCastSelf(SPELL_MAGMASPLASH);
-            DoCastSelf(SPELL_GOLEMAGG_TRUST_AURA);
-            DoCastSelf(SPELL_DOUBLE_ATTACK);
+            DoCastSelf(SPELL_ATTRACK_RAGER, true);
+            DoCastAOE(SPELL_EARTHQUAKE, true);
+            earthquakeTimer = 5000;
+            enraged = true;
         }
+    }
 
-        void DamageTaken(Unit*, uint32& damage, DamageEffectType, SpellSchoolMask) override
+    void UpdateAI(uint32 diff) override
+    {
+        if (!UpdateVictim())
+            return;
+
+        // Should not get impact by cast state (cast should always happen)
+        if (earthquakeTimer)
         {
-            if (!enraged && me->HealthBelowPctDamaged(10, damage))
+            if (earthquakeTimer <= diff)
             {
-                DoCastSelf(SPELL_ATTRACK_RAGER, true);
-                DoCastAOE(SPELL_EARTHQUAKE, true);
+                DoCastSelf(SPELL_EARTHQUAKE, true);
                 earthquakeTimer = 5000;
-                enraged = true;
-            }
-        }
-
-        void UpdateAI(uint32 diff) override
-        {
-            if (!UpdateVictim())
-            {
-                return;
-            }
-
-            // Should not get impact by cast state (cast should always happen)
-            if (earthquakeTimer)
-            {
-                if (earthquakeTimer <= diff)
-                {
-                    DoCastSelf(SPELL_EARTHQUAKE, true);
-                    earthquakeTimer = 5000;
-                }
-                else
-                {
-                    earthquakeTimer -= diff;
-                }
-            }
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-            {
-                return;
-            }
-
-            if (pyroblastTimer <= diff)
-            {
-                DoCastRandomTarget(SPELL_PYROBLAST);
-
-                pyroblastTimer = 7000;
             }
             else
-            {
-                pyroblastTimer -= diff;
-            }
-
-            DoMeleeAttackIfReady();
+                earthquakeTimer -= diff;
         }
 
-    private:
-        uint32 earthquakeTimer;
-        uint32 pyroblastTimer;
-        bool enraged;
-    };
+        if (me->HasUnitState(UNIT_STATE_CASTING))
+            return;
 
-    CreatureAI* GetAI(Creature* creature) const override
-    {
-        return GetMoltenCoreAI<boss_golemaggAI>(creature);
+        if (pyroblastTimer <= diff)
+        {
+            DoCastRandomTarget(SPELL_PYROBLAST);
+            pyroblastTimer = 7000;
+        }
+        else
+            pyroblastTimer -= diff;
+
+        DoMeleeAttackIfReady();
     }
+
+private:
+    uint32 earthquakeTimer;
+    uint32 pyroblastTimer;
+    bool enraged;
 };
 
-class npc_core_rager : public CreatureScript
+struct npc_core_rager : public ScriptedAI
 {
-public:
-    npc_core_rager() : CreatureScript("npc_core_rager") { }
-
-    struct npc_core_ragerAI : public ScriptedAI
+    npc_core_rager(Creature* creature) : ScriptedAI(creature),
+        instance(creature->GetInstanceScript()),
+        mangleTimer(7000),
+        rangeCheckTimer(1000)
     {
-        npc_core_ragerAI(Creature* creature) : ScriptedAI(creature),
-            instance(creature->GetInstanceScript()),
-            mangleTimer(7000),
-            rangeCheckTimer(1000)
-        {
-        }
-
-        void Reset() override
-        {
-            mangleTimer = 7000;               // These times are probably wrong
-            rangeCheckTimer = 1000;
-
-            if (instance->GetBossState(DATA_GOLEMAGG) == DONE)
-            {
-                DoCastSelf(SPELL_CORE_RAGER_QUIET_SUICIDE, true);
-            }
-        }
-
-        void DamageTaken(Unit* /*attacker*/, uint32& damage, DamageEffectType /*dmgType*/, SpellSchoolMask /*school*/) override
-        {
-            // Just in case if something will go bad, let players to kill this creature
-            if (instance->GetBossState(DATA_GOLEMAGG) == DONE)
-            {
-                return;
-            }
-
-            if (me->HealthBelowPctDamaged(50, damage))
-            {
-                damage = 0;
-                DoCastSelf(SPELL_FULL_HEAL, true);
-                Talk(EMOTE_LOWHP);
-            }
-        }
-
-        void UpdateAI(uint32 diff) override
-        {
-            if (!UpdateVictim())
-            {
-                return;
-            }
-
-            // Should have no impact from unit state
-            if (rangeCheckTimer <= diff)
-            {
-                Creature const* golemagg = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_GOLEMAGG));
-                if (golemagg && me->GetDistance(golemagg) > 100.0f)
-                {
-                    instance->DoAction(ACTION_RESET_GOLEMAGG_ENCOUNTER);
-                    return;
-                }
-
-                rangeCheckTimer = 1000;
-            }
-            else
-            {
-                rangeCheckTimer -= diff;
-            }
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-            {
-                return;
-            }
-
-            // Mangle
-            if (mangleTimer <= diff)
-            {
-                DoCastVictim(SPELL_MANGLE);
-                mangleTimer = 10000;
-            }
-            else
-            {
-                mangleTimer -= diff;
-            }
-
-            DoMeleeAttackIfReady();
-        }
-
-    private:
-        InstanceScript* instance;
-        uint32 mangleTimer;
-        uint32 rangeCheckTimer;
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
-    {
-        return GetMoltenCoreAI<npc_core_ragerAI>(creature);
     }
+
+    void Reset() override
+    {
+        mangleTimer = 7000;
+        rangeCheckTimer = 1000;
+
+        if (instance->GetBossState(DATA_GOLEMAGG) == DONE)
+            DoCastSelf(SPELL_CORE_RAGER_QUIET_SUICIDE, true);
+    }
+
+    void DamageTaken(Unit* /*attacker*/, uint32& damage, DamageEffectType /*dmgType*/, SpellSchoolMask /*school*/) override
+    {
+        // Just in case if something will go bad, let players kill this creature
+        if (instance->GetBossState(DATA_GOLEMAGG) == DONE)
+            return;
+
+        if (me->HealthBelowPctDamaged(50, damage))
+        {
+            damage = 0;
+            DoCastSelf(SPELL_FULL_HEAL, true);
+            Talk(EMOTE_LOWHP);
+        }
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        if (!UpdateVictim())
+            return;
+
+        // Should have no impact from unit state
+        if (rangeCheckTimer <= diff)
+        {
+            Creature const* golemagg = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_GOLEMAGG));
+            if (golemagg && me->GetDistance(golemagg) > 100.0f)
+            {
+                instance->DoAction(ACTION_RESET_GOLEMAGG_ENCOUNTER);
+                return;
+            }
+
+            rangeCheckTimer = 1000;
+        }
+        else
+            rangeCheckTimer -= diff;
+
+        if (me->HasUnitState(UNIT_STATE_CASTING))
+            return;
+
+        if (mangleTimer <= diff)
+        {
+            DoCastVictim(SPELL_MANGLE);
+            mangleTimer = 10000;
+        }
+        else
+            mangleTimer -= diff;
+
+        DoMeleeAttackIfReady();
+    }
+
+private:
+    InstanceScript* instance;
+    uint32 mangleTimer;
+    uint32 rangeCheckTimer;
 };
 
+//Dinkle custom start
 static inline bool IsNPCBot(Unit const* u)
 {
     if (!u || u->GetTypeId() != TYPEID_UNIT)
         return false;
+
     if (Creature const* c = u->ToCreature())
         return c->IsNPCBot();
+
     return false;
 }
 
@@ -248,8 +211,10 @@ class spell_magma_splash_bot_stack_cap : public SpellScript
         static uint8 sMax = []() -> uint8
             {
                 int v = sConfigMgr->GetOption<int>("MoltenCore.MagmaSplash.BotMaxStacks", 10);
-                if (v < 1)   v = 1;
-                if (v > 255) v = 255;
+                if (v < 1)
+                    v = 1;
+                if (v > 255)
+                    v = 255;
                 return static_cast<uint8>(v);
             }();
         return sMax;
@@ -270,9 +235,7 @@ class spell_magma_splash_bot_stack_cap : public SpellScript
         {
             uint8 const maxStacks = GetBotMaxStacks();
             if (a->GetStackAmount() > maxStacks)
-            {
                 a->Remove();
-            }
         }
     }
 
@@ -281,10 +244,13 @@ class spell_magma_splash_bot_stack_cap : public SpellScript
         OnHit += SpellHitFn(spell_magma_splash_bot_stack_cap::HandleAfterHit);
     }
 };
+//Dinkle custom end
 
 void AddSC_boss_golemagg()
 {
-    new boss_golemagg();
-    new npc_core_rager();
+    RegisterMoltenCoreCreatureAI(boss_golemagg);
+    RegisterMoltenCoreCreatureAI(npc_core_rager);
+
+    //Dinkle custom
     RegisterSpellScript(spell_magma_splash_bot_stack_cap);
 }

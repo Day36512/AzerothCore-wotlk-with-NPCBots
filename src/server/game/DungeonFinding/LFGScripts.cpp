@@ -27,6 +27,12 @@
 #include "ScriptMgr.h"
 #include "SharedDefines.h"
 
+//npcbot
+#include "botconfig.h"
+#include "botdatamgr.h"
+#include "botmgr.h"
+//end npcbot
+
 namespace lfg
 {
     LFGPlayerScript::LFGPlayerScript() :
@@ -132,6 +138,12 @@ namespace lfg
                     player->GetSession()->SendNameQueryOpcode(member->GetGUID());
             //end npcbot
 
+            //npcbot
+            if (group->GetLeaderGUID() == player->GetGUID() && group->GetMembersCount() < MAXGROUPSIZE &&
+                BotCfg::IsNpcBotModEnabled() && BotCfg::IsNpcBotDungeonFinderBotGenerationEnabled())
+                BotDataMgr::GenerateDungeonBots(player, group, map);
+            //end npcbot
+
             if (group->IsLfgWithBuff())
                 player->CastSpell(player, LFG_SPELL_LUCK_OF_THE_DRAW, true);
         }
@@ -146,6 +158,12 @@ namespace lfg
                 if (!player->GetSession()->PlayerLoading())
                 //end npcbot
                     group->Disband();
+
+            //npcbot
+            if (Group* group = player->GetGroup(); group && group->isLFGGroup())
+                if (sLFGMgr->GetState(group->GetGUID()) >= LFG_STATE_FINISHED_DUNGEON)
+                    player->GetBotMgr()->RemoveAllSummonedBots();
+            //end npcbot
         }
     }
 

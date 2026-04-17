@@ -84,6 +84,9 @@ public:
 
         void Reset() override
         {
+            if (_defeated)
+                return;
+
             faction_Timer = 8000;
             envelopingWinds_Timer = 9000;
             shock_Timer = 5000;
@@ -92,6 +95,15 @@ public:
             me->SetFaction(FACTION_FRIENDLY);
 
             Talk(SAY_SUMMON);
+        }
+
+        void JustReachedHome() override
+        {
+            if (_defeated)
+            {
+                Talk(SAY_FREE);
+                me->SetNpcFlag(UNIT_NPC_FLAG_QUESTGIVER);
+            }
         }
 
         void UpdateAI(uint32 diff) override
@@ -111,12 +123,11 @@ public:
 
             if (HealthBelowPct(30))
             {
-                me->SetFaction(FACTION_FRIENDLY);
-                me->SetNpcFlag(UNIT_NPC_FLAG_QUESTGIVER);
+                _defeated = true;
                 me->RemoveAllAuras();
-                me->GetThreatMgr().ClearAllThreat();
+                me->SetFaction(FACTION_FRIENDLY);
                 me->CombatStop(true);
-                Talk(SAY_FREE);
+                me->GetThreatMgr().ClearAllThreat();
                 return;
             }
 
@@ -141,6 +152,7 @@ public:
         uint32 faction_Timer;
         uint32 envelopingWinds_Timer;
         uint32 shock_Timer;
+        bool _defeated = false;
     };
 
     CreatureAI* GetAI(Creature* creature) const override
@@ -196,6 +208,7 @@ public:
             npc_escortAI::MoveInLineOfSight(who);
         }
 
+        using CreatureAI::WaypointReached;
         void WaypointReached(uint32 waypointId) override
         {
             switch (waypointId)
@@ -321,6 +334,7 @@ public:
             }
         }
 
+        using CreatureAI::WaypointReached;
         void WaypointReached(uint32 waypointId) override
         {
             Player* player = GetPlayerForEscort();

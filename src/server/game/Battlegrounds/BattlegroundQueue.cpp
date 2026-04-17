@@ -36,8 +36,9 @@
 //npcbot
 //non-PCH
 #include "Creature.h"
-#include "botmgr.h"
+#include "botconfig.h"
 #include "botdatamgr.h"
+#include "botmgr.h"
 //end npcbot
 
 /*********************************************************/
@@ -436,7 +437,7 @@ void BattlegroundQueue::RemovePlayer(ObjectGuid guid, bool decreaseInvitedCount)
     if (!groupInfo->Players.empty() && guid.IsPlayer())
     {
         std::vector<ObjectGuid> botguids;
-        botguids.reserve(BotMgr::GetMaxNpcBots(DEFAULT_MAX_LEVEL) / 2);
+        botguids.reserve(BotCfg::GetMaxNpcBots(DEFAULT_MAX_LEVEL) / 2);
         BotDataMgr::GetNPCBotGuidsByOwner(botguids, guid);
         for (std::vector<ObjectGuid>::const_iterator ci = botguids.begin(); ci != botguids.end() && !groupInfo->Players.empty(); ++ci)
         {

@@ -31,6 +31,7 @@
 #include "WorldSession.h"
 
 //npcbot
+#include "botconfig.h"
 #include "botmgr.h"
 //end npcbot
 
@@ -186,7 +187,7 @@ void WorldSession::HandleLootMoneyOpcode(WorldPacket& /*recvData*/)
         sScriptMgr->OnPlayerBeforeLootMoney(player, loot);
         loot->NotifyMoneyRemoved();
         //npcbot
-        if (shareMoney && player->GetGroup() && BotMgr::GetNpcBotMoneyShareEnabled())
+        if (shareMoney && player->GetGroup() && BotCfg::GetNpcBotMoneyShareEnabled())
         {
             Group* group = player->GetGroup();
             std::vector<Player*> playersNear;
@@ -207,7 +208,7 @@ void WorldSession::HandleLootMoneyOpcode(WorldPacket& /*recvData*/)
                 for (auto const& kv : *botMap)
                 {
                     Creature const* bot = kv.second;
-                    if (bot && bot->IsAlive() && bot->IsInMap(player) && (group->IsMember(kv.first) || !BotMgr::GetNpcBotMoneyShareGroupOnly()) &&
+                    if (bot && bot->IsAlive() && bot->IsInMap(player) && (group->IsMember(kv.first) || !BotCfg::GetNpcBotMoneyShareGroupOnly()) &&
                         (member->GetMap()->IsDungeon() || player->GetDistance(bot) <= sWorld->getFloatConfig(CONFIG_GROUP_XP_DISTANCE)))
                         ++bots_count;
                 }

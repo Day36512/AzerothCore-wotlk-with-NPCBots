@@ -7,9 +7,8 @@
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
@@ -19,9 +18,15 @@
 #include "ScriptedCreature.h"
 #include "SpellScriptLoader.h"
 #include "hellfire_ramparts.h"
-#include "Containers.h"       // Acore::Containers helpers
-#include "SpellAuras.h"       // Aura, SetDuration/SetMaxDuration
+#include "Containers.h"
+#include "SpellAuras.h"
 #include "ObjectAccessor.h"
+
+ // Dinkle custom: needed for random-target helpers
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
+#include "Cell.h"
+#include "CellImpl.h"
 
 #include <unordered_set>
 
@@ -37,20 +42,17 @@ enum Says
 
 enum Spells
 {
-    SPELL_SHADOW_BOLT = 30686,   // single target nuke
-    SPELL_SUMMON_FIENDISH_HOUND = 30707,   // summons 1 hound
-    SPELL_TREACHEROUS_AURA = 30695,   // classic Omor curse
-    SPELL_DEMONIC_SHIELD = 31901,   // damage reduction shield (base 10s)
-    SPELL_BERSERK = 300362   // custom Berserk that stacks (DB-side effect)
+    SPELL_SHADOW_BOLT = 30686,
+    SPELL_SUMMON_FIENDISH_HOUND = 30707,
+    SPELL_TREACHEROUS_AURA = 30695,
+    SPELL_DEMONIC_SHIELD = 31901,
+    SPELL_BERSERK = 300362
 };
 
-// Tunables
 static constexpr float  HOUND_FIXATE_THREAT = 8000.0f;
-static constexpr uint32 HOUND_HP_NORMAL = 21220; // normal 5-man
-static constexpr uint32 HOUND_HP_HEROIC = 38750; // heroic 5-man
+static constexpr uint32 HOUND_HP_NORMAL = 21220;
+static constexpr uint32 HOUND_HP_HEROIC = 38750;
 static constexpr float  HOUND_SCALE_MULT = 2.0f;
-
-// Re-application window after summon to beat late init/model resets
 static constexpr Milliseconds HOUND_TUNE_REAPPLY_DELAY = 150ms;
 
 struct boss_omor_the_unscarred : public BossAI
@@ -59,6 +61,8 @@ struct boss_omor_the_unscarred : public BossAI
         : BossAI(creature, DATA_OMOR_THE_UNSCARRED), _hasSpoken(false), _shieldActive(false)
     {
         me->SetCombatMovement(false);
+
+        // Dinkle custom
         scheduler.SetValidator([this]
             {
                 return !me->HasUnitState(UNIT_STATE_CASTING);
@@ -73,11 +77,9 @@ struct boss_omor_the_unscarred : public BossAI
         _lastCurseTarget.Clear();
         _shieldActive = false;
 
-        // Clear berserk stacks & tracking
         _activeHounds.clear();
         me->RemoveAurasDueToSpell(SPELL_BERSERK);
 
-        // Health checkpoints for shield cycles
         ScheduleHealthCheckEvent(66, [&] { StartShieldCycle(); });
         ScheduleHealthCheckEvent(33, [&] { StartShieldCycle(); });
     }
@@ -87,7 +89,6 @@ struct boss_omor_the_unscarred : public BossAI
         Talk(SAY_AGGRO);
         _JustEngagedWith();
 
-        // Tank-targeted single Shadow Bolt cadence
         scheduler.Schedule(5s, [this](TaskContext context)
             {
                 if (Unit* v = me->GetVictim())
@@ -95,7 +96,6 @@ struct boss_omor_the_unscarred : public BossAI
                 context.Repeat(6s, 8s);
             });
 
-        // Treacherous Aura: cast, then 6s later spread to up to 2 nearby within 8y
         scheduler.Schedule(7s, [this](TaskContext context)
             {
                 if (roll_chance_i(40))
@@ -109,14 +109,14 @@ struct boss_omor_the_unscarred : public BossAI
                     scheduler.Schedule(6s, [this](TaskContext /*ctx*/)
                         {
                             if (Unit* anchor = ObjectAccessor::GetUnit(*me, _lastCurseTarget))
-                                SpreadTreacherousAura(anchor, 8.0f /*radius*/, 2 /*max extra*/);
+                                SpreadTreacherousAura(anchor, 8.0f, 2);
                             _lastCurseTarget.Clear();
                         });
                 }
+
                 context.Repeat(13s, 17s);
             });
 
-        // Fiend summon cadence (also drives Berserk stacks)
         scheduler.Schedule(10s, [this](TaskContext context)
             {
                 DoCastSelf(SPELL_SUMMON_FIENDISH_HOUND, true);
@@ -143,10 +143,8 @@ struct boss_omor_the_unscarred : public BossAI
         summons.Summon(summon);
         summon->SetInCombatWithZone();
 
-        // 1) Apply initial tuning immediately
         ApplyHoundTuning(summon);
 
-        // 2) Re-apply once more after a short delay to beat late init/model resets
         ObjectGuid sguid = summon->GetGUID();
         scheduler.Schedule(HOUND_TUNE_REAPPLY_DELAY, [this, sguid](TaskContext /*ctx*/)
             {
@@ -154,12 +152,10 @@ struct boss_omor_the_unscarred : public BossAI
                     ApplyHoundTuning(s);
             });
 
-        // Track for Berserk stack logic
         _activeHounds.insert(summon->GetGUID());
         UpdateBerserkStacks();
 
-        // Fixate logic
-        Unit* target = SelectRandomEligibleTarget(60.0f, /*preferNonVictim=*/true);
+        Unit* target = SelectRandomEligibleTarget(60.0f, true);
         if (!target)
             target = me->GetVictim();
 
@@ -204,6 +200,7 @@ struct boss_omor_the_unscarred : public BossAI
             return;
 
         scheduler.Update(diff);
+
         if (me->HasUnitState(UNIT_STATE_CASTING))
             return;
 
@@ -230,26 +227,23 @@ private:
     bool _hasSpoken;
     bool _shieldActive;
     ObjectGuid _lastCurseTarget;
-
     std::unordered_set<ObjectGuid> _activeHounds;
 
-    // --- Consistent hound tuning ---
     void ApplyHoundTuning(Creature* hound)
     {
         if (!hound || !hound->IsAlive())
             return;
 
-        // Always set scale from native to avoid cumulative double-scaling on re-apply
         float nativeScale = hound->GetNativeObjectScale();
         hound->SetObjectScale(nativeScale * HOUND_SCALE_MULT);
 
-        // Set HP deterministically
         bool heroic = me->GetMap() && me->GetMap()->IsHeroic();
         uint32 hp = heroic ? HOUND_HP_HEROIC : HOUND_HP_NORMAL;
         hound->SetMaxHealth(hp);
         hound->SetHealth(hp);
     }
 
+    // Dinkle custom
     Unit* SelectRandomEligibleTarget(float range, bool preferNonVictim = false)
     {
         std::list<Unit*> targets;
@@ -264,8 +258,8 @@ private:
                 if (!u || !u->IsAlive())
                     return true;
 
-                const bool isPlayer = u->GetTypeId() == TYPEID_PLAYER;
-                const bool isNpcBot = (u->GetTypeId() == TYPEID_UNIT) && u->ToCreature() && u->ToCreature()->IsNPCBot();
+                bool const isPlayer = u->GetTypeId() == TYPEID_PLAYER;
+                bool const isNpcBot = (u->GetTypeId() == TYPEID_UNIT) && u->ToCreature() && u->ToCreature()->IsNPCBot();
                 if (!isPlayer && !isNpcBot)
                     return true;
 
@@ -284,6 +278,7 @@ private:
         return Acore::Containers::SelectRandomContainerElement(targets);
     }
 
+    // Dinkle custom
     void SpreadTreacherousAura(Unit* anchor, float radius, uint8 maxExtra)
     {
         std::list<Unit*> nearby;
@@ -296,8 +291,8 @@ private:
                 if (!u || !u->IsAlive())
                     return true;
 
-                const bool isPlayer = u->GetTypeId() == TYPEID_PLAYER;
-                const bool isNpcBot = (u->GetTypeId() == TYPEID_UNIT) && u->ToCreature() && u->ToCreature()->IsNPCBot();
+                bool const isPlayer = u->GetTypeId() == TYPEID_PLAYER;
+                bool const isNpcBot = (u->GetTypeId() == TYPEID_UNIT) && u->ToCreature() && u->ToCreature()->IsNPCBot();
                 if (!isPlayer && !isNpcBot)
                     return true;
 
@@ -310,7 +305,7 @@ private:
                 return false;
             });
 
-        Acore::Containers::RandomResize(nearby, std::min<uint8>(maxExtra, nearby.size()));
+        Acore::Containers::RandomResize(nearby, std::min<size_t>(maxExtra, nearby.size()));
         for (Unit* u : nearby)
             DoCast(u, SPELL_TREACHEROUS_AURA, true);
     }
@@ -336,7 +331,6 @@ private:
                 }
             });
 
-        // Summon a hound during shield (tuning will apply twice, as in JustSummoned)
         DoCastSelf(SPELL_SUMMON_FIENDISH_HOUND, true);
 
         scheduler.Schedule(12s, [this](TaskContext /*ctx*/)

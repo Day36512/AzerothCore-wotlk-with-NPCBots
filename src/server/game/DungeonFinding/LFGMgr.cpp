@@ -41,7 +41,7 @@
 #include "WorldSession.h"
 
 //npcbot
-#include "botcommon.h"
+#include "botconfig.h"
 #include "botmgr.h"
 #include "Chat.h"
 #include "Creature.h"
@@ -744,29 +744,34 @@ namespace lfg
                             if (!plrg->HaveBot())
                                 continue;
                             //add npcbots
-                            BotMap const* map = plrg->GetBotMgr()->GetBotMap();
-                            for (BotMap::const_iterator itr = map->begin(); itr != map->end(); ++itr)
+                            for (auto const& [bguid, bot] : *plrg->GetBotMgr()->GetBotMap())
                             {
-                                if (!grp->IsMember(itr->first))
+                                if (!grp->IsMember(bguid))
                                     continue;
 
                                 //disabled in config
-                                if (!BotMgr::IsNpcBotDungeonFinderEnabled())
+                                if (!BotCfg::IsNpcBotDungeonFinderEnabled())
                                 {
-                                    (ChatHandler(plrg->GetSession())).SendSysMessage("Using npcbots in Dungeon Finder is restricted. Contact your administration.");
+                                    ChatHandler ch(plrg->GetSession());
+                                    ch.SendSysMessage("Using npcbots in Dungeon Finder is restricted. Contact your administration.");
 
                                     if (plrg->GetGUID() != grp->GetLeaderGUID())
-                                        if (Player* leader = ObjectAccessor::FindPlayer(grp->GetLeaderGUID()))
-                                            (ChatHandler(leader->GetSession())).PSendSysMessage("There is a npcbot in your group (owner: {}). Using npcbots in Dungeon Finder is restricted. Contact your administration.", plrg->GetName());
+                                    {
+                                        if (Player const* leader = ObjectAccessor::FindPlayer(grp->GetLeaderGUID()))
+                                        {
+                                            ChatHandler ch(leader->GetSession());
+                                            ch.PSendSysMessage("There is a npcbot in your group (owner: %s). Using npcbots in Dungeon Finder is restricted. Contact your administration.", plrg->GetName());
+                                        }
+                                    }
 
                                     joinData.result = LFG_JOIN_PARTY_NOT_MEET_REQS;
                                     break;
                                 }
 
-                                if (ObjectAccessor::GetCreature(*plrg, itr->first))
+                                if (ObjectAccessor::GetCreature(*plrg, bguid))
                                 {
                                     ++memberCount;
-                                    players.insert(itr->first);
+                                    players.insert(bguid);
                                 }
                             }
                             //end npcbot
@@ -853,6 +858,25 @@ namespace lfg
             return;
         }
 
+        //npcbot
+        const uint32 PLAYER_ROLE_ANY = PLAYER_ROLE_TANK | PLAYER_ROLE_HEALER | PLAYER_ROLE_DAMAGE;
+        auto try_generate_fake_dungeon_bots = [gguid, isContinue, &dungeons, this](LfgRoleCheck& role_check) {
+            if (BotCfg::IsNpcBotModEnabled() && BotCfg::IsNpcBotDungeonFinderBotGenerationEnabled() && role_check.roles.size() < std::size_t(MAXGROUPSIZE))
+            {
+                const uint32 fake_entry = BOT_GIVER_ENTRY;
+                ObjectGuid::LowType counter = 1;
+                while (role_check.roles.size() < static_cast<std::size_t>(MAXGROUPSIZE))
+                {
+                    ObjectGuid fake_guid = ObjectGuid::Create<HighGuid::Unit>(fake_entry, counter++);
+                    if (!isContinue)
+                        SetSelectedDungeons(fake_guid, dungeons);
+                    role_check.roles.emplace(fake_guid, 0);
+                    UpdateRoleCheck(gguid, fake_guid, PLAYER_ROLE_ANY & ~PLAYER_ROLE_LEADER);
+                }
+            }
+        };
+        //end npcbot
+
         std::string debugNames = "";
         if (grp)                                               // Begin rolecheck
         {
@@ -874,9 +898,6 @@ namespace lfg
             SetState(gguid, LFG_STATE_ROLECHECK);
             // Send update to player
             LfgUpdateData updateData = LfgUpdateData(LFG_UPDATETYPE_JOIN_QUEUE, dungeons, comment);
-            //npcbot
-            std::vector<std::pair<ObjectGuid, uint8>> bot_roles;
-            //end npcbot
             for (GroupReference* itr = grp->GetFirstMember(); itr != nullptr; itr = itr->next())
             {
                 if (Player* plrg = itr->GetSource())
@@ -895,53 +916,63 @@ namespace lfg
                     if (!plrg->HaveBot())
                         continue;
                     //add npcbots
-                    BotMap const* map = plrg->GetBotMgr()->GetBotMap();
-                    for (BotMap::const_iterator itr = map->begin(); itr != map->end(); ++itr)
+                    for (auto const& [bguid, bot] : *plrg->GetBotMgr()->GetBotMap())
                     {
-                        ObjectGuid bguid = itr->first;
-                        if (players.find(bguid) == players.end() || !grp->IsMember(bguid))
-                            continue;
-
-                        Creature* bot = ObjectAccessor::GetCreature(*plrg, bguid);
-                        if (!bot)
+                        if (!bot || !players.contains(bguid) || !grp->IsMember(bguid))
                             continue;
 
                         SetState(bguid, LFG_STATE_ROLECHECK);
                         if (!isContinue)
                             SetSelectedDungeons(bguid, dungeons);
-                        roleCheck.roles[bguid] = 0;
                         if (!debugNames.empty())
                             debugNames.append(", ");
                         debugNames.append(bot->GetName());
 
-                        //fill possible roles (as if player selected all roles possible for class)
-                        uint8 broles = PLAYER_ROLE_DAMAGE;
-                        if (bot->GetBotClass() == CLASS_WARRIOR || bot->GetBotClass() == CLASS_PALADIN ||
-                            bot->GetBotClass() == CLASS_DEATH_KNIGHT || bot->GetBotClass() == CLASS_DRUID ||
-                            (bot->GetBotRoles() & BOT_ROLE_TANK))
-                            broles |= PLAYER_ROLE_TANK;
-                        if (bot->GetBotClass() == CLASS_PRIEST || bot->GetBotClass() == CLASS_DRUID ||
-                            bot->GetBotClass() == CLASS_SHAMAN || bot->GetBotClass() == CLASS_PALADIN ||
-                            (bot->GetBotRoles() & BOT_ROLE_HEAL))
-                            broles |= PLAYER_ROLE_HEALER;
-                        //remove unneeded / occupied roles so players can go with role they choose
-                        if (roles & PLAYER_ROLE_TANK)
+                        uint8 broles = PLAYER_ROLE_ANY & ~PLAYER_ROLE_LEADER;
+                        if (!!(roles & PLAYER_ROLE_TANK) || !(bot->GetBotRoles() & BOT_ROLE_TANK))
                             broles &= ~PLAYER_ROLE_TANK;
-                        if (roles & PLAYER_ROLE_HEALER)
+                        if (!!(roles & PLAYER_ROLE_HEALER) || !(bot->GetBotRoles() & BOT_ROLE_HEAL))
                             broles &= ~PLAYER_ROLE_HEALER;
 
-                        bot_roles.emplace_back(bguid, broles);
+                        roleCheck.roles.emplace(bguid, 0);
+                        UpdateRoleCheck(gguid, bguid, broles);
                     }
                     //end npcbot
                 }
             }
+            //npcbot
+            try_generate_fake_dungeon_bots(roleCheck);
+            //end npcbot
             // Update leader role
             UpdateRoleCheck(gguid, guid, roles);
-            //npcbot - update bots' roles
-            for (decltype(bot_roles)::value_type const& brole_pair : bot_roles)
-                UpdateRoleCheck(gguid, brole_pair.first, brole_pair.second);
-            //end npcbot
         }
+        //npcbot
+        else if (BotCfg::IsNpcBotModEnabled() && BotCfg::IsNpcBotDungeonFinderBotGenerationEnabled())
+        {
+            LfgRoleCheck& roleCheck = RoleChecksStore[gguid];
+            roleCheck.roles.clear();
+            roleCheck.cancelTime = time_t(GameTime::GetGameTime().count()) + LFG_TIME_ROLECHECK;
+            roleCheck.state = LFG_ROLECHECK_INITIALITING;
+            roleCheck.leader = guid;
+            roleCheck.dungeons = dungeons;
+            roleCheck.rDungeonId = rDungeonId;
+            if (rDungeonId)
+            {
+                dungeons.clear();
+                dungeons.insert(rDungeonId);
+            }
+            SetState(gguid, LFG_STATE_ROLECHECK);
+            LfgUpdateData updateData = LfgUpdateData(LFG_UPDATETYPE_JOIN_QUEUE, dungeons, comment);
+            player->GetSession()->SendLfgUpdateParty(updateData);
+            SetState(guid, LFG_STATE_ROLECHECK);
+            if (!isContinue)
+                SetSelectedDungeons(guid, dungeons);
+            roleCheck.roles[guid] = 0;
+            debugNames.append(player->GetName());
+            try_generate_fake_dungeon_bots(roleCheck);
+            UpdateRoleCheck(gguid, guid, roles);
+        }
+        //end npcbot
         else                                                   // Add player to queue
         {
             LfgRolesMap rolesMap;
@@ -1870,15 +1901,15 @@ namespace lfg
 
                 for (GuidList::const_iterator itr2 = players.begin(); itr2 != players.end(); ++itr2)
                 {
-                    ObjectGuid bguid = (*itr2);
-                    if (bguid.IsPlayer())
-                        continue;
-                    Creature* bot = player->GetBotMgr()->GetBot(bguid);
-                    if (!bot)
-                        continue;
-
-                    player->GetBotMgr()->AddBotToGroup(bot);
-                    grp->SetLfgRoles(bguid, proposal.players.find(bguid)->second.role);
+                    ObjectGuid bguid = *itr2;
+                    if (bguid.IsCreature())
+                    {
+                        if (Creature* bot = player->GetBotMgr()->GetBot(bguid))
+                        {
+                            player->GetBotMgr()->AddBotToGroup(bot);
+                            grp->SetLfgRoles(bguid, proposal.players.find(bguid)->second.role);
+                        }
+                    }
                 }
 
                 continue;
@@ -2090,10 +2121,11 @@ namespace lfg
                         ObjectGuid bguid = itPlayers->first;
                         if (bguid.IsPlayer())
                             continue;
-                        if (!player->GetBotMgr()->GetBot(bguid))
+                        const bool is_dungeon_bot_lfg_guid = bguid.GetEntry() == BOT_GIVER_ENTRY;
+                        if (!is_dungeon_bot_lfg_guid && !player->GetBotMgr()->GetBot(bguid))
                             continue;
 
-                        itPlayers->second.accept = LfgAnswer(accept);
+                        itPlayers->second.accept = is_dungeon_bot_lfg_guid ? LFG_ANSWER_AGREE : LfgAnswer(accept);
                     }
                 }
             }
@@ -2200,6 +2232,13 @@ namespace lfg
             for (LfgProposalPlayerContainer::iterator it = proposal.players.begin(); it != proposal.players.end(); ++it)
                 if (it->second.accept == LFG_ANSWER_PENDING)
                     it->second.accept = LFG_ANSWER_DENY;
+
+        //npcbot
+        if (type == LFG_UPDATETYPE_PROPOSAL_FAILED)
+            for (LfgProposalPlayerContainer::iterator it = proposal.players.begin(); it != proposal.players.end(); ++it)
+                if (it->first.IsCreature())
+                    it->second.accept = LFG_ANSWER_DENY;
+        //end npcbot
 
         // pussywizard: add cooldown for not accepting (after 40 secs) or declining
         for (LfgProposalPlayerContainer::iterator it = proposal.players.begin(); it != proposal.players.end(); ++it)

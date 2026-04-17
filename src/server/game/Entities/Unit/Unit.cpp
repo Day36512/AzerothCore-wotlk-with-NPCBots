@@ -72,9 +72,12 @@
 #include "Vehicle.h"
 #include "World.h"
 #include "WorldPacket.h"
+#include <algorithm>
 #include <cmath>
+#include <limits>
 
 //npcbot
+#include "botconfig.h"
 #include "botdatamgr.h"
 #include "botmgr.h"
 //end npcbot
@@ -130,6 +133,28 @@ DamageInfo::DamageInfo(CalcDamageInfo const& dmgInfo, uint8 damageIndex)
       m_damageType(DIRECT_DAMAGE), m_attackType(dmgInfo.attackType), m_absorb(dmgInfo.damages[damageIndex].absorb), m_resist(dmgInfo.damages[damageIndex].resist), m_block(dmgInfo.blocked_amount),
       m_cleanDamage(dmgInfo.cleanDamage), m_hitMask(0)
 {
+    switch (dmgInfo.TargetState)
+    {
+        case VICTIMSTATE_IS_IMMUNE:
+            m_hitMask |= PROC_HIT_IMMUNE;
+            break;
+        case VICTIMSTATE_BLOCKS:
+            m_hitMask |= PROC_HIT_FULL_BLOCK;
+            break;
+    }
+
+    if (dmgInfo.HitInfo & (HITINFO_PARTIAL_ABSORB | HITINFO_FULL_ABSORB))
+        m_hitMask |= PROC_HIT_ABSORB;
+
+    if (dmgInfo.HitInfo & HITINFO_FULL_RESIST)
+        m_hitMask |= PROC_HIT_FULL_RESIST;
+
+    if (m_block)
+        m_hitMask |= PROC_HIT_BLOCK;
+
+    bool const damageNullified = (dmgInfo.HitInfo & (HITINFO_FULL_ABSORB | HITINFO_FULL_RESIST)) != 0
+        || (m_hitMask & (PROC_HIT_IMMUNE | PROC_HIT_FULL_BLOCK)) != 0;
+
     switch (dmgInfo.hitOutCome)
     {
         case MELEE_HIT_MISS:
@@ -145,25 +170,19 @@ DamageInfo::DamageInfo(CalcDamageInfo const& dmgInfo, uint8 damageIndex)
             m_hitMask |= PROC_HIT_EVADE;
             break;
         case MELEE_HIT_BLOCK:
-            m_hitMask |= PROC_HIT_BLOCK;
-            [[fallthrough]];
         case MELEE_HIT_CRUSHING:
         case MELEE_HIT_GLANCING:
         case MELEE_HIT_NORMAL:
-            m_hitMask |= PROC_HIT_NORMAL;
+            if (!damageNullified)
+                m_hitMask |= PROC_HIT_NORMAL;
             break;
         case MELEE_HIT_CRIT:
-            m_hitMask |= PROC_HIT_CRITICAL;
+            if (!damageNullified)
+                m_hitMask |= PROC_HIT_CRITICAL;
             break;
         default:
             break;
     }
-
-    if (dmgInfo.damages[damageIndex].absorb)
-        m_hitMask |= PROC_HIT_ABSORB;
-
-    if (dmgInfo.blocked_amount)
-        m_hitMask |= (dmgInfo.damages[damageIndex].damage == dmgInfo.blocked_amount) ? PROC_HIT_FULL_BLOCK : PROC_HIT_BLOCK;
 }
 
 DamageInfo::DamageInfo(SpellNonMeleeDamage const& spellNonMeleeDamage, DamageEffectType damageType, WeaponAttackType attackType, uint32 hitMask)
@@ -376,9 +395,6 @@ Unit::Unit() : WorldObject(),
     m_interruptMask = 0;
     m_transform = 0;
     m_canModifyStats = false;
-
-    for (uint8 i = 0; i < MAX_SPELL_IMMUNITY; ++i)
-        m_spellImmune[i].clear();
 
     for (uint8 i = 0; i < UNIT_MOD_END; ++i)
     {
@@ -913,6 +929,74 @@ bool Unit::HasAuraTypeWithFamilyFlags(AuraType auraType, uint32 familyName, uint
     return false;
 }
 
+bool Unit::IsImmunedToSpell(SpellInfo const* spellInfo, uint32 effectMask, Unit const* caster /*= nullptr*/)
+//npcbot
+const
+//end npcbot
+{
+    if (!spellInfo)
+        return false;
+
+    if (spellInfo->HasAttribute(SPELL_ATTR0_NO_IMMUNITIES) && !HasSpiritOfRedemptionAura())
+        return false;
+
+    bool immuneToAllEffects = true;
+    bool hasCheckedEffect = false;
+
+    for (uint8 i = EFFECT_0; i < MAX_SPELL_EFFECTS; ++i)
+    {
+        if (!(effectMask & (1u << i)))
+            continue;
+
+        if (!spellInfo->Effects[i].IsEffect())
+            continue;
+
+        hasCheckedEffect = true;
+
+        if (IsImmunedToSpellEffect(spellInfo, i, caster))
+        {
+            if (spellInfo->HasAttribute(SPELL_ATTR4_NO_PARTIAL_IMMUNITY))
+                return true;
+
+            continue;
+        }
+
+        immuneToAllEffects = false;
+        break;
+    }
+
+    if (hasCheckedEffect && immuneToAllEffects)
+        return true;
+
+    if (!spellInfo->HasAttribute(SPELL_ATTR2_NO_SCHOOL_IMMUNITIES))
+    {
+        if (spellInfo->Id == 42292 || spellInfo->Id == 59752 || spellInfo->Id == 19574 || spellInfo->Id == 34471)
+            return false;
+
+        SpellSchoolMask schoolMask = spellInfo->GetSchoolMask();
+        if (schoolMask != SPELL_SCHOOL_MASK_NONE)
+        {
+            SpellImmuneContainer const& schoolList = m_spellImmune[IMMUNITY_SCHOOL];
+            for (auto const& [immunitySchoolMask, immunityAuraId] : schoolList)
+            {
+                SpellInfo const* immuneSpellInfo = sSpellMgr->GetSpellInfo(immunityAuraId);
+                if ((immunitySchoolMask & schoolMask) != schoolMask)
+                    continue;
+
+                if (IgnoresSchoolImmunityFromFriendlyCaster(caster, immunityAuraId, immuneSpellInfo))
+                    continue;
+
+                if (spellInfo->CanPierceImmuneAura(immuneSpellInfo))
+                    continue;
+
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 bool Unit::HasBreakableByDamageAuraType(AuraType type, uint32 excludeAura) const
 {
     AuraEffectList const& auras = GetAuraEffectsByType(type);
@@ -1233,7 +1317,8 @@ uint32 Unit::DealDamage(Unit* attacker, Unit* victim, uint32 damage, CleanDamage
         if (!attacker || attacker->IsControlledByPlayer() || attacker->IsCreatedByPlayer())
         {
             uint32 unDamage = health < damage ? health : damage;
-            bool damagedByPlayer = unDamage && attacker && (attacker->IsPlayer() || attacker->m_movedByPlayer != nullptr);
+            bool damagedByPlayer = unDamage && attacker && (attacker->IsPlayer() || attacker->m_movedByPlayer != nullptr
+                || attacker->GetCharmerOrOwnerGUID().IsPlayer());
             //npcbot: npcbots' damage allways counts towards damage requirement
             damagedByPlayer |= attacker && attacker->IsNPCBotOrPet();
             //end npcbot
@@ -1405,7 +1490,7 @@ SpellCastResult Unit::CastSpell(SpellCastTargets const& targets, SpellInfo const
 {
     if (!spellInfo)
     {
-        LOG_ERROR("entities.unit", "CastSpell: unknown spell by caster {}", GetGUID().ToString());
+        LOG_DEBUG("entities.unit", "CastSpell: unknown spell by caster {}", GetGUID().ToString());
         return SPELL_FAILED_SPELL_UNAVAILABLE;
     }
 
@@ -1580,9 +1665,9 @@ void Unit::CalculateSpellDamageTaken(SpellNonMeleeDamage* damageInfo, int32 dama
                     //TODO: rename to ApplyBotDamageMultiplierPhysical
                     ToCreature()->ApplyBotDamageMultiplierMelee(damage, *damageInfo, spellInfo, attackType, crit);
                     if (damageSchoolMask & SPELL_SCHOOL_MASK_NORMAL)
-                        damage *= (BotMgr::IsWanderingWorldBot(ToCreature()) ? BotMgr::GetBotWandererDamageMod() : BotMgr::GetBotDamageModPhysical());
+                        damage *= (BotMgr::IsWanderingWorldBot(ToCreature()) ? BotCfg::GetBotWandererDamageMod() : BotCfg::GetBotDamageModPhysical());
                     else if (damageSchoolMask & SPELL_SCHOOL_MASK_MAGIC)
-                        damage *= (BotMgr::IsWanderingWorldBot(ToCreature()) ? BotMgr::GetBotWandererDamageMod() : BotMgr::GetBotDamageModSpell());
+                        damage *= (BotMgr::IsWanderingWorldBot(ToCreature()) ? BotCfg::GetBotWandererDamageMod() : BotCfg::GetBotDamageModSpell());
                 }
                 //End NpcBot
 
@@ -1662,9 +1747,9 @@ void Unit::CalculateSpellDamageTaken(SpellNonMeleeDamage* damageInfo, int32 dama
                 {
                     ToCreature()->ApplyBotDamageMultiplierSpell(damage, *damageInfo, spellInfo, attackType, crit);
                     if (damageSchoolMask & SPELL_SCHOOL_MASK_NORMAL)
-                        damage *= (BotMgr::IsWanderingWorldBot(ToCreature()) ? BotMgr::GetBotWandererDamageMod() : BotMgr::GetBotDamageModPhysical());
+                        damage *= (BotMgr::IsWanderingWorldBot(ToCreature()) ? BotCfg::GetBotWandererDamageMod() : BotCfg::GetBotDamageModPhysical());
                     else if (damageSchoolMask & SPELL_SCHOOL_MASK_MAGIC)
-                        damage *= (BotMgr::IsWanderingWorldBot(ToCreature()) ? BotMgr::GetBotWandererDamageMod() : BotMgr::GetBotDamageModSpell());
+                        damage *= (BotMgr::IsWanderingWorldBot(ToCreature()) ? BotCfg::GetBotWandererDamageMod() : BotCfg::GetBotDamageModSpell());
                 }
                 //End NpcBot
 
@@ -1844,7 +1929,7 @@ void Unit::CalculateMeleeDamage(Unit* victim, CalcDamageInfo* damageInfo, Weapon
             //damage is unused. TODO: remove this redundant argument
             ToCreature()->ApplyBotDamageMultiplierMelee(damageInfo->damages[i].damage, *damageInfo);
             damage = damageInfo->damages[i].damage;
-            damage *= (BotMgr::IsWanderingWorldBot(ToCreature()) ? BotMgr::GetBotWandererDamageMod() : BotMgr::GetBotDamageModPhysical());
+            damage *= (BotMgr::IsWanderingWorldBot(ToCreature()) ? BotCfg::GetBotWandererDamageMod() : BotCfg::GetBotDamageModPhysical());
         }
         //End NpcBot
 
@@ -2242,7 +2327,7 @@ void Unit::DealDamageShieldDamage(Unit* victim)
         }
 
         // ...or immuned
-        if (IsImmunedToDamageOrSchool(i_spellProto))
+        if (IsImmunedToDamage(victim, i_spellProto))
         {
             victim->SendSpellDamageImmune(this, i_spellProto->Id);
             continue;
@@ -2304,7 +2389,7 @@ bool Unit::IsDamageReducedByArmor(SpellSchoolMask schoolMask, SpellInfo const* s
         {
             if (spellInfo->Effects[effIndex].ApplyAuraName == SPELL_AURA_PERIODIC_DAMAGE ||
                     spellInfo->Effects[effIndex].Effect == SPELL_EFFECT_SCHOOL_DAMAGE)
-                if (spellInfo->GetEffectMechanicMask(effIndex) & (1 << MECHANIC_BLEED))
+                if (spellInfo->GetEffectMechanicMask(effIndex) & (1ULL << MECHANIC_BLEED))
                     return false;
         }
     }
@@ -3431,7 +3516,7 @@ void Unit::SendMeleeAttackStop(Unit* victim)
 bool Unit::isSpellBlocked(Unit* victim, SpellInfo const* spellProto, WeaponAttackType attackType)
 {
     // These spells can't be blocked
-    if (spellProto && spellProto->HasAttribute(SPELL_ATTR0_NO_ACTIVE_DEFENSE))
+    if (spellProto && (spellProto->HasAttribute(SPELL_ATTR0_NO_ACTIVE_DEFENSE) || spellProto->HasAttribute(SPELL_ATTR3_ALWAYS_HIT)))
         return false;
 
     if (victim->HasIgnoreHitDirectionAura() || victim->HasInArc(M_PI, this))
@@ -3818,6 +3903,9 @@ SpellMissInfo Unit::MagicSpellHitResult(Unit* victim, SpellInfo const* spellInfo
 //   Resist
 SpellMissInfo Unit::SpellHitResult(Unit* victim, SpellInfo const* spell, bool CanReflect)
 {
+    if (spell->HasAttribute(SPELL_ATTR3_ALWAYS_HIT))
+        return SPELL_MISS_NONE;
+
     // Check for immune
     if (victim->IsImmunedToSpell(spell))
         return SPELL_MISS_IMMUNE;
@@ -3827,11 +3915,6 @@ SpellMissInfo Unit::SpellHitResult(Unit* victim, SpellInfo const* spell, bool Ca
     if ((spell->IsPositive() || spell->HasEffect(SPELL_EFFECT_DISPEL))
             && (!IsHostileTo(victim))) // prevent from affecting enemy by "positive" spell
         return SPELL_MISS_NONE;
-
-    // Check for immune
-    // xinef: check for school immunity only
-    if (victim->IsImmunedToSchool(spell))
-        return SPELL_MISS_IMMUNE;
 
     if (this == victim)
         return SPELL_MISS_NONE;
@@ -3897,12 +3980,16 @@ SpellMissInfo Unit::SpellHitResult(Unit* victim, Spell const* spell, bool CanRef
         return SPELL_MISS_NONE;
     }
 
-    // Check for immune
-    // xinef: check for school immunity only
-    if (victim->IsImmunedToSchool(spell))
+    // Check for immune to spell effects (includes school, mechanics, state, dispel immunities)
+    if (victim->IsImmunedToSpell(spellInfo, MAX_EFFECT_MASK, this))
     {
         return SPELL_MISS_IMMUNE;
     }
+
+    // Damage immunity is only checked if the spell has damage effects, this immunity must not prevent aura apply
+    // returns SPELL_MISS_IMMUNE in that case, for other spells, the SMSG_SPELL_GO must show hit
+    if (spellInfo->HasOnlyDamageEffects() && victim->IsImmunedToDamage(this, spellInfo))
+        return SPELL_MISS_IMMUNE;
 
     if (this == victim)
     {
@@ -5721,7 +5808,7 @@ void Unit::RemoveAurasWithFamily(SpellFamilyNames family, uint32 familyFlag1, ui
 void Unit::RemoveMovementImpairingAuras(bool withRoot)
 {
     if (withRoot)
-        RemoveAurasWithMechanic(1 << MECHANIC_ROOT);
+        RemoveAurasWithMechanic(1ULL << MECHANIC_ROOT);
 
     // Snares
     for (AuraApplicationMap::iterator iter = m_appliedAuras.begin(); iter != m_appliedAuras.end();)
@@ -5737,7 +5824,7 @@ void Unit::RemoveMovementImpairingAuras(bool withRoot)
     }
 }
 
-void Unit::RemoveAurasWithMechanic(uint32 mechanic_mask, AuraRemoveMode removemode, uint32 except)
+void Unit::RemoveAurasWithMechanic(uint64 mechanic_mask, AuraRemoveMode removemode, uint32 except)
 {
     for (AuraApplicationMap::iterator iter = m_appliedAuras.begin(); iter != m_appliedAuras.end();)
     {
@@ -5756,7 +5843,7 @@ void Unit::RemoveAurasWithMechanic(uint32 mechanic_mask, AuraRemoveMode removemo
 
 void Unit::RemoveAurasByShapeShift()
 {
-    uint32 mechanic_mask = (1 << MECHANIC_SNARE) | (1 << MECHANIC_ROOT);
+    uint64 mechanic_mask = (1ULL << MECHANIC_SNARE) | (1ULL << MECHANIC_ROOT);
     for (AuraApplicationMap::iterator iter = m_appliedAuras.begin(); iter != m_appliedAuras.end();)
     {
         Aura const* aura = iter->second->GetBase();
@@ -5929,6 +6016,9 @@ void Unit::RemoveAllAurasExceptType(AuraType type)
 // Xinef: We should not remove passive auras on evade, if npc has player owner (scripted one cast auras)
 void Unit::RemoveEvadeAuras()
 {
+    if (IsCharmedOwnedByPlayerOrPlayer())
+        return;
+
     for (AuraApplicationMap::iterator iter = m_appliedAuras.begin(); iter != m_appliedAuras.end();)
     {
         Aura const* aura = iter->second->GetBase();
@@ -6310,17 +6400,17 @@ bool Unit::HasNegativeAuraWithAttribute(uint32 flag, ObjectGuid guid)
     return false;
 }
 
-bool Unit::HasAuraWithMechanic(uint32 mechanicMask) const
+bool Unit::HasAuraWithMechanic(uint64 mechanicMask) const
 {
     for (AuraApplicationMap::const_iterator iter = m_appliedAuras.begin(); iter != m_appliedAuras.end(); ++iter)
     {
         SpellInfo const* spellInfo  = iter->second->GetBase()->GetSpellInfo();
-        if (spellInfo->Mechanic && (mechanicMask & (1 << spellInfo->Mechanic)))
+        if (spellInfo->Mechanic && (mechanicMask & (1ULL << spellInfo->Mechanic)))
             return true;
 
         for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
             if (iter->second->HasEffect(i) && spellInfo->Effects[i].Effect && spellInfo->Effects[i].Mechanic)
-                if (mechanicMask & (1 << spellInfo->Effects[i].Mechanic))
+                if (mechanicMask & (1ULL << spellInfo->Effects[i].Mechanic))
                     return true;
     }
 
@@ -7023,7 +7113,7 @@ void Unit::ProcSkillsAndAuras(Unit* actor, Unit* victim, uint32 procAttacker, ui
         }
         else if (healInfo && healInfo->GetHeal())
             spellTypeMask = PROC_SPELL_TYPE_HEAL;
-        else if (damageInfo && damageInfo->GetDamage())
+        else if (damageInfo && (damageInfo->GetDamage() || damageInfo->GetAbsorb()))
             spellTypeMask = PROC_SPELL_TYPE_DAMAGE;
         else if (procSpellInfo)
             spellTypeMask = PROC_SPELL_TYPE_NO_DMG_HEAL;
@@ -7690,22 +7780,25 @@ bool Unit::Attack(Unit* victim, bool meleeAttack)
     // set position before any AI calls/assistance
     //if (IsCreature())
     //    ToCreature()->SetCombatStartPosition(GetPositionX(), GetPositionY(), GetPositionZ());
-    if (creature && !IsControlledByPlayer())
+    if (creature)
     //npcbot - not for npcbots either
     if (!creature->IsNPCBotOrPet())
     //end npcbot
     {
         EngageWithTarget(victim);
 
-        creature->SendAIReaction(AI_REACTION_HOSTILE);
+        if (!IsControlledByPlayer())
+        {
+            creature->SendAIReaction(AI_REACTION_HOSTILE);
 
-        /// @todo: Implement aggro range, detection range and assistance range templates
-        if (!(creature->HasFlagsExtra(CREATURE_FLAG_EXTRA_DONT_CALL_ASSISTANCE)))
-            creature->CallAssistance();
+            /// @todo: Implement aggro range, detection range and assistance range templates
+            if (!(creature->HasFlagsExtra(CREATURE_FLAG_EXTRA_DONT_CALL_ASSISTANCE)))
+                creature->CallAssistance();
 
-        creature->SetAssistanceTimer(sWorld->getIntConfig(CONFIG_CREATURE_FAMILY_ASSISTANCE_PERIOD));
+            creature->SetAssistanceTimer(sWorld->getIntConfig(CONFIG_CREATURE_FAMILY_ASSISTANCE_PERIOD));
 
-        SetUInt32Value(UNIT_NPC_EMOTESTATE, EMOTE_ONESHOT_NONE);
+            SetUInt32Value(UNIT_NPC_EMOTESTATE, EMOTE_ONESHOT_NONE);
+        }
     }
 
     // delay offhand weapon attack by 50% of the base attack time
@@ -8945,7 +9038,7 @@ float Unit::SpellPctDamageModsDone(Unit* victim, SpellInfo const* spellProto, Da
 
             // Torment the weak
             if (spellProto->SpellFamilyFlags[0] & 0x20600021 || spellProto->SpellFamilyFlags[1] & 0x9000)
-                if (victim->HasAuraWithMechanic((1 << MECHANIC_SNARE) | (1 << MECHANIC_SLOW_ATTACK)))
+                if (victim->HasAuraWithMechanic((1ULL << MECHANIC_SNARE) | (1ULL << MECHANIC_SLOW_ATTACK)))
                     if (AuraEffect* aurEff = GetAuraEffect(SPELL_AURA_DUMMY, SPELLFAMILY_GENERIC, 3263, EFFECT_0))
                         AddPct(DoneTotalMod, aurEff->GetAmount());
             break;
@@ -9259,7 +9352,7 @@ uint32 Unit::SpellDamageBonusTaken(Unit* caster, SpellInfo const* spellProto, ui
         });
     }
 
-    if (uint32 mechanicMask = spellProto->GetAllEffectsMechanicMask())
+    if (uint64 mechanicMask = spellProto->GetAllEffectsMechanicMask())
     {
         int32 modifierMax = 0;
         int32 modifierMin = 0;
@@ -9274,7 +9367,7 @@ uint32 Unit::SpellDamageBonusTaken(Unit* caster, SpellInfo const* spellProto, ui
                 if (!caster || caster->GetGUID() != (*i)->GetCasterGUID())
                     continue;
 
-            if (mechanicMask & uint32(1 << (*i)->GetMiscValue()))
+            if (mechanicMask & (1ULL << (*i)->GetMiscValue()))
             {
                 if ((*i)->GetAmount() > 0)
                 {
@@ -9590,7 +9683,7 @@ float Unit::SpellTakenCritChance(Unit const* caster, SpellInfo const* spellProto
                         case SPELLFAMILY_MAGE:
                             // Glyph of Fire Blast
                             if (spellProto->SpellFamilyFlags[0] == 0x2 && spellProto->SpellIconID == 12)
-                                if (HasAuraWithMechanic((1 << MECHANIC_STUN) | (1 << MECHANIC_KNOCKOUT)))
+                                if (HasAuraWithMechanic((1ULL << MECHANIC_STUN) | (1ULL << MECHANIC_KNOCKOUT)))
                                     if (AuraEffect const* aurEff = caster->GetAuraEffect(56369, EFFECT_0))
                                         crit_chance += aurEff->GetAmount();
                             break;
@@ -10188,105 +10281,100 @@ int32 Unit::SpellBaseHealingBonusDone(SpellSchoolMask schoolMask)
     return AdvertisedBenefit;
 }
 
-bool Unit::IsImmunedToDamage(SpellSchoolMask meleeSchoolMask) const
+uint32 Unit::GetDamageImmunityMask() const
 {
-    if (meleeSchoolMask == SPELL_SCHOOL_MASK_NONE)
-    {
-        return false;
-    }
-
-    // If m_immuneToDamage type contain magic, IMMUNE damage.
-    SpellImmuneList const& damageList = m_spellImmune[IMMUNITY_DAMAGE];
-    for (SpellImmuneList::const_iterator itr = damageList.begin(); itr != damageList.end(); ++itr)
-        if ((itr->type & meleeSchoolMask) == meleeSchoolMask)
-            return true;
-
-    return false;
+    uint32 mask = 0;
+    SpellImmuneContainer const& damageList = m_spellImmune[IMMUNITY_DAMAGE];
+    for (auto const& [immunitySchoolMask, _] : damageList)
+        mask |= immunitySchoolMask;
+    return mask;
 }
 
-bool Unit::IsImmunedToDamage(SpellInfo const* spellInfo) const
+bool Unit::IgnoresSchoolImmunityFromFriendlyCaster(Unit const* caster, uint32 immunityAuraId, SpellInfo const* immunitySpellInfo) const
 {
-    if (!spellInfo)
-    {
+    if (!caster || !caster->IsFriendlyTo(this))
         return false;
-    }
 
-    if (spellInfo->HasAttribute(SPELL_ATTR0_NO_IMMUNITIES) && !HasSpiritOfRedemptionAura())
-    {
-        return false;
-    }
+    if (immunitySpellInfo)
+        return !immunitySpellInfo->HasAttribute(SPELL_ATTR1_IMMUNITY_TO_HOSTILE_AND_FRIENDLY_EFFECTS);
 
-    if (spellInfo->HasAttribute(SPELL_ATTR1_IMMUNITY_TO_HOSTILE_AND_FRIENDLY_EFFECTS) || spellInfo->HasAttribute(SPELL_ATTR2_NO_SCHOOL_IMMUNITIES))
-    {
-        return false;
-    }
-
-    uint32 schoolMask = spellInfo->GetSchoolMask();
-    if (schoolMask == SPELL_SCHOOL_MASK_NONE)
-    {
-        return false;
-    }
-
-    // If m_immuneToDamage type contain magic, IMMUNE damage.
-    SpellImmuneList const& damageList = m_spellImmune[IMMUNITY_DAMAGE];
-    for (SpellImmuneList::const_iterator itr = damageList.begin(); itr != damageList.end(); ++itr)
-        if ((itr->type & schoolMask) == schoolMask)
-            return true;
-
-    return false;
+    // Creature template immunities are loaded with a placeholder spell id.
+    return immunityAuraId == std::numeric_limits<uint32>::max();
 }
 
-bool Unit::IsImmunedToDamage(Spell const* spell) const
+bool Unit::IsImmunedToDamage(SpellSchoolMask schoolMask) const
 {
-    SpellInfo const* spellInfo = spell->GetSpellInfo();
-    if (!spellInfo)
-    {
-        return false;
-    }
-
-    if (spellInfo->HasAttribute(SPELL_ATTR0_NO_IMMUNITIES) && !HasSpiritOfRedemptionAura())
-    {
-        return false;
-    }
-
-    if (spellInfo->HasAttribute(SPELL_ATTR1_IMMUNITY_TO_HOSTILE_AND_FRIENDLY_EFFECTS) || spellInfo->HasAttribute(SPELL_ATTR2_NO_SCHOOL_IMMUNITIES))
-    {
-        return false;
-    }
-
-    uint32 schoolMask = spell->GetSpellSchoolMask();
     if (schoolMask == SPELL_SCHOOL_MASK_NONE)
-    {
         return false;
-    }
 
-    // If m_immuneToDamage type contain magic, IMMUNE damage.
-    SpellImmuneList const& damageList = m_spellImmune[IMMUNITY_DAMAGE];
-    for (SpellImmuneList::const_iterator itr = damageList.begin(); itr != damageList.end(); ++itr)
+    // If m_immuneToSchool type contains all requested schools, IMMUNE damage.
+    SpellImmuneContainer const& schoolList = m_spellImmune[IMMUNITY_SCHOOL];
+    for (auto const& itr : schoolList)
+        if (IsImmuneMaskFully(SpellSchoolMask(itr.first), schoolMask))
+            return true;
+
+    // If m_immuneToDamage type contains all requested schools, IMMUNE damage.
+    SpellImmuneContainer const& damageList = m_spellImmune[IMMUNITY_DAMAGE];
+    return std::ranges::any_of(damageList, [schoolMask](auto const& immune)
     {
-        if ((itr->type & schoolMask) == schoolMask)
+        return Unit::IsImmuneMaskFully(SpellSchoolMask(immune.first), schoolMask);
+    });
+}
+
+bool Unit::IsImmunedToDamage(Unit const* caster, SpellInfo const* spellInfo) const
+{
+    if (!spellInfo)
+        return false;
+
+    if (spellInfo->HasAttribute(SPELL_ATTR0_NO_IMMUNITIES) || spellInfo->HasAttribute(SPELL_ATTR2_NO_SCHOOL_IMMUNITIES))
+        return false;
+
+    SpellSchoolMask schoolMask = SpellSchoolMask(spellInfo->GetSchoolMask());
+    if (schoolMask == SPELL_SCHOOL_MASK_NONE)
+        return false;
+
+    auto hasImmunity = [&](SpellImmuneContainer const& container)
+    {
+        uint32 schoolImmunityMask = 0;
+        for (auto const& [immunitySchoolMask, immunityAuraId] : container)
         {
-            return true;
+            SpellInfo const* immuneAuraInfo = sSpellMgr->GetSpellInfo(immunityAuraId);
+            if (IgnoresSchoolImmunityFromFriendlyCaster(caster, immunityAuraId, immuneAuraInfo))
+                continue;
+
+            if (immuneAuraInfo && spellInfo->CanPierceImmuneAura(immuneAuraInfo))
+                continue;
+
+            schoolImmunityMask |= immunitySchoolMask;
         }
-    }
 
-    return false;
-}
-
-bool Unit::IsImmunedToSchool(SpellSchoolMask meleeSchoolMask) const
-{
-    if (meleeSchoolMask == SPELL_SCHOOL_MASK_NONE)
-    {
-        return false;
-    }
+        // We need to be immune to all types
+        return (schoolImmunityMask & schoolMask) == schoolMask;
+    };
 
     // If m_immuneToSchool type contain this school type, IMMUNE damage.
-    SpellImmuneList const& schoolList = m_spellImmune[IMMUNITY_SCHOOL];
-    for (SpellImmuneList::const_iterator itr = schoolList.begin(); itr != schoolList.end(); ++itr)
-        if ((itr->type & meleeSchoolMask) == meleeSchoolMask)
-            return true;
+    if (hasImmunity(m_spellImmune[IMMUNITY_SCHOOL]))
+        return true;
+
+    // If m_immuneToDamage type contain magic, IMMUNE damage.
+    if (hasImmunity(m_spellImmune[IMMUNITY_DAMAGE]))
+        return true;
 
     return false;
+}
+
+bool Unit::IsImmunedToSchool(SpellSchoolMask schoolMask) const
+{
+    if (schoolMask == SPELL_SCHOOL_MASK_NONE)
+        return false;
+
+    // Check IMMUNITY_SCHOOL: returns true if ALL schools in the mask are covered by at least one immunity
+    // (e.g., Anti-Magic Shell provides school immunity to all magic schools)
+    SpellImmuneContainer const& schoolList = m_spellImmune[IMMUNITY_SCHOOL];
+    return std::ranges::any_of(schoolList, [schoolMask](auto const& immune)
+    {
+        return (immune.first & schoolMask) == schoolMask;
+    });
 }
 
 bool Unit::IsImmunedToSchool(SpellInfo const* spellInfo) const
@@ -10302,10 +10390,10 @@ bool Unit::IsImmunedToSchool(SpellInfo const* spellInfo) const
 
     if (spellInfo->Id != 42292 && spellInfo->Id != 59752 && spellInfo->Id != 19574 && spellInfo->Id != 34471)
     {
-        // If m_immuneToSchool type contain this school type, IMMUNE damage.
-        SpellImmuneList const& schoolList = m_spellImmune[IMMUNITY_SCHOOL];
-        for (SpellImmuneList::const_iterator itr = schoolList.begin(); itr != schoolList.end(); ++itr)
-            if ((itr->type & schoolMask) == schoolMask && !spellInfo->CanPierceImmuneAura(sSpellMgr->GetSpellInfo(itr->spellId)))
+        // Check IMMUNITY_SCHOOL: returns true if ALL schools in the mask are covered and spell can't pierce
+        SpellImmuneContainer const& schoolList = m_spellImmune[IMMUNITY_SCHOOL];
+        for (auto itr = schoolList.begin(); itr != schoolList.end(); ++itr)
+            if ((itr->first & schoolMask) == schoolMask && !spellInfo->CanPierceImmuneAura(sSpellMgr->GetSpellInfo(itr->second)))
                 return true;
     }
 
@@ -10328,11 +10416,14 @@ bool Unit::IsImmunedToSchool(Spell const* spell) const
 
     if (spellInfo->Id != 42292 && spellInfo->Id != 59752 && spellInfo->Id != 19574 && spellInfo->Id != 34471)
     {
-        // If m_immuneToSchool type contain this school type, IMMUNE damage.
-        SpellImmuneList const& schoolList = m_spellImmune[IMMUNITY_SCHOOL];
-        for (SpellImmuneList::const_iterator itr = schoolList.begin(); itr != schoolList.end(); ++itr)
+        // Check IMMUNITY_SCHOOL: returns true if ALL schools in the mask are covered and spell can't pierce
+        SpellImmuneContainer const& schoolList = m_spellImmune[IMMUNITY_SCHOOL];
+        for (auto itr = schoolList.begin(); itr != schoolList.end(); ++itr)
         {
-            if ((itr->type & schoolMask) == schoolMask && !spellInfo->CanPierceImmuneAura(sSpellMgr->GetSpellInfo(itr->spellId)))
+            SpellInfo const* immuneSpellInfo = sSpellMgr->GetSpellInfo(itr->second);
+            if ((itr->first & schoolMask) == schoolMask
+                && !IgnoresSchoolImmunityFromFriendlyCaster(spell->GetCaster(), itr->second, immuneSpellInfo)
+                && !spellInfo->CanPierceImmuneAura(immuneSpellInfo))
             {
                 return true;
             }
@@ -10342,19 +10433,49 @@ bool Unit::IsImmunedToSchool(Spell const* spell) const
     return false;
 }
 
-bool Unit::IsImmunedToDamageOrSchool(SpellSchoolMask meleeSchoolMask) const
+bool Unit::IsImmunedToDamageOrSchool(SpellSchoolMask schoolMask) const
 {
-    if (meleeSchoolMask == SPELL_SCHOOL_MASK_NONE)
+    if (schoolMask == SPELL_SCHOOL_MASK_NONE)
     {
         return false;
     }
 
-    return IsImmunedToDamage(meleeSchoolMask) || IsImmunedToSchool(meleeSchoolMask);
+    return IsImmunedToDamage(schoolMask) || IsImmunedToSchool(schoolMask);
 }
 
-bool Unit::IsImmunedToDamageOrSchool(SpellInfo const* spellInfo) const
+bool Unit::IsImmunedToAuraPeriodicTick(Unit const* caster, SpellInfo const* spellInfo) const
 {
-    return IsImmunedToDamage(spellInfo) || IsImmunedToSchool(spellInfo);
+    if (!spellInfo)
+        return false;
+
+    if (spellInfo->HasAttribute(SPELL_ATTR0_NO_IMMUNITIES) || spellInfo->HasAttribute(SPELL_ATTR2_NO_SCHOOL_IMMUNITIES))
+        return false;
+
+    SpellSchoolMask schoolMask = SpellSchoolMask(spellInfo->GetSchoolMask());
+    if (schoolMask == SPELL_SCHOOL_MASK_NONE)
+        return false;
+
+    auto hasImmunity = [&](SpellImmuneContainer const& container)
+    {
+        uint32 schoolImmunityMask = 0;
+        for (auto const& [immunitySchoolMask, immunityAuraId] : container)
+        {
+            SpellInfo const* immuneAuraInfo = sSpellMgr->GetSpellInfo(immunityAuraId);
+            if (IgnoresSchoolImmunityFromFriendlyCaster(caster, immunityAuraId, immuneAuraInfo))
+                continue;
+
+            schoolImmunityMask |= immunitySchoolMask;
+        }
+
+        // We need to be immune to all types
+        return (schoolImmunityMask & schoolMask) == schoolMask;
+    };
+
+    // If m_immuneToSchool type contain this school type, IMMUNE periodic tick.
+    if (hasImmunity(m_spellImmune[IMMUNITY_SCHOOL]))
+        return true;
+
+    return false;
 }
 
 bool Unit::IsImmunedToSpell(SpellInfo const* spellInfo, Spell const* spell)
@@ -10366,39 +10487,35 @@ const
         return false;
 
     // Single spell immunity.
-    SpellImmuneList const& idList = m_spellImmune[IMMUNITY_ID];
-    for (SpellImmuneList::const_iterator itr = idList.begin(); itr != idList.end(); ++itr)
-        if (itr->type == spellInfo->Id)
-            return true;
+    SpellImmuneContainer const& idList = m_spellImmune[IMMUNITY_ID];
+    if (idList.count(spellInfo->Id) > 0)
+        return true;
 
     // xinef: my special immunity, if spellid is not on this list it means npc is immune
-    SpellImmuneList const& allowIdList = m_spellImmune[IMMUNITY_ALLOW_ID];
+    SpellImmuneContainer const& allowIdList = m_spellImmune[IMMUNITY_ALLOW_ID];
     if (!allowIdList.empty())
     {
-        for (SpellImmuneList::const_iterator itr = allowIdList.begin(); itr != allowIdList.end(); ++itr)
-            if (itr->type == spellInfo->Id)
-                return false;
-        return true;
+        if (allowIdList.count(spellInfo->Id) == 0)
+            return true;
+        return false;
     }
 
     if (spellInfo->HasAttribute(SPELL_ATTR0_NO_IMMUNITIES) && !HasSpiritOfRedemptionAura())
         return false;
 
-    if (spellInfo->Dispel)
+    if (uint32 dispel = spellInfo->Dispel)
     {
-        SpellImmuneList const& dispelList = m_spellImmune[IMMUNITY_DISPEL];
-        for (SpellImmuneList::const_iterator itr = dispelList.begin(); itr != dispelList.end(); ++itr)
-            if (itr->type == spellInfo->Dispel)
-                return true;
+        SpellImmuneContainer const& dispelList = m_spellImmune[IMMUNITY_DISPEL];
+        if (dispelList.count(dispel) > 0)
+            return true;
     }
 
     // Spells that don't have effectMechanics.
-    if (spellInfo->Mechanic)
+    if (uint32 mechanic = spellInfo->Mechanic)
     {
-        SpellImmuneList const& mechanicList = m_spellImmune[IMMUNITY_MECHANIC];
-        for (SpellImmuneList::const_iterator itr = mechanicList.begin(); itr != mechanicList.end(); ++itr)
-            if (itr->type == spellInfo->Mechanic)
-                return true;
+        SpellImmuneContainer const& mechanicList = m_spellImmune[IMMUNITY_MECHANIC];
+        if (mechanicList.count(mechanic) > 0)
+            return true;
     }
 
     bool immuneToAllEffects = true;
@@ -10423,9 +10540,10 @@ const
     if (immuneToAllEffects) //Return immune only if the target is immune to all spell effects.
         return true;
 
-    if (spellInfo->Id != 42292 && spellInfo->Id != 59752 && spellInfo->Id != 19574 && spellInfo->Id != 34471)
+    if (!spellInfo->HasAttribute(SPELL_ATTR2_NO_SCHOOL_IMMUNITIES))
     {
         SpellSchoolMask spellSchoolMask = spellInfo->GetSchoolMask();
+        Unit const* spellCaster = spell ? spell->GetCaster() : nullptr;
         if (spell)
         {
             spellSchoolMask = spell->GetSpellSchoolMask();
@@ -10433,16 +10551,20 @@ const
 
         if (spellSchoolMask != SPELL_SCHOOL_MASK_NONE)
         {
-            SpellImmuneList const& schoolList = m_spellImmune[IMMUNITY_SCHOOL];
-            for (SpellImmuneList::const_iterator itr = schoolList.begin(); itr != schoolList.end(); ++itr)
+            SpellImmuneContainer const& schoolList = m_spellImmune[IMMUNITY_SCHOOL];
+            for (auto itr = schoolList.begin(); itr != schoolList.end(); ++itr)
             {
-                SpellInfo const* immuneSpellInfo = sSpellMgr->GetSpellInfo(itr->spellId);
-                if (((itr->type & spellSchoolMask) == spellSchoolMask)
-                    && (!immuneSpellInfo || immuneSpellInfo->IsPositive()) && !spellInfo->IsPositive()
-                    && !spellInfo->CanPierceImmuneAura(immuneSpellInfo))
-                {
-                    return true;
-                }
+                SpellInfo const* immuneSpellInfo = sSpellMgr->GetSpellInfo(itr->second);
+                if (!(itr->first & spellSchoolMask))
+                    continue;
+
+                if (IgnoresSchoolImmunityFromFriendlyCaster(spellCaster, itr->second, immuneSpellInfo))
+                    continue;
+
+                if (spellInfo->CanPierceImmuneAura(immuneSpellInfo))
+                    continue;
+
+                return true;
             }
         }
     }
@@ -10450,7 +10572,7 @@ const
     return false;
 }
 
-bool Unit::IsImmunedToSpellEffect(SpellInfo const* spellInfo, uint32 index) const
+bool Unit::IsImmunedToSpellEffect(SpellInfo const* spellInfo, uint32 index, Unit const* caster /*= nullptr*/) const
 {
     if (!spellInfo || !spellInfo->Effects[index].IsEffect())
         return false;
@@ -10462,12 +10584,16 @@ bool Unit::IsImmunedToSpellEffect(SpellInfo const* spellInfo, uint32 index) cons
     if (spellInfo->HasAttribute(SPELL_ATTR0_NO_IMMUNITIES) && !HasSpiritOfRedemptionAura())
         return false;
 
+    // Special-case handling for Vezax's Aura of Despair.
+    static constexpr uint32 SPELL_AURA_OF_DESPAIR_1 = 62692;
+    static constexpr uint32 SPELL_AURA_OF_DESPAIR_2 = 64848;
+
     //If m_immuneToEffect type contain this effect type, IMMUNE effect.
     uint32 effect = spellInfo->Effects[index].Effect;
-    SpellImmuneList const& effectList = m_spellImmune[IMMUNITY_EFFECT];
-    for (SpellImmuneList::const_iterator itr = effectList.begin(); itr != effectList.end(); ++itr)
+    SpellImmuneContainer const& effectList = m_spellImmune[IMMUNITY_EFFECT];
+    for (SpellImmuneContainer::const_iterator itr = effectList.begin(); itr != effectList.end(); ++itr)
     {
-        if (itr->type == effect && (itr->spellId != 62692 || (spellInfo->Effects[index].MiscValue == POWER_MANA && !CanRestoreMana(spellInfo))))
+        if (itr->first == effect && (itr->second != SPELL_AURA_OF_DESPAIR_1 || (spellInfo->Effects[index].MiscValue == POWER_MANA && !CanRestoreMana(spellInfo))))
         {
             return true;
         }
@@ -10475,41 +10601,32 @@ bool Unit::IsImmunedToSpellEffect(SpellInfo const* spellInfo, uint32 index) cons
 
     if (uint32 mechanic = spellInfo->Effects[index].Mechanic)
     {
-        SpellImmuneList const& mechanicList = m_spellImmune[IMMUNITY_MECHANIC];
-        for (SpellImmuneList::const_iterator itr = mechanicList.begin(); itr != mechanicList.end(); ++itr)
-            if (itr->type == mechanic)
-                return true;
+        auto const& mechanicList = m_spellImmune[IMMUNITY_MECHANIC];
+        if (mechanicList.count(mechanic) > 0)
+            return true;
     }
 
-    if (uint32 aura = spellInfo->Effects[index].ApplyAuraName)
+    if (!spellInfo->HasAttribute(SPELL_ATTR3_ALWAYS_HIT))
     {
-        SpellImmuneList const& list = m_spellImmune[IMMUNITY_STATE];
-        for (SpellImmuneList::const_iterator itr = list.begin(); itr != list.end(); ++itr)
+        if (uint32 aura = spellInfo->Effects[index].ApplyAuraName)
         {
-            if (itr->type == aura && (itr->spellId != 64848 || (spellInfo->Effects[index].MiscValue == POWER_MANA && !CanRestoreMana(spellInfo))))
+            SpellImmuneContainer const& list = m_spellImmune[IMMUNITY_STATE];
+            for (SpellImmuneContainer::const_iterator itr = list.begin(); itr != list.end(); ++itr)
             {
-                if (!spellInfo->HasAttribute(SPELL_ATTR3_ALWAYS_HIT))
-                {
-                    if (itr->blockType == SPELL_BLOCK_TYPE_ALL || spellInfo->IsPositive()) // xinef: added for pet scaling
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        if (!spellInfo->HasAttribute(SPELL_ATTR2_NO_SCHOOL_IMMUNITIES))
-        {
-            // Check for immune to application of harmful magical effects
-            AuraEffectList const& immuneAuraApply = GetAuraEffectsByType(SPELL_AURA_MOD_IMMUNE_AURA_APPLY_SCHOOL);
-            for (AuraEffectList::const_iterator iter = immuneAuraApply.begin(); iter != immuneAuraApply.end(); ++iter)
-            {
-                if (/*(spellInfo->Dispel == DISPEL_MAGIC || spellInfo->Dispel == DISPEL_CURSE || spellInfo->Dispel == DISPEL_DISEASE) &&*/ // Magic debuff, xinef: all kinds?
-                    ((*iter)->GetMiscValue() & spellInfo->GetSchoolMask()) &&  // Check school
-                    !spellInfo->IsPositiveEffect(index) &&                                  // Harmful
-                    spellInfo->Effects[index].Effect != SPELL_EFFECT_PERSISTENT_AREA_AURA)  // Not Persistent area auras
-                {
+                if (itr->first == aura && (itr->second != SPELL_AURA_OF_DESPAIR_2 || (spellInfo->Effects[index].MiscValue == POWER_MANA && !CanRestoreMana(spellInfo))))
                     return true;
+            }
+
+            if (!spellInfo->HasAttribute(SPELL_ATTR2_NO_SCHOOL_IMMUNITIES))
+            {
+                // Check for immune to application of harmful magical effects
+                for (AuraEffect* immuneAuraApply : GetAuraEffectsByType(SPELL_AURA_MOD_IMMUNE_AURA_APPLY_SCHOOL))
+                {
+                    if (!(immuneAuraApply->GetMiscValue() & spellInfo->GetSchoolMask()))              // Check school
+                        continue;
+
+                    if (spellInfo->HasAttribute(SPELL_ATTR1_IMMUNITY_TO_HOSTILE_AND_FRIENDLY_EFFECTS) || (caster && !IsFriendlyTo(caster))) // Harmful
+                        return true;
                 }
             }
         }
@@ -10743,17 +10860,17 @@ uint32 Unit::MeleeDamageBonusTaken(Unit* attacker, uint32 pdamage, WeaponAttackT
         });
 
         // Mod damage from spell mechanic
-        uint32 mechanicMask = spellProto->GetAllEffectsMechanicMask();
+        uint64 mechanicMask = spellProto->GetAllEffectsMechanicMask();
 
         // Shred, Maul - "Effects which increase Bleed damage also increase Shred damage"
         if (spellProto->SpellFamilyName == SPELLFAMILY_DRUID && spellProto->SpellFamilyFlags[0] & 0x00008800)
-            mechanicMask |= (1 << MECHANIC_BLEED);
+            mechanicMask |= (1ULL << MECHANIC_BLEED);
 
         if (mechanicMask)
         {
             TakenTotalMod *= GetTotalAuraMultiplier(SPELL_AURA_MOD_MECHANIC_DAMAGE_TAKEN_PERCENT, [mechanicMask](AuraEffect const* aurEff) -> bool
             {
-                if (mechanicMask & uint32(1 << (aurEff->GetMiscValue())))
+                if (mechanicMask & (1ULL << (aurEff->GetMiscValue())))
                     return true;
                 return false;
             });
@@ -10821,51 +10938,17 @@ private:
     uint32 _type;
 };
 
-void Unit::ApplySpellImmune(uint32 spellId, uint32 op, uint32 type, bool apply, SpellImmuneBlockType blockType)
+void Unit::ApplySpellImmune(uint32 spellId, uint32 op, uint32 type, bool apply, SpellImmuneBlockType /*blockType*/)
 {
     if (apply)
-    {
-        // xinef: immunities with spellId 0 are intended to be applied only once (script purposes mosty)
-        if (spellId == 0 && std::find_if(m_spellImmune[op].begin(), m_spellImmune[op].end(), spellIdImmunityPredicate(type)) != m_spellImmune[op].end())
-            return;
-
-        SpellImmune immune;
-        immune.spellId = spellId;
-        immune.type = type;
-        immune.blockType = blockType;
-        m_spellImmune[op].push_back(std::move(immune));
-    }
+        m_spellImmune[op].emplace(type, spellId);
     else
     {
-        for (SpellImmuneList::iterator itr = m_spellImmune[op].begin(); itr != m_spellImmune[op].end(); ++itr)
+        auto bounds = m_spellImmune[op].equal_range(type);
+        for (auto itr = bounds.first; itr != bounds.second;)
         {
-            if (itr->spellId == spellId && itr->type == type)
-            {
-                m_spellImmune[op].erase(itr);
-                break;
-            }
-        }
-    }
-}
-
-void Unit::ApplySpellDispelImmunity(SpellInfo const* spellProto, DispelType type, bool apply)
-{
-    ApplySpellImmune(spellProto->Id, IMMUNITY_DISPEL, type, apply);
-
-    if (apply && spellProto->HasAttribute(SPELL_ATTR1_IMMUNITY_PURGES_EFFECT))
-    {
-        // Create dispel mask by dispel type
-        uint32 dispelMask = SpellInfo::GetDispelMask(type);
-        // Dispel all existing auras vs current dispel type
-        AuraApplicationMap& auras = GetAppliedAuras();
-        for (AuraApplicationMap::iterator itr = auras.begin(); itr != auras.end();)
-        {
-            SpellInfo const* spell = itr->second->GetBase()->GetSpellInfo();
-            if (spell->GetDispelMask() & dispelMask)
-            {
-                // Dispel aura
-                RemoveAura(itr);
-            }
+            if (itr->second == spellId)
+                itr = m_spellImmune[op].erase(itr);
             else
                 ++itr;
         }
@@ -11635,7 +11718,7 @@ bool Unit::IsAlwaysVisibleFor(WorldObject const* seer) const
                     return true;
 
     //npcbot - bots are always visible for owner
-    if (GetCreator() && (seer->GetGUID() == GetCreator()->GetGUID() || (seer->IsCreature() && seer->ToCreature()->GetCreator() == GetCreator())))
+    if (GetCreator() && (seer->ToUnit() == GetCreator() || (seer->IsCreature() && seer->ToCreature()->GetCreator() == GetCreator())))
         return true;
     //end npcbot
 
@@ -11801,8 +11884,9 @@ void Unit::UpdateSpeed(UnitMoveType mtype, bool forced)
             {
                 if (Creature* creature = ToCreature())
                 {
-                    uint32 immuneMask = creature->GetCreatureTemplate()->MechanicImmuneMask;
-                    if (immuneMask & (1 << (MECHANIC_SNARE - 1)) || immuneMask & (1 << (MECHANIC_DAZE - 1)))
+                    // use creature helper which now consults creature_immunities table
+                    if (creature->HasMechanicTemplateImmunity(1ULL << MECHANIC_SNARE) ||
+                        creature->HasMechanicTemplateImmunity(1ULL << MECHANIC_DAZE))
                         break;
                 }
 
@@ -11823,7 +11907,7 @@ void Unit::UpdateSpeed(UnitMoveType mtype, bool forced)
     if (creature
         && !IsPet()
         && !(IsControlledByPlayer() && IsVehicle())
-        && !(creature->HasMechanicTemplateImmunity(MECHANIC_SNARE))
+        && !(creature->HasMechanicTemplateImmunity(1ULL << MECHANIC_SNARE))
         && !(creature->IsDungeonBoss())
         //npcbots: prevent slowing due to health percentage
         && !creature->IsNPCBot())
@@ -12027,6 +12111,8 @@ void Unit::AtTargetAttacked(Unit* target, bool canInitialAggro)
     target->EngageWithTarget(this);
     if (Unit* targetOwner = target->GetCharmerOrOwner())
         targetOwner->EngageWithTarget(this);
+    if (Unit* myOwner = GetCharmerOrOwner())
+        target->EngageWithTarget(myOwner);
 
     // Patch 3.0.8: All player spells which cause a creature to become aggressive
     // to you will now also immediately cause the creature to be tapped.
@@ -12054,12 +12140,8 @@ Unit* Creature::SelectVictim()
 
     Unit* target = nullptr;
 
-    // Taunt handling is now done inside ThreatManager via TauntState
     if (CanHaveThreatList())
-    {
-        if (!m_threatManager.IsThreatListEmpty())
-            target = m_threatManager.GetCurrentVictim();
-    }
+        target = m_threatManager.GetCurrentVictim();
     else if (!HasReactState(REACT_PASSIVE))
     {
         // we have player pet probably
@@ -12089,12 +12171,12 @@ Unit* Creature::SelectVictim()
         return target;
     }
 
-    // last case when creature must not go to evade mode:
-    // it in combat but attacker not make any damage and not enter to aggro radius to have record in threat list
-    // Note: creature does not have targeted movement generator but has attacker in this case
-    for (AttackerSet::const_iterator itr = m_attackers.begin(); itr != m_attackers.end(); ++itr)
-        if ((*itr) && CanCreatureAttack(*itr) && !(*itr)->IsPlayer() && !(*itr)->ToCreature()->HasUnitTypeMask(UNIT_MASK_CONTROLLABLE_GUARDIAN))
-            return nullptr;
+    // Don't evade if another unit has us on their threat list — evading would
+    // end the bidirectional combat reference and remove us from their threat list,
+    // causing them to lose their target (e.g. an NPC fighting a guardian whose
+    // CanAIAttack rejects the NPC).
+    if (!m_threatManager.GetThreatenedByMeList().empty())
+        return nullptr;
 
     if (GetVehicle())
         return nullptr;
@@ -12213,7 +12295,7 @@ int32 Unit::ModSpellDuration(SpellInfo const* spellProto, Unit const* target, in
     // xinef: also calculate self casts, spell can be reflected for example
     if (!positive)
     {
-        int32 mechanic = spellProto->GetSpellMechanicMaskByEffectMask(effectMask);
+        uint64 mechanic = spellProto->GetSpellMechanicMaskByEffectMask(effectMask);
 
         int32 durationMod;
         int32 durationMod_always = 0;
@@ -12221,11 +12303,11 @@ int32 Unit::ModSpellDuration(SpellInfo const* spellProto, Unit const* target, in
 
         for (uint8 i = 1; i <= MECHANIC_ENRAGED; ++i)
         {
-            if (!(mechanic & 1 << i))
+            if (!(mechanic & (1ULL << i)))
                 continue;
 
             // Xinef: spells affecting movement imparing effects should not reduce duration if disoriented mechanic is present
-            if (i == MECHANIC_SNARE && (mechanic & (1 << MECHANIC_DISORIENTED)))
+            if (i == MECHANIC_SNARE && (mechanic & (1ULL << MECHANIC_DISORIENTED)))
                 continue;
 
             // Find total mod value (negative bonus)
@@ -13313,6 +13395,14 @@ void Unit::CleanupsBeforeDelete(bool finalCleanup)
         m_movementInfo.transport.Reset();
         m_movementInfo.RemoveMovementFlag(MOVEMENTFLAG_ONTRANSPORT);
     }
+
+    //npcbot
+    if (IsNPCBot() && IsSummon() && !ToCreature()->IsTempBot())
+        if (Unit const* creator = GetCreator())
+            if (Player const* owner = creator->ToPlayer())
+                if (owner->GetBotMgr()->GetBot(GetGUID()))
+                    owner->GetBotMgr()->RemoveBot(GetGUID(), BOT_REMOVE_UNSUMMON);
+    //end npcbot
 
     CleanupBeforeRemoveFromMap(finalCleanup);
 }
@@ -16052,14 +16142,14 @@ Aura* Unit::AddAura(SpellInfo const* spellInfo, uint8 effMask, Unit* target)
     if (!spellInfo)
         return nullptr;
 
-    if (target->IsImmunedToSpell(spellInfo))
+    if (target->IsImmunedToSpell(spellInfo, effMask, this))
         return nullptr;
 
     for (uint32 i = 0; i < MAX_SPELL_EFFECTS; ++i)
     {
         if (!(effMask & (1 << i)))
             continue;
-        if (target->IsImmunedToSpellEffect(spellInfo, i))
+        if (target->IsImmunedToSpellEffect(spellInfo, i, this))
             effMask &= ~(1 << i);
     }
 
@@ -16907,6 +16997,12 @@ void Unit::_ExitVehicle(Position const* exitPosition)
                 pos.RelocateOffset({ seatAddon->ExitParameterX, seatAddon->ExitParameterY, seatAddon->ExitParameterZ, seatAddon->ExitParameterO });
             else if (seatAddon->ExitParameter == VehicleExitParameters::VehicleExitParamDest)
                 pos.Relocate({ seatAddon->ExitParameterX, seatAddon->ExitParameterY, seatAddon->ExitParameterZ, seatAddon->ExitParameterO });
+
+            bool isInLoS = GetMap()->isInLineOfSight(GetPositionX(), GetPositionY(), GetPositionZ(), pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), GetPhaseMask(), LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::Nothing);
+            float floorZ = GetMapHeight(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ());
+
+            if (!isInLoS || pos.GetPositionZ() < floorZ)
+                pos = vehicleBase->GetPosition();
         }
     }
 
@@ -17530,8 +17626,8 @@ void Unit::ExecuteDelayedUnitRelocationEvent()
         GetMap()->LoadGridsInRange(*player, MAX_VISIBILITY_DISTANCE);
 
         Acore::PlayerRelocationNotifier notifier(*player);
-        Cell::VisitObjects(viewPoint, notifier, player->GetSightRange());
-        Cell::VisitFarVisibleObjects(viewPoint, notifier, VISIBILITY_DISTANCE_GIGANTIC);
+        Cell::VisitObjects(player->GetSightPosition().GetPositionX(), player->GetSightPosition().GetPositionY(), player->GetMap(), notifier, player->GetSightRange());
+        Cell::VisitFarVisibleObjects(player->GetSightPosition().GetPositionX(), player->GetSightPosition().GetPositionY(), player->GetMap(), notifier, VISIBILITY_DISTANCE_GIGANTIC);
         notifier.SendToSelf();
 
         this->AddToNotify(NOTIFY_AI_RELOCATION);

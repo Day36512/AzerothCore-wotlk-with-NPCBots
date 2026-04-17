@@ -50,6 +50,10 @@ private:
     float _groupRate;
     Player* _maxNotGrayMember;
     uint32 _count;
+    //npcbot
+    uint32 _bots_count_xp = 0;
+    uint32 _bots_count_honor = 0;
+    //end npcbot
     uint32 _aliveSumLevel;
     uint32 _sumLevel;
     uint32 _xp;

@@ -1,4 +1,5 @@
 #include "bot_ai.h"
+#include "botlogtraits.h"
 #include "botmgr.h"
 #include "botspell.h"
 #include "bottraits.h"
@@ -215,45 +216,26 @@ public:
 
         void Counter(uint32 diff)
         {
-            //skip if evocation, blizzard
-            if (IsChanneling() || Rand() > 30)
+            if (Rand() > 30)
                 return;
 
-            if (IsSpellReady(COUNTERSPELL_1, diff, false))
-            {
-                if (Unit* target = FindCastingTarget(CalcSpellMaxRange(COUNTERSPELL_1), 0, COUNTERSPELL_1))
-                {
-                    me->InterruptNonMeleeSpells(false);
-                    if (doCast(target, GetSpell(COUNTERSPELL_1)))
+            if (IsSpellReady(COUNTERSPELL_1, diff, false) && !HasQueuedSpellAction(COUNTERSPELL_1))
+                if (Unit const* target = FindCastingTarget(CalcSpellMaxRange(COUNTERSPELL_1), 0, COUNTERSPELL_1))
+                    if (EnqueueCounterSpellAction(target->GetGUID(), COUNTERSPELL_1, true))
                         return;
-                }
-            }
-            if (IsSpellReady(DEEP_FREEZE_1, diff) && me->HasAuraType(SPELL_AURA_ABILITY_IGNORE_AURASTATE))
-            {
-                if (Unit* target = FindCastingTarget(CalcSpellMaxRange(DEEP_FREEZE_1), 0, DEEP_FREEZE_1))
-                {
-                    me->InterruptNonMeleeSpells(false);
-                    if (doCast(target, GetSpell(DEEP_FREEZE_1)))
+            if (IsSpellReady(DEEP_FREEZE_1, diff, false) && me->HasAuraType(SPELL_AURA_ABILITY_IGNORE_AURASTATE) && !HasQueuedSpellAction(DEEP_FREEZE_1))
+                if (Unit const* target = FindCastingTarget(CalcSpellMaxRange(DEEP_FREEZE_1), 0, DEEP_FREEZE_1))
+                    if (EnqueueCounterSpellAction(target->GetGUID(), DEEP_FREEZE_1, true))
                         return;
-                }
-            }
-            if (IsSpellReady(FIRE_BLAST_1, diff) && me->HasAura(IMPACT_BUFF))
-            {
-                if (Unit* target = FindCastingTarget(CalcSpellMaxRange(FIRE_BLAST_1), 0, FIRE_BLAST_1))
-                {
-                    me->InterruptNonMeleeSpells(false);
-                    if (doCast(target, GetSpell(FIRE_BLAST_1)))
+            if (IsSpellReady(FIRE_BLAST_1, diff, false) && me->HasAura(IMPACT_BUFF) && !HasQueuedSpellAction(FIRE_BLAST_1))
+                if (Unit const* target = FindCastingTarget(CalcSpellMaxRange(FIRE_BLAST_1), 0, FIRE_BLAST_1))
+                    if (EnqueueCounterSpellAction(target->GetGUID(), FIRE_BLAST_1, true))
                         return;
-                }
-            }
-            if (!IsCasting() && IsSpellReady(POLYMORPH_1, diff))
-            {
-                if (Unit* target = FindCastingTarget(CalcSpellMaxRange(POLYMORPH_1), 0, POLYMORPH_1, 75))
-                {
-                    if (doCast(target, GetSpell(POLYMORPH_1)))
-                        return;
-                }
-            }
+            if (!IsCasting() && IsSpellReady(POLYMORPH_1, diff, false) && !HasQueuedSpellAction(POLYMORPH_1))
+                if (Unit const* target = FindCastingTarget(CalcSpellMaxRange(POLYMORPH_1), 0, POLYMORPH_1, 75))
+                    if (IsCastingOnMyParty(target, 1500))
+                        if (EnqueueCounterSpellAction(target->GetGUID(), POLYMORPH_1, true))
+                            return;
         }
 
         void CheckSpellSteal(uint32 diff)
@@ -429,7 +411,7 @@ public:
             //ICY VEINS (no GCD)
             if (IsSpellReady(ICY_VEINS_1, diff, false) && me->IsInCombat() && GetManaPCT(me) > 20 &&
                 (mytar->GetMaxHealth() > master->GetMaxHealth() * 2 ||
-                (mytar->GetTypeId() == TYPEID_UNIT && mytar->ToCreature()->GetCreatureTemplate()->rank != CREATURE_ELITE_NORMAL)) &&
+                (mytar->IsCreature() && mytar->ToCreature()->GetCreatureTemplate()->rank != CREATURE_ELITE_NORMAL)) &&
                 Rand() < 45)
             {
                 if (doCast(me, GetSpell(ICY_VEINS_1)))
@@ -438,7 +420,7 @@ public:
             //ARCANE POWER (no GCD, not with PoM)
             if (IsSpellReady(ARCANE_POWER_1, diff, false) && me->IsInCombat() && GetManaPCT(me) > 50 &&
                 (mytar->GetMaxHealth() > master->GetMaxHealth() * 2 ||
-                (mytar->GetTypeId() == TYPEID_UNIT && mytar->ToCreature()->GetCreatureTemplate()->rank != CREATURE_ELITE_NORMAL)) &&
+                (mytar->IsCreature() && mytar->ToCreature()->GetCreatureTemplate()->rank != CREATURE_ELITE_NORMAL)) &&
                 Rand() < 75 && !me->GetAuraEffect(SPELL_AURA_ADD_PCT_MODIFIER, SPELLFAMILY_MAGE, 0x0, 0x20, 0x0))
             {
                 if (doCast(me, GetSpell(ARCANE_POWER_1)))
@@ -482,8 +464,8 @@ public:
             }
             //MIRROR IMAGE
             if (IsSpellReady(MIRROR_IMAGE_1, diff) &&
-                (mytar->GetTypeId() == TYPEID_PLAYER ||
-                (mytar->GetTypeId() == TYPEID_UNIT && mytar->ToCreature()->GetCreatureTemplate()->rank != CREATURE_ELITE_NORMAL)) &&
+                (mytar->IsPlayer() ||
+                (mytar->IsCreature() && mytar->ToCreature()->GetCreatureTemplate()->rank != CREATURE_ELITE_NORMAL)) &&
                 Rand() < 25)
             {
                 if (doCast(me, GetSpell(MIRROR_IMAGE_1)))
@@ -713,7 +695,7 @@ public:
             }
             if (!cast && me->IsInCombat() && !me->getAttackers().empty() && HasRole(BOT_ROLE_RANGED))
             {
-                cast = me->HasAuraWithMechanic((1<<MECHANIC_STUN)|(1<<MECHANIC_ROOT));
+                cast = me->HasAuraWithMechanic((1u<<MECHANIC_STUN)|(1u<<MECHANIC_ROOT));
                 if (!cast)
                 {
                     u = me->SelectNearestTarget(7);
@@ -771,8 +753,10 @@ public:
             if (Group const* gr = master->GetGroup())
             {
                 std::vector<Unit*> members = BotMgr::GetAllGroupMembers(gr);
-                for (uint8 i = 0; i < 3 && !targets.empty(); ++i)
+                for (auto i : NPCBots::index_array<uint8, 3>)
                 {
+                    if (!targets.empty())
+                        break;
                     for (Unit* member : members)
                     {
                         if (!(i == 0 ? member->IsPlayer() : member->IsNPCBot()) || me->GetMap() != member->FindMap() ||
@@ -1266,7 +1250,7 @@ public:
             //{
             //    std::ostringstream msg;
             //    msg << "OnClassSpellGo: " << spellInfo->SpellName[0] << " (" << spellId << ")!";
-            //    BotWhisper(msg.str().c_str());
+            //    BotWhisper(msg.view());
             //}
 
             if (baseId == SUMMON_WATER_ELEMENTAL_1)
@@ -1347,18 +1331,16 @@ public:
             //Handle Cold Snap
             if (baseId == COLD_SNAP_1)
             {
-                SpellInfo const* cdInfo;
-                BotSpellMap const& myspells = GetSpellMap();
-                for (BotSpellMap::const_iterator itr = myspells.begin(); itr != myspells.end(); ++itr)
+                for (auto& [rank1_id, spell] : GetSpellMap())
                 {
-                    if (itr->first == baseId)
+                    if (rank1_id == baseId)
                         continue;
-                    if (itr->second->spellId != 0 && itr->second->cooldown > 0)
+                    if (spell.spellId != 0 && spell.cooldown > 0)
                     {
-                        cdInfo = sSpellMgr->GetSpellInfo(itr->first);
+                        SpellInfo const* cdInfo = sSpellMgr->GetSpellInfo(rank1_id);
                         if (cdInfo && cdInfo->SpellFamilyName == SPELLFAMILY_MAGE && cdInfo->GetRecoveryTime() > 0 &&
                             (cdInfo->GetSchoolMask() & SPELL_SCHOOL_MASK_FROST))
-                            ResetSpellCooldown(itr->first);
+                            spell.cooldown = 0;
                     }
                 }
             }
@@ -1390,7 +1372,7 @@ public:
                     return;
 
                 //handle effects
-                for (uint8 i = 0; i != MAX_SPELL_EFFECTS; ++i)
+                for (auto i : NPCBots::index_array<uint8, MAX_SPELL_EFFECTS>)
                 {
                     switch (spell->Effects[i].Effect)
                     {

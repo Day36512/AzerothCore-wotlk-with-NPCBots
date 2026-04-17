@@ -7,9 +7,8 @@
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
@@ -68,6 +67,7 @@ struct boss_kelidan_the_breaker : public BossAI
 {
     boss_kelidan_the_breaker(Creature* creature) : BossAI(creature, DATA_KELIDAN)
     {
+        //Dinkle custom
         scheduler.SetValidator([this] { return !me->HasUnitState(UNIT_STATE_CASTING); });
     }
 
@@ -126,12 +126,17 @@ struct boss_kelidan_the_breaker : public BossAI
         ApplyImmunities(true);
         me->SetReactState(REACT_PASSIVE);
         me->SetUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
-        DoCastSelf(SPELL_EVOCATION); 
+        DoCastSelf(SPELL_EVOCATION);
 
         me->SetHomePosition(KELIDAN_CENTER);
         if (me->GetExactDist2d(KELIDAN_CENTER.GetPositionX(), KELIDAN_CENTER.GetPositionY()) > 0.5f)
-            me->NearTeleportTo(KELIDAN_CENTER.GetPositionX(), KELIDAN_CENTER.GetPositionY(),
-                KELIDAN_CENTER.GetPositionZ(), KELIDAN_CENTER.GetOrientation());
+        {
+            me->NearTeleportTo(
+                KELIDAN_CENTER.GetPositionX(),
+                KELIDAN_CENTER.GetPositionY(),
+                KELIDAN_CENTER.GetPositionZ(),
+                KELIDAN_CENTER.GetOrientation());
+        }
     }
 
     void EnterEvadeMode(EvadeReason why) override
@@ -154,7 +159,7 @@ struct boss_kelidan_the_breaker : public BossAI
 
         Talk(SAY_WAKE);
         _JustEngagedWith();
-        me->InterruptNonMeleeSpells(false); 
+        me->InterruptNonMeleeSpells(false);
 
         scheduler.Schedule(1s, [this](TaskContext ctx)
             {
@@ -173,8 +178,11 @@ struct boss_kelidan_the_breaker : public BossAI
                 if (me->GetExactDist2d(KELIDAN_CENTER.GetPositionX(), KELIDAN_CENTER.GetPositionY()) > 0.5f)
                 {
                     me->CastSpell(me, 64446, true);
-                    me->NearTeleportTo(KELIDAN_CENTER.GetPositionX(), KELIDAN_CENTER.GetPositionY(),
-                        KELIDAN_CENTER.GetPositionZ(), KELIDAN_CENTER.GetOrientation());
+                    me->NearTeleportTo(
+                        KELIDAN_CENTER.GetPositionX(),
+                        KELIDAN_CENTER.GetPositionY(),
+                        KELIDAN_CENTER.GetPositionZ(),
+                        KELIDAN_CENTER.GetOrientation());
                 }
 
                 Talk(SAY_NOVA);
@@ -222,7 +230,8 @@ struct boss_kelidan_the_breaker : public BossAI
         if (!me->IsInCombat())
         {
             if (!me->HasAura(SPELL_EVOCATION))
-            DoCastSelf(SPELL_EVOCATION);
+                DoCastSelf(SPELL_EVOCATION);
+
             me->SetReactState(REACT_PASSIVE);
             me->SetUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
             return;

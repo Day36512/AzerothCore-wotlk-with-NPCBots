@@ -35,6 +35,7 @@
 #include "WorldSession.h"
 
 //npcbot
+#include "botconfig.h"
 #include "botdatamgr.h"
 #include "botmgr.h"
 //end npcbot
@@ -294,7 +295,7 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPacket& recvData)
 
         isPremade = (grp->GetMembersCount() >= bg->GetMinPlayersPerTeam() && bgTypeId != BATTLEGROUND_RB);
         //npcbot: check premade for bots
-        if (isPremade && !BotMgr::IsNpcBotsPremadeEnabled() && grp->GetFirstBotMember() != nullptr)
+        if (isPremade && !BotCfg::IsNpcBotsPremadeEnabled() && grp->GetFirstBotMember() != nullptr)
             isPremade = false;
         //end npcbot
         uint32 avgWaitTime = 0;

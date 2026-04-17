@@ -16,6 +16,7 @@
  */
 
 #include "Battleground.h"
+#include "ConditionMgr.h"
 #include "BattlegroundMgr.h"
 #include "Creature.h"
 #include "DatabaseEnv.h"
@@ -150,6 +151,11 @@ void WorldSession::HandleGossipHelloOpcode(WorldPacket& recvData)
     if (unit->GetNpcFlags() == UNIT_NPC_FLAG_NONE)
         return;
 
+    // Check GossipHello conditions - block gossip opening if conditions not met
+    ConditionList gossipConditions = sConditionMgr->GetConditionsForNotGroupedEntry(CONDITION_SOURCE_TYPE_GOSSIP_HELLO, unit->GetEntry());
+    if (!sConditionMgr->IsObjectMeetToConditions(_player, unit, gossipConditions))
+        return;
+
     // set faction visible if needed
     if (FactionTemplateEntry const* factionTemplateEntry = sFactionTemplateStore.LookupEntry(unit->GetFaction()))
         _player->GetReputationMgr().SetVisible(factionTemplateEntry);
@@ -162,7 +168,11 @@ void WorldSession::HandleGossipHelloOpcode(WorldPacket& recvData)
     // Stop the npc if moving
     if (uint32 pause = unit->GetMovementTemplate().GetInteractionPauseTimer())
         unit->PauseMovement(pause);
-    unit->SetHomePosition(unit->GetPosition());
+
+    // Update home position for patrolling NPCs only (prevents drift for stationary NPCs)
+    if (unit->GetDefaultMovementType() == WAYPOINT_MOTION_TYPE ||
+        unit->GetMotionMaster()->GetCurrentMovementGeneratorType() == WAYPOINT_MOTION_TYPE)
+        unit->SetHomePosition(unit->GetPosition());
 
     // If spiritguide, no need for gossip menu, just put player into resurrect queue
     if (unit->IsSpiritGuide())

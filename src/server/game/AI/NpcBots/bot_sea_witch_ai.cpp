@@ -276,7 +276,7 @@ public:
             {
                 //Frost Arrow / Autoshot
                 if (IsSpellReady(FROST_ARROW_1, diff) && me->GetPower(POWER_MANA) >= FROSTARROW_COST &&
-                    !mytar->IsImmunedToDamage(AssertBotSpellInfoOverride(FROST_ARROW_1)))
+                    !mytar->IsImmunedToDamage(me, AssertBotSpellInfoOverride(FROST_ARROW_1)))
                 {
                     if (doCast(mytar, GetSpell(FROST_ARROW_1)))
                         return;
@@ -296,9 +296,9 @@ public:
 
             std::list<Unit*> targets;
             GetNearbyTargetsList(targets, 40.f, 0);
-            targets.erase(std::remove_if(targets.begin(), targets.end(), [healthThreshold = uint32(me->GetMaxHealth() / 4 * 3)](Unit const* u) {
+            std::erase_if(targets, [healthThreshold = uint32(me->GetMaxHealth() / 4 * 3)](Unit const* u) {
                 return u->GetHealth() < healthThreshold;
-            }), targets.end());
+            });
 
             size_t targets_count = (IAmFree() || !master->GetGroup()) ? TORNADO_MIN_TARGETS : std::max<size_t>(master->GetGroup()->GetMemberSlots().size() / 3, TORNADO_MIN_TARGETS);
             if (targets.size() >= targets_count)
@@ -656,7 +656,7 @@ public:
         void SummonedCreatureDespawn(Creature* summon) override
         {
             //BOT_LOG_ERROR("entities.unit", "SummonedCreatureDespawn: %s's %s", me->GetName().c_str(), summon->GetName().c_str());
-            if (_minions.find(summon) != _minions.end())
+            if (_minions.contains(summon))
                 _minions.erase(summon);
         }
 
@@ -741,13 +741,13 @@ public:
                 amount = 1.f / amount;
             }
 
+            uint32 text_id = amount_is_mana ? BOT_TEXT_MANA_PER_DAMAGE : BOT_TEXT_DAMAGE_PER_MANA;
             std::ostringstream amount_sstr;
             amount_sstr.setf(std::ios_base::fixed);
             amount_sstr.precision(1);
-            amount_sstr << amount;
-            uint32 text_id = amount_is_mana ? BOT_TEXT_MANA_PER_DAMAGE : BOT_TEXT_DAMAGE_PER_MANA;
+            amount_sstr << LocalizedNpcText(player, text_id) << ": " << amount;
 
-            specList.push_back(LocalizedNpcText(player, text_id) + ": " + amount_sstr.str());
+            specList.push_back(amount_sstr.str());
         }
 
         std::vector<uint32> const* GetDamagingSpellsList() const override
@@ -767,7 +767,7 @@ public:
             return &Seawitch_spells_support;
         }
     private:
-        typedef std::set<Creature*> Summons;
+        using Summons = std::set<Creature*>;
         Summons _minions;
 
         bool _spell_preact{};

@@ -7,9 +7,8 @@
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
@@ -47,17 +46,17 @@ namespace Maker
 
     enum Spells
     {
-        SPELL_EXPLODING_BEAKER = 30925,   // Original random-target beaker
-        SPELL_TRANSMOGRIFY = 118,     // Polymorph (non-MC CC) – "Mutagenic Transmogrify"
-        SPELL_SLIME_SPRAY = 300370,  // Frontal cone "Acid Spray"
-        SPELL_VOLATILE_CLOUD = 300371,  // Ground hazard
-        SPELL_VOLATILE_MARK_VISUAL = 300372,  // Short visual mark on the chosen target
-        SPELL_BERSERK = 26662,   // Fail-safe enrage (optional, not scheduled here)
+        SPELL_EXPLODING_BEAKER = 30925,      // Original random-target beaker
+        SPELL_TRANSMOGRIFY = 118,            // Polymorph (non-MC CC) – "Mutagenic Transmogrify"
+        SPELL_SLIME_SPRAY = 300370,          // Frontal cone "Acid Spray"
+        SPELL_VOLATILE_CLOUD = 300371,       // Ground hazard
+        SPELL_VOLATILE_MARK_VISUAL = 300372, // Short visual mark on the chosen target
+        SPELL_BERSERK = 26662,               // Fail-safe enrage (optional, not scheduled here)
 
-        // Cage ritual (your current choices)
-        SPELL_CAGE_CHANNEL = 300374,  // Channeled spell on cage
-        SPELL_ORC_HARVEST_BUFF = 300376,  // small buff
-        SPELL_ORC_HARVEST_HEAL = 300375   // small self-heal
+        // Cage ritual
+        SPELL_CAGE_CHANNEL = 300374,         // Channeled spell on cage
+        SPELL_ORC_HARVEST_BUFF = 300376,     // Small buff
+        SPELL_ORC_HARVEST_HEAL = 300375      // Small self-heal
     };
 
     enum Events
@@ -83,7 +82,7 @@ namespace Maker
         POINT_RITUAL_3
     };
 
-    // Four cage anchor positions (you supplied)
+    // Four cage anchor positions
     static Position const kCagePos[4] =
     {
         { 296.02f,  99.86f, 9.62f, 3.12f },
@@ -92,7 +91,6 @@ namespace Maker
         { 359.37f, 100.09f, 9.62f, 0.00f }
     };
 
-    // --------- Helpers ----------
     inline bool IsPlayerOrNPCBot(Unit* u)
     {
         if (!u || !u->IsAlive())
@@ -111,9 +109,11 @@ namespace Maker
 
 struct boss_the_maker : public BossAI
 {
-    boss_the_maker(Creature* creature) : BossAI(creature, DATA_THE_MAKER) {}
+    boss_the_maker(Creature* creature) : BossAI(creature, DATA_THE_MAKER)
+    {
+    }
 
-    // --- Targeting helpers ---
+    //Dinkle custom start
     Unit* SelectRandomPlayerOrNPCBotFromThreat(bool excludeVictim = true)
     {
         std::vector<Unit*> pool;
@@ -140,6 +140,7 @@ struct boss_the_maker : public BossAI
 
         return pool[urand(0, uint32(pool.size() - 1))];
     }
+    //Dinkle custom end
 
     // Select a random player/NPCBot beyond a minimum distance; optionally exclude current victim.
     Unit* SelectRandomPlayerOrNPCBotBeyond(float minDistance, bool excludeVictim = true)
@@ -172,40 +173,42 @@ struct boss_the_maker : public BossAI
         return pool[urand(0, uint32(pool.size() - 1))];
     }
 
-    // --- Ritual state ---
-    bool  _ritualActive = false;           // blocks ability events while true
+    // Ritual state
+    bool  _ritualActive = false;
     bool  _visited[4] = { false, false, false, false };
     uint8 _visitedCount = 0;
-    int8  _activeCage = -1;              // 0..3 for the cage currently being visited
+    int8  _activeCage = -1;
 
-    // Choose furthest unvisited cage from current position
     int8 GetFurthestUnvisitedCageIndex() const
     {
         float bestDist = -1.f;
-        int8  bestIdx = -1;
+        int8 bestIdx = -1;
+
         for (int8 i = 0; i < 4; ++i)
         {
             if (_visited[i])
                 continue;
 
-            float d = me->GetExactDist(Maker::kCagePos[i].GetPositionX(),
+            float d = me->GetExactDist(
+                Maker::kCagePos[i].GetPositionX(),
                 Maker::kCagePos[i].GetPositionY(),
                 Maker::kCagePos[i].GetPositionZ());
+
             if (d > bestDist)
             {
                 bestDist = d;
                 bestIdx = i;
             }
         }
+
         return bestIdx;
     }
 
-    // Face the cage/orcs cleanly before channeling
     void FaceRitualTarget()
     {
         if (Creature* orc = me->FindNearestCreature(Maker::NPC_CAGED_ORC, 25.0f))
         {
-            me->SetFacingToObject(orc); // authoritative server-side turn
+            me->SetFacingToObject(orc);
             return;
         }
 
@@ -223,14 +226,11 @@ struct boss_the_maker : public BossAI
         _visitedCount = 0;
         _activeCage = -1;
 
-        // Ensure cage orcs are present again
-        {
-            std::list<Creature*> orcs;
-            me->GetCreaturesWithEntryInRange(orcs, 200.0f, Maker::NPC_CAGED_ORC);
-            for (Creature* c : orcs)
-                if (!c->IsAlive())
-                    c->Respawn(true);
-        }
+        std::list<Creature*> orcs;
+        me->GetCreaturesWithEntryInRange(orcs, 200.0f, Maker::NPC_CAGED_ORC);
+        for (Creature* c : orcs)
+            if (!c->IsAlive())
+                c->Respawn(true);
     }
 
     void JustEngagedWith(Unit* who) override
@@ -242,9 +242,8 @@ struct boss_the_maker : public BossAI
         events.ScheduleEvent(Maker::EVENT_TRANSMOGRIFY, 20s);
         events.ScheduleEvent(Maker::EVENT_ACID_SPRAY, 9s);
         events.ScheduleEvent(Maker::EVENT_VOLATILE_CLOUD, 15s);
-        // events.ScheduleEvent(Maker::EVENT_BERSERK, 10min); 
+        // events.ScheduleEvent(Maker::EVENT_BERSERK, 10min);
 
-        // First ritual a bit into the fight; subsequent ones are re-scheduled on completion
         events.ScheduleEvent(Maker::EVENT_ORC_RITUAL_START, 20s);
     }
 
@@ -260,7 +259,6 @@ struct boss_the_maker : public BossAI
         BossAI::JustDied(nullptr);
     }
 
-    // Movement: arrival at a cage
     void MovementInform(uint32 type, uint32 id) override
     {
         if (type != POINT_MOTION_TYPE)
@@ -272,12 +270,10 @@ struct boss_the_maker : public BossAI
         if (id == Maker::POINT_RITUAL_0 || id == Maker::POINT_RITUAL_1 ||
             id == Maker::POINT_RITUAL_2 || id == Maker::POINT_RITUAL_3)
         {
-            // At the cage: stop, face properly, and channel
             me->AttackStop();
             me->SetReactState(REACT_PASSIVE);
-            FaceRitualTarget(); // orientation fix
+            FaceRitualTarget();
             me->CastSpell(me, Maker::SPELL_CAGE_CHANNEL, false);
-            // AuraScript signals ACTION_RITUAL_DONE when channel ends
         }
     }
 
@@ -316,7 +312,6 @@ struct boss_the_maker : public BossAI
 
         events.Update(diff);
 
-        // Block ability kit during ritual (movement + channel are handled elsewhere)
         if (_ritualActive)
             return;
 
@@ -337,7 +332,7 @@ struct boss_the_maker : public BossAI
         case Maker::EVENT_TRANSMOGRIFY:
         {
             if (Unit* tgt = SelectRandomPlayerOrNPCBotFromThreat(true))
-                me->CastSpell(tgt, Maker::SPELL_TRANSMOGRIFY, false); // soft CC, breaks on damage
+                me->CastSpell(tgt, Maker::SPELL_TRANSMOGRIFY, false);
 
             events.Repeat(22s, 30s);
             break;
@@ -347,7 +342,6 @@ struct boss_the_maker : public BossAI
         {
             if (Unit* victim = me->GetVictim())
             {
-                // Ensure cone aims correctly
                 me->SetFacingToObject(victim);
                 me->SetInFront(victim);
                 me->CastSpell(victim, Maker::SPELL_SLIME_SPRAY, false);
@@ -359,7 +353,6 @@ struct boss_the_maker : public BossAI
 
         case Maker::EVENT_VOLATILE_CLOUD:
         {
-            // Prefer targets > 10.0f away; else, any eligible player/NPCBot
             Unit* tgt = SelectRandomPlayerOrNPCBotBeyond(10.0f, false);
             if (!tgt)
                 tgt = SelectRandomPlayerOrNPCBotFromThreat(false);
@@ -396,7 +389,6 @@ struct boss_the_maker : public BossAI
             _ritualActive = true;
             _activeCage = idx;
 
-            // Ritual start yell (harvesting/consuming souls)
             me->Yell("Subjects prepared... I will harvest your souls!", LANG_UNIVERSAL);
 
             me->AttackStop();
@@ -405,15 +397,16 @@ struct boss_the_maker : public BossAI
             me->GetMotionMaster()->MovePoint(Maker::POINT_RITUAL_0 + idx, Maker::kCagePos[idx]);
             break;
         }
+
+        default:
+            break;
         }
 
         DoMeleeAttackIfReady();
     }
 };
 
-// -----------------------------------------------------------------------------
-// AuraScript: cage channel (300374) – on channel end, kill nearby orcs & buff/heal the boss
-// -----------------------------------------------------------------------------
+// 300374 - Cage Channel
 class aura_maker_cage_channel : public AuraScript
 {
     PrepareAuraScript(aura_maker_cage_channel);
@@ -424,7 +417,7 @@ class aura_maker_cage_channel : public AuraScript
             Maker::SPELL_CAGE_CHANNEL,
             Maker::SPELL_ORC_HARVEST_BUFF,
             Maker::SPELL_ORC_HARVEST_HEAL,
-            300377 // orc self-cast spell (corpse explosion visual)
+            300377
             });
     }
 
@@ -434,7 +427,6 @@ class aura_maker_cage_channel : public AuraScript
         if (!caster || !caster->IsAlive())
             return;
 
-        // Kill orcs within 15y and apply buff/heal per orc
         std::list<Creature*> found;
         caster->GetCreaturesWithEntryInRange(found, 15.0f, Maker::NPC_CAGED_ORC);
 
@@ -443,10 +435,8 @@ class aura_maker_cage_channel : public AuraScript
             if (!c || !c->IsAlive())
                 continue;
 
-            // Orcs cast 300377 on themselves before death
             c->CastSpell(c, 300377, true);
 
-            // Maker kills them, gains buff/heal per orc
             Unit::Kill(caster, c, true);
             caster->CastSpell(caster, Maker::SPELL_ORC_HARVEST_BUFF, true);
             caster->CastSpell(caster, Maker::SPELL_ORC_HARVEST_HEAL, true);

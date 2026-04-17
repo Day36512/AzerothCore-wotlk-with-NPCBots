@@ -94,7 +94,7 @@ public:
             else if ((IsIndoors() && !me->IsOutdoors()) && (isIndoorsTimer += diff) >= TORNADO_DISSIPATE_TIMER)
             {
                 canUpdate = false;
-                me->SetObjectScale(me->GetCreatureTemplate()->scale / 2.f);
+                me->SetObjectScale(me->GetCreatureTemplate()->GetFirstValidModel()->DisplayScale / 2.f);
                 me->ToTempSummon()->UnSummon(2000ms);
                 return;
             }

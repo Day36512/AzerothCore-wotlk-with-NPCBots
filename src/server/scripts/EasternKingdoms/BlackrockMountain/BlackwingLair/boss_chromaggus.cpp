@@ -25,11 +25,19 @@
 #include "ScriptedCreature.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
+#include "Config.h"
 #include "blackwing_lair.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
+#include "Cell.h"
 #include "CellImpl.h"
+
+ //Dinkle custom
 #include "bot_ai.h"
+
+#include <limits>
+#include <list>
+#include <vector>
 
 enum Emotes
 {
@@ -40,15 +48,16 @@ enum Emotes
 enum Spells
 {
     // Other spells
-    SPELL_INCINERATE = 23308,   //Incinerate 23308, 23309
-    SPELL_TIMELAPSE = 23310,   //Time lapse 23310, 23311(old threat mod that was removed in 2.01)
-    SPELL_CORROSIVEACID = 23313,   //Corrosive Acid 23313, 23314
-    SPELL_IGNITEFLESH = 23315,   //Ignite Flesh 23315, 23316
-    SPELL_FROSTBURN = 23187,   //Frost burn 23187, 23189
-    // Brood Affliction 23173
+    SPELL_INCINERATE = 23308, // Incinerate 23308, 23309
+    SPELL_TIMELAPSE = 23310, // Time lapse 23310, 23311 (old threat mod removed in 2.0.1)
+    SPELL_CORROSIVEACID = 23313, // Corrosive Acid 23313, 23314
+    SPELL_IGNITEFLESH = 23315, // Ignite Flesh 23315, 23316
+    SPELL_FROSTBURN = 23187, // Frost burn 23187, 23189
+
+    // Brood Affliction
     SPELL_BROODAF_BLUE = 23153,
     SPELL_BROODAF_BLACK = 23154,
-    SPELL_BROODAF_RED = 23155,   // (23168 on death)
+    SPELL_BROODAF_RED = 23155, // 23168 on death
     SPELL_BROODAF_BRONZE = 23170,
     SPELL_BROODAF_GREEN = 23169,
     SPELL_CHROMATIC_MUT_1 = 23174,
@@ -71,291 +80,268 @@ enum Misc
     GUID_LEVER_USER = 0
 };
 
-Position const homePos = { -7491.1587f, -1069.718f, 476.59094, 476.59094f };
+Position const homePos = { -7491.1587f, -1069.718f, 476.59094f, 476.59094f };
 
-class boss_chromaggus : public CreatureScript
+struct boss_chromaggus : public BossAI
 {
-public:
-    boss_chromaggus() : CreatureScript("boss_chromaggus") {}
-
-    struct boss_chromaggusAI : public BossAI
+    boss_chromaggus(Creature* creature) : BossAI(creature, DATA_CHROMAGGUS)
     {
-        boss_chromaggusAI(Creature* creature) : BossAI(creature, DATA_CHROMAGGUS)
+        Initialize();
+
+        // Select the 2 breaths that we are going to use until despawned so we don't end up casting 2 of the same breath.
+        _breathSpells = { SPELL_INCINERATE, SPELL_TIMELAPSE, SPELL_CORROSIVEACID, SPELL_IGNITEFLESH, SPELL_FROSTBURN };
+        Acore::Containers::RandomResize(_breathSpells, 2);
+
+        // Hack fix: This is here to prevent him from being pulled from the floor underneath, remove it once maps are fixed.
+        creature->SetImmuneToAll(true);
+    }
+
+    //Dinkle custom start
+    static float GetBotTankThreatBonus()
+    {
+        static float sBonus = []() -> float
+            {
+                float v = sConfigMgr->GetOption<float>("NPCBots.BossEngage.BotTankThreatBonus", 120000.0f);
+                if (v < 0.0f)
+                    v = 0.0f;
+                return v;
+            }();
+        return sBonus;
+    }
+    //Dinkle custom end
+
+    void Initialize()
+    {
+        Enraged = false;
+    }
+
+    void Reset() override
+    {
+        _Reset();
+        Initialize();
+    }
+
+    void JustEngagedWith(Unit* who) override
+    {
+        BossAI::JustEngagedWith(who);
+
+        events.ScheduleEvent(EVENT_SHIMMER, 1s);
+        events.ScheduleEvent(EVENT_BREATH, 30s);
+        events.ScheduleEvent(EVENT_BREATH, 60s);
+        events.ScheduleEvent(EVENT_AFFLICTION, 10s);
+        events.ScheduleEvent(EVENT_FRENZY, 15s);
+
+        //Dinkle custom
+        BoostThreatToBotTanksOnEngage(100.0f);
+    }
+
+    bool CanAIAttack(Unit const* victim) const override
+    {
+        return !victim->HasAura(SPELL_TIMELAPSE);
+    }
+
+    void SetGUID(ObjectGuid const& guid, int32 id) override
+    {
+        if (id == GUID_LEVER_USER)
         {
-            Initialize();
+            _playerGUID = guid;
 
-            // Select the 2 breaths we will use until despawned
-            _breathSpells = { SPELL_INCINERATE, SPELL_TIMELAPSE,  SPELL_CORROSIVEACID, SPELL_IGNITEFLESH, SPELL_FROSTBURN };
-            Acore::Containers::RandomResize(_breathSpells, 2);
-
-            // Hack fix: prevent pull from underneath
-            creature->SetImmuneToAll(true);
+            // Hack fix: allow pull now
+            me->SetImmuneToAll(false);
         }
+    }
 
-        // -------- NEW: read-config (cached) for bot-tank threat bonus --------
-        static float GetBotTankThreatBonus()
+    void PathEndReached(uint32 /*pathId*/) override
+    {
+        if (Unit* player = ObjectAccessor::GetUnit(*me, _playerGUID))
+            me->SetInCombatWith(player);
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        if (!UpdateVictim())
+            return;
+
+        events.Update(diff);
+
+        if (me->HasUnitState(UNIT_STATE_CASTING))
+            return;
+
+        while (uint32 eventId = events.ExecuteEvent())
         {
-            static float sBonus = []() -> float
+            switch (eventId)
+            {
+            case EVENT_SHIMMER:
+            {
+                DoCast(me, SPELL_ELEMENTAL_SHIELD);
+                Talk(EMOTE_SHIMMER);
+                events.ScheduleEvent(EVENT_SHIMMER, 17s, 25s);
+                break;
+            }
+            case EVENT_BREATH:
+            {
+                DoCastVictim(_breathSpells.front());
+                _breathSpells.reverse();
+                events.ScheduleEvent(EVENT_BREATH, 60s);
+                break;
+            }
+            case EVENT_AFFLICTION:
+            {
+                uint32 afflictionSpellID = RAND(SPELL_BROODAF_BLUE, SPELL_BROODAF_BLACK, SPELL_BROODAF_RED, SPELL_BROODAF_BRONZE, SPELL_BROODAF_GREEN);
+
+                std::vector<Player*> playerTargets;
+                Map::PlayerList const& players = me->GetMap()->GetPlayers();
+                for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
                 {
-                    float v = sConfigMgr->GetOption<float>("NPCBots.BossEngage.BotTankThreatBonus", 120000.0f);
-                    if (v < 0.0f)
-                        v = 0.0f;
-                    return v;
-                }();
-            return sBonus;
-        }
-        // ---------------------------------------------------------------------
+                    if (Player* player = itr->GetSource()->ToPlayer())
+                    {
+                        if (!player->IsGameMaster() && !player->IsSpectator() && player->IsAlive())
+                            playerTargets.push_back(player);
+                    }
+                }
 
-        void Initialize()
-        {
-            Enraged = false;
-        }
+                if (playerTargets.size() > 12)
+                    Acore::Containers::RandomResize(playerTargets, 12);
 
-        void Reset() override
-        {
-            _Reset();
-            Initialize();
-        }
+                for (Player* player : playerTargets)
+                {
+                    DoCast(player, afflictionSpellID, true);
 
-        void JustEngagedWith(Unit* who) override
-        {
-            BossAI::JustEngagedWith(who);
+                    if (player->HasAllAuras(SPELL_BROODAF_BLUE, SPELL_BROODAF_BLACK, SPELL_BROODAF_RED, SPELL_BROODAF_BRONZE, SPELL_BROODAF_GREEN))
+                        DoCast(player, SPELL_CHROMATIC_MUT_1);
+                }
 
-            events.ScheduleEvent(EVENT_SHIMMER, 1s);
-            events.ScheduleEvent(EVENT_BREATH, 30s);
-            events.ScheduleEvent(EVENT_BREATH, 60s);
-            events.ScheduleEvent(EVENT_AFFLICTION, 10s);
-            events.ScheduleEvent(EVENT_FRENZY, 15s);
-
-            // ---------- NEW: give bot tanks a healthy, configurable threat bump ----------
-            BoostThreatToBotTanksOnEngage(/*searchRange=*/100.0f);
-            // ---------------------------------------------------------------------------
-        }
-
-        bool CanAIAttack(Unit const* victim) const override
-        {
-            return !victim->HasAura(SPELL_TIMELAPSE);
-        }
-
-        void SetGUID(ObjectGuid const& guid, int32 id) override
-        {
-            if (id == GUID_LEVER_USER)
-            {
-                _playerGUID = guid;
-                me->SetImmuneToAll(false); // Hack fix: allow pull now
+                events.ScheduleEvent(EVENT_AFFLICTION, 10s);
+                break;
             }
-        }
-
-        void PathEndReached(uint32 /*pathId*/) override
-        {
-            if (Unit* player = ObjectAccessor::GetUnit(*me, _playerGUID))
+            case EVENT_FRENZY:
             {
-                me->SetInCombatWith(player);
+                DoCast(me, SPELL_FRENZY);
+                events.ScheduleEvent(EVENT_FRENZY, 10s, 15s);
+                break;
             }
-        }
-
-        void UpdateAI(uint32 diff) override
-        {
-            if (!UpdateVictim())
-                return;
-
-            events.Update(diff);
+            }
 
             if (me->HasUnitState(UNIT_STATE_CASTING))
                 return;
-
-            while (uint32 eventId = events.ExecuteEvent())
-            {
-                switch (eventId)
-                {
-                case EVENT_SHIMMER:
-                {
-                    DoCast(me, SPELL_ELEMENTAL_SHIELD);
-                    Talk(EMOTE_SHIMMER);
-                    events.ScheduleEvent(EVENT_SHIMMER, 17s, 25s);
-                    break;
-                }
-                case EVENT_BREATH:
-                    DoCastVictim(_breathSpells.front());
-                    _breathSpells.reverse();
-                    events.ScheduleEvent(EVENT_BREATH, 60s);
-                    break;
-                case EVENT_AFFLICTION:
-                {
-                    uint32 afflictionSpellID = RAND(SPELL_BROODAF_BLUE, SPELL_BROODAF_BLACK, SPELL_BROODAF_RED, SPELL_BROODAF_BRONZE, SPELL_BROODAF_GREEN);
-                    std::vector<Player*> playerTargets;
-                    Map::PlayerList const& players = me->GetMap()->GetPlayers();
-                    for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
-                    {
-                        if (Player* player = itr->GetSource()->ToPlayer())
-                        {
-                            if (!player->IsGameMaster() && !player->IsSpectator() && player->IsAlive())
-                                playerTargets.push_back(player);
-                        }
-                    }
-
-                    if (playerTargets.size() > 12)
-                        Acore::Containers::RandomResize(playerTargets, 12);
-
-                    for (Player* player : playerTargets)
-                    {
-                        DoCast(player, afflictionSpellID, true);
-
-                        if (player->HasAllAuras(SPELL_BROODAF_BLUE, SPELL_BROODAF_BLACK, SPELL_BROODAF_RED, SPELL_BROODAF_BRONZE, SPELL_BROODAF_GREEN))
-                            DoCast(player, SPELL_CHROMATIC_MUT_1);
-                    }
-                    events.ScheduleEvent(EVENT_AFFLICTION, 10s);
-                    break;
-                }
-                case EVENT_FRENZY:
-                    DoCast(me, SPELL_FRENZY);
-                    events.ScheduleEvent(EVENT_FRENZY, 10s, 15s);
-                    break;
-                }
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-            }
-
-            // Enrage if not already enraged and below 20%
-            if (!Enraged && HealthBelowPct(20))
-            {
-                DoCast(me, SPELL_ENRAGE);
-                Enraged = true;
-            }
-
-            DoMeleeAttackIfReady();
         }
 
-    private:
-        std::list<uint32> _breathSpells;
-        bool Enraged;
-        ObjectGuid _playerGUID;
-
-        // ---------- NEW: helpers to find bot tanks and boost their threat ----------
-        void CollectNearbyNPcbotTanks(float range, std::vector<Creature*>& out)
+        if (!Enraged && HealthBelowPct(20))
         {
-            out.clear();
-
-            std::list<Unit*> units;
-            Acore::AnyUnitInObjectRangeCheck check(me, range);
-            Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, units, check);
-            Cell::VisitObjects(me, searcher, range);
-
-            for (Unit* u : units)
-            {
-                if (!u || u->GetTypeId() != TYPEID_UNIT)
-                    continue;
-
-                Creature* c = u->ToCreature();
-                if (!c || !c->IsAlive())
-                    continue;
-
-                // Must be an NPCBot and hostile to boss
-                if (!c->IsNPCBot() || !me->IsHostileTo(c))
-                    continue;
-
-                // Tank role?
-                if (bot_ai* bai = dynamic_cast<bot_ai*>(c->AI()))
-                {
-                    uint32 const roles = bai->GetBotRoles();
-                    bool const isTankRole = (roles & (BOT_ROLE_TANK | BOT_ROLE_TANK_OFF)) != 0;
-                    if (bai->IsTank() || isTankRole)
-                        out.push_back(c);
-                }
-            }
+            DoCast(me, SPELL_ENRAGE);
+            Enraged = true;
         }
 
-        void BoostThreatToBotTanksOnEngage(float searchRange)
-        {
-            float const bonus = GetBotTankThreatBonus();
-            if (bonus <= 0.0f)
-                return;
-
-            std::vector<Creature*> tanks;
-            tanks.reserve(16);
-            CollectNearbyNPcbotTanks(searchRange, tanks);
-
-            if (tanks.empty())
-                return;
-
-            // Choose closest tank as primary
-            Creature* primary = nullptr;
-            float bestDist = std::numeric_limits<float>::max();
-            for (Creature* c : tanks)
-            {
-                float d = me->GetDistance(c);
-                if (d < bestDist)
-                {
-                    bestDist = d;
-                    primary = c;
-                }
-            }
-
-            // Add threat to all tanks; slight bias for primary
-            for (Creature* c : tanks)
-            {
-                float amount = (c == primary) ? bonus * 1.05f : bonus;
-                me->GetThreatMgr().AddThreat(c, amount);
-            }
-
-            // Ensure we start on the tank if no current victim
-            if (!me->GetVictim() && primary)
-                AttackStart(primary);
-        }
-        // --------------------------------------------------------------------------
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
-    {
-        return GetBlackwingLairAI<boss_chromaggusAI>(creature);
+        DoMeleeAttackIfReady();
     }
+
+private:
+    std::list<uint32> _breathSpells;
+    bool Enraged;
+    ObjectGuid _playerGUID;
+
+    //Dinkle custom start
+    void CollectNearbyNPCBotTanks(float range, std::vector<Creature*>& out)
+    {
+        out.clear();
+
+        std::list<Unit*> units;
+        Acore::AnyUnitInObjectRangeCheck check(me, range);
+        Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, units, check);
+        Cell::VisitObjects(me, searcher, range);
+
+        for (Unit* u : units)
+        {
+            if (!u || u->GetTypeId() != TYPEID_UNIT)
+                continue;
+
+            Creature* c = u->ToCreature();
+            if (!c || !c->IsAlive())
+                continue;
+
+            if (!c->IsNPCBot() || !me->IsHostileTo(c))
+                continue;
+
+            if (bot_ai* bai = c->GetBotAI())
+            {
+                uint32 const roles = bai->GetBotRoles();
+                bool const isTankRole = (roles & (BOT_ROLE_TANK | BOT_ROLE_TANK_OFF)) != 0;
+                if (bai->IsTank() || isTankRole)
+                    out.push_back(c);
+            }
+        }
+    }
+
+    void BoostThreatToBotTanksOnEngage(float searchRange)
+    {
+        float const bonus = GetBotTankThreatBonus();
+        if (bonus <= 0.0f)
+            return;
+
+        std::vector<Creature*> tanks;
+        tanks.reserve(16);
+        CollectNearbyNPCBotTanks(searchRange, tanks);
+
+        if (tanks.empty())
+            return;
+
+        Creature* primary = nullptr;
+        float bestDist = std::numeric_limits<float>::max();
+
+        for (Creature* c : tanks)
+        {
+            float d = me->GetDistance(c);
+            if (d < bestDist)
+            {
+                bestDist = d;
+                primary = c;
+            }
+        }
+
+        for (Creature* c : tanks)
+        {
+            float amount = (c == primary) ? bonus * 1.05f : bonus;
+            me->GetThreatMgr().AddThreat(c, amount);
+        }
+
+        if (!me->GetVictim() && primary)
+            AttackStart(primary);
+    }
+    //Dinkle custom end
 };
 
-class go_chromaggus_lever : public GameObjectScript
+struct go_chromaggus_lever : public GameObjectAI
 {
-public:
-    go_chromaggus_lever() : GameObjectScript("go_chromaggus_lever") {}
+    go_chromaggus_lever(GameObject* go) : GameObjectAI(go), _instance(go->GetInstanceScript()) {}
 
-    struct go_chromaggus_leverAI : public GameObjectAI
+    bool GossipHello(Player* player, bool reportUse) override
     {
-        go_chromaggus_leverAI(GameObject* go) : GameObjectAI(go), _instance(go->GetInstanceScript()) {}
-
-        bool GossipHello(Player* player, bool reportUse) override
+        if (reportUse && _instance)
         {
-            if (reportUse && _instance)
+            if (_instance->GetBossState(DATA_CHROMAGGUS) != DONE &&
+                _instance->GetBossState(DATA_CHROMAGGUS) != IN_PROGRESS)
             {
-                if (_instance->GetBossState(DATA_CHROMAGGUS) != DONE &&
-                    _instance->GetBossState(DATA_CHROMAGGUS) != IN_PROGRESS)
+                if (Creature* creature = _instance->GetCreature(DATA_CHROMAGGUS))
                 {
-                    if (Creature* creature = _instance->GetCreature(DATA_CHROMAGGUS))
-                    {
-                        creature->SetHomePosition(homePos);
-                        creature->GetMotionMaster()->MoveWaypoint(creature->GetEntry() * 10, false);
-                        creature->AI()->SetGUID(player->GetGUID(), GUID_LEVER_USER);
-                    }
-
-                    if (GameObject* go = _instance->GetGameObject(DATA_GO_CHROMAGGUS_DOOR))
-                        _instance->HandleGameObject(ObjectGuid::Empty, true, go);
+                    creature->SetHomePosition(homePos);
+                    creature->GetMotionMaster()->MoveWaypoint(creature->GetEntry() * 10, false);
+                    creature->AI()->SetGUID(player->GetGUID(), GUID_LEVER_USER);
                 }
 
-                me->SetGameObjectFlag(GO_FLAG_NOT_SELECTABLE | GO_FLAG_IN_USE);
-                me->SetGoState(GO_STATE_ACTIVE);
+                if (GameObject* go = _instance->GetGameObject(DATA_GO_CHROMAGGUS_DOOR))
+                    _instance->HandleGameObject(ObjectGuid::Empty, true, go);
             }
 
-            return true;
+            me->SetGameObjectFlag(GO_FLAG_NOT_SELECTABLE | GO_FLAG_IN_USE);
+            me->SetGoState(GO_STATE_ACTIVE);
         }
 
-    private:
-        InstanceScript* _instance;
-    };
-
-    GameObjectAI* GetAI(GameObject* go) const override
-    {
-        return GetBlackwingLairAI<go_chromaggus_leverAI>(go);
+        return true;
     }
-};
 
+private:
+    InstanceScript* _instance;
+};
 
 enum ElementalShieldSpells
 {
@@ -437,18 +423,18 @@ class spell_gen_brood_power : public SpellScript
         OnEffectHitTarget += SpellEffectFn(spell_gen_brood_power::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
     }
 };
+
+//Dinkle custom start
 // Spells: Frost Burn (23187 rank 1, 23189 rank 2)
 class chromaggus_spell_frostburn_custom : public SpellScript
 {
     PrepareSpellScript(chromaggus_spell_frostburn_custom);
 
-    // Cached config lookup (first use). 1.0 = no change.
     static float GetMultiplier()
     {
         static float sMult = []() -> float
             {
                 float v = sConfigMgr->GetOption<float>("Chromaggus.Frostburn.DamageMultiplier", 1.0f);
-                // Safety: no negative scaling
                 if (v < 0.0f)
                     v = 0.0f;
                 return v;
@@ -458,7 +444,6 @@ class chromaggus_spell_frostburn_custom : public SpellScript
 
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
-        // Validate the IDs we intend to bind to (won't crash if a DBC is missing; simply returns false to skip loading)
         return ValidateSpellInfo({ 23187u, 23189u });
     }
 
@@ -472,7 +457,6 @@ class chromaggus_spell_frostburn_custom : public SpellScript
         if (dmg <= 0)
             return;
 
-        // Scale and clamp to int32 range
         double scaled = static_cast<double>(dmg) * static_cast<double>(mult);
         if (scaled < 0.0)
             scaled = 0.0;
@@ -480,7 +464,7 @@ class chromaggus_spell_frostburn_custom : public SpellScript
         if (scaled > static_cast<double>(std::numeric_limits<int32>::max()))
             SetHitDamage(std::numeric_limits<int32>::max());
         else
-            SetHitDamage(static_cast<int32>(scaled + 0.5)); // round half-up
+            SetHitDamage(static_cast<int32>(scaled + 0.5));
     }
 
     void Register() override
@@ -488,12 +472,14 @@ class chromaggus_spell_frostburn_custom : public SpellScript
         OnHit += SpellHitFn(chromaggus_spell_frostburn_custom::HandleHit);
     }
 };
+//Dinkle custom end
 
 void AddSC_boss_chromaggus()
 {
-    new boss_chromaggus();
-    new go_chromaggus_lever();
+    RegisterBlackwingLairCreatureAI(boss_chromaggus);
+    RegisterBlackwingLairGameObjectAI(go_chromaggus_lever);
     RegisterSpellScript(spell_gen_elemental_shield);
     RegisterSpellScript(spell_gen_brood_power);
+    //Dinkle custom
     RegisterSpellScript(chromaggus_spell_frostburn_custom);
 }

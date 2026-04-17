@@ -872,9 +872,9 @@ void WorldSession::HandlePlayerLoginFromDB(LoginQueryHolder const& holder)
         if (ChrClassesEntry const* cEntry = sChrClassesStore.LookupEntry(pCurrChar->getClass()))
         {
             if (cEntry->CinematicSequence)
-                pCurrChar->SendCinematicStart(cEntry->CinematicSequence);
+                pCurrChar->GetCinematicMgr().StartCinematic(cEntry->CinematicSequence);
             else if (ChrRacesEntry const* rEntry = sChrRacesStore.LookupEntry(pCurrChar->getRace()))
-                pCurrChar->SendCinematicStart(rEntry->CinematicSequence);
+                pCurrChar->GetCinematicMgr().StartCinematic(rEntry->CinematicSequence);
 
             // send new char string if not empty
             std::string_view newCharString = sWorld->getStringConfig(CONFIG_NEW_CHAR_STRING);
@@ -1129,6 +1129,13 @@ void WorldSession::HandlePlayerLoginToCharInWorld(Player* pCurrChar)
 {
     ChatHandler chH = ChatHandler(this);
     m_playerLoading = true;
+
+    // Exit vehicle on reconnect - the client has fully reset so
+    // the player can no longer control the vehicle. Without this
+    // the player is stuck: server-side still seated, but the
+    // client has no vehicle UI or movement control.
+    if (pCurrChar->GetVehicle())
+        pCurrChar->ExitVehicle();
 
     pCurrChar->SendDungeonDifficulty(false);
 
