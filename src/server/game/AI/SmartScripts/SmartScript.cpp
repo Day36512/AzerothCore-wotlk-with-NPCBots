@@ -3085,9 +3085,9 @@ void SmartScript::ProcessAction(SmartScriptHolder& e, Unit* unit, uint32 var0, u
             for (WorldObject* target : targets)
             {
                 if (IsUnit(target))
-                {
                     target->ToUnit()->SetObjectScale(scale);
-                }
+                else if (IsGameObject(target))
+                    target->ToGameObject()->SetObjectScale(scale);
             }
             break;
         }

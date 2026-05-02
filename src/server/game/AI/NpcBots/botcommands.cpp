@@ -27,7 +27,7 @@
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "RaceMgr.h"
-//#include "RBAC.h"
+#include "RBAC.h"
 #include "ScriptMgr.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
@@ -50,51 +50,6 @@ Category: commandscripts/custom/
 
 #ifdef _MSC_VER
 # pragma warning(push, 4)
-#endif
-
-#ifdef AC_COMPILER
-//Acore only
-enum rbac
-{
-    RBAC_PERM_COMMAND_NPCBOT                                 = SEC_PLAYER,
-    RBAC_PERM_COMMAND_NPCBOT_ADD                             = SEC_GAMEMASTER,
-    RBAC_PERM_COMMAND_NPCBOT_REMOVE                          = SEC_GAMEMASTER,
-    RBAC_PERM_COMMAND_NPCBOT_SPAWN                           = SEC_GAMEMASTER,
-    RBAC_PERM_COMMAND_NPCBOT_MOVE                            = SEC_GAMEMASTER,
-    RBAC_PERM_COMMAND_NPCBOT_DELETE                          = SEC_GAMEMASTER,
-    RBAC_PERM_COMMAND_NPCBOT_LOOKUP                          = SEC_GAMEMASTER,
-    RBAC_PERM_COMMAND_NPCBOT_REVIVE                          = SEC_GAMEMASTER,
-    RBAC_PERM_COMMAND_NPCBOT_RELOADCONFIG                    = SEC_GAMEMASTER,
-    RBAC_PERM_COMMAND_NPCBOT_INFO                            = SEC_PLAYER,
-    RBAC_PERM_COMMAND_NPCBOT_HIDE                            = SEC_PLAYER,
-    RBAC_PERM_COMMAND_NPCBOT_UNHIDE                          = SEC_PLAYER,
-    RBAC_PERM_COMMAND_NPCBOT_RECALL                          = SEC_PLAYER,
-    RBAC_PERM_COMMAND_NPCBOT_KILL                            = SEC_PLAYER,
-    RBAC_PERM_COMMAND_NPCBOT_DEBUG_RAID                      = SEC_GAMEMASTER,
-    RBAC_PERM_COMMAND_NPCBOT_DEBUG_MOUNT                     = SEC_GAMEMASTER,
-    RBAC_PERM_COMMAND_NPCBOT_DEBUG_VISUAL                    = SEC_GAMEMASTER,
-    RBAC_PERM_COMMAND_NPCBOT_DEBUG_STATES                    = SEC_GAMEMASTER,
-    RBAC_PERM_COMMAND_NPCBOT_TOGGLE_FLAGS                    = SEC_GAMEMASTER,
-    RBAC_PERM_COMMAND_NPCBOT_SET_FACTION                     = SEC_GAMEMASTER,
-    RBAC_PERM_COMMAND_NPCBOT_SET_OWNER                       = SEC_GAMEMASTER,
-    RBAC_PERM_COMMAND_NPCBOT_SET_SPEC                        = SEC_GAMEMASTER,
-    RBAC_PERM_COMMAND_NPCBOT_COMMAND_STANDSTILL              = SEC_PLAYER,
-    RBAC_PERM_COMMAND_NPCBOT_COMMAND_STOPFULLY               = SEC_PLAYER,
-    RBAC_PERM_COMMAND_NPCBOT_COMMAND_FOLLOW                  = SEC_PLAYER,
-    RBAC_PERM_COMMAND_NPCBOT_ATTDISTANCE_SHORT               = SEC_PLAYER,
-    RBAC_PERM_COMMAND_NPCBOT_ATTDISTANCE_LONG                = SEC_PLAYER,
-    RBAC_PERM_COMMAND_NPCBOT_ATTDISTANCE_EXACT               = SEC_PLAYER,
-    RBAC_PERM_COMMAND_NPCBOT_FOLDISTANCE_EXACT               = SEC_PLAYER,
-    RBAC_PERM_COMMAND_NPCBOT_ORDER_CAST                      = SEC_PLAYER,
-    RBAC_PERM_COMMAND_NPCBOT_VEHICLE_EJECT                   = SEC_PLAYER,
-    RBAC_PERM_COMMAND_NPCBOT_DUMP_LOAD                       = SEC_ADMINISTRATOR,
-    RBAC_PERM_COMMAND_NPCBOT_DUMP_WRITE                      = SEC_ADMINISTRATOR,
-    RBAC_PERM_COMMAND_NPCBOT_SPAWNED                         = SEC_GAMEMASTER,
-    RBAC_PERM_COMMAND_NPCBOT_COMMAND_MISC                    = SEC_PLAYER,
-    RBAC_PERM_COMMAND_NPCBOT_CREATENEW                       = SEC_ADMINISTRATOR,
-    RBAC_PERM_COMMAND_NPCBOT_SEND                            = SEC_PLAYER
-};
-//end Acore only
 #endif
 
 using namespace std::string_view_literals;
@@ -283,7 +238,7 @@ static consteval uint8 GetMaxVisual()
     GetMaxVisual<PlayerVisuals::Features, r, g>() }
 
 #define PLAYER_VIS_ARRS(r) { PLAYER_VIS_ARR(r, GENDER_MALE), PLAYER_VIS_ARR(r, GENDER_FEMALE) }
-static constinit const uint8 MAX_PLAYER_VISUALS[][GENDERS_COUNT][5] {
+static constinit const uint8 MAX_PLAYER_VISUALS[MAX_RACES][GENDERS_COUNT][5] {
     PLAYER_VIS_ARRS(RACE_NONE),
     PLAYER_VIS_ARRS(RACE_HUMAN),
     PLAYER_VIS_ARRS(RACE_ORC),
@@ -301,7 +256,7 @@ static constinit const uint8 MAX_PLAYER_VISUALS[][GENDERS_COUNT][5] {
 #undef PLAYER_VIS_ARRS
 #endif // !defined(PLAYER_VIS_ARRS) && !defined(PLAYER_VIS_ARR)
 
-static_assert(std::size(MAX_PLAYER_VISUALS) == 12);
+static_assert(std::size(MAX_PLAYER_VISUALS) == MAX_RACES);
 static_assert(std::ranges::all_of(MAX_PLAYER_VISUALS, [](auto const& c) {
     return std::size(c) == GENDERS_COUNT;
 }));
@@ -581,7 +536,6 @@ public:
 
         static ChatCommandTable npcbotWPCommandTable =
         {
-            //{ "generate",   HandleNpcBotWPGenerateCommand,          rbac::RBAC_PERM_COMMAND_NPCBOT_SPAWN,              Console::Yes },
             { "spawnall",   HandleNpcBotWPSpawnAllCommand,          rbac::RBAC_PERM_COMMAND_NPCBOT_SPAWN,              Console::No  },
             { "move",       HandleNpcBotWPMoveCommand,              rbac::RBAC_PERM_COMMAND_NPCBOT_SPAWN,              Console::No  },
             { "add",        HandleNpcBotWPAddCommand,               rbac::RBAC_PERM_COMMAND_NPCBOT_SPAWN,              Console::No  },
@@ -829,103 +783,6 @@ public:
         wp->SetupLinkToAura();
         wpc->m_serverSideVisibilityDetect.SetValue(SERVERSIDE_VISIBILITY_GM, wpc->m_serverSideVisibility.GetValue(SERVERSIDE_VISIBILITY_GM));
         return wpc;
-    }
-
-    static bool HandleNpcBotWPGenerateCommand(ChatHandler* handler, Optional<bool> save)
-    {
-        using WanderNodeLink = WanderNode::WanderNodeLink;
-
-        WanderNode::RemoveAllWPs();
-
-        handler->SendSysMessage("Generating wander nodes from POIs. No levels or flags will be set");
-
-        uint32 poiId_start = 0;
-        for (AreaPOIEntry const* aProto : sAreaPOIStore)
-        {
-            if (aProto->mapId != 0 && aProto->mapId != 1/* && aProto->ContinentID != 530 && aProto->ContinentID != 571*/)
-                continue;
-
-            uint32 poiId = ++poiId_start;
-            std::string poiName = aProto->name;
-            if (strlen(aProto->name2) > 0)
-            {
-                poiName += " - ";
-                poiName += aProto->name2;
-            }
-            std::erase_if(poiName, [](char c) { return c == '\''; });
-            uint32 poiMapId = aProto->mapId;
-            float x = aProto->x;
-            float y = aProto->y;
-            float z = aProto->z;
-            float o = frand(0.001f, float(M_PI + M_PI) - 0.001f);
-            float ground_z = sMapMgr->CreateBaseMap(poiMapId)->GetHeight(PHASEMASK_NORMAL, x, y, z);
-            if (ground_z > INVALID_HEIGHT)
-                z = ground_z;
-            uint32 poiZoneId, poiAreaId;
-            sMapMgr->GetZoneAndAreaId(PHASEMASK_NORMAL, poiZoneId, poiAreaId, poiMapId, x, y, z);
-
-            poiZoneId = GetZoneIdOverride(poiZoneId);
-            if (IsNoWPZone(poiZoneId))
-            {
-                --poiId_start;
-                continue;
-            }
-
-            WanderNode* wp = new WanderNode(poiId, poiMapId, x, y, z, o, poiZoneId, poiAreaId, std::move(poiName));
-            auto [minl, maxl] = GetZoneLevels(poiZoneId);
-            wp->SetLevels(minl, maxl);
-            BotWPFlags flags = BotWPFlags::BOTWP_FLAG_NONE;
-            wp->SetFlags(flags);
-            WanderNode::DoForAllMapWPs(poiMapId, [wp = wp](WanderNode const* mwp) {
-                if (mwp->GetWPId() != wp->GetWPId() && mwp->GetExactDist2d(wp) < MAX_VISIBILITY_DISTANCE)
-                    wp->Link(WanderNodeLink{ .wp = const_cast<WanderNode*>(mwp), .weight = 0 });
-            });
-
-            handler->SendSysMessage(wp->ToString());
-        }
-
-        handler->PSendSysMessage("Generating wander nodes completed with {} nodes", uint32(WanderNode::GetAllWPsCount()));
-
-        if (!(save && *save))
-            return true;
-
-        WorldDatabaseTransaction trans = WorldDatabase.BeginTransaction();
-        trans->Append("DROP TABLE IF EXISTS creature_wander_nodes_");
-        trans->Append(
-            "CREATE TABLE creature_wander_nodes_ ("
-            "  `id` int(10) unsigned NOT NULL,"
-            "  `name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'RENAME_ME',"
-            "  `mapid` smallint(5) unsigned NOT NULL DEFAULT '0',"
-            "  `zoneid` int(10) unsigned NOT NULL DEFAULT '0',"
-            "  `areaid` int(10) unsigned NOT NULL DEFAULT '0',"
-            "  `minlevel` tinyint(3) unsigned NOT NULL DEFAULT '0',"
-            "  `maxlevel` tinyint(3) unsigned NOT NULL DEFAULT '0',"
-            "  `flags` int(10) unsigned NOT NULL DEFAULT '0',"
-            "  `x` float NOT NULL DEFAULT '0',"
-            "  `y` float NOT NULL DEFAULT '0',"
-            "  `z` float NOT NULL DEFAULT '0',"
-            "  `o` float NOT NULL DEFAULT '0',"
-            "  `links` mediumtext COLLATE utf8mb4_unicode_ci,"
-            "  PRIMARY KEY (`id`)"
-            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Bot Wander Map'"
-        );
-        std::ostringstream ss;
-        ss << "INSERT INTO creature_wander_nodes_ (id,mapid,x,y,z,o,zoneId,areaId,minlevel,maxlevel,flags,name,links) VALUES ";
-        WanderNode::DoForAllWPs([&ss](WanderNode const* wp) {
-            auto [minl, maxl] = wp->GetLevels();
-            ss << '(' << wp->GetWPId() << ',' << wp->GetMapId()
-                << ',' << wp->GetPositionX() << ',' << wp->GetPositionY() << ',' << wp->GetPositionZ() << ',' << wp->GetOrientation()
-                << ',' << wp->GetZoneId() << ',' << wp->GetAreaId() << ',' << uint32(minl) << ',' << uint32(maxl)
-                << ',' << wp->GetFlags() << ",'" << wp->GetName() << "','" << wp->FormatLinks() << "'),";
-        });
-        std::string val_str = ss.str();
-        val_str.resize(val_str.size() - 1u);
-        trans->Append(val_str);
-        WorldDatabase.CommitTransaction(trans);
-
-        handler->SendSysMessage("Saved.");
-
-        return true;
     }
 
     static bool HandleNpcBotWPSpawnAllCommand(ChatHandler* handler)
