@@ -47,9 +47,9 @@ enum Spells
     SPELL_EVOCATION = 30935,
     SPELL_FIRE_NOVA = 300380,   // huge 500y nova
     SPELL_SHADOW_BOLT_VOLLEY = 28599,
-    SPELL_BURNING_NOVA = 300381,   // 11s immunity channel/aura
+    SPELL_BURNING_NOVA = 300381,   // 9s immunity channel/aura
     SPELL_VORTEX = 37370,
-    SPELL_ANTI_MAGIC_ZONE = 300379    // 12s, -95% spell dmg
+    SPELL_ANTI_MAGIC_ZONE = 300379    // 10s, -95% spell dmg
 };
 
 enum Misc
@@ -197,7 +197,7 @@ struct boss_kelidan_the_breaker : public BossAI
                 SpawnAntiMagicZones();
                 MoveBotsIntoAMZ();
 
-                scheduler.Schedule(10s, [this](TaskContext /*fire*/)
+                scheduler.Schedule(8s, [this](TaskContext /*fire*/)
                     {
                         DoCastSelf(SPELL_FIRE_NOVA, true);
                     });

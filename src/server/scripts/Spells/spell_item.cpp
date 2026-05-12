@@ -486,36 +486,35 @@ class spell_item_with_mount_speed : public AuraScript
     {
         switch (m_scriptSpellId)
         {
-            case SPELL_MOUNT_SPEED_CARROT:
-                return SPELL_CARROT_ON_A_STICK_EFFECT;
-            case SPELL_MITHRIL_SPURS:
-                return SPELL_MITHRIL_SPURS_EFFECT;
-            case SPELL_MOUNT_SPEED_RIDING:
-                return SPELL_RIDING_CROP_EFFECT;
-            default:
-                return 0;
+        case SPELL_MOUNT_SPEED_CARROT:
+            return SPELL_CARROT_ON_A_STICK_EFFECT;
+        case SPELL_MITHRIL_SPURS:
+            return SPELL_MITHRIL_SPURS_EFFECT;
+        case SPELL_MOUNT_SPEED_RIDING:
+            return SPELL_RIDING_CROP_EFFECT;
+        default:
+            return 0;
         }
     }
 
     void OnApply(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
     {
         Unit* target = GetTarget();
-        if (target->GetLevel() <= 70)
-        {
-            if (auto spellId = getMountSpellId())
-            {
-                target->CastSpell(target, spellId, aurEff);
-            }
-        }
+        if (!target)
+            return;
+
+        if (uint32 spellId = getMountSpellId())
+            target->CastSpell(target, spellId, aurEff);
     }
 
     void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         Unit* target = GetTarget();
-        if (auto spellId = getMountSpellId())
-        {
+        if (!target)
+            return;
+
+        if (uint32 spellId = getMountSpellId())
             target->RemoveAurasDueToSpell(spellId);
-        }
     }
 
     void Register() override
@@ -531,17 +530,8 @@ class spell_item_magic_dust : public SpellScript
 
     void HandlePreventAura(SpellEffIndex /*effIndex*/)
     {
-        if (Unit* target = GetHitUnit())
-        {
-            if (target->GetLevel() >= 30)
-            {
-                uint8 chance = 100 - std::min<uint8>(100, target->GetLevel() - 30 * urand(3, 10));
-                if (!roll_chance_i(chance))
-                {
-                    PreventHitAura();
-                }
-            }
-        }
+        // Intentionally no-op.
+        // Keep the script and hook intact, but do not prevent the aura.
     }
 
     void Register() override
@@ -1591,11 +1581,11 @@ class spell_item_arcane_shroud : public AuraScript
 {
     PrepareAuraScript(spell_item_arcane_shroud);
 
-    void CalculateAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    void CalculateAmount(AuraEffect const* /*aurEff*/, int32& /*amount*/, bool& /*canBeRecalculated*/)
     {
-        int32 diff = GetUnitOwner()->GetLevel() - 60;
-        if (diff > 0)
-            amount += 2 * diff;
+        // Intentionally no-op.
+        // Keep the script and registration intact, but remove the
+        // above-60 threat scaling behavior.
     }
 
     void Register() override
@@ -2753,16 +2743,20 @@ class spell_item_the_eye_of_diminution : public AuraScript
 {
     PrepareAuraScript(spell_item_the_eye_of_diminution);
 
-    void CalculateAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    void CalculateAmount(AuraEffect const* /*aurEff*/, int32& /*amount*/, bool& /*canBeRecalculated*/)
     {
-        int32 diff = GetUnitOwner()->GetLevel() - 60;
-        if (diff > 0)
-            amount += diff;
+        // Intentionally no-op.
+        // Keep the script and registration intact, but remove the
+        // above-60 threat scaling behavior.
     }
 
     void Register() override
     {
-        DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_item_the_eye_of_diminution::CalculateAmount, EFFECT_0, SPELL_AURA_MOD_THREAT);
+        DoEffectCalcAmount += AuraEffectCalcAmountFn(
+            spell_item_the_eye_of_diminution::CalculateAmount,
+            EFFECT_0,
+            SPELL_AURA_MOD_THREAT
+        );
     }
 };
 
@@ -4054,12 +4048,11 @@ class spell_item_green_whelp_armor : public AuraScript
 {
     PrepareAuraScript(spell_item_green_whelp_armor);
 
-    bool CheckProc(ProcEventInfo& eventInfo)
+    bool CheckProc(ProcEventInfo& /*eventInfo*/)
     {
-        if (eventInfo.GetActor() && eventInfo.GetActor()->GetLevel() <= 50)
-            return true;
-
-        return false;
+        // Intentionally no-op.
+        // Keep the script and registration intact, but remove the level restriction.
+        return true;
     }
 
     void Register() override
@@ -4416,21 +4409,24 @@ class spell_item_luffa : public SpellScript
 // 23097 - Fire Reflector
 // 23131 - Frost Reflector
 // 23132 - Shadow Reflector
-class spell_item_spell_reflectors: public AuraScript
+class spell_item_spell_reflectors : public AuraScript
 {
     PrepareAuraScript(spell_item_spell_reflectors);
 
-    void CalculateAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    void CalculateAmount(AuraEffect const* /*aurEff*/, int32& /*amount*/, bool& /*canBeRecalculated*/)
     {
-        if (GetCaster()->GetLevel() > 70)
-            amount = 4;
-        else if (GetCaster()->GetLevel() > 60)
-            amount = 50;
+        // Intentionally no-op.
+        // Keep the script and registration intact, but remove the
+        // above-60 / above-70 reflect reduction behavior.
     }
 
     void Register() override
     {
-        DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_item_spell_reflectors::CalculateAmount, EFFECT_0, SPELL_AURA_REFLECT_SPELLS_SCHOOL);
+        DoEffectCalcAmount += AuraEffectCalcAmountFn(
+            spell_item_spell_reflectors::CalculateAmount,
+            EFFECT_0,
+            SPELL_AURA_REFLECT_SPELLS_SCHOOL
+        );
     }
 };
 

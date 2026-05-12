@@ -190,8 +190,10 @@ public:
     void SetWanderer();
     static bool IsWanderNodeAvailableForBotFaction(WanderNode const* wp, uint32 factionTemplateId, bool teleport, bool spawn = false);
     WanderNode const* GetClosestWanderNode() const;
-    WanderNode const* GetNextWanderNode(Position const* fromPos, uint8 lvl, bool random) const;
-    WanderNode const* GetNextTravelNode(Position const* from, bool random) const;
+    WanderNode const* GetNextWanderNode(Position const* fromPos, uint8 lvl, bool random, uint32 requiredZoneId = 0) const;
+    WanderNode const* GetNextTravelNode(Position const* from, bool random, uint32 requiredZoneId = 0) const;
+    WanderNode const* GetRandomWanderNodeInZone(uint32 zoneId, bool spawnOnly, bool excludeCurrent) const;
+    uint32 GetWandererAssignedZoneId() const;
     WanderNode const* GetNextBGTravelNode() const;
     void OnWanderNodeReached();
     void OnBotEnterBattleground();
@@ -234,7 +236,8 @@ public:
     bool IsTempBot() const;
     bool IsSharedBot() const;
     bool CanAppearInWorld() const;
-
+    void SetCanAppearInWorld(bool canAppear) { _canAppearInWorld = canAppear; }
+    void MarkWandererZoneActive();
     void SetShouldUpdateStats() { shouldUpdateStats = true; }
     void UpdateHealth() { doHealth = true; }
     void UpdateMana() { doMana = true; }
@@ -758,12 +761,18 @@ private:
     //save flags
     bool _saveDisabledSpells{};
     bool _saveMiscValues{};
+    uint32 _wandererZoneActivityTimer{};
+    bool _wandererZoneHasPlayer{ true };
+
+    bool IsWandererZoneInactive() const { return IsWanderer() && !_wandererZoneHasPlayer; }
 
     //wandering bots
     bool _wanderer{};
     uint8 _baseLevel{};
     WanderNode const* _travel_node_last{};
     WanderNode const* _travel_node_cur{};
+    uint32 _wandererAssignedZoneId{};
+    uint32 _wandererSameNodeTimer{};
 
     uint32 _groupUpdateMask{};
     uint64 _auraRaidUpdateMask{};

@@ -5,22 +5,22 @@
 
 enum SharedOwnerOptions : uint32
 {
-    SHARED_OWNER_ENABLE                 = 1,
-    SHARED_OWNER_EQUIPMENT              = 2,
-    SHARED_OWNER_ADD_OWNERS             = 3,
-    SHARED_OWNER_REMOVE_OWNERS          = 4,
+    SHARED_OWNER_ENABLE = 1,
+    SHARED_OWNER_EQUIPMENT = 2,
+    SHARED_OWNER_ADD_OWNERS = 3,
+    SHARED_OWNER_REMOVE_OWNERS = 4,
 
     MAX_SHARED_OWNER_OPTIONS
 };
 enum SharedOwnerOptionMask : uint32
 {
-    SHARED_OWNER_OPTION_MASK_ENABLE         = (1<<(SHARED_OWNER_ENABLE-1)),
-    SHARED_OWNER_OPTION_MASK_EQUIPMENT      = (1<<(SHARED_OWNER_EQUIPMENT-1)),
-    SHARED_OWNER_OPTION_MASK_ADD_OWNERS     = (1<<(SHARED_OWNER_ADD_OWNERS-1)),
-    SHARED_OWNER_OPTION_MASK_REMOVE_OWNERS  = (1<<(SHARED_OWNER_REMOVE_OWNERS-1)),
+    SHARED_OWNER_OPTION_MASK_ENABLE = (1 << (SHARED_OWNER_ENABLE - 1)),
+    SHARED_OWNER_OPTION_MASK_EQUIPMENT = (1 << (SHARED_OWNER_EQUIPMENT - 1)),
+    SHARED_OWNER_OPTION_MASK_ADD_OWNERS = (1 << (SHARED_OWNER_ADD_OWNERS - 1)),
+    SHARED_OWNER_OPTION_MASK_REMOVE_OWNERS = (1 << (SHARED_OWNER_REMOVE_OWNERS - 1)),
 
-    SHARED_OWNER_OPTION_MASK_MANAGE_OWNERS  = SHARED_OWNER_OPTION_MASK_ADD_OWNERS | SHARED_OWNER_OPTION_MASK_REMOVE_OWNERS,
-    SHARED_OWNER_OPTION_MASK_ALL            = (1<<(MAX_SHARED_OWNER_OPTIONS-1)) - 1
+    SHARED_OWNER_OPTION_MASK_MANAGE_OWNERS = SHARED_OWNER_OPTION_MASK_ADD_OWNERS | SHARED_OWNER_OPTION_MASK_REMOVE_OWNERS,
+    SHARED_OWNER_OPTION_MASK_ALL = (1 << (MAX_SHARED_OWNER_OPTIONS - 1)) - 1
 };
 
 class Map;
@@ -66,6 +66,10 @@ public:
     static bool IsBotGenerationEnabledBGs();
     static bool IsBotLevelCappedByConfigBG();
     static bool IsBotLevelCappedByConfigBGFirstPlayer();
+    static bool InactiveWanderingBotsWithoutZonePlayers();
+    static bool WanderingBotsStayInAssignedZone();
+    static bool WanderingBotsReviveInSameZone();
+    static uint32 GetWandererSameNodeTeleportDelayMs();
     static bool IsBotGenerationEnabledWorldMapId(uint32 mapId);
     static bool IsBotHKEnabled();
     static bool IsBotHKMessageEnabled();
@@ -96,6 +100,7 @@ public:
     static float GetBotDamageModSpell();
     static float GetBotHealingMod();
     static float GetBotHPMod();
+    static float GetBotManaRegenMod();
     static float GetBotWandererDamageMod();
     static float GetBotWandererHealingMod();
     static float GetBotWandererHPMod();

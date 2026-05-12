@@ -20,6 +20,12 @@
 #include "ScriptedCreature.h"
 #include "mana_tombs.h"
 
+#include "ScriptMgr.h"
+#include "SpellAuraEffects.h"
+#include "SpellScript.h"
+#include "SpellScriptLoader.h"
+#include "Unit.h"
+
 enum Texts
 {
     SAY_AGGRO = 0,
@@ -173,8 +179,8 @@ struct boss_pandemonius : public BossAI
 private:
     void CastDarkShellCustom()
     {
-        int32 bp0 = IsHeroic() ? 38000 : 13000;
-        int32 bp1 = IsHeroic() ? 250 : 100;
+        int32 bp0 = IsHeroic() ? 58000 : 23000;
+        int32 bp1 = IsHeroic() ? 450 : 200;
 
         // Override effects 0 and 1; leave effect 2 to DB.
         me->CastCustomSpell(me, SPELL_DARK_SHELL, &bp0, &bp1, nullptr, true);
@@ -239,7 +245,77 @@ private:
     uint8 _shadowWordPainStage; // 0..5
 };
 
+namespace PandemoniusVeilOfShadows
+{
+    constexpr uint32 SPELL_VEIL_OF_SHADOW = 300392;
+    constexpr uint32 SPELL_VEIL_REMOVAL_TRIGGER = 502629;
+
+    inline bool IsAllowedRemoveMode(AuraRemoveMode removeMode)
+    {
+        return removeMode == AURA_REMOVE_BY_EXPIRE ||
+            removeMode == AURA_REMOVE_BY_ENEMY_SPELL;
+    }
+
+    inline bool IsValidTarget(Unit const* target)
+    {
+        return target &&
+            target->IsInWorld() &&
+            target->IsAlive() &&
+            (target->IsPlayer() || target->IsNPCBot());
+    }
+}
+
+class custom_spell_veil_of_shadows : public AuraScript
+{
+    PrepareAuraScript(custom_spell_veil_of_shadows);
+
+private:
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo(
+            {
+                PandemoniusVeilOfShadows::SPELL_VEIL_REMOVAL_TRIGGER
+            });
+    }
+
+    bool Load() override
+    {
+        return m_scriptSpellId == PandemoniusVeilOfShadows::SPELL_VEIL_OF_SHADOW;
+    }
+
+    void HandleAfterRemove(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
+    {
+        AuraApplication const* application = GetTargetApplication();
+        if (!application)
+            return;
+
+        if (!PandemoniusVeilOfShadows::IsAllowedRemoveMode(application->GetRemoveMode()))
+            return;
+
+        Unit* target = GetTarget();
+        if (!PandemoniusVeilOfShadows::IsValidTarget(target))
+            return;
+
+        Unit* caster = GetCaster();
+        if (!caster || !caster->IsInWorld())
+            caster = target;
+
+        target->CastSpell(target, 502629, true, nullptr, aurEff);
+    }
+
+    void Register() override
+    {
+        AfterEffectRemove += AuraEffectRemoveFn(
+            custom_spell_veil_of_shadows::HandleAfterRemove,
+            EFFECT_0,
+            SPELL_AURA_ANY,
+            AURA_EFFECT_HANDLE_REAL
+        );
+    }
+};
+
 void AddSC_boss_pandemonius()
 {
     RegisterManaTombsCreatureAI(boss_pandemonius);
+    RegisterSpellScript(custom_spell_veil_of_shadows);
 }

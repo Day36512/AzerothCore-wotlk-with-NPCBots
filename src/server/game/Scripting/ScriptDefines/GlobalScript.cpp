@@ -34,6 +34,11 @@ void ScriptMgr::OnGlobalMirrorImageDisplayItem(Item const* item, uint32& display
     CALL_ENABLED_HOOKS(GlobalScript, GLOBALHOOK_ON_MIRRORIMAGE_DISPLAY_ITEM, script->OnMirrorImageDisplayItem(item, display));
 }
 
+bool ScriptMgr::OnBeforeMirrorImageDataRequest(WorldSession* session, Unit* unit, ObjectGuid const& guid)
+{
+    CALL_ENABLED_BOOLEAN_HOOKS_WITH_DEFAULT_FALSE(GlobalScript, GLOBALHOOK_ON_BEFORE_MIRRORIMAGE_DATA_REQUEST, script->OnBeforeMirrorImageDataRequest(session, unit, guid));
+}
+
 void ScriptMgr::OnAfterRefCount(Player const* player, Loot& loot, bool canRate, uint16 lootMode, LootStoreItem* LootStoreItem, uint32& maxcount, LootStore const& store)
 {
     CALL_ENABLED_HOOKS(GlobalScript, GLOBALHOOK_ON_AFTER_REF_COUNT, script->OnAfterRefCount(player, LootStoreItem, loot, canRate, lootMode, maxcount, store));

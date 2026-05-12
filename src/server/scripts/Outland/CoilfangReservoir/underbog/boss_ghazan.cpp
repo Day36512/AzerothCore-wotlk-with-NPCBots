@@ -132,7 +132,7 @@ struct boss_ghazan : public BossAI
         scheduler.Schedule(3s, [this](TaskContext context)
             {
                 DoCastVictim(SPELL_ACID_BREATH);
-                context.Repeat(7s, 9s);
+                context.Repeat(10s, 14s);
             });
 
         // Acid Spit — bot + player aware
@@ -265,8 +265,8 @@ private:
 
 // ---------------- Venom Fangs SpellScript (initial hit) ----------------
 // EFFECT_1: SCHOOL_DAMAGE
-//  - If target HP >= 50%: deals 40% of MAX HP.
-//  - If target HP <  50%: deals 15% of MAX HP.
+//  - If target HP >= 50%: deals 20% of MAX HP.
+//  - If target HP <  50%: deals 10% of MAX HP.
 class spell_ghazan_venom_fangs : public SpellScript
 {
     PrepareSpellScript(spell_ghazan_venom_fangs);
@@ -279,7 +279,7 @@ class spell_ghazan_venom_fangs : public SpellScript
         if (!target || !target->IsAlive())
             return;
 
-        float pct = target->HealthBelowPct(50) ? 0.15f : 0.4f;
+        float pct = target->HealthBelowPct(50) ? 0.1f : 0.2f;
         float raw = float(target->GetMaxHealth()) * pct;
         int32 damage = int32(raw);
 

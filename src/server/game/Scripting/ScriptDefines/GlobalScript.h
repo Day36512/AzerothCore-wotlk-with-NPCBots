@@ -24,11 +24,14 @@
 #include "ScriptObject.h"
 #include <map>
 #include <vector>
+class Unit;
+class WorldSession;
 
 enum GlobalHook
 {
     GLOBALHOOK_ON_ITEM_DEL_FROM_DB,
     GLOBALHOOK_ON_MIRRORIMAGE_DISPLAY_ITEM,
+    GLOBALHOOK_ON_BEFORE_MIRRORIMAGE_DATA_REQUEST,
     GLOBALHOOK_ON_AFTER_REF_COUNT,
     GLOBALHOOK_ON_AFTER_CALCULATE_LOOT_GROUP_AMOUNT,
     GLOBALHOOK_ON_BEFORE_DROP_ADD_ITEM,
@@ -60,6 +63,7 @@ public:
     // items
     virtual void OnItemDelFromDB(CharacterDatabaseTransaction /*trans*/, ObjectGuid::LowType /*itemGuid*/) { }
     virtual void OnMirrorImageDisplayItem(Item const* /*item*/, uint32& /*display*/) { }
+    virtual bool OnBeforeMirrorImageDataRequest(WorldSession* /*session*/, Unit* /*unit*/, ObjectGuid const& /*guid*/) { return false; }
 
     // loot
     virtual void OnAfterRefCount(Player const* /*player*/, LootStoreItem* /*LootStoreItem*/, Loot& /*loot*/, bool /*canRate*/, uint16 /*lootMode*/, uint32& /*maxcount*/, LootStore const& /*store*/) { }

@@ -135,6 +135,10 @@ static bool _botStatLimits;
 static bool _enableWanderingBotsBG;
 static bool _enableConfigLevelCapBG;
 static bool _enableConfigLevelCapBGFirst;
+static bool _inactiveWanderingBotsWithoutZonePlayers;
+static bool _wanderingBotsStayInAssignedZone;
+static bool _wanderingBotsReviveInSameZone;
+static uint32 _wandererSameNodeTeleportDelayMs;
 static bool _bothk_enable;
 static bool _bothk_message_enable;
 static bool _bothk_achievements_enable;
@@ -148,6 +152,7 @@ static float _mult_dmg_physical;
 static float _mult_dmg_spell;
 static float _mult_healing;
 static float _mult_hp;
+static float _mult_mana_regen;
 static float _mult_dmg_wanderer;
 static float _mult_healing_wanderer;
 static float _mult_hp_wanderer;
@@ -263,7 +268,7 @@ void AddNpcBotScripts()
 class NPCBotsConfigScript : public WorldScript
 {
 public:
-    NPCBotsConfigScript() : WorldScript("NPCBotsConfigScript") { }
+    NPCBotsConfigScript() : WorldScript("NPCBotsConfigScript") {}
 
     void OnAfterConfigLoad(bool reload) override
     {
@@ -301,153 +306,163 @@ private:
 
     static void _loadConfig(bool reload)
     {
-        _enableNpcBots                  = sConfigMgr->GetBoolDefault("NpcBot.Enable", true);
-        _logToDB                        = sConfigMgr->GetBoolDefault("NpcBot.LogToDB", true);
-        _maxClassNpcBots                = sConfigMgr->GetIntDefault("NpcBot.MaxBotsPerClass", 1);
-        _maxAccountNpcBots              = sConfigMgr->GetIntDefault("NpcBot.MaxBotsPerAccount", 0);
-        _filterRaces                    = sConfigMgr->GetBoolDefault("NpcBot.Botgiver.FilterRaces", false);
-        _shared_ownership_options       = sConfigMgr->GetIntDefault("NpcBot.SharedOwnership.Options", 0);
-        _maxSharedOwners                = sConfigMgr->GetIntDefault("NpcBot.SharedOwnership.MaxOwners", 0);
-        _basefollowdist                 = sConfigMgr->GetIntDefault("NpcBot.BaseFollowDistance", 30);
-        _xpReductionEnable              = sConfigMgr->GetBoolDefault("NpcBot.XpReduction.Enable", false);
-        _xpReductionGroupOnly           = sConfigMgr->GetBoolDefault("NpcBot.XpReduction.GroupOnly", false);
-        _xpReductionExtraAmount         = sConfigMgr->GetIntDefault("NpcBot.XpReduction.Extra.Amount", 0);
+        _enableNpcBots = sConfigMgr->GetBoolDefault("NpcBot.Enable", true);
+        _logToDB = sConfigMgr->GetBoolDefault("NpcBot.LogToDB", true);
+        _maxClassNpcBots = sConfigMgr->GetIntDefault("NpcBot.MaxBotsPerClass", 1);
+        _maxAccountNpcBots = sConfigMgr->GetIntDefault("NpcBot.MaxBotsPerAccount", 0);
+        _filterRaces = sConfigMgr->GetBoolDefault("NpcBot.Botgiver.FilterRaces", false);
+        _shared_ownership_options = sConfigMgr->GetIntDefault("NpcBot.SharedOwnership.Options", 0);
+        _maxSharedOwners = sConfigMgr->GetIntDefault("NpcBot.SharedOwnership.MaxOwners", 0);
+        _basefollowdist = sConfigMgr->GetIntDefault("NpcBot.BaseFollowDistance", 30);
+        _xpReductionEnable = sConfigMgr->GetBoolDefault("NpcBot.XpReduction.Enable", false);
+        _xpReductionGroupOnly = sConfigMgr->GetBoolDefault("NpcBot.XpReduction.GroupOnly", false);
+        _xpReductionExtraAmount = sConfigMgr->GetIntDefault("NpcBot.XpReduction.Extra.Amount", 0);
         _xpReductionExtraStartingNumber = sConfigMgr->GetIntDefault("NpcBot.XpReduction.Extra.StartingNumber", 2);
-        _honorReductionEnable           = sConfigMgr->GetBoolDefault("NpcBot.HonorReduction.Enable", false);
-        _honorReductionGroupOnly        = sConfigMgr->GetBoolDefault("NpcBot.HonorReduction.GroupOnly", false);
-        _moneyLootShareEnable           = sConfigMgr->GetBoolDefault("NpcBot.MoneyShare.Enable", false);
-        _moneyLootShareGroupOnly        = sConfigMgr->GetBoolDefault("NpcBot.MoneyShare.GroupOnly", false);
-        _mountLevel60                   = sConfigMgr->GetIntDefault("NpcBot.MountLevel.60", 20);
-        _mountLevel100                  = sConfigMgr->GetIntDefault("NpcBot.MountLevel.100", 40);
-        _healTargetIconFlags            = sConfigMgr->GetIntDefault("NpcBot.HealTargetIconMask", 0);
-        _tankingTargetIconFlags         = sConfigMgr->GetIntDefault("NpcBot.TankTargetIconMask", 0);
-        _offTankingTargetIconFlags      = sConfigMgr->GetIntDefault("NpcBot.OffTankTargetIconMask", 0);
-        _dpsTargetIconFlags             = sConfigMgr->GetIntDefault("NpcBot.DPSTargetIconMask", 0);
-        _rangedDpsTargetIconFlags       = sConfigMgr->GetIntDefault("NpcBot.RangedDPSTargetIconMask", 0);
-        _noDpsTargetIconFlags           = sConfigMgr->GetIntDefault("NpcBot.NoDPSTargetIconMask", 0);
-        _mult_dmg_physical              = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Physical", 1.0f);
-        _mult_dmg_spell                 = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Spell", 1.0f);
-        _mult_healing                   = sConfigMgr->GetFloatDefault("NpcBot.Mult.Healing", 1.0f);
-        _mult_hp                        = sConfigMgr->GetFloatDefault("NpcBot.Mult.HP", 1.0f);
-        _mult_dmg_wanderer              = sConfigMgr->GetFloatDefault("NpcBot.Mult.Wanderer.Damage", 1.0f);
-        _mult_healing_wanderer          = sConfigMgr->GetFloatDefault("NpcBot.Mult.Wanderer.Healing", 1.0f);
-        _mult_hp_wanderer               = sConfigMgr->GetFloatDefault("NpcBot.Mult.Wanderer.HP", 1.0f);
-        _mult_speed_wanderer            = sConfigMgr->GetFloatDefault("NpcBot.Mult.Wanderer.Speed", 1.0f);
-        _mult_dmg_warrior               = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Warrior", 1.0f);
-        _mult_dmg_paladin               = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Paladin", 1.0f);
-        _mult_dmg_hunter                = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Hunter", 1.0f);
-        _mult_dmg_rogue                 = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Rogue", 1.0f);
-        _mult_dmg_priest                = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Priest", 1.0f);
-        _mult_dmg_deathknight           = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.DeathKnight", 1.0f);
-        _mult_dmg_shaman                = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Shaman", 1.0f);
-        _mult_dmg_mage                  = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Mage", 1.0f);
-        _mult_dmg_warlock               = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Warlock", 1.0f);
-        _mult_dmg_druid                 = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Druid", 1.0f);
-        _mult_dmg_blademaster           = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Blademaster", 1.0f);
-        _mult_dmg_obsidiandestroyer     = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.ObsidianDestroyer", 1.0f);
-        _mult_dmg_archmage              = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Archmage", 1.0f);
-        _mult_dmg_dreadlord             = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Dreadlord", 1.0f);
-        _mult_dmg_spellbreaker          = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.SpellBreaker", 1.0f);
-        _mult_dmg_darkranger            = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.DarkRanger", 1.0f);
-        _mult_dmg_necromancer           = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Necromancer", 1.0f);
-        _mult_dmg_seawitch              = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.SeaWitch", 1.0f);
-        _mult_dmg_cryptlord             = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.CryptLord", 1.0f);
-        _enableNpcBotsDungeons          = sConfigMgr->GetBoolDefault("NpcBot.Enable.Dungeon", true);
-        _enableNpcBotsRaids             = sConfigMgr->GetBoolDefault("NpcBot.Enable.Raid", false);
-        _enableNpcBotsBGs               = sConfigMgr->GetBoolDefault("NpcBot.Enable.BG", false);
-        _enableNpcBotsArenas            = sConfigMgr->GetBoolDefault("NpcBot.Enable.Arena", false);
-        _enableDungeonFinder            = sConfigMgr->GetBoolDefault("NpcBot.Enable.DungeonFinder", true);
-        _enableDungeonFinderBotsGen     = sConfigMgr->GetBoolDefault("NpcBot.DungeonBots.Enable", false);
-        _enableNpcBotsPremade           = sConfigMgr->GetBoolDefault("NpcBot.Premade.Enable", false);
-        _limitNpcBotsDungeons           = sConfigMgr->GetBoolDefault("NpcBot.Limit.Dungeon", true);
-        _limitNpcBotsRaids              = sConfigMgr->GetBoolDefault("NpcBot.Limit.Raid", true);
-        _hideSpawns                     = sConfigMgr->GetBoolDefault("NpcBot.HideSpawns", false);
-        _botInfoPacketsLimit            = sConfigMgr->GetIntDefault("NpcBot.InfoPacketsLimit", -1);
-        _npcBotsCostHire                = sConfigMgr->GetIntDefault("NpcBot.Cost.Hire", 1000000);
-        _npcBotsCostRent                = sConfigMgr->GetIntDefault("NpcBot.Cost.Rent", 0);
-        _npcBotUpdateDelayBase          = sConfigMgr->GetIntDefault("NpcBot.UpdateDelay.Base", 0);
-        _npcBotEngageDelayDPS_default   = sConfigMgr->GetIntDefault("NpcBot.EngageDelay.DPS", 0);
-        _npcBotEngageDelayHeal_default  = sConfigMgr->GetIntDefault("NpcBot.EngageDelay.Heal", 0);
-        _npcBotOwnerExpireTime          = sConfigMgr->GetIntDefault("NpcBot.OwnershipExpireTime", 0);
-        _npcBotOwnerExpireMode          = sConfigMgr->GetIntDefault("NpcBot.OwnershipExpireMode", 0);
-        _botPvP                         = sConfigMgr->GetBoolDefault("NpcBot.PvP", true);
-        _botMovementFoodInterrupt       = sConfigMgr->GetBoolDefault("NpcBot.Movements.InterruptFood", false);
-        _displayEquipment               = sConfigMgr->GetBoolDefault("NpcBot.EquipmentDisplay.Enable", true);
-        _showCloak                      = sConfigMgr->GetBoolDefault("NpcBot.EquipmentDisplay.ShowCloak", true);
-        _showHelm                       = sConfigMgr->GetBoolDefault("NpcBot.EquipmentDisplay.ShowHelm", false);
-        _sendEquipListItems             = sConfigMgr->GetBoolDefault("NpcBot.Gossip.ShowEquipmentListItems", false);
-        _enableBotGearBank              = sConfigMgr->GetBoolDefault("NpcBot.GearBank.Enable", true);
-        _gearBankCapacity               = sConfigMgr->GetIntDefault("NpcBot.GearBank.Capacity", 40);
-        _gearBankEquipmentSetsCount     = sConfigMgr->GetIntDefault("NpcBot.GearBank.EquipmentSets", 0);
-        _transmog_enable                = sConfigMgr->GetBoolDefault("NpcBot.Transmog.Enable", false);
-        _transmog_mixArmorClasses       = sConfigMgr->GetBoolDefault("NpcBot.Transmog.MixArmorClasses", false);
-        _transmog_mixWeaponClasses      = sConfigMgr->GetBoolDefault("NpcBot.Transmog.MixWeaponClasses", false);
-        _transmog_mixWeaponInvTypes     = sConfigMgr->GetBoolDefault("NpcBot.Transmog.MixWeaponInventoryTypes", false);
-        _transmog_useEquipmentSlots     = sConfigMgr->GetBoolDefault("NpcBot.Transmog.UseEquipmentSlots", false);
-        _enableclass_warrior            = sConfigMgr->GetBoolDefault("NpcBot.Classes.Warrior.Enable", true);
-        _enableclass_paladin            = sConfigMgr->GetBoolDefault("NpcBot.Classes.Paladin.Enable", true);
-        _enableclass_hunter             = sConfigMgr->GetBoolDefault("NpcBot.Classes.Hunter.Enable", true);
-        _enableclass_rogue              = sConfigMgr->GetBoolDefault("NpcBot.Classes.Rogue.Enable", true);
-        _enableclass_priest             = sConfigMgr->GetBoolDefault("NpcBot.Classes.Priest.Enable", true);
-        _enableclass_deathknight        = sConfigMgr->GetBoolDefault("NpcBot.Classes.DeathKnight.Enable", true);
-        _enableclass_shaman             = sConfigMgr->GetBoolDefault("NpcBot.Classes.Shaman.Enable", true);
-        _enableclass_mage               = sConfigMgr->GetBoolDefault("NpcBot.Classes.Mage.Enable", true);
-        _enableclass_warlock            = sConfigMgr->GetBoolDefault("NpcBot.Classes.Warlock.Enable", true);
-        _enableclass_druid              = sConfigMgr->GetBoolDefault("NpcBot.Classes.Druid.Enable", true);
-        _enableclass_blademaster        = sConfigMgr->GetBoolDefault("NpcBot.Classes.Blademaster.Enable", false);
-        _enableclass_sphynx             = sConfigMgr->GetBoolDefault("NpcBot.Classes.ObsidianDestroyer.Enable", true);
-        _enableclass_archmage           = sConfigMgr->GetBoolDefault("NpcBot.Classes.Archmage.Enable", true);
-        _enableclass_dreadlord          = sConfigMgr->GetBoolDefault("NpcBot.Classes.Dreadlord.Enable", true);
-        _enableclass_spellbreaker       = sConfigMgr->GetBoolDefault("NpcBot.Classes.SpellBreaker.Enable", true);
-        _enableclass_darkranger         = sConfigMgr->GetBoolDefault("NpcBot.Classes.DarkRanger.Enable", true);
-        _enableclass_necromancer        = sConfigMgr->GetBoolDefault("NpcBot.Classes.Necromancer.Enable", true);
-        _enableclass_seawitch           = sConfigMgr->GetBoolDefault("NpcBot.Classes.SeaWitch.Enable", true);
-        _enableclass_cryptlord          = sConfigMgr->GetBoolDefault("NpcBot.Classes.CryptLord.Enable", true);
-        _enableclass_wander_warrior     = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Warrior.Enable", true);
-        _enableclass_wander_paladin     = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Paladin.Enable", true);
-        _enableclass_wander_hunter      = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Hunter.Enable", true);
-        _enableclass_wander_rogue       = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Rogue.Enable", true);
-        _enableclass_wander_priest      = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Priest.Enable", true);
+        _honorReductionEnable = sConfigMgr->GetBoolDefault("NpcBot.HonorReduction.Enable", false);
+        _honorReductionGroupOnly = sConfigMgr->GetBoolDefault("NpcBot.HonorReduction.GroupOnly", false);
+        _moneyLootShareEnable = sConfigMgr->GetBoolDefault("NpcBot.MoneyShare.Enable", false);
+        _moneyLootShareGroupOnly = sConfigMgr->GetBoolDefault("NpcBot.MoneyShare.GroupOnly", false);
+        _mountLevel60 = sConfigMgr->GetIntDefault("NpcBot.MountLevel.60", 20);
+        _mountLevel100 = sConfigMgr->GetIntDefault("NpcBot.MountLevel.100", 40);
+        _healTargetIconFlags = sConfigMgr->GetIntDefault("NpcBot.HealTargetIconMask", 0);
+        _tankingTargetIconFlags = sConfigMgr->GetIntDefault("NpcBot.TankTargetIconMask", 0);
+        _offTankingTargetIconFlags = sConfigMgr->GetIntDefault("NpcBot.OffTankTargetIconMask", 0);
+        _dpsTargetIconFlags = sConfigMgr->GetIntDefault("NpcBot.DPSTargetIconMask", 0);
+        _rangedDpsTargetIconFlags = sConfigMgr->GetIntDefault("NpcBot.RangedDPSTargetIconMask", 0);
+        _noDpsTargetIconFlags = sConfigMgr->GetIntDefault("NpcBot.NoDPSTargetIconMask", 0);
+        _mult_dmg_physical = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Physical", 1.0f);
+        _mult_dmg_spell = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Spell", 1.0f);
+        _mult_healing = sConfigMgr->GetFloatDefault("NpcBot.Mult.Healing", 1.0f);
+        _mult_hp = sConfigMgr->GetFloatDefault("NpcBot.Mult.HP", 1.0f);
+        _mult_mana_regen = sConfigMgr->GetFloatDefault("NpcBot.Mult.ManaRegen", 1.0f);
+        if (_mult_mana_regen < 0.0f)
+             {
+            BOT_LOG_ERROR("server.loading", "NpcBot.Mult.ManaRegen cannot be negative ({})! Using 0.0 instead.", _mult_mana_regen);
+            _mult_mana_regen = 0.0f;
+            }
+        _mult_dmg_wanderer = sConfigMgr->GetFloatDefault("NpcBot.Mult.Wanderer.Damage", 1.0f);
+        _mult_healing_wanderer = sConfigMgr->GetFloatDefault("NpcBot.Mult.Wanderer.Healing", 1.0f);
+        _mult_hp_wanderer = sConfigMgr->GetFloatDefault("NpcBot.Mult.Wanderer.HP", 1.0f);
+        _mult_speed_wanderer = sConfigMgr->GetFloatDefault("NpcBot.Mult.Wanderer.Speed", 1.0f);
+        _mult_dmg_warrior = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Warrior", 1.0f);
+        _mult_dmg_paladin = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Paladin", 1.0f);
+        _mult_dmg_hunter = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Hunter", 1.0f);
+        _mult_dmg_rogue = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Rogue", 1.0f);
+        _mult_dmg_priest = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Priest", 1.0f);
+        _mult_dmg_deathknight = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.DeathKnight", 1.0f);
+        _mult_dmg_shaman = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Shaman", 1.0f);
+        _mult_dmg_mage = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Mage", 1.0f);
+        _mult_dmg_warlock = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Warlock", 1.0f);
+        _mult_dmg_druid = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Druid", 1.0f);
+        _mult_dmg_blademaster = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Blademaster", 1.0f);
+        _mult_dmg_obsidiandestroyer = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.ObsidianDestroyer", 1.0f);
+        _mult_dmg_archmage = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Archmage", 1.0f);
+        _mult_dmg_dreadlord = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Dreadlord", 1.0f);
+        _mult_dmg_spellbreaker = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.SpellBreaker", 1.0f);
+        _mult_dmg_darkranger = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.DarkRanger", 1.0f);
+        _mult_dmg_necromancer = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.Necromancer", 1.0f);
+        _mult_dmg_seawitch = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.SeaWitch", 1.0f);
+        _mult_dmg_cryptlord = sConfigMgr->GetFloatDefault("NpcBot.Mult.Damage.CryptLord", 1.0f);
+        _enableNpcBotsDungeons = sConfigMgr->GetBoolDefault("NpcBot.Enable.Dungeon", true);
+        _enableNpcBotsRaids = sConfigMgr->GetBoolDefault("NpcBot.Enable.Raid", false);
+        _enableNpcBotsBGs = sConfigMgr->GetBoolDefault("NpcBot.Enable.BG", false);
+        _enableNpcBotsArenas = sConfigMgr->GetBoolDefault("NpcBot.Enable.Arena", false);
+        _enableDungeonFinder = sConfigMgr->GetBoolDefault("NpcBot.Enable.DungeonFinder", true);
+        _enableDungeonFinderBotsGen = sConfigMgr->GetBoolDefault("NpcBot.DungeonBots.Enable", false);
+        _enableNpcBotsPremade = sConfigMgr->GetBoolDefault("NpcBot.Premade.Enable", false);
+        _limitNpcBotsDungeons = sConfigMgr->GetBoolDefault("NpcBot.Limit.Dungeon", true);
+        _limitNpcBotsRaids = sConfigMgr->GetBoolDefault("NpcBot.Limit.Raid", true);
+        _hideSpawns = sConfigMgr->GetBoolDefault("NpcBot.HideSpawns", false);
+        _botInfoPacketsLimit = sConfigMgr->GetIntDefault("NpcBot.InfoPacketsLimit", -1);
+        _npcBotsCostHire = sConfigMgr->GetIntDefault("NpcBot.Cost.Hire", 1000000);
+        _npcBotsCostRent = sConfigMgr->GetIntDefault("NpcBot.Cost.Rent", 0);
+        _npcBotUpdateDelayBase = sConfigMgr->GetIntDefault("NpcBot.UpdateDelay.Base", 0);
+        _npcBotEngageDelayDPS_default = sConfigMgr->GetIntDefault("NpcBot.EngageDelay.DPS", 0);
+        _npcBotEngageDelayHeal_default = sConfigMgr->GetIntDefault("NpcBot.EngageDelay.Heal", 0);
+        _npcBotOwnerExpireTime = sConfigMgr->GetIntDefault("NpcBot.OwnershipExpireTime", 0);
+        _npcBotOwnerExpireMode = sConfigMgr->GetIntDefault("NpcBot.OwnershipExpireMode", 0);
+        _botPvP = sConfigMgr->GetBoolDefault("NpcBot.PvP", true);
+        _botMovementFoodInterrupt = sConfigMgr->GetBoolDefault("NpcBot.Movements.InterruptFood", false);
+        _displayEquipment = sConfigMgr->GetBoolDefault("NpcBot.EquipmentDisplay.Enable", true);
+        _showCloak = sConfigMgr->GetBoolDefault("NpcBot.EquipmentDisplay.ShowCloak", true);
+        _showHelm = sConfigMgr->GetBoolDefault("NpcBot.EquipmentDisplay.ShowHelm", false);
+        _sendEquipListItems = sConfigMgr->GetBoolDefault("NpcBot.Gossip.ShowEquipmentListItems", false);
+        _enableBotGearBank = sConfigMgr->GetBoolDefault("NpcBot.GearBank.Enable", true);
+        _gearBankCapacity = sConfigMgr->GetIntDefault("NpcBot.GearBank.Capacity", 40);
+        _gearBankEquipmentSetsCount = sConfigMgr->GetIntDefault("NpcBot.GearBank.EquipmentSets", 0);
+        _transmog_enable = sConfigMgr->GetBoolDefault("NpcBot.Transmog.Enable", false);
+        _transmog_mixArmorClasses = sConfigMgr->GetBoolDefault("NpcBot.Transmog.MixArmorClasses", false);
+        _transmog_mixWeaponClasses = sConfigMgr->GetBoolDefault("NpcBot.Transmog.MixWeaponClasses", false);
+        _transmog_mixWeaponInvTypes = sConfigMgr->GetBoolDefault("NpcBot.Transmog.MixWeaponInventoryTypes", false);
+        _transmog_useEquipmentSlots = sConfigMgr->GetBoolDefault("NpcBot.Transmog.UseEquipmentSlots", false);
+        _enableclass_warrior = sConfigMgr->GetBoolDefault("NpcBot.Classes.Warrior.Enable", true);
+        _enableclass_paladin = sConfigMgr->GetBoolDefault("NpcBot.Classes.Paladin.Enable", true);
+        _enableclass_hunter = sConfigMgr->GetBoolDefault("NpcBot.Classes.Hunter.Enable", true);
+        _enableclass_rogue = sConfigMgr->GetBoolDefault("NpcBot.Classes.Rogue.Enable", true);
+        _enableclass_priest = sConfigMgr->GetBoolDefault("NpcBot.Classes.Priest.Enable", true);
+        _enableclass_deathknight = sConfigMgr->GetBoolDefault("NpcBot.Classes.DeathKnight.Enable", true);
+        _enableclass_shaman = sConfigMgr->GetBoolDefault("NpcBot.Classes.Shaman.Enable", true);
+        _enableclass_mage = sConfigMgr->GetBoolDefault("NpcBot.Classes.Mage.Enable", true);
+        _enableclass_warlock = sConfigMgr->GetBoolDefault("NpcBot.Classes.Warlock.Enable", true);
+        _enableclass_druid = sConfigMgr->GetBoolDefault("NpcBot.Classes.Druid.Enable", true);
+        _enableclass_blademaster = sConfigMgr->GetBoolDefault("NpcBot.Classes.Blademaster.Enable", false);
+        _enableclass_sphynx = sConfigMgr->GetBoolDefault("NpcBot.Classes.ObsidianDestroyer.Enable", true);
+        _enableclass_archmage = sConfigMgr->GetBoolDefault("NpcBot.Classes.Archmage.Enable", true);
+        _enableclass_dreadlord = sConfigMgr->GetBoolDefault("NpcBot.Classes.Dreadlord.Enable", true);
+        _enableclass_spellbreaker = sConfigMgr->GetBoolDefault("NpcBot.Classes.SpellBreaker.Enable", true);
+        _enableclass_darkranger = sConfigMgr->GetBoolDefault("NpcBot.Classes.DarkRanger.Enable", true);
+        _enableclass_necromancer = sConfigMgr->GetBoolDefault("NpcBot.Classes.Necromancer.Enable", true);
+        _enableclass_seawitch = sConfigMgr->GetBoolDefault("NpcBot.Classes.SeaWitch.Enable", true);
+        _enableclass_cryptlord = sConfigMgr->GetBoolDefault("NpcBot.Classes.CryptLord.Enable", true);
+        _enableclass_wander_warrior = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Warrior.Enable", true);
+        _enableclass_wander_paladin = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Paladin.Enable", true);
+        _enableclass_wander_hunter = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Hunter.Enable", true);
+        _enableclass_wander_rogue = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Rogue.Enable", true);
+        _enableclass_wander_priest = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Priest.Enable", true);
         _enableclass_wander_deathknight = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.DeathKnight.Enable", true);
-        _enableclass_wander_shaman      = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Shaman.Enable", true);
-        _enableclass_wander_mage        = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Mage.Enable", true);
-        _enableclass_wander_warlock     = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Warlock.Enable", true);
-        _enableclass_wander_druid       = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Druid.Enable", true);
+        _enableclass_wander_shaman = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Shaman.Enable", true);
+        _enableclass_wander_mage = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Mage.Enable", true);
+        _enableclass_wander_warlock = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Warlock.Enable", true);
+        _enableclass_wander_druid = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Druid.Enable", true);
         _enableclass_wander_blademaster = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Blademaster.Enable", false);
-        _enableclass_wander_sphynx      = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.ObsidianDestroyer.Enable", true);
-        _enableclass_wander_archmage    = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Archmage.Enable", true);
-        _enableclass_wander_dreadlord   = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Dreadlord.Enable", true);
-        _enableclass_wander_spellbreaker= sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.SpellBreaker.Enable", true);
-        _enableclass_wander_darkranger  = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.DarkRanger.Enable", true);
+        _enableclass_wander_sphynx = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.ObsidianDestroyer.Enable", true);
+        _enableclass_wander_archmage = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Archmage.Enable", true);
+        _enableclass_wander_dreadlord = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Dreadlord.Enable", true);
+        _enableclass_wander_spellbreaker = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.SpellBreaker.Enable", true);
+        _enableclass_wander_darkranger = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.DarkRanger.Enable", true);
         _enableclass_wander_necromancer = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.Necromancer.Enable", true);
-        _enableclass_wander_seawitch    = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.SeaWitch.Enable", true);
-        _enableclass_wander_cryptlord   = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.CryptLord.Enable", true);
-        _untarget_wnpc_questgiver       = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.SkipTarget.Questgiver", false);
-        _untarget_wnpc_flightmaster     = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.SkipTarget.Flightmaster", false);
-        _enrageOnDismiss                = sConfigMgr->GetBoolDefault("NpcBot.EnrageOnDismiss", true);
-        _botStatLimits                  = sConfigMgr->GetBoolDefault("NpcBot.Stats.Limits.Enable", false);
-        _botStatLimits_dodge            = sConfigMgr->GetFloatDefault("NpcBot.Stats.Limits.Dodge", 95.0f);
-        _botStatLimits_parry            = sConfigMgr->GetFloatDefault("NpcBot.Stats.Limits.Parry", 95.0f);
-        _botStatLimits_block            = sConfigMgr->GetFloatDefault("NpcBot.Stats.Limits.Block", 95.0f);
-        _botStatLimits_crit             = sConfigMgr->GetFloatDefault("NpcBot.Stats.Limits.Crit", 95.0f);
-        _desiredWanderingBotsCount      = sConfigMgr->GetIntDefault("NpcBot.WanderingBots.Continents.Count", 0);
-        _killrewardWandererMoneyBase    = sConfigMgr->GetIntDefault("NpcBot.WanderingBots.KillReward.Money", 0);
-        _killrewardWandererItemCount    = sConfigMgr->GetIntDefault("NpcBot.WanderingBots.KillReward.ItemCount", 0);
-        _killrewardWandererItemQuality  = sConfigMgr->GetIntDefault("NpcBot.WanderingBots.KillReward.ItemQuality", int(ITEM_QUALITY_RARE));
-        _mult_xpgain_wanderer           = sConfigMgr->GetFloatDefault("NpcBot.WanderingBots.Continents.XPGain", 1.0f);
-        _enableWanderingBotsBG          = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.BG.Enable", false);
-        _enableConfigLevelCapBG         = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.BG.CapLevel", false);
-        _enableConfigLevelCapBGFirst    = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.BG.CapLevelByFirstPlayer", false);
+        _enableclass_wander_seawitch = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.SeaWitch.Enable", true);
+        _enableclass_wander_cryptlord = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.Classes.CryptLord.Enable", true);
+        _untarget_wnpc_questgiver = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.SkipTarget.Questgiver", false);
+        _untarget_wnpc_flightmaster = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.SkipTarget.Flightmaster", false);
+        _enrageOnDismiss = sConfigMgr->GetBoolDefault("NpcBot.EnrageOnDismiss", true);
+        _botStatLimits = sConfigMgr->GetBoolDefault("NpcBot.Stats.Limits.Enable", false);
+        _botStatLimits_dodge = sConfigMgr->GetFloatDefault("NpcBot.Stats.Limits.Dodge", 95.0f);
+        _botStatLimits_parry = sConfigMgr->GetFloatDefault("NpcBot.Stats.Limits.Parry", 95.0f);
+        _botStatLimits_block = sConfigMgr->GetFloatDefault("NpcBot.Stats.Limits.Block", 95.0f);
+        _botStatLimits_crit = sConfigMgr->GetFloatDefault("NpcBot.Stats.Limits.Crit", 95.0f);
+        _desiredWanderingBotsCount = sConfigMgr->GetIntDefault("NpcBot.WanderingBots.Continents.Count", 0);
+        _killrewardWandererMoneyBase = sConfigMgr->GetIntDefault("NpcBot.WanderingBots.KillReward.Money", 0);
+        _killrewardWandererItemCount = sConfigMgr->GetIntDefault("NpcBot.WanderingBots.KillReward.ItemCount", 0);
+        _killrewardWandererItemQuality = sConfigMgr->GetIntDefault("NpcBot.WanderingBots.KillReward.ItemQuality", int(ITEM_QUALITY_RARE));
+        _mult_xpgain_wanderer = sConfigMgr->GetFloatDefault("NpcBot.WanderingBots.Continents.XPGain", 1.0f);
+        _inactiveWanderingBotsWithoutZonePlayers = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.InactiveWithoutZonePlayers", true);
+        _wanderingBotsStayInAssignedZone = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.StayInAssignedZone", true);
+        _wanderingBotsReviveInSameZone = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.ReviveInSameZone", true);
+        _wandererSameNodeTeleportDelayMs = sConfigMgr->GetIntDefault("NpcBot.WanderingBots.SameNodeTeleportDelayMs", 60000);
+        _enableWanderingBotsBG = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.BG.Enable", false);
+        _enableConfigLevelCapBG = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.BG.CapLevel", false);
+        _enableConfigLevelCapBGFirst = sConfigMgr->GetBoolDefault("NpcBot.WanderingBots.BG.CapLevelByFirstPlayer", false);
         _targetBGPlayersPerTeamCount_AV = sConfigMgr->GetIntDefault("NpcBot.WanderingBots.BG.TargetTeamPlayersCount.AV", 30);
         _targetBGPlayersPerTeamCount_WS = sConfigMgr->GetIntDefault("NpcBot.WanderingBots.BG.TargetTeamPlayersCount.WS", 8);
         _targetBGPlayersPerTeamCount_AB = sConfigMgr->GetIntDefault("NpcBot.WanderingBots.BG.TargetTeamPlayersCount.AB", 12);
         _targetBGPlayersPerTeamCount_EY = sConfigMgr->GetIntDefault("NpcBot.WanderingBots.BG.TargetTeamPlayersCount.EY", 12);
         _targetBGPlayersPerTeamCount_SA = sConfigMgr->GetIntDefault("NpcBot.WanderingBots.BG.TargetTeamPlayersCount.SA", 0);
         _targetBGPlayersPerTeamCount_IC = sConfigMgr->GetIntDefault("NpcBot.WanderingBots.BG.TargetTeamPlayersCount.IC", 0);
-        _bothk_enable                   = sConfigMgr->GetBoolDefault("NpcBot.HK.Enable", true);
-        _bothk_message_enable           = sConfigMgr->GetBoolDefault("NpcBot.HK.Message.Enable", false);
-        _bothk_achievements_enable      = sConfigMgr->GetBoolDefault("NpcBot.HK.Achievements.Enable", false);
-        _bothk_rate_honor               = sConfigMgr->GetFloatDefault("NpcBot.HK.Rate.Honor", 1.0);
+        _bothk_enable = sConfigMgr->GetBoolDefault("NpcBot.HK.Enable", true);
+        _bothk_message_enable = sConfigMgr->GetBoolDefault("NpcBot.HK.Message.Enable", false);
+        _bothk_achievements_enable = sConfigMgr->GetBoolDefault("NpcBot.HK.Achievements.Enable", false);
+        _bothk_rate_honor = sConfigMgr->GetFloatDefault("NpcBot.HK.Rate.Honor", 1.0);
 
         if (reload)
             BotLogger::Log(NPCBOT_LOG_CONFIG_RELOAD, uint32(0));
@@ -622,6 +637,7 @@ private:
         RoundToInterval(_mult_hp_wanderer, 0.1f, 10.f);
         RoundToInterval(_mult_speed_wanderer, 0.1f, 10.f);
         RoundToInterval(_mult_xpgain_wanderer, 0.0f, 100.f);
+        RoundToInterval(_wandererSameNodeTeleportDelayMs, uint32(0), uint32(600000));
         RoundToInterval(_mult_dmg_warrior, 0.1f, 10.f);
         RoundToInterval(_mult_dmg_paladin, 0.1f, 10.f);
         RoundToInterval(_mult_dmg_hunter, 0.1f, 10.f);
@@ -844,46 +860,46 @@ bool BotCfg::IsClassEnabled(uint8 m_class)
 {
     switch (m_class)
     {
-        case BOT_CLASS_WARRIOR:
-            return _enableclass_warrior;
-        case BOT_CLASS_PALADIN:
-            return _enableclass_paladin;
-        case BOT_CLASS_HUNTER:
-            return _enableclass_hunter;
-        case BOT_CLASS_ROGUE:
-            return _enableclass_rogue;
-        case BOT_CLASS_PRIEST:
-            return _enableclass_priest;
-        case BOT_CLASS_DEATH_KNIGHT:
-            return _enableclass_deathknight;
-        case BOT_CLASS_SHAMAN:
-            return _enableclass_shaman;
-        case BOT_CLASS_MAGE:
-            return _enableclass_mage;
-        case BOT_CLASS_WARLOCK:
-            return _enableclass_warlock;
-        case BOT_CLASS_DRUID:
-            return _enableclass_druid;
-        case BOT_CLASS_BM:
-            return _enableclass_blademaster;
-        case BOT_CLASS_SPHYNX:
-            return _enableclass_sphynx;
-        case BOT_CLASS_ARCHMAGE:
-            return _enableclass_archmage;
-        case BOT_CLASS_DREADLORD:
-            return _enableclass_dreadlord;
-        case BOT_CLASS_SPELLBREAKER:
-            return _enableclass_spellbreaker;
-        case BOT_CLASS_DARK_RANGER:
-            return _enableclass_darkranger;
-        case BOT_CLASS_NECROMANCER:
-            return _enableclass_necromancer;
-        case BOT_CLASS_SEA_WITCH:
-            return _enableclass_seawitch;
-        case BOT_CLASS_CRYPT_LORD:
-            return _enableclass_cryptlord;
-        default:
-            return true;
+    case BOT_CLASS_WARRIOR:
+        return _enableclass_warrior;
+    case BOT_CLASS_PALADIN:
+        return _enableclass_paladin;
+    case BOT_CLASS_HUNTER:
+        return _enableclass_hunter;
+    case BOT_CLASS_ROGUE:
+        return _enableclass_rogue;
+    case BOT_CLASS_PRIEST:
+        return _enableclass_priest;
+    case BOT_CLASS_DEATH_KNIGHT:
+        return _enableclass_deathknight;
+    case BOT_CLASS_SHAMAN:
+        return _enableclass_shaman;
+    case BOT_CLASS_MAGE:
+        return _enableclass_mage;
+    case BOT_CLASS_WARLOCK:
+        return _enableclass_warlock;
+    case BOT_CLASS_DRUID:
+        return _enableclass_druid;
+    case BOT_CLASS_BM:
+        return _enableclass_blademaster;
+    case BOT_CLASS_SPHYNX:
+        return _enableclass_sphynx;
+    case BOT_CLASS_ARCHMAGE:
+        return _enableclass_archmage;
+    case BOT_CLASS_DREADLORD:
+        return _enableclass_dreadlord;
+    case BOT_CLASS_SPELLBREAKER:
+        return _enableclass_spellbreaker;
+    case BOT_CLASS_DARK_RANGER:
+        return _enableclass_darkranger;
+    case BOT_CLASS_NECROMANCER:
+        return _enableclass_necromancer;
+    case BOT_CLASS_SEA_WITCH:
+        return _enableclass_seawitch;
+    case BOT_CLASS_CRYPT_LORD:
+        return _enableclass_cryptlord;
+    default:
+        return true;
     }
 }
 
@@ -891,46 +907,46 @@ bool BotCfg::IsWanderingClassEnabled(uint8 m_class)
 {
     switch (m_class)
     {
-        case BOT_CLASS_WARRIOR:
-            return _enableclass_wander_warrior;
-        case BOT_CLASS_PALADIN:
-            return _enableclass_wander_paladin;
-        case BOT_CLASS_HUNTER:
-            return _enableclass_wander_hunter;
-        case BOT_CLASS_ROGUE:
-            return _enableclass_wander_rogue;
-        case BOT_CLASS_PRIEST:
-            return _enableclass_wander_priest;
-        case BOT_CLASS_DEATH_KNIGHT:
-            return _enableclass_wander_deathknight;
-        case BOT_CLASS_SHAMAN:
-            return _enableclass_wander_shaman;
-        case BOT_CLASS_MAGE:
-            return _enableclass_wander_mage;
-        case BOT_CLASS_WARLOCK:
-            return _enableclass_wander_warlock;
-        case BOT_CLASS_DRUID:
-            return _enableclass_wander_druid;
-        case BOT_CLASS_BM:
-            return _enableclass_wander_blademaster;
-        case BOT_CLASS_SPHYNX:
-            return _enableclass_wander_sphynx;
-        case BOT_CLASS_ARCHMAGE:
-            return _enableclass_wander_archmage;
-        case BOT_CLASS_DREADLORD:
-            return _enableclass_wander_dreadlord;
-        case BOT_CLASS_SPELLBREAKER:
-            return _enableclass_wander_spellbreaker;
-        case BOT_CLASS_DARK_RANGER:
-            return _enableclass_wander_darkranger;
-        case BOT_CLASS_NECROMANCER:
-            return _enableclass_wander_necromancer;
-        case BOT_CLASS_SEA_WITCH:
-            return _enableclass_wander_seawitch;
-        case BOT_CLASS_CRYPT_LORD:
-            return _enableclass_wander_cryptlord;
-        default:
-            return true;
+    case BOT_CLASS_WARRIOR:
+        return _enableclass_wander_warrior;
+    case BOT_CLASS_PALADIN:
+        return _enableclass_wander_paladin;
+    case BOT_CLASS_HUNTER:
+        return _enableclass_wander_hunter;
+    case BOT_CLASS_ROGUE:
+        return _enableclass_wander_rogue;
+    case BOT_CLASS_PRIEST:
+        return _enableclass_wander_priest;
+    case BOT_CLASS_DEATH_KNIGHT:
+        return _enableclass_wander_deathknight;
+    case BOT_CLASS_SHAMAN:
+        return _enableclass_wander_shaman;
+    case BOT_CLASS_MAGE:
+        return _enableclass_wander_mage;
+    case BOT_CLASS_WARLOCK:
+        return _enableclass_wander_warlock;
+    case BOT_CLASS_DRUID:
+        return _enableclass_wander_druid;
+    case BOT_CLASS_BM:
+        return _enableclass_wander_blademaster;
+    case BOT_CLASS_SPHYNX:
+        return _enableclass_wander_sphynx;
+    case BOT_CLASS_ARCHMAGE:
+        return _enableclass_wander_archmage;
+    case BOT_CLASS_DREADLORD:
+        return _enableclass_wander_dreadlord;
+    case BOT_CLASS_SPELLBREAKER:
+        return _enableclass_wander_spellbreaker;
+    case BOT_CLASS_DARK_RANGER:
+        return _enableclass_wander_darkranger;
+    case BOT_CLASS_NECROMANCER:
+        return _enableclass_wander_necromancer;
+    case BOT_CLASS_SEA_WITCH:
+        return _enableclass_wander_seawitch;
+    case BOT_CLASS_CRYPT_LORD:
+        return _enableclass_wander_cryptlord;
+    default:
+        return true;
     }
 }
 
@@ -978,6 +994,22 @@ bool BotCfg::IsBotLevelCappedByConfigBG()
 bool BotCfg::IsBotLevelCappedByConfigBGFirstPlayer()
 {
     return _enableConfigLevelCapBGFirst;
+}
+bool BotCfg::InactiveWanderingBotsWithoutZonePlayers()
+{
+    return _inactiveWanderingBotsWithoutZonePlayers;
+}
+bool BotCfg::WanderingBotsStayInAssignedZone()
+{
+    return _wanderingBotsStayInAssignedZone;
+}
+bool BotCfg::WanderingBotsReviveInSameZone()
+{
+    return _wanderingBotsReviveInSameZone;
+}
+uint32 BotCfg::GetWandererSameNodeTeleportDelayMs()
+{
+    return _wandererSameNodeTeleportDelayMs;
 }
 bool BotCfg::IsBotGenerationEnabledWorldMapId(uint32 mapId)
 {
@@ -1063,20 +1095,20 @@ uint32 BotCfg::GetBGTargetTeamPlayersCount(BattlegroundTypeId bgTypeId)
 {
     switch (bgTypeId)
     {
-        case BATTLEGROUND_AV:
-            return _targetBGPlayersPerTeamCount_AV;
-        case BATTLEGROUND_WS:
-            return _targetBGPlayersPerTeamCount_WS;
-        case BATTLEGROUND_AB:
-            return _targetBGPlayersPerTeamCount_AB;
-        case BATTLEGROUND_EY:
-            return _targetBGPlayersPerTeamCount_EY;
-        case BATTLEGROUND_SA:
-            return _targetBGPlayersPerTeamCount_SA;
-        case BATTLEGROUND_IC:
-            return _targetBGPlayersPerTeamCount_IC;
-        default:
-            return 0;
+    case BATTLEGROUND_AV:
+        return _targetBGPlayersPerTeamCount_AV;
+    case BATTLEGROUND_WS:
+        return _targetBGPlayersPerTeamCount_WS;
+    case BATTLEGROUND_AB:
+        return _targetBGPlayersPerTeamCount_AB;
+    case BATTLEGROUND_EY:
+        return _targetBGPlayersPerTeamCount_EY;
+    case BATTLEGROUND_SA:
+        return _targetBGPlayersPerTeamCount_SA;
+    case BATTLEGROUND_IC:
+        return _targetBGPlayersPerTeamCount_IC;
+    default:
+        return 0;
     }
 }
 float BotCfg::GetBotHKHonorRate()
@@ -1170,6 +1202,10 @@ float BotCfg::GetBotHPMod()
 {
     return _mult_hp;
 }
+float BotCfg::GetBotManaRegenMod()
+{
+    return _mult_mana_regen;
+}
 float BotCfg::GetBotWandererDamageMod()
 {
     return _mult_dmg_wanderer;
@@ -1214,46 +1250,46 @@ float BotCfg::GetBotDamageModByClass(uint8 botclass)
 {
     switch (botclass)
     {
-        case BOT_CLASS_WARRIOR:
-            return _mult_dmg_warrior;
-        case BOT_CLASS_PALADIN:
-            return _mult_dmg_paladin;
-        case BOT_CLASS_HUNTER:
-            return _mult_dmg_hunter;
-        case BOT_CLASS_ROGUE:
-            return _mult_dmg_rogue;
-        case BOT_CLASS_PRIEST:
-            return _mult_dmg_priest;
-        case BOT_CLASS_DEATH_KNIGHT:
-            return _mult_dmg_deathknight;
-        case BOT_CLASS_SHAMAN:
-            return _mult_dmg_shaman;
-        case BOT_CLASS_MAGE:
-            return _mult_dmg_mage;
-        case BOT_CLASS_WARLOCK:
-            return _mult_dmg_warlock;
-        case BOT_CLASS_DRUID:
-            return _mult_dmg_druid;
-        case BOT_CLASS_BM:
-            return _mult_dmg_blademaster;
-        case BOT_CLASS_SPHYNX:
-            return _mult_dmg_obsidiandestroyer;
-        case BOT_CLASS_ARCHMAGE:
-            return _mult_dmg_archmage;
-        case BOT_CLASS_DREADLORD:
-            return _mult_dmg_dreadlord;
-        case BOT_CLASS_SPELLBREAKER:
-            return _mult_dmg_spellbreaker;
-        case BOT_CLASS_DARK_RANGER:
-            return _mult_dmg_darkranger;
-        case BOT_CLASS_NECROMANCER:
-            return _mult_dmg_necromancer;
-        case BOT_CLASS_SEA_WITCH:
-            return _mult_dmg_seawitch;
-        case BOT_CLASS_CRYPT_LORD:
-            return _mult_dmg_cryptlord;
-        default:
-            return 1.0;
+    case BOT_CLASS_WARRIOR:
+        return _mult_dmg_warrior;
+    case BOT_CLASS_PALADIN:
+        return _mult_dmg_paladin;
+    case BOT_CLASS_HUNTER:
+        return _mult_dmg_hunter;
+    case BOT_CLASS_ROGUE:
+        return _mult_dmg_rogue;
+    case BOT_CLASS_PRIEST:
+        return _mult_dmg_priest;
+    case BOT_CLASS_DEATH_KNIGHT:
+        return _mult_dmg_deathknight;
+    case BOT_CLASS_SHAMAN:
+        return _mult_dmg_shaman;
+    case BOT_CLASS_MAGE:
+        return _mult_dmg_mage;
+    case BOT_CLASS_WARLOCK:
+        return _mult_dmg_warlock;
+    case BOT_CLASS_DRUID:
+        return _mult_dmg_druid;
+    case BOT_CLASS_BM:
+        return _mult_dmg_blademaster;
+    case BOT_CLASS_SPHYNX:
+        return _mult_dmg_obsidiandestroyer;
+    case BOT_CLASS_ARCHMAGE:
+        return _mult_dmg_archmage;
+    case BOT_CLASS_DREADLORD:
+        return _mult_dmg_dreadlord;
+    case BOT_CLASS_SPELLBREAKER:
+        return _mult_dmg_spellbreaker;
+    case BOT_CLASS_DARK_RANGER:
+        return _mult_dmg_darkranger;
+    case BOT_CLASS_NECROMANCER:
+        return _mult_dmg_necromancer;
+    case BOT_CLASS_SEA_WITCH:
+        return _mult_dmg_seawitch;
+    case BOT_CLASS_CRYPT_LORD:
+        return _mult_dmg_cryptlord;
+    default:
+        return 1.0;
     }
 }
 
@@ -1332,21 +1368,21 @@ uint32 BotCfg::_normalizedCostForLevel(uint32 cost_base, uint8 bot_class, uint8 
 
     switch (bot_class)
     {
-        case BOT_CLASS_BM:
-        case BOT_CLASS_ARCHMAGE:
-        case BOT_CLASS_SPELLBREAKER:
-        case BOT_CLASS_NECROMANCER:
-            cost += cost; //200%
-            break;
-        case BOT_CLASS_SPHYNX:
-        case BOT_CLASS_DREADLORD:
-        case BOT_CLASS_DARK_RANGER:
-        case BOT_CLASS_SEA_WITCH:
-        case BOT_CLASS_CRYPT_LORD:
-            cost += cost * 4; //500%
-            break;
-        default:
-            break;
+    case BOT_CLASS_BM:
+    case BOT_CLASS_ARCHMAGE:
+    case BOT_CLASS_SPELLBREAKER:
+    case BOT_CLASS_NECROMANCER:
+        cost += cost; //200%
+        break;
+    case BOT_CLASS_SPHYNX:
+    case BOT_CLASS_DREADLORD:
+    case BOT_CLASS_DARK_RANGER:
+    case BOT_CLASS_SEA_WITCH:
+    case BOT_CLASS_CRYPT_LORD:
+        cost += cost * 4; //500%
+        break;
+    default:
+        break;
     }
 
     return cost;

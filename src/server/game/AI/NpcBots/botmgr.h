@@ -145,7 +145,6 @@ public:
     static int32 GetBotStat(Creature const* bot, BotStatMods stat);
     static int32 GetBotStat(Creature const* bot, Stats stat);
     static float GetBotResilience(Creature const* botOrPet);
-
     void LoadData();
 
     void Update(uint32 diff);
@@ -164,6 +163,9 @@ public:
     static bool LimitBots(Map const* map);
     static bool CanBotParryWhileCasting(Creature const* bot);
     static bool IsWanderingWorldBot(Creature const* bot);
+    static void ParkInactiveWanderer(Creature* bot);
+    static void UnparkInactiveWanderer(Creature* bot);
+    static void WakeInactiveWanderersInZone(Player const* player);
     static bool IsBotContestedPvP(Creature const* bot);
     static void SetBotContestedPvP(Creature const* bot);
     bool RestrictBots(Creature const* bot, bool add) const;

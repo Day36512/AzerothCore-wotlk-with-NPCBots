@@ -4,7 +4,7 @@
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * at your option any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -39,8 +39,8 @@ enum QuagmirranSpells
     SPELL_POISON_BOLT_VOLLEY = 34780,
     SPELL_UPPERCUT = 32055,
 
-    SPELL_TOXIC_LINK_DOT = 300387, // Poison (DoT aura)
-    SPELL_TOXIC_LINK_TICK = 300386  // Poison Bolt (direct damage)
+    SPELL_TOXIC_LINK_DOT = 300387,    // Poison DoT aura
+    SPELL_TOXIC_LINK_VISUAL = 39920   // Visual tether, triggered from one linked target to the other
 };
 
 struct boss_quagmirran : public BossAI
@@ -57,7 +57,6 @@ struct boss_quagmirran : public BossAI
     ObjectGuid _linkTarget2;
     bool _linkActive = false;
 
-    static constexpr float LINK_PUNISH_DISTANCE = 25.0f;
     static constexpr float LINK_BREAK_DISTANCE = 25.0f;
 
     static bool IsPlayer(Unit* u)
@@ -109,20 +108,51 @@ struct boss_quagmirran : public BossAI
         return pool[urand(0u, static_cast<uint32>(pool.size() - 1))];
     }
 
+    void RemoveToxicLinkVisual(Unit* a, Unit* b)
+    {
+        if (a)
+            a->RemoveAurasDueToSpell(SPELL_TOXIC_LINK_VISUAL);
+
+        if (b)
+            b->RemoveAurasDueToSpell(SPELL_TOXIC_LINK_VISUAL);
+    }
+
     void EndToxicLink()
     {
         if (!_linkActive)
             return;
 
-        if (Unit* a = ObjectAccessor::GetUnit(*me, _linkTarget1))
-            a->RemoveAurasDueToSpell(SPELL_TOXIC_LINK_DOT);
+        Unit* a = ObjectAccessor::GetUnit(*me, _linkTarget1);
+        Unit* b = ObjectAccessor::GetUnit(*me, _linkTarget2);
 
-        if (Unit* b = ObjectAccessor::GetUnit(*me, _linkTarget2))
+        if (a)
+        {
+            a->RemoveAurasDueToSpell(SPELL_TOXIC_LINK_DOT);
+            a->RemoveAurasDueToSpell(SPELL_TOXIC_LINK_VISUAL);
+        }
+
+        if (b)
+        {
             b->RemoveAurasDueToSpell(SPELL_TOXIC_LINK_DOT);
+            b->RemoveAurasDueToSpell(SPELL_TOXIC_LINK_VISUAL);
+        }
+
+        RemoveToxicLinkVisual(a, b);
 
         _linkTarget1.Clear();
         _linkTarget2.Clear();
         _linkActive = false;
+    }
+
+    void ApplyToxicLinkVisual(Unit* first, Unit* second)
+    {
+        if (!first || !second)
+            return;
+
+        // Keep the damaging part as a DoT only.  Spell 39920 is used only as the
+        // visible connection between linked targets.  Cast from one linked target
+        // to the other so the beam appears between the pair instead of from boss.
+        first->CastSpell(second, SPELL_TOXIC_LINK_VISUAL, true);
     }
 
     void TryStartToxicLink()
@@ -156,9 +186,12 @@ struct boss_quagmirran : public BossAI
 
         if (players.size() >= 2)
         {
-            uint32 i1 = urand(0u, players.size() - 1);
+            uint32 i1 = urand(0u, static_cast<uint32>(players.size() - 1));
             uint32 i2;
-            do { i2 = urand(0u, players.size() - 1); } while (i2 == i1);
+            do
+            {
+                i2 = urand(0u, static_cast<uint32>(players.size() - 1));
+            } while (i2 == i1);
 
             first = players[i1];
             second = players[i2];
@@ -166,16 +199,19 @@ struct boss_quagmirran : public BossAI
         else if (!players.empty() && !bots.empty())
         {
             first = players[0];
-            second = bots[urand(0u, bots.size() - 1)];
+            second = bots[urand(0u, static_cast<uint32>(bots.size() - 1))];
         }
         else
         {
             if (bots.size() < 2)
                 return;
 
-            uint32 i1 = urand(0u, bots.size() - 1);
+            uint32 i1 = urand(0u, static_cast<uint32>(bots.size() - 1));
             uint32 i2;
-            do { i2 = urand(0u, bots.size() - 1); } while (i2 == i1);
+            do
+            {
+                i2 = urand(0u, static_cast<uint32>(bots.size() - 1));
+            } while (i2 == i1);
 
             first = bots[i1];
             second = bots[i2];
@@ -190,6 +226,8 @@ struct boss_quagmirran : public BossAI
 
         me->CastSpell(first, SPELL_TOXIC_LINK_DOT, true);
         me->CastSpell(second, SPELL_TOXIC_LINK_DOT, true);
+
+        ApplyToxicLinkVisual(first, second);
     }
 
     void Reset() override
@@ -243,7 +281,11 @@ struct boss_quagmirran : public BossAI
                 ctx.Repeat(25s, 32s);
             });
 
-        // Toxic Link heartbeat
+        // Toxic Link heartbeat:
+        // No extra damage spell is cast here.  The mechanic is only:
+        //  - both linked targets have the DoT
+        //  - one linked target casts the visual tether onto the other
+        //  - moving far enough apart removes both DoTs and the visual aura
         scheduler.Schedule(1s, [this](TaskContext ctx)
             {
                 if (_linkActive)
@@ -255,19 +297,14 @@ struct boss_quagmirran : public BossAI
                     {
                         EndToxicLink();
                     }
-                    else
+                    else if (!a->HasAura(SPELL_TOXIC_LINK_DOT) || !b->HasAura(SPELL_TOXIC_LINK_DOT))
                     {
-                        float dist = a->GetDistance(b);
-
-                        if (dist <= LINK_PUNISH_DISTANCE)
-                        {
-                            me->CastSpell(a, SPELL_TOXIC_LINK_TICK, true);
-                            me->CastSpell(b, SPELL_TOXIC_LINK_TICK, true);
-                        }
-                        else if (dist >= LINK_BREAK_DISTANCE)
-                        {
-                            EndToxicLink();
-                        }
+                        // If the DoT was removed by any non-distance condition, clean the visual too.
+                        EndToxicLink();
+                    }
+                    else if (a->GetDistance(b) >= LINK_BREAK_DISTANCE)
+                    {
+                        EndToxicLink();
                     }
                 }
 

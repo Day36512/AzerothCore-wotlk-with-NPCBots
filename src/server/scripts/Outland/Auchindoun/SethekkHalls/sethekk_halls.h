@@ -42,7 +42,8 @@ enum eTypes
 enum InstanceData
 {
     DATA_GO_TALON_KING_COFFER,
-    DATA_VOICE_OF_THE_RAVEN_GOD
+    DATA_VOICE_OF_THE_RAVEN_GOD,
+    DATA_ANZU_CREATURE
 };
 
 enum eIds

@@ -6,12 +6,12 @@
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
- * FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+ * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License along with this program.
+ * If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "CreatureScript.h"
@@ -28,6 +28,7 @@
 #include "Cell.h"
 #include "CellImpl.h"
 
+#include <algorithm>
 #include <unordered_set>
 
 enum Says
@@ -50,10 +51,20 @@ enum Spells
 };
 
 static constexpr float  HOUND_FIXATE_THREAT = 8000.0f;
-static constexpr uint32 HOUND_HP_NORMAL = 21220;
-static constexpr uint32 HOUND_HP_HEROIC = 38750;
+static constexpr uint32 HOUND_HP_NORMAL = 16220;
+static constexpr uint32 HOUND_HP_HEROIC = 22750;
 static constexpr float  HOUND_SCALE_MULT = 2.0f;
 static constexpr Milliseconds HOUND_TUNE_REAPPLY_DELAY = 150ms;
+
+// Treacherous Aura timing.
+// Original behavior was initial 7s, repeat 13s-17s.
+// This keeps the mechanic active but makes it much less spammy.
+static constexpr Milliseconds TREACHEROUS_AURA_INITIAL_DELAY = 12s;
+static constexpr Milliseconds TREACHEROUS_AURA_REPEAT_MIN = 22s;
+static constexpr Milliseconds TREACHEROUS_AURA_REPEAT_MAX = 28s;
+static constexpr Milliseconds TREACHEROUS_AURA_SPREAD_DELAY = 6s;
+static constexpr float TREACHEROUS_AURA_SPREAD_RADIUS = 8.0f;
+static constexpr uint8 TREACHEROUS_AURA_MAX_EXTRA_TARGETS = 2;
 
 struct boss_omor_the_unscarred : public BossAI
 {
@@ -93,28 +104,33 @@ struct boss_omor_the_unscarred : public BossAI
             {
                 if (Unit* v = me->GetVictim())
                     DoCast(v, SPELL_SHADOW_BOLT, false);
+
                 context.Repeat(6s, 8s);
             });
 
-        scheduler.Schedule(7s, [this](TaskContext context)
+        scheduler.Schedule(TREACHEROUS_AURA_INITIAL_DELAY, [this](TaskContext context)
             {
                 if (roll_chance_i(40))
                     Talk(SAY_CURSE);
 
                 if (Unit* mark = SelectRandomEligibleTarget(60.0f))
                 {
-                    _lastCurseTarget = mark->GetGUID();
+                    ObjectGuid markGuid = mark->GetGUID();
+                    _lastCurseTarget = markGuid;
+
                     DoCast(mark, SPELL_TREACHEROUS_AURA, false);
 
-                    scheduler.Schedule(6s, [this](TaskContext /*ctx*/)
+                    scheduler.Schedule(TREACHEROUS_AURA_SPREAD_DELAY, [this, markGuid](TaskContext /*ctx*/)
                         {
-                            if (Unit* anchor = ObjectAccessor::GetUnit(*me, _lastCurseTarget))
-                                SpreadTreacherousAura(anchor, 8.0f, 2);
-                            _lastCurseTarget.Clear();
+                            if (Unit* anchor = ObjectAccessor::GetUnit(*me, markGuid))
+                                SpreadTreacherousAura(anchor, TREACHEROUS_AURA_SPREAD_RADIUS, TREACHEROUS_AURA_MAX_EXTRA_TARGETS);
+
+                            if (_lastCurseTarget == markGuid)
+                                _lastCurseTarget.Clear();
                         });
                 }
 
-                context.Repeat(13s, 17s);
+                context.Repeat(TREACHEROUS_AURA_REPEAT_MIN, TREACHEROUS_AURA_REPEAT_MAX);
             });
 
         scheduler.Schedule(10s, [this](TaskContext context)
@@ -130,6 +146,7 @@ struct boss_omor_the_unscarred : public BossAI
         {
             _hasSpoken = true;
             Talk(SAY_KILL);
+
             scheduler.Schedule(6s, [this](TaskContext /*context*/)
                 {
                     _hasSpoken = false;
@@ -260,6 +277,7 @@ private:
 
                 bool const isPlayer = u->GetTypeId() == TYPEID_PLAYER;
                 bool const isNpcBot = (u->GetTypeId() == TYPEID_UNIT) && u->ToCreature() && u->ToCreature()->IsNPCBot();
+
                 if (!isPlayer && !isNpcBot)
                     return true;
 
@@ -281,6 +299,9 @@ private:
     // Dinkle custom
     void SpreadTreacherousAura(Unit* anchor, float radius, uint8 maxExtra)
     {
+        if (!anchor || !anchor->IsAlive())
+            return;
+
         std::list<Unit*> nearby;
         Acore::AnyUnitInObjectRangeCheck check(anchor, radius);
         Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(anchor, nearby, check);
@@ -293,6 +314,7 @@ private:
 
                 bool const isPlayer = u->GetTypeId() == TYPEID_PLAYER;
                 bool const isNpcBot = (u->GetTypeId() == TYPEID_UNIT) && u->ToCreature() && u->ToCreature()->IsNPCBot();
+
                 if (!isPlayer && !isNpcBot)
                     return true;
 
@@ -306,6 +328,7 @@ private:
             });
 
         Acore::Containers::RandomResize(nearby, std::min<size_t>(maxExtra, nearby.size()));
+
         for (Unit* u : nearby)
             DoCast(u, SPELL_TREACHEROUS_AURA, true);
     }
@@ -337,6 +360,7 @@ private:
             {
                 _shieldActive = false;
                 me->SetCombatMovement(true);
+
                 if (Unit* v = me->GetVictim())
                     me->GetMotionMaster()->MoveChase(v);
             });
@@ -345,6 +369,7 @@ private:
     void UpdateBerserkStacks()
     {
         uint32 stacks = static_cast<uint32>(_activeHounds.size());
+
         if (stacks == 0)
         {
             me->RemoveAurasDueToSpell(SPELL_BERSERK);
@@ -358,6 +383,7 @@ private:
         else
         {
             me->CastSpell(me, SPELL_BERSERK, true);
+
             if (Aura* a2 = me->GetAura(SPELL_BERSERK))
                 a2->SetStackAmount(stacks);
         }

@@ -6,17 +6,18 @@
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "Creature.h"
 #include "CreatureScript.h"
+#include "GameObject.h"
 #include "GameObjectScript.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
@@ -25,7 +26,10 @@
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "blood_furnace.h"
-#include "ObjectAccessor.h" 
+#include "ObjectAccessor.h"
+
+#include <list>
+#include <vector>
 
  // NPCBots
 #include "bot_ai.h"
@@ -45,28 +49,33 @@ enum Spells
     SPELL_POISON_BOLT = 30917,
     SPELL_POISON = 30914,
 
-    // Teleport visual for players/bots and now for boss intro blink
     SPELL_TELEPORT_VISUAL = 41232
 };
 
-// ---------- custom IDs for healer attendants ----------
 enum CustomEntries
 {
-    NPC_BROGGOK_ATTENDANT_N = 816947,  // Normal-mode healer 
-    NPC_BROGGOK_ATTENDANT_H = 816948   // Heroic-mode healer 
+    NPC_BROGGOK_ATTENDANT_N = 816947,  // Normal-mode healer
+    NPC_BROGGOK_ATTENDANT_H = 816948   // Heroic-mode healer
 };
 
 enum CustomSpells
 {
-    SPELL_ATTENDANT_HEAL_N = 300378,   // Channel heal to Broggok (Normal)
-    SPELL_ATTENDANT_HEAL_H = 300378    // Channel heal to Broggok (Heroic) - adjust later 
+    SPELL_ATTENDANT_HEAL_N = 300378,   // Channel heal to Broggok - Normal
+    SPELL_ATTENDANT_HEAL_H = 300378    // Channel heal to Broggok - Heroic
 };
 
-// Boss entries (fixed)
+enum BroggokGameObjects
+{
+    GO_BROGGOK_GATE_1 = 181819,
+    GO_BROGGOK_GATE_2 = 181822
+};
+
 static constexpr uint32 BROGGOK_NORMAL_ENTRY = 17380;
 static constexpr uint32 BROGGOK_HEROIC_ENTRY = 18601;
 
-// ---------- Attendant spawn spots (now 4 unique points) ----------
+static constexpr float BROGGOK_GATE_SEARCH_RADIUS = 250.0f;
+static constexpr float BROGGOK_ATTENDANT_CLEANUP_RADIUS = 250.0f;
+
 static Position const kHealerSpawn[4] =
 {
     { 458.57f, 140.95f, 9.62f, 0.00f },
@@ -75,12 +84,10 @@ static Position const kHealerSpawn[4] =
     { 459.01f,  41.32f, 9.62f, 0.00f }
 };
 
-// ---------- TELEPORT GATE (positions & radius) ----------
-static Position const kTeleportTrigger = { 456.09f,  37.01f, 9.59f, 0.0f };
-static Position const kTeleportDest = { 455.17f,  91.55f, 9.61f, 0.0f };
+static Position const kTeleportTrigger = { 456.09f, 37.01f, 9.59f, 0.0f };
+static Position const kTeleportDest = { 455.17f, 91.55f, 9.61f, 0.0f };
 static constexpr float kTeleportRadius = 7.0f;
 
-// ---------- BOSS INTRO TELEPORT DEST ----------
 static Position const kBossIntroBlink = { 455.26f, 44.83f, 9.62f, 0.0f };
 
 enum Events
@@ -106,9 +113,11 @@ static inline bool IsPlayerOrNPCBot(Unit* u)
     return false;
 }
 
-// ============================================================================
-// Boss: Broggok
-// ============================================================================
+static inline bool IsBroggokAttendantEntry(uint32 entry)
+{
+    return entry == NPC_BROGGOK_ATTENDANT_N || entry == NPC_BROGGOK_ATTENDANT_H;
+}
+
 struct boss_broggok : public BossAI
 {
     boss_broggok(Creature* creature) : BossAI(creature, DATA_BROGGOK) {}
@@ -116,8 +125,11 @@ struct boss_broggok : public BossAI
     void Reset() override
     {
         _Reset();
-        // ---------- DESPAWN ON RESET (safety) ----------
+        scheduler.CancelAll();
         summons.DespawnAll();
+
+        SetBroggokGatesOpen(false);
+        DespawnDifficultyMismatchedAttendants();
 
         me->SetReactState(REACT_PASSIVE);
         me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
@@ -126,9 +138,22 @@ struct boss_broggok : public BossAI
 
     void JustDied(Unit* /*killer*/) override
     {
-        // ---------- DESPAWN ON DEATH ----------
+        scheduler.CancelAll();
         summons.DespawnAll();
+
+        SetBroggokGatesOpen(true);
+
         _JustDied();
+    }
+
+    void EnterEvadeMode(EvadeReason why) override
+    {
+        scheduler.CancelAll();
+        summons.DespawnAll();
+
+        SetBroggokGatesOpen(false);
+
+        BossAI::EnterEvadeMode(why);
     }
 
     void JustEngagedWith(Unit* /*who*/) override
@@ -148,17 +173,64 @@ struct boss_broggok : public BossAI
 
     void JustSummoned(Creature* summoned) override
     {
-        // Track attendants and other summons
-        summons.Summon(summoned);
-
-        // Skip special setup for attendants; they run/channel via their own AI
-        if (summoned->GetEntry() == NPC_BROGGOK_ATTENDANT_N || summoned->GetEntry() == NPC_BROGGOK_ATTENDANT_H)
+        if (!summoned)
             return;
+
+        if (IsBroggokAttendantEntry(summoned->GetEntry()))
+        {
+            const bool heroic = me->GetMap()->IsHeroic();
+            const uint32 allowedEntry = heroic ? NPC_BROGGOK_ATTENDANT_H : NPC_BROGGOK_ATTENDANT_N;
+
+            if (summoned->GetEntry() != allowedEntry)
+            {
+                summoned->DespawnOrUnsummon();
+                return;
+            }
+
+            summons.Summon(summoned);
+            return;
+        }
+
+        summons.Summon(summoned);
 
         // Original poison cloud helper behavior
         summoned->SetFaction(FACTION_MONSTER_2);
         summoned->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
         summoned->CastSpell(summoned, SPELL_POISON, true, nullptr, nullptr, me->GetGUID());
+    }
+
+    void SetBroggokGatesOpen(bool open)
+    {
+        SetBroggokGateOpen(GO_BROGGOK_GATE_1, open);
+        SetBroggokGateOpen(GO_BROGGOK_GATE_2, open);
+    }
+
+    void SetBroggokGateOpen(uint32 entry, bool open)
+    {
+        if (GameObject* go = me->FindNearestGameObject(entry, BROGGOK_GATE_SEARCH_RADIUS))
+            go->SetGoState(open ? GO_STATE_ACTIVE : GO_STATE_READY);
+    }
+
+    void DespawnCreaturesWithEntry(uint32 entry)
+    {
+        std::list<Creature*> creatures;
+        me->GetCreatureListWithEntryInGrid(creatures, entry, BROGGOK_ATTENDANT_CLEANUP_RADIUS);
+
+        for (Creature* creature : creatures)
+        {
+            if (!creature)
+                continue;
+
+            creature->DespawnOrUnsummon();
+        }
+    }
+
+    void DespawnDifficultyMismatchedAttendants()
+    {
+        const bool heroic = me->GetMap()->IsHeroic();
+        const uint32 wrongEntry = heroic ? NPC_BROGGOK_ATTENDANT_N : NPC_BROGGOK_ATTENDANT_H;
+
+        DespawnCreaturesWithEntry(wrongEntry);
     }
 
     Unit* SelectRandomPlayerOrNPCBotFromThreat(bool excludeVictim = true)
@@ -218,19 +290,26 @@ struct boss_broggok : public BossAI
         return pool[urand(0u, static_cast<uint32>(pool.size() - 1))];
     }
 
-    // ---------- helper: spawn attendants at unique points (2 on Normal, 3 on Heroic) ----------
     void SpawnHealerAttendants()
     {
+        if (!me->IsAlive())
+            return;
+
         const bool heroic = me->GetMap()->IsHeroic();
+
         const uint32 entry = heroic ? NPC_BROGGOK_ATTENDANT_H : NPC_BROGGOK_ATTENDANT_N;
         const uint8 count = heroic ? 3 : 2;
 
-        // Pick 'count' unique indices from {0,1,2,3} using a partial Fisher–Yates shuffle
+        // Hard cleanup: if heroic is active, normal attendants should not exist.
+        // If normal is active, heroic attendants should not exist.
+        DespawnDifficultyMismatchedAttendants();
+
         int idx[4] = { 0, 1, 2, 3 };
+
         for (uint8 i = 0; i < count; ++i)
         {
             uint8 r = urand(i, 3);
-            // swap idx[i] and idx[r] (manual swap to avoid requiring headers)
+
             int tmp = idx[i];
             idx[i] = idx[r];
             idx[r] = tmp;
@@ -239,7 +318,6 @@ struct boss_broggok : public BossAI
         }
     }
 
-    // ---------- TELEPORT GATE: scan threat list and warp intruders (with visual) ----------
     void TeleportGateScan()
     {
         for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
@@ -259,7 +337,6 @@ struct boss_broggok : public BossAI
                 kTeleportTrigger.GetPositionY(),
                 kTeleportTrigger.GetPositionZ()) <= kTeleportRadius)
             {
-                // Teleport visual, then move them
                 u->CastSpell(u, SPELL_TELEPORT_VISUAL, true);
                 u->NearTeleportTo(kTeleportDest.GetPositionX(),
                     kTeleportDest.GetPositionY(),
@@ -275,16 +352,19 @@ struct boss_broggok : public BossAI
         {
         case ACTION_PREPARE_BROGGOK:
         {
+            SetBroggokGatesOpen(false);
+            DespawnDifficultyMismatchedAttendants();
+
             me->SetInCombatWithZone();
             instance->SetBossState(DATA_BROGGOK, IN_PROGRESS);
             break;
         }
+
         case ACTION_ACTIVATE_BROGGOK:
         {
-            // Initial attendants at pull (now mode-aware and unique points)
-            SpawnHealerAttendants();
+            SetBroggokGatesOpen(false);
+            DespawnDifficultyMismatchedAttendants();
 
-            // Core kit + orientation fix + teleport scan + recurring attendants
             scheduler
                 .Schedule(10s, [this](TaskContext ctx)
                     {
@@ -294,12 +374,14 @@ struct boss_broggok : public BossAI
                             me->SetInFront(v);
                             me->CastSpell(v, SPELL_SLIME_SPRAY, false);
                         }
+
                         ctx.Repeat(7s, 12s);
                     })
                 .Schedule(5s, [this](TaskContext ctx)
                     {
                         if (Unit* tgt = SelectRandomPlayerOrNPCBotFromThreat(true))
                             me->CastSpell(tgt, SPELL_POISON_BOLT, false);
+
                         ctx.Repeat(6s, 11s);
                     })
                 .Schedule(7s, [this](TaskContext ctx)
@@ -313,11 +395,14 @@ struct boss_broggok : public BossAI
                         TeleportGateScan();
                         ctx.Repeat(1s);
                     })
-                // Recurring waves of healer attendants (mode-aware, unique each time)
-                .Schedule(30s, [this](TaskContext ctx)
+                // First healer wave is intentionally delayed.
+                // Previously this happened instantly on ACTION_ACTIVATE_BROGGOK,
+                // which made heroic feel like the attendants slammed the party
+                // the moment Broggok woke up.
+                .Schedule(15s, [this](TaskContext ctx)
                     {
                         SpawnHealerAttendants();
-                        ctx.Repeat(28s, 38s);
+                        ctx.Repeat(40s, 55s);
                     });
 
             me->SetReactState(REACT_AGGRESSIVE);
@@ -325,13 +410,13 @@ struct boss_broggok : public BossAI
             me->SetImmuneToAll(false);
             break;
         }
+
+        default:
+            break;
         }
     }
 };
 
-// ============================================================================
-// Healer Attendant (Normal)
-// ============================================================================
 class npc_broggok_attendant_normal : public CreatureScript
 {
 public:
@@ -345,7 +430,11 @@ public:
         EventMap   _events;
         bool       _channeling = false;
 
-        enum { POINT_TO_BOSS = 1 };
+        enum
+        {
+            POINT_TO_BOSS = 1,
+            EVENT_RETRY_FIND_BOSS = 1
+        };
 
         Creature* GetBoss()
         {
@@ -365,11 +454,17 @@ public:
 
         void IsSummonedBy(WorldObject* summoner) override
         {
+            if (me->GetMap()->IsHeroic())
+            {
+                me->DespawnOrUnsummon();
+                return;
+            }
+
             _bossGuid = summoner ? summoner->GetGUID() : ObjectGuid::Empty;
 
             me->SetReactState(REACT_PASSIVE);
             me->SetWalk(false); // run
-            me->Yell("For the master’s renewal!", LANG_UNIVERSAL);
+            me->Yell("For the master's renewal!", LANG_UNIVERSAL);
 
             if (Creature* boss = GetBoss())
             {
@@ -378,7 +473,7 @@ public:
             }
             else
             {
-                _events.ScheduleEvent(1, 1s);
+                _events.ScheduleEvent(EVENT_RETRY_FIND_BOSS, 1s);
             }
         }
 
@@ -404,14 +499,22 @@ public:
 
         void UpdateAI(uint32 diff) override
         {
+            if (me->GetMap()->IsHeroic())
+            {
+                me->DespawnOrUnsummon();
+                return;
+            }
+
             _events.Update(diff);
 
-            if (uint32 id = _events.ExecuteEvent())
+            while (uint32 id = _events.ExecuteEvent())
             {
-                if (id == 1)
+                if (id == EVENT_RETRY_FIND_BOSS)
                 {
                     if (Creature* boss = GetBoss())
                         me->GetMotionMaster()->MovePoint(POINT_TO_BOSS, boss->GetPosition());
+                    else
+                        _events.ScheduleEvent(EVENT_RETRY_FIND_BOSS, 1s);
                 }
             }
 
@@ -428,12 +531,12 @@ public:
         }
     };
 
-    CreatureAI* GetAI(Creature* c) const override { return new npc_broggok_attendant_normalAI(c); }
+    CreatureAI* GetAI(Creature* c) const override
+    {
+        return new npc_broggok_attendant_normalAI(c);
+    }
 };
 
-// ============================================================================
-// Healer Attendant (Heroic)
-// ============================================================================
 class npc_broggok_attendant_heroic : public CreatureScript
 {
 public:
@@ -447,7 +550,11 @@ public:
         EventMap   _events;
         bool       _channeling = false;
 
-        enum { POINT_TO_BOSS = 1 };
+        enum
+        {
+            POINT_TO_BOSS = 1,
+            EVENT_RETRY_FIND_BOSS = 1
+        };
 
         Creature* GetBoss()
         {
@@ -467,6 +574,12 @@ public:
 
         void IsSummonedBy(WorldObject* summoner) override
         {
+            if (!me->GetMap()->IsHeroic())
+            {
+                me->DespawnOrUnsummon();
+                return;
+            }
+
             _bossGuid = summoner ? summoner->GetGUID() : ObjectGuid::Empty;
 
             me->SetReactState(REACT_PASSIVE);
@@ -480,7 +593,7 @@ public:
             }
             else
             {
-                _events.ScheduleEvent(1, 1s);
+                _events.ScheduleEvent(EVENT_RETRY_FIND_BOSS, 1s);
             }
         }
 
@@ -506,14 +619,22 @@ public:
 
         void UpdateAI(uint32 diff) override
         {
+            if (!me->GetMap()->IsHeroic())
+            {
+                me->DespawnOrUnsummon();
+                return;
+            }
+
             _events.Update(diff);
 
-            if (uint32 id = _events.ExecuteEvent())
+            while (uint32 id = _events.ExecuteEvent())
             {
-                if (id == 1)
+                if (id == EVENT_RETRY_FIND_BOSS)
                 {
                     if (Creature* boss = GetBoss())
                         me->GetMotionMaster()->MovePoint(POINT_TO_BOSS, boss->GetPosition());
+                    else
+                        _events.ScheduleEvent(EVENT_RETRY_FIND_BOSS, 1s);
                 }
             }
 
@@ -530,12 +651,12 @@ public:
         }
     };
 
-    CreatureAI* GetAI(Creature* c) const override { return new npc_broggok_attendant_heroicAI(c); }
+    CreatureAI* GetAI(Creature* c) const override
+    {
+        return new npc_broggok_attendant_heroicAI(c);
+    }
 };
 
-// ============================================================================
-// Poison (Broggok) aura helper 
-// ============================================================================
 class spell_broggok_poison_cloud : public AuraScript
 {
     PrepareAuraScript(spell_broggok_poison_cloud);
@@ -554,6 +675,7 @@ class spell_broggok_poison_cloud : public AuraScript
 
         uint32 triggerSpell = GetSpellInfo()->Effects[aurEff->GetEffIndex()].TriggerSpell;
         int32 mod = int32(((float(aurEff->GetTickNumber()) / aurEff->GetTotalTicks()) * 0.9f + 0.1f) * 10000 * 2 / 3);
+
         GetTarget()->CastCustomSpell(triggerSpell, SPELLVALUE_RADIUS_MOD, mod, (Unit*)nullptr, TRIGGERED_FULL_MASK, nullptr, aurEff);
     }
 
@@ -571,9 +693,13 @@ public:
     bool OnGossipHello(Player* /*player*/, GameObject* go) override
     {
         if (InstanceScript* instance = go->GetInstanceScript())
+        {
             if (instance->GetBossState(DATA_BROGGOK) == NOT_STARTED)
+            {
                 if (Creature* broggok = instance->GetCreature(DATA_BROGGOK))
                     broggok->AI()->DoAction(ACTION_PREPARE_BROGGOK);
+            }
+        }
 
         go->UseDoorOrButton();
         return false;
@@ -586,6 +712,7 @@ void AddSC_boss_broggok()
 
     new npc_broggok_attendant_normal();
     new npc_broggok_attendant_heroic();
+
     RegisterSpellScript(spell_broggok_poison_cloud);
 
     new go_broggok_lever();

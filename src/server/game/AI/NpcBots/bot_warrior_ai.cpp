@@ -25,141 +25,141 @@ TODO:
 
 enum WarriorBaseSpells
 {
-    BATTLE_STANCE_1                         = 2457,
-    DEFENSIVE_STANCE_1                      = 71,
-    BERSERKER_STANCE_1                      = 2458,
+    BATTLE_STANCE_1 = 2457,
+    DEFENSIVE_STANCE_1 = 71,
+    BERSERKER_STANCE_1 = 2458,
 
-    INTIMIDATING_SHOUT_1                    = 5246,
-    ENRAGED_REGENERATION_1                  = 55694,
-    CHARGE_1                                = 100,
-    OVERPOWER_1                             = 7384,
-    TAUNT_1                                 = 355,
-    BLOODRAGE_1                             = 2687,
-    BERSERKER_RAGE_1                        = 18499,
-    INTERCEPT_1                             = 20252,
-    CLEAVE_1                                = 845,
-    HAMSTRING_1                             = 1715,
-    INTERVENE_1                             = 3411,
-    WHIRLWIND_1                             = 1680,
-    BLADESTORM_1                            = 46924,
-    BATTLE_SHOUT_1                          = 6673,
-    REND_1                                  = 772,
-    EXECUTE_1                               = 5308,
-    PUMMEL_1                                = 6552,
-    BLOODTHIRST_1                           = 23881,
-    MORTAL_STRIKE_1                         = 12294,
-    SLAM_1                                  = 1464,
-    SUNDER_ARMOR_1                          = 7386,
-    SWEEPING_STRIKES_1                      = 12328,
-    RECKLESSNESS_1                          = 1719,
-    RETALIATION_1                           = 20230,
-    DEATH_WISH_1                            = 12292,
-    VICTORY_RUSH_1                          = 34428,
-    THUNDER_CLAP_1                          = 6343,
-    LAST_STAND_1                            = 12975,
-    REVENGE_1                               = 6572,
-    SHIELD_BLOCK_1                          = 2565,
-    SHIELD_SLAM_1                           = 23922,
-    SPELL_REFLECTION_1                      = 23920,
-    DISARM_1                                = 676,
-    SHIELD_WALL_1                           = 871,
-    SHIELD_BASH_1                           = 72,
-    HEROIC_THROW_1                          = 57755,
-    CONCUSSION_BLOW_1                       = 12809,
-    VIGILANCE_1                             = 50720,
-    DEVASTATE_1                             = 20243,
-    MOCKING_BLOW_1                          = 694,
-    SHOCKWAVE_1                             = 46968,
-    PIERCING_HOWL_1                         = 12323,
-    HEROIC_STRIKE_1                         = 78,
-    CHALLENGING_SHOUT_1                     = 1161,
-    COMMANDING_SHOUT_1                      = 469,
-    SHATTERING_THROW_1                      = 64382,
-    DEMORALIZING_SHOUT_1                    = 1160,
-    HEROIC_FURY_1                           = 60970
+    INTIMIDATING_SHOUT_1 = 5246,
+    ENRAGED_REGENERATION_1 = 55694,
+    CHARGE_1 = 100,
+    OVERPOWER_1 = 7384,
+    TAUNT_1 = 355,
+    BLOODRAGE_1 = 2687,
+    BERSERKER_RAGE_1 = 18499,
+    INTERCEPT_1 = 20252,
+    CLEAVE_1 = 845,
+    HAMSTRING_1 = 1715,
+    INTERVENE_1 = 3411,
+    WHIRLWIND_1 = 1680,
+    BLADESTORM_1 = 46924,
+    BATTLE_SHOUT_1 = 6673,
+    REND_1 = 772,
+    EXECUTE_1 = 5308,
+    PUMMEL_1 = 6552,
+    BLOODTHIRST_1 = 23881,
+    MORTAL_STRIKE_1 = 12294,
+    SLAM_1 = 1464,
+    SUNDER_ARMOR_1 = 7386,
+    SWEEPING_STRIKES_1 = 12328,
+    RECKLESSNESS_1 = 1719,
+    RETALIATION_1 = 20230,
+    DEATH_WISH_1 = 12292,
+    VICTORY_RUSH_1 = 34428,
+    THUNDER_CLAP_1 = 6343,
+    LAST_STAND_1 = 12975,
+    REVENGE_1 = 6572,
+    SHIELD_BLOCK_1 = 2565,
+    SHIELD_SLAM_1 = 23922,
+    SPELL_REFLECTION_1 = 23920,
+    DISARM_1 = 676,
+    SHIELD_WALL_1 = 871,
+    SHIELD_BASH_1 = 72,
+    HEROIC_THROW_1 = 57755,
+    CONCUSSION_BLOW_1 = 12809,
+    VIGILANCE_1 = 50720,
+    DEVASTATE_1 = 20243,
+    MOCKING_BLOW_1 = 694,
+    SHOCKWAVE_1 = 46968,
+    PIERCING_HOWL_1 = 12323,
+    HEROIC_STRIKE_1 = 78,
+    CHALLENGING_SHOUT_1 = 1161,
+    COMMANDING_SHOUT_1 = 469,
+    SHATTERING_THROW_1 = 64382,
+    DEMORALIZING_SHOUT_1 = 1160,
+    HEROIC_FURY_1 = 60970
 };
 enum WarriorPassives
 {
-//Talents
-    ARMORED_TO_THE_TEETH                    = 61222,//rank 3
-    SHIELD_SPECIALIZATION                   = 12727,//rank 5
-    DEEP_WOUNDS_1                           = 12834,
-    DEEP_WOUNDS_2                           = 12849,
-    DEEP_WOUNDS_3                           = 12867,
-    BLOOD_CRAZE1                            = 16487,
-    BLOOD_CRAZE2                            = 16489,
-    BLOOD_CRAZE3                            = 16492,
-    TOUGHNESS                               = 12764,//rank 5
-    TWO_HANDED_WEAPON_SPECIALIZATION        = 12712,//rank 3
-    TASTE_FOR_BLOOD1                        = 56636,
-    TASTE_FOR_BLOOD2                        = 56637,
-    TASTE_FOR_BLOOD3                        = 56638,
-    DUAL_WIELD_SPECIALIZATION               = 23588,//rank 5
-    IMPROVED_SPELL_REFLECTION               = 59089,//rank 2
-    SWORD_SPEC1                             = 12281,
-    SWORD_SPEC2                             = 12812,
-    SWORD_SPEC3                             = 12813,
-    SWORD_SPEC4                             = 12814,
-    SWORD_SPEC5                             = 12815,
-    IMPROVED_HAMSTRING                      = 23695,//rank 3
-    TRAUMA1                                 = 46854,
-    TRAUMA2                                 = 46855,
-    FLURRY1                                 = 12319,
-    FLURRY2                                 = 12971,
-    FLURRY3                                 = 12972,
-    FLURRY4                                 = 12973,
-    FLURRY5                                 = 12974,
-    ONE_HANDED_WEAPON_SPECIALIZATION        = 16542,//rank 5
-    SECOND_WIND                             = 29838,//rank 2
-    IMPROVED_DEFENSIVE_STANCE               = 29594,//rank 2
-    JUGGERNAUGHT                            = 64976,
-    FURIOUS_ATTACKS                         = 46911,//rank 2
-    SAFEGUARD                               = 46949,//rank 2
-    SUDDEN_DEATH                            = 29724,//rank 3
-    ENDLESS_RAGE                            = 29623,
-    BLOOD_FRENZY                            = 29859,
-    RAMPAGE                                 = 29801,
-    BLOODSURGE                              = 46915,//rank 3
-    WARBRINGER                              = 57499,
-    CRITICAL_BLOCK                          = 47296,//rank 3
-    WRECKING_CREW                           = 56614,//rank 5
-    DAMAGE_SHIELD                           = 58874,//rank 2
-//other
-    GLYPH_HEROIC_STRIKE                     = 58357,
-    GLYPH_REVENGE                           = 58364,
-    GLYPH_EXECUTION                         = 58367,
-    GLYPH_BLOCKING                          = 58375,
-    GLYPH_VIGILANCE                         = 63326,
-    GLYPH_DEVASTATE                         = 58388,
+    //Talents
+    ARMORED_TO_THE_TEETH = 61222,//rank 3
+    SHIELD_SPECIALIZATION = 12727,//rank 5
+    DEEP_WOUNDS_1 = 12834,
+    DEEP_WOUNDS_2 = 12849,
+    DEEP_WOUNDS_3 = 12867,
+    BLOOD_CRAZE1 = 16487,
+    BLOOD_CRAZE2 = 16489,
+    BLOOD_CRAZE3 = 16492,
+    TOUGHNESS = 12764,//rank 5
+    TWO_HANDED_WEAPON_SPECIALIZATION = 12712,//rank 3
+    TASTE_FOR_BLOOD1 = 56636,
+    TASTE_FOR_BLOOD2 = 56637,
+    TASTE_FOR_BLOOD3 = 56638,
+    DUAL_WIELD_SPECIALIZATION = 23588,//rank 5
+    IMPROVED_SPELL_REFLECTION = 59089,//rank 2
+    SWORD_SPEC1 = 12281,
+    SWORD_SPEC2 = 12812,
+    SWORD_SPEC3 = 12813,
+    SWORD_SPEC4 = 12814,
+    SWORD_SPEC5 = 12815,
+    IMPROVED_HAMSTRING = 23695,//rank 3
+    TRAUMA1 = 46854,
+    TRAUMA2 = 46855,
+    FLURRY1 = 12319,
+    FLURRY2 = 12971,
+    FLURRY3 = 12972,
+    FLURRY4 = 12973,
+    FLURRY5 = 12974,
+    ONE_HANDED_WEAPON_SPECIALIZATION = 16542,//rank 5
+    SECOND_WIND = 29838,//rank 2
+    IMPROVED_DEFENSIVE_STANCE = 29594,//rank 2
+    JUGGERNAUGHT = 64976,
+    FURIOUS_ATTACKS = 46911,//rank 2
+    SAFEGUARD = 46949,//rank 2
+    SUDDEN_DEATH = 29724,//rank 3
+    ENDLESS_RAGE = 29623,
+    BLOOD_FRENZY = 29859,
+    RAMPAGE = 29801,
+    BLOODSURGE = 46915,//rank 3
+    WARBRINGER = 57499,
+    CRITICAL_BLOCK = 47296,//rank 3
+    WRECKING_CREW = 56614,//rank 5
+    DAMAGE_SHIELD = 58874,//rank 2
+    //other
+    GLYPH_HEROIC_STRIKE = 58357,
+    GLYPH_REVENGE = 58364,
+    GLYPH_EXECUTION = 58367,
+    GLYPH_BLOCKING = 58375,
+    GLYPH_VIGILANCE = 63326,
+    GLYPH_DEVASTATE = 58388,
 
-    WARRIOR_T10_PROT_4P                     = 70844 //bloodrage absorb
+    WARRIOR_T10_PROT_4P = 70844 //bloodrage absorb
 };
 enum WarriorSpecial
 {
-    STANCE_NONE                             = 0,
-    STANCE_BATTLE                           = 1,
-    STANCE_DEFENSIVE                        = 2,
-    STANCE_BERSERKER                        = 3,
+    STANCE_NONE = 0,
+    STANCE_BATTLE = 1,
+    STANCE_DEFENSIVE = 2,
+    STANCE_BERSERKER = 3,
 
-    TASTE_FOR_BLOOD_BUFF                    = 60503,
-    SWORD_AND_BOARD_BUFF                    = 50227,
-    BLOODSURGE_BUFF                         = 46916,//"Slam!"
-    JUGGERNAUGHT_BUFF                       = 65156,
-    GLYPH_REVENGE_BUFF                      = 58363,
-    UNRELENTING_ASSAULT_SPELL               = 64850,
-    VICTORIOUS_SPELL                        = 32216,
-    REVENGE_STUN_SPELL                      = 12798,
+    TASTE_FOR_BLOOD_BUFF = 60503,
+    SWORD_AND_BOARD_BUFF = 50227,
+    BLOODSURGE_BUFF = 46916,//"Slam!"
+    JUGGERNAUGHT_BUFF = 65156,
+    GLYPH_REVENGE_BUFF = 58363,
+    UNRELENTING_ASSAULT_SPELL = 64850,
+    VICTORIOUS_SPELL = 32216,
+    REVENGE_STUN_SPELL = 12798,
     //SWORD_SPECIALIZATION_TRIGGERED          = 16459,
-    VIGILANCE_PROC                          = 50725,
-    IMPROVED_BERSERKER_RAGE_EFFECT          = 23691,//rank 2
-    UNBRIDLED_WRATH_EFFECT                  = 12964,
-    SUNDER_ARMOR_DEBUFF                     = 58567,
-    GAG_ORDER_DEBUFF                        = 18498,//silence
+    VIGILANCE_PROC = 50725,
+    IMPROVED_BERSERKER_RAGE_EFFECT = 23691,//rank 2
+    UNBRIDLED_WRATH_EFFECT = 12964,
+    SUNDER_ARMOR_DEBUFF = 58567,
+    GAG_ORDER_DEBUFF = 18498,//silence
     //SUDDEN_DEATH_BUFF                       = 52437,
-    BLOODRAGE_PERIODIC_EFFECT               = 29131,
+    BLOODRAGE_PERIODIC_EFFECT = 29131,
 
     //VICTORIOUS_STATE_PASSIVE              = 32215,
-    BERSERKER_STANCE_PASSIVE                = 7381
+    BERSERKER_STANCE_PASSIVE = 7381
 };
 
 static const std::vector<uint32> Warrior_spells_damage
@@ -181,7 +181,7 @@ static float rageLossMult;
 class warrior_bot : public CreatureScript
 {
 public:
-    warrior_bot() : CreatureScript("warrior_bot") { }
+    warrior_bot() : CreatureScript("warrior_bot") {}
 
     CreatureAI* GetAI(Creature* creature) const override
     {
@@ -255,7 +255,7 @@ public:
         void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override { bot_ai::EnterEvadeMode(why); }
         void MoveInLineOfSight(Unit* u) override { bot_ai::MoveInLineOfSight(u); }
         void JustDied(Unit* u) override { bot_ai::JustDied(u); }
-        void DoNonCombatActions(uint32 /*diff*/) { }
+        void DoNonCombatActions(uint32 /*diff*/) {}
 
         //void modrage(int32 mod, bool set = false)
         //{
@@ -296,7 +296,7 @@ public:
         void BreakCC(uint32 diff) override
         {
             if (IsSpellReady(HEROIC_FURY_1, diff) && Rand() < 55 &&
-                (CCed(me, true) || me->HasAuraWithMechanic(1u<<MECHANIC_SNARE)))
+                (CCed(me, true) || me->HasAuraWithMechanic(1u << MECHANIC_SNARE)))
             {
                 if (doCast(me, GetSpell(HEROIC_FURY_1)))
                     return;
@@ -304,7 +304,7 @@ public:
             if (IsSpellReady(BERSERKER_RAGE_1, diff) && Rand() < 45 &&
                 !me->GetAuraEffect(SPELL_AURA_MECHANIC_IMMUNITY, SPELLFAMILY_WARRIOR, 0x0, 0x20000, 0x0) &&
                 /*!me->HasAura(ENRAGED_REGENERATION_1)*/
-                me->HasAuraWithMechanic((1u<<MECHANIC_FEAR)|(1u<<MECHANIC_SAPPED)|(1u<<MECHANIC_KNOCKOUT)))
+                me->HasAuraWithMechanic((1u << MECHANIC_FEAR) | (1u << MECHANIC_SAPPED) | (1u << MECHANIC_KNOCKOUT)))
             {
                 if (doCast(me, GetSpell(BERSERKER_RAGE_1)))
                     return;
@@ -398,176 +398,170 @@ public:
             Attack(diff);
         }
 
-        void Attack(uint32 diff)
+        bool _isDurableWarriorTarget(Unit const* target) const
         {
-            Unit* mytar = opponent ? opponent : disttarget ? disttarget : nullptr;
-            if (!mytar)
-                return;
+            if (!target || !target->IsAlive())
+                return false;
 
-            StartAttack(mytar, IsMelee());
+            if (target->IsPlayer() || target->IsControlledByPlayer())
+                return true;
 
-            CheckAttackState();
-            if (!me->IsAlive() || !mytar->IsAlive())
-                return;
+            if (Creature const* creature = target->ToCreature())
+                if (creature->IsDungeonBoss() || creature->isWorldBoss())
+                    return true;
 
-            bool const isFury = GetSpec() == BOT_SPEC_WARRIOR_FURY;
-            bool const isArms = GetSpec() == BOT_SPEC_WARRIOR_ARMS;
+            return target->GetHealth() > me->GetMaxHealth() / 2 * (1 + target->getAttackers().size());
+        }
 
-            //Keep stance in combat
-            if (stancetimer <= diff && Rand() < 10 + 15 * (me->GetPower(POWER_RAGE) <= 250))
-            {
-                uint8 mystance;
-                if (IsTank())
-                    mystance = 2;
-                else if (isFury && me->GetLevel() >= 30)
-                    mystance = 3;
-                else
-                    mystance = 1;
+        bool _canBleedWarriorTarget(Unit const* target) const
+        {
+            if (!target || target->GetCreatureType() == CREATURE_TYPE_MECHANICAL)
+                return false;
 
-                stanceChange(diff, mystance);
-            }
+            if (target->IsCreature() && target->ToCreature()->HasMechanicTemplateImmunity(1u << (MECHANIC_BLEED - 1)))
+                return false;
 
-            if (IsSpellReady(BLOODRAGE_1, diff, false) && me->IsInCombat() && rage < 600 && Rand() < 20 &&
-                !me->GetAuraEffect(SPELL_AURA_MECHANIC_IMMUNITY, SPELLFAMILY_WARRIOR, 0x0, 0x20000, 0x0)
-                /*!me->HasAura(ENRAGED_REGENERATION_1)*/)
+            return true;
+        }
+
+        bool _hasMyRend(Unit const* target) const
+        {
+            return target &&
+                target->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_WARRIOR, 0x20, 0x0, 0x0, me->GetGUID());
+        }
+
+        bool _hasTasteForBlood() const
+        {
+            return me->GetAuraEffect(SPELL_AURA_ABILITY_IGNORE_AURASTATE, SPELLFAMILY_WARRIOR, 2961, 0) != nullptr;
+        }
+
+        bool _hasSuddenDeath() const
+        {
+            return me->GetAuraEffect(SPELL_AURA_ABILITY_IGNORE_AURASTATE, SPELLFAMILY_WARRIOR, 0x0, 0x2000000, 0x0) != nullptr;
+        }
+
+        bool _hasSwordAndBoard() const
+        {
+            return me->GetAuraEffect(SPELL_AURA_ADD_PCT_MODIFIER, SPELLFAMILY_WARRIOR, 2780, 0) != nullptr;
+        }
+
+        bool _hasBloodsurge() const
+        {
+            return me->GetAuraEffect(SPELL_AURA_ADD_PCT_MODIFIER, SPELLFAMILY_WARRIOR, 0x0, 0x1000000, 0x0) != nullptr;
+        }
+
+        bool _isExecuteTarget(Unit const* target) const
+        {
+            return target && target->HasAuraState(AURA_STATE_HEALTHLESS_20_PERCENT);
+        }
+
+        bool TryWarriorBloodrage(uint32 diff)
+        {
+            if (IsSpellReady(BLOODRAGE_1, diff, false) && me->IsInCombat() && rage < 600 && Rand() < 35 &&
+                !me->GetAuraEffect(SPELL_AURA_MECHANIC_IMMUNITY, SPELLFAMILY_WARRIOR, 0x0, 0x20000, 0x0))
             {
                 if (doCast(me, GetSpell(BLOODRAGE_1)))
+                {
                     getrage();
+                    return true;
+                }
             }
 
-            getrage();
+            return false;
+        }
 
-            //SelfHeal
+        bool TryWarriorSelfPreservation(Unit* mytar, uint32 diff, Unit::AttackerSet const& b_attackers)
+        {
             if (IsSpellReady(ENRAGED_REGENERATION_1, diff) && Rand() < 80 && GetHealthPCT(me) < 40 &&
-                rage >= rcost(ENRAGED_REGENERATION_1) && me->HasAuraWithMechanic(1u<<MECHANIC_ENRAGED))
+                rage >= rcost(ENRAGED_REGENERATION_1) && me->HasAuraWithMechanic(1u << MECHANIC_ENRAGED))
             {
                 if (doCast(me, GetSpell(ENRAGED_REGENERATION_1)))
-                    return;
+                    return true;
             }
 
-            Unit::AttackerSet const& b_attackers = me->getAttackers();
-            float dist = me->GetDistance(mytar);
-
-            //FEAR
-            if (IsSpellReady(INTIMIDATING_SHOUT_1, diff) && Rand() < 70 && rage >= rcost(INTIMIDATING_SHOUT_1))
-            {
-                if (mytar->IsNonMeleeSpellCast(false, false, true) && dist < 5 &&
-                    mytar->GetCreatureType() != CREATURE_TYPE_UNDEAD)
-                {
-                    if (doCast(mytar, GetSpell(INTIMIDATING_SHOUT_1)))
-                        return;
-                }
-                Unit::AttackerSet const& m_attackers = master->getAttackers();
-                Unit* fearTarget = nullptr;
-                uint8 tCount = 0;
-                //fear master's attackers
-                if (!m_attackers.empty() &&
-                    ((master->GetClass() != BOT_CLASS_DEATH_KNIGHT &&
-                    master->GetClass() != BOT_CLASS_WARRIOR &&
-                    master->GetClass() != BOT_CLASS_PALADIN) ||
-                    GetHealthPCT(master) < 70))
-                {
-                    for (Unit* attacker : m_attackers)
-                    {
-                        if (!attacker) continue;
-                        if (attacker->GetCreatureType() == CREATURE_TYPE_UNDEAD) continue;
-                        if (me->GetDistance((attacker)) < 7.5f)
-                            ++tCount;
-                        if (!fearTarget && me->GetDistance(attacker) < 5)
-                            fearTarget = attacker;
-                        if (fearTarget && tCount > 1)
-                            break;
-                    }
-                    if (fearTarget && tCount > 1 && doCast(fearTarget, GetSpell(INTIMIDATING_SHOUT_1)))
-                        return;
-                }
-                //Defend myself
-                if (b_attackers.size() > 1 && (!IsTank() || GetHealthPCT(me) < 50))
-                {
-                    tCount = 0;
-                    fearTarget = nullptr;
-                    for (Unit* attacker : b_attackers)
-                    {
-                        if (!attacker) continue;
-                        if (attacker->GetCreatureType() == CREATURE_TYPE_UNDEAD) continue;
-                        if (me->GetDistance((attacker)) < 7.5f)
-                            ++tCount;
-                        if (!fearTarget && me->GetDistance(attacker) < 5)
-                            fearTarget = attacker;
-                        if (fearTarget && tCount > 1)
-                            break;
-                    }
-                    if (fearTarget && tCount > 1 && doCast(fearTarget, GetSpell(INTIMIDATING_SHOUT_1)))
-                        return;
-                }
-            }//end FEAR
-
-            //LAST STAND
             if (IsSpellReady(LAST_STAND_1, diff, false) &&
                 GetHealthPCT(me) < (30 + 20 * (b_attackers.size() > 1) + 10 * me->HasAuraType(SPELL_AURA_PERIODIC_DAMAGE)))
             {
                 if (doCast(me, GetSpell(LAST_STAND_1)))
-                    return;
+                    return true;
             }
+
+            if (IsSpellReady(SHIELD_WALL_1, diff, false) && CanBlock() &&
+                GetHealthPCT(me) < (30 + 4 * b_attackers.size() + 20ull * (mytar && mytar->IsCreature() && mytar->ToCreature()->isWorldBoss())) &&
+                (_inStance(2) || stanceChange(diff, 2)))
+            {
+                if (doCast(me, GetSpell(SHIELD_WALL_1)))
+                    return true;
+            }
+
+            return false;
+        }
+
+        bool TryWarriorMobility(Unit* mytar, uint32 diff, float dist)
+        {
+            if (!mytar || HasBotCommandState(BOT_COMMAND_STAY))
+                return false;
+
+            if (IsSpellReady(CHARGE_1, diff, false) && !HasRole(BOT_ROLE_RANGED) &&
+                !(IsTank() && mytar->IsCreature() && mytar->ToCreature()->isWorldBoss()) &&
+                dist > 8 && dist < CalcSpellMaxRange(CHARGE_1) &&
+                ((IsTank() && me->GetLevel() >= 50) ||
+                    (!me->IsInCombat() && (_inStance(1) || (stancetimer <= diff && stanceChange(diff, 1))))))
+            {
+                if (doCast(mytar, GetSpell(CHARGE_1)))
+                    return true;
+            }
+
+            if (IsSpellReady(INTERCEPT_1, diff, false) && !HasRole(BOT_ROLE_RANGED) && HasRole(BOT_ROLE_DPS) &&
+                !(IsTank() && mytar->IsCreature() && mytar->ToCreature()->isWorldBoss()) &&
+                !me->HasUnitState(UNIT_STATE_CHARGING) &&
+                (me->IsInCombat() || !IsSpellReady(CHARGE_1, diff, false)) &&
+                dist > 10 && dist < 25 && !CCed(mytar) && rage >= rcost(INTERCEPT_1) &&
+                ((IsTank() && me->GetLevel() >= 50) ||
+                    (!IsTank() && (_inStance(3) || (stancetimer <= diff && stanceChange(diff, 3))))))
+            {
+                if (doCast(mytar, GetSpell(INTERCEPT_1)))
+                    return true;
+            }
+
+            return false;
+        }
+
+        bool TryWarriorTaunts(Unit* mytar, uint32 diff, float dist)
+        {
+            if (!mytar)
+                return false;
 
             Unit const* u = mytar->GetVictim();
 
-            //TAUNT //No GCD
             if (IsSpellReady(TAUNT_1, diff, false) && u && u != me && Rand() < 50 && dist < 30 &&
                 mytar->CanHaveThreatList() && !CCed(mytar) && !mytar->HasAuraType(SPELL_AURA_MOD_TAUNT) &&
                 (!IsTank(u) || (IsTank() && GetHealthPCT(me) > 67 &&
-                (GetHealthPCT(u) < 30 || (IsOffTank() && !IsOffTank(u) && IsPointedOffTankingTarget(mytar)) ||
-                (!IsOffTank() && IsOffTank(u) && IsPointedTankingTarget(mytar))))) &&
+                    (GetHealthPCT(u) < 30 || (IsOffTank() && !IsOffTank(u) && IsPointedOffTankingTarget(mytar)) ||
+                        (!IsOffTank() && IsOffTank(u) && IsPointedTankingTarget(mytar))))) &&
                 ((!BotDataMgr::IsTankingClass(u->GetClass()) && (GetHealthPCT(u) < 80 || _inStance(2))) || IsTank()) &&
                 IsInBotParty(u) &&
                 (_inStance(2) || (stancetimer <= diff && stanceChange(diff, 2))))
             {
                 if (doCast(mytar, GetSpell(TAUNT_1)))
-                    return;
+                    return true;
             }
-            //TAUNT 2 (distant)
+
             if (IsSpellReady(TAUNT_1, diff, false) && !IAmFree() && u == me && Rand() < 35 && IsTank() &&
                 (IsOffTank() || master->GetBotMgr()->GetNpcBotsCountByRole(BOT_ROLE_TANK_OFF) == 0) &&
                 !(me->GetLevel() >= 40 && mytar->IsCreature() &&
-                (mytar->ToCreature()->IsDungeonBoss() || mytar->ToCreature()->isWorldBoss())) &&
+                    (mytar->ToCreature()->IsDungeonBoss() || mytar->ToCreature()->isWorldBoss())) &&
                 (_inStance(2) || stancetimer <= diff))
             {
                 Unit* tUnit = FindDistantTauntTarget();
                 if (tUnit && (_inStance(2) || (stancetimer <= diff && stanceChange(diff, 2))))
-                {
                     if (doCast(tUnit, GetSpell(TAUNT_1)))
-                        return;
-                }
+                        return true;
             }
-            //CHARGE (warbringer)
-            if (IsSpellReady(CHARGE_1, diff, false) && !HasRole(BOT_ROLE_RANGED) && Rand() < 70 &&
-                !HasBotCommandState(BOT_COMMAND_STAY) &&
-                !(IsTank() && mytar->IsCreature() && mytar->ToCreature()->isWorldBoss()) &&
-                dist > 8 && dist < CalcSpellMaxRange(CHARGE_1) &&
-                ((IsTank() && me->GetLevel() >= 50) ||
-                (!me->IsInCombat() && (_inStance(1) || (stancetimer <= diff && stanceChange(diff, 1))))))
-            {
-                if (doCast(mytar, GetSpell(CHARGE_1)))
-                    return;
-            }
-            //INTERCEPT (warbringer)
-            if (IsSpellReady(INTERCEPT_1, diff, false) && !HasRole(BOT_ROLE_RANGED) && HasRole(BOT_ROLE_DPS) &&
-                !HasBotCommandState(BOT_COMMAND_STAY) &&
-                !(IsTank() && mytar->IsCreature() && mytar->ToCreature()->isWorldBoss()) &&
-                !me->HasUnitState(UNIT_STATE_CHARGING) &&
-                //!(me->GetMotionMaster()->GetCurrentMovementGenerator() && me->GetMotionMaster()->GetCurrentMovementGenerator()->BaseUnitState == UNIT_STATE_CHARGING) && //not charging
-                (me->IsInCombat() || !IsSpellReady(CHARGE_1, diff, false)) &&
-                Rand() < 60 && dist > 10 && dist < 25 && !CCed(mytar) && rage >= rcost(INTERCEPT_1) &&
-                ((IsTank() && me->GetLevel() >= 50) ||
-                (!IsTank() && (_inStance(3) || (stancetimer <= diff && stanceChange(diff, 3))))))
-            {
-                if (doCast(mytar, GetSpell(INTERCEPT_1)))
-                    return;
-            }
-            //CHALLENGING SHOUT
+
             if (IsSpellReady(CHALLENGING_SHOUT_1, diff) && Rand() < 40 &&
                 !(u == me && me->GetLevel() >= 40 && mytar->IsCreature() &&
-                (mytar->ToCreature()->IsDungeonBoss() || mytar->ToCreature()->isWorldBoss())) &&
+                    (mytar->ToCreature()->IsDungeonBoss() || mytar->ToCreature()->isWorldBoss())) &&
                 rage >= rcost(CHALLENGING_SHOUT_1))
             {
                 if (IsTank())
@@ -582,156 +576,72 @@ public:
                                 break;
                     }
                     if (count > 1 && doCast(me, GetSpell(CHALLENGING_SHOUT_1)))
-                        return;
+                        return true;
                 }
+
                 if (u && u != me && !IsSpellReady(TAUNT_1, diff, false) && !IsTank(u) && !CCed(mytar) && dist < 9 &&
                     (!BotDataMgr::IsTankingClass(u->GetClass()) || IsTank()) && IsInBotParty(u))
-                {
                     if (doCast(me, GetSpell(CHALLENGING_SHOUT_1)))
-                        return;
-                }
+                        return true;
             }
 
-            bool can_do_normal = CanAffectVictimAny(mytar, SPELL_SCHOOL_NORMAL);
-
-            //BERSERKER RAGE (for rage)
-            if (IsSpellReady(BERSERKER_RAGE_1, diff) && Rand() < 15 && rage < 80/* && me->GetLevel() >= 35*/)
-            {
-                if (doCast(me, GetSpell(BERSERKER_RAGE_1)))
-                    return;
-            }
-            //MOCKING BLOW
-            if (IsSpellReady(MOCKING_BLOW_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) && Rand() < 70 && u && u != me &&
+            if (IsSpellReady(MOCKING_BLOW_1, diff) && HasRole(BOT_ROLE_DPS) && Rand() < 70 && u && u != me &&
                 !IsTank(u) && dist < 5 && rage >= rcost(MOCKING_BLOW_1) &&
                 !CCed(mytar) && (!BotDataMgr::IsTankingClass(u->GetClass()) || IsTank()) && IsInBotParty(u) &&
                 (_inStance(4) || (stancetimer <= diff && stanceChange(diff, 4))))
             {
                 if (doCast(mytar, GetSpell(MOCKING_BLOW_1)))
-                    return;
-            }
-            //SHIELD SLAM
-            if (IsSpellReady(SHIELD_SLAM_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) && CanBlock() &&
-                (_inStance(4) || stancetimer <= diff) && dist <= 5 && rage >= rcost(SHIELD_SLAM_1) &&
-                Rand() < (75 + 200*(me->GetAuraEffect(SPELL_AURA_ADD_PCT_MODIFIER, SPELLFAMILY_WARRIOR, 2780, 0) != nullptr)
-                /*me->HasAura(SWORD_AND_BOARD_BUFF)*/))
-            {
-                //check Shield Block
-                if (IsSpellReady(SHIELD_BLOCK_1, diff, false) && (_inStance(2) || (IsTank() && stanceChange(diff, 2))))
-                {
-                    if (doCast(me, GetSpell(SHIELD_BLOCK_1)))
-                    {}
-                }
-                if (_inStance(4) || stanceChange(diff, 4))
-                {
-                    if (doCast(mytar, GetSpell(SHIELD_SLAM_1)))
-                        return;
-                }
-            }
-            //SHIELD BLOCK
-            if (IsSpellReady(SHIELD_BLOCK_1, diff, false) && CanBlock() && Rand() < 70 &&
-                (_inStance(2) || stancetimer <= diff) &&
-                ((u == me && dist < 8) || (!b_attackers.empty() && me->GetDistance2d(*(b_attackers.begin())) < 8)) &&
-                GetHealthPCT(me) < (65 + 8 * uint8(b_attackers.size())))
-            {
-                if ((_inStance(2) || stanceChange(diff, 2)) &&
-                    doCast(me, GetSpell(SHIELD_BLOCK_1)))
-                    return;
-            }
-            //SHOCKWAVE - frontal cone
-            if (IsSpellReady(SHOCKWAVE_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) && dist < 8.f && !CCed(mytar) &&
-                rage >= rcost(SHOCKWAVE_1) && Rand() < (70 + 70 * mytar->IsNonMeleeSpellCast(false)) &&
-                me->HasInArc(float(M_PI)/2, mytar) && mytar->IsWithinLOSInMap(me, VMAP::ModelIgnoreFlags::M2, LINEOFSIGHT_ALL_CHECKS))
-            {
-                if (doCast(me, GetSpell(SHOCKWAVE_1)))
-                    return;
-            }
-            //HEROIC THROW
-            if (IsSpellReady(HEROIC_THROW_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) && dist < 30 &&
-                (mytar->IsCreature() || dist > 6) &&
-                Rand() < (20 - 15 * CanBlock() + 90 * mytar->IsNonMeleeSpellCast(false,false,true)))
-            {
-                if (doCast(mytar, GetSpell(HEROIC_THROW_1)))
-                    return;
-            }
-            //THUNDER CLAP
-            if (IsSpellReady(THUNDER_CLAP_1, diff) && HasRole(BOT_ROLE_DPS) && !isFury && Rand() < 40 &&
-                (_inStance(4) || stancetimer <= diff) && dist < 7.5f && rage >= rcost(THUNDER_CLAP_1) &&
-                ((IsTank() && b_attackers.size() > 1) ||
-                (mytar->GetHealth() > me->GetMaxHealth() / 2 &&
-                !mytar->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_MELEE_HASTE, SPELLFAMILY_WARRIOR, 0x80)) ||
-                FindSplashTarget(7.5f, mytar, 15.f)))
-            {
-                if (_inStance(4) || (me->GetLevel() >= 20 && stanceChange(diff, 4)))
-                {
-                    if (doCast(me, GetSpell(THUNDER_CLAP_1)))
-                        return;
-                }
-            }
-            //REVENGE
-            if (IsSpellReady(REVENGE_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) && IsTank() && me->HasReactive(REACTIVE_DEFENSE) &&
-                Rand() < 150 && (_inStance(2) || stancetimer <= diff) && dist < 5 && rage >= rcost(REVENGE_1))
-            {
-                if (_inStance(2) || stanceChange(diff, 2))
-                {
-                    if (doCast(mytar, GetSpell(REVENGE_1)))
-                        return;
-                }
-            }
-            //CONCUSSION BLOW
-            if (IsSpellReady(CONCUSSION_BLOW_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) && !CCed(mytar) &&
-                dist < 5 && rage >= rcost(CONCUSSION_BLOW_1) &&
-                mytar->GetDiminishing(DIMINISHING_STUN) <= DIMINISHING_LEVEL_2 &&
-                Rand() < (30 + 60 * mytar->IsNonMeleeSpellCast(false,false,true)))
-            {
-                if (doCast(mytar, GetSpell(CONCUSSION_BLOW_1)))
-                    return;
+                    return true;
             }
 
-            MoveBehind(mytar);
+            return false;
+        }
 
-            //SHIELD BASH - shared cd with pummel
-            if (IsSpellReady(SHIELD_BASH_1, diff, false) && can_do_normal && CanBlock() && Rand() < 80 &&
+        bool TryWarriorInterruptsAndControl(Unit* mytar, uint32 diff, float dist, bool can_do_normal)
+        {
+            if (!mytar || !can_do_normal)
+                return false;
+
+            if (IsSpellReady(SHIELD_BASH_1, diff, false) && CanBlock() && Rand() < 80 &&
                 (_inStance(4) || stancetimer <= diff) &&
-                dist < 5 && rage >= rcost(SHIELD_BASH_1) && mytar->IsNonMeleeSpellCast(false,false,true))
+                dist < 5 && rage >= rcost(SHIELD_BASH_1) && mytar->IsNonMeleeSpellCast(false, false, true))
             {
                 if ((_inStance(4) || stanceChange(diff, 4)) &&
                     doCast(mytar, GetSpell(SHIELD_BASH_1)))
-                    return;
+                    return true;
             }
-            //PUMMEL - shared cd with shield bash
-            if (IsSpellReady(PUMMEL_1, diff, false) && can_do_normal && !IsTank() && !CanBlock() && Rand() < 80 &&
+
+            if (IsSpellReady(PUMMEL_1, diff, false) && !IsTank() && !CanBlock() && Rand() < 80 &&
                 dist < 5 && (_inStance(3) || stancetimer <= diff) &&
-                rage >= rcost(PUMMEL_1) && mytar->IsNonMeleeSpellCast(false,false,true))
+                rage >= rcost(PUMMEL_1) && mytar->IsNonMeleeSpellCast(false, false, true))
             {
                 if ((_inStance(3) || stanceChange(diff, 3)) &&
                     doCast(mytar, GetSpell(PUMMEL_1)))
-                    return;
+                    return true;
             }
-            //HAMSTRING
-            if (IsSpellReady(HAMSTRING_1, diff) && can_do_normal && Rand() < 70 && (_inStance(5) || stancetimer <= diff) &&
+
+            if (IsSpellReady(HAMSTRING_1, diff) && Rand() < 70 && (_inStance(5) || stancetimer <= diff) &&
                 (!GetSpell(PIERCING_HOWL_1) || mytar->IsPlayer()) &&
                 (mytar->isMoving() || mytar->IsPlayer()) && dist < 5 && rage >= rcost(HAMSTRING_1) &&
-                !mytar->HasAuraWithMechanic(1u<<MECHANIC_SNARE))
+                !mytar->HasAuraWithMechanic(1u << MECHANIC_SNARE))
             {
                 if (_inStance(5) || (me->GetLevel() >= 15 && stanceChange(diff, 5)))
                     if (doCast(mytar, GetSpell(HAMSTRING_1)))
-                        return;
+                        return true;
             }
-            //PIERCING HOWL
-            if (IsSpellReady(PIERCING_HOWL_1, diff) && can_do_normal && mytar->isMoving() && Rand() < 80 &&
-                dist < 9 && rage >= rcost(PIERCING_HOWL_1) && !mytar->HasAuraWithMechanic(1u<<MECHANIC_SNARE))
+
+            if (IsSpellReady(PIERCING_HOWL_1, diff) && mytar->isMoving() && Rand() < 80 &&
+                dist < 9 && rage >= rcost(PIERCING_HOWL_1) && !mytar->HasAuraWithMechanic(1u << MECHANIC_SNARE))
             {
                 if (doCast(me, GetSpell(PIERCING_HOWL_1)))
-                    return;
+                    return true;
             }
-            //DISARM
-            if (IsSpellReady(DISARM_1, diff) && can_do_normal && dist < 5 && (_inStance(2) || stancetimer <= diff) &&
-                Rand() < (35 + 55*mytar->HasAuraType(SPELL_AURA_ALLOW_ONLY_ABILITY)) &&
+
+            if (IsSpellReady(DISARM_1, diff) && dist < 5 && (_inStance(2) || stancetimer <= diff) &&
+                Rand() < (35 + 55 * mytar->HasAuraType(SPELL_AURA_ALLOW_ONLY_ABILITY)) &&
                 !mytar->HasAuraType(SPELL_AURA_MOD_DISARM) &&
-                mytar->GetHealth() > me->GetMaxHealth() / 8 * (1 + mytar->getAttackers().size()) &&
-                rage >= rcost(DISARM_1))
+                _isDurableWarriorTarget(mytar) && rage >= rcost(DISARM_1))
             {
-                //check weapons
                 bool hasWeapon = true;
                 if (mytar->IsCreature() && !mytar->GetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID))
                     hasWeapon = false;
@@ -741,195 +651,428 @@ public:
 
                 if (hasWeapon && (_inStance(2) || stanceChange(diff, 2)) &&
                     doCast(mytar, GetSpell(DISARM_1)))
-                    return;
+                    return true;
             }
-            //DEMORALIZING SHOUT
-            if (IsSpellReady(DEMORALIZING_SHOUT_1, diff) && can_do_normal && Rand() < 15 + 25 * IsTank() && dist < 10 &&
+
+            if (IsSpellReady(INTIMIDATING_SHOUT_1, diff) && Rand() < 45 && rage >= rcost(INTIMIDATING_SHOUT_1) &&
+                mytar->IsNonMeleeSpellCast(false, false, true) && dist < 5 &&
+                mytar->GetCreatureType() != CREATURE_TYPE_UNDEAD)
+            {
+                if (doCast(mytar, GetSpell(INTIMIDATING_SHOUT_1)))
+                    return true;
+            }
+
+            return false;
+        }
+
+        bool TryWarriorDebuffs(Unit* mytar, uint32 diff, float dist, bool can_do_normal)
+        {
+            if (!mytar || !can_do_normal)
+                return false;
+
+            if (IsSpellReady(DEMORALIZING_SHOUT_1, diff) && Rand() < 15 + 25 * IsTank() && dist < 10 &&
                 (mytar->GetClass() == CLASS_WARRIOR || mytar->GetClass() == CLASS_ROGUE ||
-                (mytar->IsCreature() && mytar->ToCreature()->GetCreatureTemplate()->rank != CREATURE_ELITE_NORMAL)) &&
-                mytar->GetHealth() > me->GetMaxHealth() / 8 * (1 + mytar->getAttackers().size()) &&
-                rage >= rcost(DEMORALIZING_SHOUT_1) &&
+                    (mytar->IsCreature() && mytar->ToCreature()->GetCreatureTemplate()->rank != CREATURE_ELITE_NORMAL)) &&
+                _isDurableWarriorTarget(mytar) && rage >= rcost(DEMORALIZING_SHOUT_1) &&
                 !mytar->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_ATTACK_POWER, SPELLFAMILY_WARRIOR, 0x20000))
             {
                 if (doCast(me, GetSpell(DEMORALIZING_SHOUT_1)))
-                    return;
+                    return true;
             }
 
-            //UBERS
-            //Shield Wall
-            if (IsSpellReady(SHIELD_WALL_1, diff, false) && CanBlock() &&
-                GetHealthPCT(me) < (30 + 4 * b_attackers.size() + 20ull * (mytar->IsCreature() && mytar->ToCreature()->isWorldBoss())) &&
-                (_inStance(2) || stanceChange(diff, 2)))
-            {
-                if (doCast(me, GetSpell(SHIELD_WALL_1)))
-                    return;
-            }
-            //Retaliation
-            if (IsSpellReady(RETALIATION_1, diff) && HasRole(BOT_ROLE_DPS) && !CanBlock() && Rand() < 40 &&
-                !me->HasAuraType(SPELL_AURA_MOD_DISARM) && b_attackers.size() > 4 &&
-                (_inStance(1) || stanceChange(diff, 1)))
-            {
-                if (doCast(me, GetSpell(RETALIATION_1)))
-                    return;
-            }
-            //Recklessness
-            if (IsSpellReady(RECKLESSNESS_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) && !CanBlock() && !IsTank() && Rand() < 60 &&
-                GetHealthPCT(me) > 50 && (_inStance(3) || stancetimer <= diff) && b_attackers.size() < 2 &&
-                (mytar->GetHealth() > me->GetHealth()/2 * (1 + mytar->getAttackers().size()) || mytar->IsControlledByPlayer()) &&
-                !me->GetAuraEffect(SPELL_AURA_MECHANIC_IMMUNITY, SPELLFAMILY_WARRIOR, 0x0, 0x20000, 0x0)
-                /*!me->HasAura(ENRAGED_REGENERATION_1)*/ &&
-                (_inStance(3) || stanceChange(diff, 3)))
-            {
-                if (doCast(me, GetSpell(RECKLESSNESS_1)))
-                    return;
-            }
-            //DEATHWISH
-            if (IsSpellReady(DEATH_WISH_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) && !IsTank() && Rand() < 70 &&
-                dist < 15 && rage >= rcost(DEATH_WISH_1) &&
-                mytar->GetHealth() > me->GetHealth()/4 * (1 + mytar->getAttackers().size()) &&
-                !me->GetAuraEffect(SPELL_AURA_MECHANIC_IMMUNITY, SPELLFAMILY_WARRIOR, 0x0, 0x20000, 0x0)
-                /*!me->HasAura(ENRAGED_REGENERATION_1)*/)
-            {
-                if (doCast(me, GetSpell(DEATH_WISH_1)))
-                    return;
-            }
-
-            //VICTORY RUSH
-            if (IsSpellReady(VICTORY_RUSH_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) && Rand() < 70 && dist < 5 && _inStance(5) &&
-                me->GetAuraEffect(SPELL_AURA_DUMMY, SPELLFAMILY_WARRIOR, 0x0, 0x40000, 0x0))
-            {
-                if (doCast(mytar, GetSpell(VICTORY_RUSH_1)))
-                    return;
-            }
-            //DEVASTATE - only with shield
-            if (IsSpellReady(DEVASTATE_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) && CanBlock() && Rand() < 100 &&
-                dist < 5 && rage >= rcost(DEVASTATE_1))
-            {
-                if (doCast(mytar, GetSpell(DEVASTATE_1)))
-                    return;
-            }
-            //SUNDER ARMOR
-            if (IsSpellReady(SUNDER_ARMOR_1, diff) && !IAmFree() && can_do_normal && dist < 5 && Rand() < 45 &&
-                (IsTank() ? (mytar->GetHealth() > me->GetMaxHealth()) : (Rand() < 25 && mytar->GetHealth() > me->GetMaxHealth() * 2)) &&
+            if (IsSpellReady(SUNDER_ARMOR_1, diff) && !IAmFree() && dist < 5 && Rand() < (IsTank() ? 85 : 25) &&
+                (IsTank() ? (mytar->GetHealth() > me->GetMaxHealth()) : (mytar->GetHealth() > me->GetMaxHealth() * 2)) &&
                 (!HasRole(BOT_ROLE_DPS) || !CanBlock() || !GetSpell(DEVASTATE_1)) &&
                 (IsTank() || master->GetBotMgr()->HasBotWithSpec(BOT_SPEC_WARRIOR_PROTECTION, false)) && rage >= rcost(SUNDER_ARMOR_1))
             {
                 AuraEffect const* sunder = mytar->GetAuraEffect(SUNDER_ARMOR_DEBUFF, 0);
                 if ((!sunder || sunder->GetBase()->GetStackAmount() < 5 || sunder->GetBase()->GetDuration() < 20000) &&
                     doCast(mytar, GetSpell(SUNDER_ARMOR_1)))
-                    return;
+                    return true;
             }
-            //SWEEPING STRIKES //no GCD
-            if (IsSpellReady(SWEEPING_STRIKES_1, diff, false) && HasRole(BOT_ROLE_DPS) && !IsTank() && Rand() < 65 &&
-                (_inStance(5) || stancetimer <= diff) && rage >= rcost(SWEEPING_STRIKES_1) &&
-                (b_attackers.size() > 1 || FindSplashTarget(7, mytar)))
+
+            return false;
+        }
+
+        bool TryWarriorMajorCooldowns(Unit* mytar, uint32 diff, float dist, bool can_do_normal, Unit::AttackerSet const& b_attackers)
+        {
+            if (!mytar || !can_do_normal)
+                return false;
+
+            if (IsSpellReady(RETALIATION_1, diff) && HasRole(BOT_ROLE_DPS) && !CanBlock() && Rand() < 40 &&
+                !me->HasAuraType(SPELL_AURA_MOD_DISARM) && b_attackers.size() > 4 &&
+                (_inStance(1) || stanceChange(diff, 1)))
+            {
+                if (doCast(me, GetSpell(RETALIATION_1)))
+                    return true;
+            }
+
+            if (IsSpellReady(RECKLESSNESS_1, diff) && HasRole(BOT_ROLE_DPS) && !CanBlock() && !IsTank() && Rand() < 60 &&
+                GetHealthPCT(me) > 50 && (_inStance(3) || stancetimer <= diff) && b_attackers.size() < 2 &&
+                (_isDurableWarriorTarget(mytar) || mytar->IsControlledByPlayer()) &&
+                !me->GetAuraEffect(SPELL_AURA_MECHANIC_IMMUNITY, SPELLFAMILY_WARRIOR, 0x0, 0x20000, 0x0) &&
+                (_inStance(3) || stanceChange(diff, 3)))
+            {
+                if (doCast(me, GetSpell(RECKLESSNESS_1)))
+                    return true;
+            }
+
+            if (IsSpellReady(DEATH_WISH_1, diff) && HasRole(BOT_ROLE_DPS) && !IsTank() && Rand() < 75 &&
+                dist < 15 && rage >= rcost(DEATH_WISH_1) && _isDurableWarriorTarget(mytar) &&
+                !me->GetAuraEffect(SPELL_AURA_MECHANIC_IMMUNITY, SPELLFAMILY_WARRIOR, 0x0, 0x20000, 0x0))
+            {
+                if (doCast(me, GetSpell(DEATH_WISH_1)))
+                    return true;
+            }
+
+            return false;
+        }
+
+        bool TryWarriorRend(Unit* mytar, uint32 diff, float dist, bool can_do_normal)
+        {
+            if (!mytar || !can_do_normal)
+                return false;
+
+            if (IsSpellReady(REND_1, diff) && HasRole(BOT_ROLE_DPS) && Rand() < 95 &&
+                _isDurableWarriorTarget(mytar) && _canBleedWarriorTarget(mytar) &&
+                dist < 5 && rage >= rcost(REND_1) && !_hasMyRend(mytar) &&
+                (_inStance(4) || (me->GetLevel() >= 15 && stanceChange(diff, 4))))
+            {
+                if (doCast(mytar, GetSpell(REND_1)))
+                    return true;
+            }
+
+            return false;
+        }
+
+        bool TryWarriorAoE(Unit* mytar, uint32 diff, float dist, bool can_do_normal)
+        {
+            if (!mytar || !can_do_normal || !HasRole(BOT_ROLE_DPS))
+                return false;
+
+            bool const hasSplash = FindSplashTarget(7.f, mytar, 15.f) != nullptr;
+            bool const multipleAttackers = me->getAttackers().size() > 1 || mytar->getAttackers().size() > 1;
+
+            if (IsSpellReady(SWEEPING_STRIKES_1, diff, false) && !IsTank() && GetSpec() == BOT_SPEC_WARRIOR_ARMS &&
+                (_inStance(5) || stancetimer <= diff) && rage >= rcost(SWEEPING_STRIKES_1) && (hasSplash || multipleAttackers))
             {
                 if ((_inStance(5) || stanceChange(diff, 5)) &&
                     doCast(me, GetSpell(SWEEPING_STRIKES_1)))
                     getrage();
             }
-            //REND
-            if (IsSpellReady(REND_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) && Rand() < 80 &&
-                mytar->GetHealth() > me->GetMaxHealth() / 4 * (1 + mytar->getAttackers().size()) &&
-                (isArms || mytar->GetClass() == CLASS_ROGUE || mytar->GetShapeshiftForm() == FORM_CAT) &&
-                dist < 5 && rage >= rcost(REND_1) && mytar->GetCreatureType() != CREATURE_TYPE_MECHANICAL &&
-                !(mytar->IsCreature() &&
-                (mytar->ToCreature()->HasMechanicTemplateImmunity(1u<<(MECHANIC_BLEED-1)))) &&
-                !mytar->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_WARRIOR, 0x20, 0x0, 0x0, me->GetGUID()) &&
-                (_inStance(4) || (me->GetLevel() >= 15 && stanceChange(diff, 4))))
-            {
-                if (doCast(mytar, GetSpell(REND_1)))
-                    return;
-            }
-            //BLOODTHIRST
-            if (IsSpellReady(BLOODTHIRST_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) &&
-                dist < 5 && rage >= rcost(BLOODTHIRST_1))
-            {
-                if (doCast(mytar, GetSpell(BLOODTHIRST_1)))
-                    return;
-            }
-            //MORTAL STRIKE
-            if (IsSpellReady(MORTAL_STRIKE_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) && !CanBlock() &&
-                dist < 5 && rage >= rcost(MORTAL_STRIKE_1))
-            {
-                if (doCast(mytar, GetSpell(MORTAL_STRIKE_1)))
-                    return;
-            }
-            //OVERPOWER
-            if (IsSpellReady(OVERPOWER_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) && !IsTank() && (!isFury || rage < 250) &&
-                (_inStance(1) || stancetimer <= diff) && dist < 5 && rage >= rcost(OVERPOWER_1) &&
-                (me->HasReactive(REACTIVE_OVERPOWER) ||
-                me->GetAuraEffect(SPELL_AURA_ABILITY_IGNORE_AURASTATE, SPELLFAMILY_WARRIOR, 2961, 0)
-                /*me->HasAura(TASTE_FOR_BLOOD_BUFF)*/))
-            {
-                if (_inStance(1) || (me->GetLevel() >= 15 && stanceChange(diff, 1)))
-                {
-                    if (doCast(mytar, GetSpell(OVERPOWER_1)))
-                        return;
-                }
-            }
-            //BLADESTORM
-            if (IsSpellReady(BLADESTORM_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) && !IsTank() && !CanBlock() &&
-               dist < 10 && rage >= rcost(BLADESTORM_1) &&
-               (b_attackers.size() > 1 || mytar->GetHealth() > me->GetHealth() / 3 * (1 + mytar->getAttackers().size()) ||
-               mytar->IsControlledByPlayer()) &&
-               (Rand() < 50 || me->HasAuraTypeWithFamilyFlags(SPELL_AURA_ADD_FLAT_MODIFIER, SPELLFAMILY_WARRIOR, 0x10)
-               /*me->HasAura(RECKLESSNESS_1)*/) &&
-               (me->GetMap()->IsDungeon() || mytar->GetMaxHealth() > me->GetMaxHealth() * 8 || CCed(mytar, true) || mytar->HasAuraWithMechanic(1u<<MECHANIC_SNARE)))
+
+            if (IsSpellReady(BLADESTORM_1, diff) && !IsTank() && !CanBlock() && GetSpec() == BOT_SPEC_WARRIOR_ARMS &&
+                dist < 10 && rage >= rcost(BLADESTORM_1) && (_isDurableWarriorTarget(mytar) || hasSplash || mytar->IsControlledByPlayer()) &&
+                (me->GetMap()->IsDungeon() || mytar->GetMaxHealth() > me->GetMaxHealth() * 8 || CCed(mytar, true) || mytar->HasAuraWithMechanic(1u << MECHANIC_SNARE)))
             {
                 if (doCast(me, GetSpell(BLADESTORM_1)))
-                    return;
+                    return true;
             }
-            //WHIRLWIND
-            if (IsSpellReady(WHIRLWIND_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) && !IsTank() && !CanBlock() && Rand() < 80 &&
-                (isFury || mytar->IsControlledByPlayer() || me->GetLevel() < 60 || !me->GetMap()->IsDungeon()) &&
+
+            if (IsSpellReady(WHIRLWIND_1, diff) && !IsTank() && !CanBlock() &&
+                (GetSpec() == BOT_SPEC_WARRIOR_FURY || hasSplash || rage >= 550) &&
                 (_inStance(3) || stancetimer <= diff) && dist < 6.f &&
-                rage >= rcost(WHIRLWIND_1) && (isFury || rage >= 500 || FindSplashTarget(7.f, mytar, 15.f)))
+                rage >= rcost(WHIRLWIND_1))
             {
                 if ((_inStance(3) || stanceChange(diff, 3)) &&
                     doCast(me, GetSpell(WHIRLWIND_1)))
-                    return;
+                    return true;
             }
-            //EXECUTE
-            if (IsSpellReady(EXECUTE_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) && !IsTank() && Rand() < 110 &&
-                (isFury || !me->GetMap()->IsRaid()) &&
-                (mytar->HasAuraState(AURA_STATE_HEALTHLESS_20_PERCENT) ||
-                me->GetAuraEffect(SPELL_AURA_ABILITY_IGNORE_AURASTATE, SPELLFAMILY_WARRIOR, 0x0, 0x2000000, 0x0)) &&
-                dist < 5 && rage >= rcost(EXECUTE_1) &&
+
+            if (IsSpellReady(THUNDER_CLAP_1, diff) && GetSpec() != BOT_SPEC_WARRIOR_FURY &&
+                (_inStance(4) || stancetimer <= diff) && dist < 7.5f && rage >= rcost(THUNDER_CLAP_1) &&
+                ((IsTank() && multipleAttackers) ||
+                    (_isDurableWarriorTarget(mytar) &&
+                        !mytar->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_MELEE_HASTE, SPELLFAMILY_WARRIOR, 0x80)) ||
+                    hasSplash))
+            {
+                if (_inStance(4) || (me->GetLevel() >= 20 && stanceChange(diff, 4)))
+                    if (doCast(me, GetSpell(THUNDER_CLAP_1)))
+                        return true;
+            }
+
+            if (IsSpellReady(SHOCKWAVE_1, diff) && dist < 8.f && !CCed(mytar) &&
+                rage >= rcost(SHOCKWAVE_1) && Rand() < (70 + 70 * mytar->IsNonMeleeSpellCast(false)) &&
+                me->HasInArc(float(M_PI) / 2, mytar) && mytar->IsWithinLOSInMap(me, VMAP::ModelIgnoreFlags::M2, LINEOFSIGHT_ALL_CHECKS))
+            {
+                if (doCast(me, GetSpell(SHOCKWAVE_1)))
+                    return true;
+            }
+
+            return false;
+        }
+
+        bool TryWarriorVictoryRush(Unit* mytar, uint32 diff, float dist, bool can_do_normal)
+        {
+            if (IsSpellReady(VICTORY_RUSH_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) && dist < 5 && _inStance(5) &&
+                me->GetAuraEffect(SPELL_AURA_DUMMY, SPELLFAMILY_WARRIOR, 0x0, 0x40000, 0x0))
+            {
+                if (doCast(mytar, GetSpell(VICTORY_RUSH_1)))
+                    return true;
+            }
+
+            return false;
+        }
+
+        bool DoArmsActions(Unit* mytar, uint32 diff, float dist, bool can_do_normal)
+        {
+            if (!mytar || !can_do_normal || !HasRole(BOT_ROLE_DPS))
+                return false;
+
+            bool const execute = _isExecuteTarget(mytar) || _hasSuddenDeath();
+            bool const durable = _isDurableWarriorTarget(mytar);
+
+            // Arms only works if Taste for Blood has Rend to chew on.
+            if (durable && !_hasMyRend(mytar))
+                if (TryWarriorRend(mytar, diff, dist, can_do_normal))
+                    return true;
+
+            // Taste for Blood is the Arms heartbeat. Do not bury it behind generic attacks.
+            if (IsSpellReady(OVERPOWER_1, diff) && !IsTank() && dist < 5 && rage >= rcost(OVERPOWER_1) &&
+                (me->HasReactive(REACTIVE_OVERPOWER) || _hasTasteForBlood()) &&
+                (_inStance(1) || (me->GetLevel() >= 15 && stanceChange(diff, 1))))
+            {
+                if (doCast(mytar, GetSpell(OVERPOWER_1)))
+                    return true;
+            }
+
+            if (execute && IsSpellReady(EXECUTE_1, diff) && !IsTank() && dist < 5 && rage >= rcost(EXECUTE_1) &&
                 (_inStance(5) || (stancetimer <= diff && stanceChange(diff, 5))))
             {
                 if (doCast(mytar, GetSpell(EXECUTE_1)))
-                    return;
+                    return true;
             }
-            //SLAM only with improved, has SPELL_ATTR2_DO_NOT_RESET_COMBAT_TIMERS
-            if (IsSpellReady(SLAM_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) && !IsTank() && !CanBlock() &&
-                me->GetLevel() >= 40 && dist < 5 && rage >= rcost(SLAM_1) &&
-                ((isArms && !mytar->isMoving() && me->getAttackTimer(BASE_ATTACK) > 500) ||
-                me->GetAuraEffect(SPELL_AURA_ADD_PCT_MODIFIER, SPELLFAMILY_WARRIOR, 0x0, 0x1000000, 0x0))
-                /*me->HasAura(BLOODSURGE_BUFF)*/)
+
+            if (IsSpellReady(MORTAL_STRIKE_1, diff) && !CanBlock() && dist < 5 && rage >= rcost(MORTAL_STRIKE_1))
+            {
+                if (doCast(mytar, GetSpell(MORTAL_STRIKE_1)))
+                    return true;
+            }
+
+            if (TryWarriorAoE(mytar, diff, dist, can_do_normal))
+                return true;
+
+            if (IsSpellReady(SLAM_1, diff) && !IsTank() && !CanBlock() && me->GetLevel() >= 40 &&
+                dist < 5 && rage >= rcost(SLAM_1) &&
+                ((!mytar->isMoving() && me->getAttackTimer(BASE_ATTACK) > 500) || _hasBloodsurge()))
             {
                 if (doCast(mytar, GetSpell(SLAM_1)))
-                    return;
+                    return true;
             }
 
-            //skip if already have cleave of heroic strike casted
-            if (me->GetCurrentSpell(CURRENT_MELEE_SPELL))
-                return;
+            return false;
+        }
 
-            //CLEAVE //no GCD
-            if (IsSpellReady(CLEAVE_1, diff, false) && can_do_normal && HasRole(BOT_ROLE_DPS) && Rand() < 70 &&
-                dist < 5 && (!IsTank() || rage >= 500) && rage >= rcost(CLEAVE_1) && FindSplashTarget())
+        bool DoFuryActions(Unit* mytar, uint32 diff, float dist, bool can_do_normal)
+        {
+            if (!mytar || !can_do_normal || !HasRole(BOT_ROLE_DPS))
+                return false;
+
+            if (IsSpellReady(BLOODTHIRST_1, diff) && dist < 5 && rage >= rcost(BLOODTHIRST_1))
+            {
+                if (doCast(mytar, GetSpell(BLOODTHIRST_1)))
+                    return true;
+            }
+
+            if (TryWarriorAoE(mytar, diff, dist, can_do_normal))
+                return true;
+
+            if (IsSpellReady(SLAM_1, diff) && !IsTank() && !CanBlock() && _hasBloodsurge() &&
+                dist < 5 && rage >= rcost(SLAM_1))
+            {
+                if (doCast(mytar, GetSpell(SLAM_1)))
+                    return true;
+            }
+
+            if (IsSpellReady(EXECUTE_1, diff) && !IsTank() && dist < 5 && rage >= rcost(EXECUTE_1) &&
+                _isExecuteTarget(mytar) && (_inStance(5) || (stancetimer <= diff && stanceChange(diff, 5))))
+            {
+                if (doCast(mytar, GetSpell(EXECUTE_1)))
+                    return true;
+            }
+
+            return false;
+        }
+
+        bool DoProtectionActions(Unit* mytar, uint32 diff, float dist, bool can_do_normal)
+        {
+            if (!mytar || !can_do_normal)
+                return false;
+
+            if (IsSpellReady(SHIELD_BLOCK_1, diff, false) && CanBlock() &&
+                (_inStance(2) || stancetimer <= diff) &&
+                (GetHealthPCT(me) < 85 || _hasSwordAndBoard() || me->getAttackers().size() > 1) &&
+                (_inStance(2) || stanceChange(diff, 2)))
+            {
+                if (doCast(me, GetSpell(SHIELD_BLOCK_1)))
+                    return true;
+            }
+
+            if (IsSpellReady(SHIELD_SLAM_1, diff) && CanBlock() && dist <= 5 && rage >= rcost(SHIELD_SLAM_1) &&
+                (_inStance(4) || stancetimer <= diff))
+            {
+                if (_inStance(4) || stanceChange(diff, 4))
+                    if (doCast(mytar, GetSpell(SHIELD_SLAM_1)))
+                        return true;
+            }
+
+            if (IsSpellReady(REVENGE_1, diff) && IsTank() && me->HasReactive(REACTIVE_DEFENSE) &&
+                (_inStance(2) || stancetimer <= diff) && dist < 5 && rage >= rcost(REVENGE_1))
+            {
+                if (_inStance(2) || stanceChange(diff, 2))
+                    if (doCast(mytar, GetSpell(REVENGE_1)))
+                        return true;
+            }
+
+            if (TryWarriorAoE(mytar, diff, dist, can_do_normal))
+                return true;
+
+            if (IsSpellReady(DEVASTATE_1, diff) && CanBlock() && dist < 5 && rage >= rcost(DEVASTATE_1))
+            {
+                if (doCast(mytar, GetSpell(DEVASTATE_1)))
+                    return true;
+            }
+
+            if (TryWarriorDebuffs(mytar, diff, dist, can_do_normal))
+                return true;
+
+            return false;
+        }
+
+        bool DoDefaultWarriorActions(Unit* mytar, uint32 diff, float dist, bool can_do_normal)
+        {
+            if (!mytar || !can_do_normal || !HasRole(BOT_ROLE_DPS))
+                return false;
+
+            if (TryWarriorRend(mytar, diff, dist, can_do_normal))
+                return true;
+
+            if (IsSpellReady(MORTAL_STRIKE_1, diff) && !CanBlock() && dist < 5 && rage >= rcost(MORTAL_STRIKE_1))
+                if (doCast(mytar, GetSpell(MORTAL_STRIKE_1)))
+                    return true;
+
+            if (IsSpellReady(BLOODTHIRST_1, diff) && dist < 5 && rage >= rcost(BLOODTHIRST_1))
+                if (doCast(mytar, GetSpell(BLOODTHIRST_1)))
+                    return true;
+
+            if (TryWarriorAoE(mytar, diff, dist, can_do_normal))
+                return true;
+
+            return false;
+        }
+
+        bool QueueWarriorNextMelee(Unit* mytar, uint32 diff, float dist, bool can_do_normal)
+        {
+            if (!mytar || !can_do_normal || !HasRole(BOT_ROLE_DPS))
+                return false;
+
+            if (me->GetCurrentSpell(CURRENT_MELEE_SPELL))
+                return false;
+
+            if (IsSpellReady(CLEAVE_1, diff, false) && dist < 5 && (!IsTank() || rage >= 500) &&
+                rage >= rcost(CLEAVE_1) && FindSplashTarget())
             {
                 if (doCast(mytar, GetSpell(CLEAVE_1)))
-                    return;
+                    return true;
             }
-            //HEROIC STRIKE
-            if (IsSpellReady(HEROIC_STRIKE_1, diff, false) && can_do_normal && HasRole(BOT_ROLE_DPS) && Rand() < 55 && rage >= 350 &&
-                dist < 5 && (isFury || IsTank() || rage >= 650) && rage >= rcost(HEROIC_STRIKE_1))
+
+            bool const highRage =
+                rage >= (GetSpec() == BOT_SPEC_WARRIOR_FURY ? 450 : IsTank() ? 500 : 650);
+
+            if (IsSpellReady(HEROIC_STRIKE_1, diff, false) && highRage && dist < 5 &&
+                rage >= rcost(HEROIC_STRIKE_1))
             {
                 if (doCast(mytar, GetSpell(HEROIC_STRIKE_1)))
+                    return true;
+            }
+
+            return false;
+        }
+
+        void Attack(uint32 diff)
+        {
+            Unit* mytar = opponent ? opponent : disttarget ? disttarget : nullptr;
+            if (!mytar)
+                return;
+
+            StartAttack(mytar, IsMelee());
+
+            CheckAttackState();
+            if (!me->IsAlive() || !mytar->IsAlive())
+                return;
+
+            bool const isFury = GetSpec() == BOT_SPEC_WARRIOR_FURY;
+            bool const isArms = GetSpec() == BOT_SPEC_WARRIOR_ARMS;
+            bool const isProt = GetSpec() == BOT_SPEC_WARRIOR_PROTECTION;
+
+            if (stancetimer <= diff && Rand() < 10 + 15 * (me->GetPower(POWER_RAGE) <= 250))
+            {
+                uint8 mystance;
+                if (IsTank())
+                    mystance = 2;
+                else if (isFury && me->GetLevel() >= 30)
+                    mystance = 3;
+                else
+                    mystance = 1;
+
+                stanceChange(diff, mystance);
+            }
+
+            TryWarriorBloodrage(diff);
+            getrage();
+
+            Unit::AttackerSet const& b_attackers = me->getAttackers();
+            float dist = me->GetDistance(mytar);
+            bool can_do_normal = CanAffectVictimAny(mytar, SPELL_SCHOOL_NORMAL);
+
+            if (TryWarriorSelfPreservation(mytar, diff, b_attackers))
+                return;
+
+            if (TryWarriorMobility(mytar, diff, dist))
+                return;
+
+            if (TryWarriorTaunts(mytar, diff, dist))
+                return;
+
+            if (!can_do_normal)
+                return;
+
+            if (IsSpellReady(BERSERKER_RAGE_1, diff) && Rand() < 20 && rage < 120)
+            {
+                if (doCast(me, GetSpell(BERSERKER_RAGE_1)))
                     return;
             }
+
+            if (TryWarriorInterruptsAndControl(mytar, diff, dist, can_do_normal))
+                return;
+
+            if (TryWarriorMajorCooldowns(mytar, diff, dist, can_do_normal, b_attackers))
+                return;
+
+            MoveBehind(mytar);
+
+            if (TryWarriorVictoryRush(mytar, diff, dist, can_do_normal))
+                return;
+
+            if (isProt || IsTank())
+            {
+                if (DoProtectionActions(mytar, diff, dist, can_do_normal))
+                    return;
+            }
+            else if (isArms)
+            {
+                if (DoArmsActions(mytar, diff, dist, can_do_normal))
+                    return;
+            }
+            else if (isFury)
+            {
+                if (DoFuryActions(mytar, diff, dist, can_do_normal))
+                    return;
+            }
+            else if (DoDefaultWarriorActions(mytar, diff, dist, can_do_normal))
+                return;
+
+            QueueWarriorNextMelee(mytar, diff, dist, can_do_normal);
         }
 
         void CheckShouts(uint32 diff)
@@ -951,7 +1094,8 @@ public:
                         if (IsSpellReady(BLOODRAGE_1, diff, false))
                         {
                             if (doCast(me, GetSpell(BLOODRAGE_1)))
-                            {}
+                            {
+                            }
                             else
                                 return;
                         }
@@ -1125,7 +1269,7 @@ public:
                     if (spell->GetTimer() < 500/*(4500 - 4000 * (target->IsPlayer()))*/ &&
                         !spell->GetSpellInfo()->IsChanneled() &&
                         spell->GetSpellInfo()->DmgClass == SPELL_DAMAGE_CLASS_MAGIC &&
-                        !(spell->GetSpellInfo()->Attributes & (SPELL_ATTR0_IS_ABILITY|SPELL_ATTR0_NO_IMMUNITIES)) &&
+                        !(spell->GetSpellInfo()->Attributes & (SPELL_ATTR0_IS_ABILITY | SPELL_ATTR0_NO_IMMUNITIES)) &&
                         !(spell->GetSpellInfo()->AttributesEx & SPELL_ATTR1_NO_REFLECTION) &&
                         !spell->GetSpellInfo()->IsPassive() && !spell->GetSpellInfo()->IsPositive())
                     {
@@ -1182,14 +1326,14 @@ public:
             rage = me->GetPower(POWER_RAGE);
             switch (stance)
             {
-                case 1:
-                    return doCast(me, BATTLE_STANCE_1);
-                case 2:
-                    return doCast(me, DEFENSIVE_STANCE_1);
-                case 3:
-                    return doCast(me, BERSERKER_STANCE_1);
-                default:
-                    return false;
+            case 1:
+                return doCast(me, BATTLE_STANCE_1);
+            case 2:
+                return doCast(me, DEFENSIVE_STANCE_1);
+            case 3:
+                return doCast(me, BERSERKER_STANCE_1);
+            default:
+                return false;
             }
         }
 
@@ -1278,7 +1422,7 @@ public:
                 if (lvl >= 20)
                     pctbonus *= 1.1f;
                 //Poleaxe Specialization: 5% additional critical damage for all attacks
-                if ((GetSpec() == BOT_SPEC_WARRIOR_PROTECTION) && lvl >= 30)
+                if ((GetSpec() == BOT_SPEC_WARRIOR_ARMS) && lvl >= 30)
                     if (Item const* weap = GetEquips(uint8(attackType)))
                         if (ItemTemplate const* proto = weap->GetTemplate())
                             if (proto->SubClass == ITEM_SUBCLASS_WEAPON_AXE || proto->SubClass == ITEM_SUBCLASS_WEAPON_AXE2 ||
@@ -1710,7 +1854,7 @@ public:
             if (baseId == REVENGE_1)
             {
                 //zzzOLD Revenge Stun (25% chance): skip players
-                if (lvl >= 25 && !target->IsPlayer() && urand(1,100) <= 25)
+                if (lvl >= 25 && !target->IsPlayer() && urand(1, 100) <= 25)
                     me->CastSpell(target, REVENGE_STUN_SPELL, true);
             }
             if (baseId == DISARM_1 && (GetSpec() == BOT_SPEC_WARRIOR_PROTECTION) && lvl >= 25)
@@ -1773,7 +1917,7 @@ public:
             }
             if ((baseId == DEVASTATE_1 || baseId == REVENGE_1) &&
                 (GetSpec() == BOT_SPEC_WARRIOR_PROTECTION) &&
-                lvl >= 55 && urand(1,100) <= 30)
+                lvl >= 55 && urand(1, 100) <= 30)
             {
                 //Sword and Board: trigger
                 me->CastSpell(me, SWORD_AND_BOARD_BUFF, true);
@@ -1906,14 +2050,14 @@ public:
         {
             switch (data)
             {
-                case BOTAI_MISC_WEAPON_SPEC:
-                {
-                    //AXE and MACE specs are handled elsewhere
-                    _checkSwordSpec();
-                    break;
-                }
-                default:
-                    break;
+            case BOTAI_MISC_WEAPON_SPEC:
+            {
+                //AXE and MACE specs are handled elsewhere
+                _checkSwordSpec();
+                break;
+            }
+            default:
+                break;
             }
 
             bot_ai::SetAIMiscValue(data, value);
@@ -1962,11 +2106,11 @@ public:
             bool isProt = GetSpec() == BOT_SPEC_WARRIOR_PROTECTION;
 
             InitSpellMap(BATTLE_STANCE_1);
-   /*Quest*/lvl >= 10 ? InitSpellMap(DEFENSIVE_STANCE_1) : RemoveSpell(DEFENSIVE_STANCE_1);
-   /*Quest*/lvl >= 30 ? InitSpellMap(BERSERKER_STANCE_1) : RemoveSpell(BERSERKER_STANCE_1);
+            /*Quest*/lvl >= 10 ? InitSpellMap(DEFENSIVE_STANCE_1) : RemoveSpell(DEFENSIVE_STANCE_1);
+            /*Quest*/lvl >= 30 ? InitSpellMap(BERSERKER_STANCE_1) : RemoveSpell(BERSERKER_STANCE_1);
 
-   /*Quest*/lvl >= 10 ? InitSpellMap(TAUNT_1) : RemoveSpell(TAUNT_1);
-   /*Quest*/lvl >= 10 ? InitSpellMap(SUNDER_ARMOR_1) : RemoveSpell(SUNDER_ARMOR_1);
+            /*Quest*/lvl >= 10 ? InitSpellMap(TAUNT_1) : RemoveSpell(TAUNT_1);
+            /*Quest*/lvl >= 10 ? InitSpellMap(SUNDER_ARMOR_1) : RemoveSpell(SUNDER_ARMOR_1);
             InitSpellMap(INTIMIDATING_SHOUT_1);
             InitSpellMap(ENRAGED_REGENERATION_1);
             InitSpellMap(CHARGE_1);
@@ -2002,20 +2146,20 @@ public:
             InitSpellMap(SHATTERING_THROW_1);
             InitSpellMap(DEMORALIZING_SHOUT_1);
 
-  /*Talent*/lvl >= 30 && isArms ? InitSpellMap(SWEEPING_STRIKES_1) : RemoveSpell(SWEEPING_STRIKES_1);
-  /*Talent*/lvl >= 40 && isArms ? InitSpellMap(MORTAL_STRIKE_1) : RemoveSpell(MORTAL_STRIKE_1);
-  /*Talent*/lvl >= 60 && isArms ? InitSpellMap(BLADESTORM_1) : RemoveSpell(BLADESTORM_1);
+            /*Talent*/lvl >= 30 && isArms ? InitSpellMap(SWEEPING_STRIKES_1) : RemoveSpell(SWEEPING_STRIKES_1);
+            /*Talent*/lvl >= 40 && isArms ? InitSpellMap(MORTAL_STRIKE_1) : RemoveSpell(MORTAL_STRIKE_1);
+            /*Talent*/lvl >= 60 && isArms ? InitSpellMap(BLADESTORM_1) : RemoveSpell(BLADESTORM_1);
 
-  /*Talent*/lvl >= (isFury ? 20 : isArms ? 70 : 99) ? InitSpellMap(PIERCING_HOWL_1) : RemoveSpell(PIERCING_HOWL_1);
-  /*Talent*/lvl >= 30 && isFury ? InitSpellMap(DEATH_WISH_1) : RemoveSpell(DEATH_WISH_1);
-  /*Talent*/lvl >= 40 && isFury ? InitSpellMap(BLOODTHIRST_1) : RemoveSpell(BLOODTHIRST_1);
-  /*Talent*/lvl >= 50 && isFury ? InitSpellMap(HEROIC_FURY_1) : RemoveSpell(HEROIC_FURY_1);
+            /*Talent*/lvl >= (isFury ? 20 : isArms ? 70 : 99) ? InitSpellMap(PIERCING_HOWL_1) : RemoveSpell(PIERCING_HOWL_1);
+            /*Talent*/lvl >= 30 && isFury ? InitSpellMap(DEATH_WISH_1) : RemoveSpell(DEATH_WISH_1);
+            /*Talent*/lvl >= 40 && isFury ? InitSpellMap(BLOODTHIRST_1) : RemoveSpell(BLOODTHIRST_1);
+            /*Talent*/lvl >= 50 && isFury ? InitSpellMap(HEROIC_FURY_1) : RemoveSpell(HEROIC_FURY_1);
 
-  /*Talent*/lvl >= 20 && isProt ? InitSpellMap(LAST_STAND_1) : RemoveSpell(LAST_STAND_1);
-  /*Talent*/lvl >= 30 && isProt ? InitSpellMap(CONCUSSION_BLOW_1) : RemoveSpell(CONCUSSION_BLOW_1);
-  /*Talent*/lvl >= 40 && isProt ? InitSpellMap(VIGILANCE_1) : RemoveSpell(VIGILANCE_1);
-  /*Talent*/lvl >= 50 && isProt ? InitSpellMap(DEVASTATE_1) : RemoveSpell(DEVASTATE_1);
-  /*Talent*/lvl >= 60 && isProt ? InitSpellMap(SHOCKWAVE_1) : RemoveSpell(SHOCKWAVE_1);
+            /*Talent*/lvl >= 20 && isProt ? InitSpellMap(LAST_STAND_1) : RemoveSpell(LAST_STAND_1);
+            /*Talent*/lvl >= 30 && isProt ? InitSpellMap(CONCUSSION_BLOW_1) : RemoveSpell(CONCUSSION_BLOW_1);
+            /*Talent*/lvl >= 40 && isProt ? InitSpellMap(VIGILANCE_1) : RemoveSpell(VIGILANCE_1);
+            /*Talent*/lvl >= 50 && isProt ? InitSpellMap(DEVASTATE_1) : RemoveSpell(DEVASTATE_1);
+            /*Talent*/lvl >= 60 && isProt ? InitSpellMap(SHOCKWAVE_1) : RemoveSpell(SHOCKWAVE_1);
         }
 
         void ApplyClassPassives() const override
@@ -2081,35 +2225,35 @@ public:
         {
             switch (basespell)
             {
-                case BLOODRAGE_1:
-                case BERSERKER_RAGE_1:
-                case BATTLE_SHOUT_1:
-                case COMMANDING_SHOUT_1:
-                case DEATH_WISH_1:
-                    return true;
-                case ENRAGED_REGENERATION_1:
-                    return me->HasAuraWithMechanic(1u<<MECHANIC_ENRAGED);
-                case BATTLE_STANCE_1:
-                    return !_inStance(1);
-                case DEFENSIVE_STANCE_1:
-                    return !_inStance(2);
-                case BERSERKER_STANCE_1:
-                    return !_inStance(3);
-                case SWEEPING_STRIKES_1:
-                    return _inStance(5);
-                case RETALIATION_1:
-                    return _inStance(1);
-                case RECKLESSNESS_1:
-                    return _inStance(3);
-                case SHIELD_WALL_1:
-                    return CanBlock() && _inStance(2);
-                case SHIELD_BLOCK_1:
-                    return CanBlock();
-                case LAST_STAND_1:
-                case VIGILANCE_1:
-                    return true;
-                default:
-                    return false;
+            case BLOODRAGE_1:
+            case BERSERKER_RAGE_1:
+            case BATTLE_SHOUT_1:
+            case COMMANDING_SHOUT_1:
+            case DEATH_WISH_1:
+                return true;
+            case ENRAGED_REGENERATION_1:
+                return me->HasAuraWithMechanic(1u << MECHANIC_ENRAGED);
+            case BATTLE_STANCE_1:
+                return !_inStance(1);
+            case DEFENSIVE_STANCE_1:
+                return !_inStance(2);
+            case BERSERKER_STANCE_1:
+                return !_inStance(3);
+            case SWEEPING_STRIKES_1:
+                return _inStance(5);
+            case RETALIATION_1:
+                return _inStance(1);
+            case RECKLESSNESS_1:
+                return _inStance(3);
+            case SHIELD_WALL_1:
+                return CanBlock() && _inStance(2);
+            case SHIELD_BLOCK_1:
+                return CanBlock();
+            case LAST_STAND_1:
+            case VIGILANCE_1:
+                return true;
+            default:
+                return false;
             }
         }
 
@@ -2157,12 +2301,12 @@ public:
         {
             switch (stance)
             {
-                case 1: return _stance == STANCE_BATTLE;
-                case 2: return _stance == STANCE_DEFENSIVE;
-                case 3: return _stance == STANCE_BERSERKER;
-                case 4: return _stance == STANCE_BATTLE || _stance == STANCE_DEFENSIVE;
-                case 5: return _stance == STANCE_BATTLE || _stance == STANCE_BERSERKER;
-                default: return false;
+            case 1: return _stance == STANCE_BATTLE;
+            case 2: return _stance == STANCE_DEFENSIVE;
+            case 3: return _stance == STANCE_BERSERKER;
+            case 4: return _stance == STANCE_BATTLE || _stance == STANCE_DEFENSIVE;
+            case 5: return _stance == STANCE_BATTLE || _stance == STANCE_BERSERKER;
+            default: return false;
             }
         }
 
@@ -2180,10 +2324,10 @@ public:
             RefreshAura(SWORD_SPEC1, isArms && sword && level >= 30 && level < 31 ? 1 : 0);
         }
 
-/*tmrs*/uint32 stancetimer, ragetimer, ragetimer2, shoutCheckTimer, shatterCheckTimer, vigiCheckTimer;
-/*misc*/int32 rage;
-/*misc*/ObjectGuid vigilanceTargetGuid;
-/*stnc*/uint8 _stance;
+        /*tmrs*/uint32 stancetimer, ragetimer, ragetimer2, shoutCheckTimer, shatterCheckTimer, vigiCheckTimer;
+        /*misc*/int32 rage;
+        /*misc*/ObjectGuid vigilanceTargetGuid;
+        /*stnc*/uint8 _stance;
     };
 };
 

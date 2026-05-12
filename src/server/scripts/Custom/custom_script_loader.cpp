@@ -58,6 +58,14 @@ void AddSC_mod_gearbank();
 void AddSC_custom_holy_onslaught();
 void AddSC_lockpick_game();
 void AddSC_custom_auction_command();
+void AddSC_custom_lazy_af_gobjects();
+void AddSC_gm_item_lookup();
+void AddSC_npcbot_auto_hide_on_logout();
+void AddSC_generic_custom_spells();
+void AddSC_npcbot_performance_governor();
+void Addmod_item_stat_scalerScripts();
+void AddFakePlayerAmbienceScripts();
+
 
 
 void AddCustomScripts()
@@ -99,4 +107,12 @@ void AddCustomScripts()
     AddSC_custom_holy_onslaught();
     AddSC_lockpick_game();
     AddSC_custom_auction_command();
+    AddSC_custom_lazy_af_gobjects();
+    AddSC_gm_item_lookup();
+    AddSC_npcbot_auto_hide_on_logout();
+    AddSC_generic_custom_spells();
+    AddSC_npcbot_performance_governor();
+    Addmod_item_stat_scalerScripts();
+    AddFakePlayerAmbienceScripts();
+
 }

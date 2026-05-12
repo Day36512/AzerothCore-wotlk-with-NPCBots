@@ -66,6 +66,8 @@ namespace
     enum ShirrakSpells : uint32
     {
         SPELL_CARNIVOROUS_BITE = 36383,  // stock Shirrak spell kept for tank pressure
+        SPELL_CARNIVOROUS_BITE_HEROIC = 39382,  // heroic SpellDifficulty.dbc version
+        SPELL_SHADOW_MEND = 33325,
         SPELL_CHAIN_BEAM = 502617,
         SPELL_SPECIAL_PHASE_EXPLODE = 502621,
         SPELL_TELEPORT_VISUAL = 51347,
@@ -1228,6 +1230,38 @@ struct boss_shirrak_the_dead_watcher : public BossAI
         }
     }
 
+    void RemoveCarnivorousBiteFromEncounterUnits()
+    {
+        for (Player* player : GetEncounterPlayers(false))
+        {
+            if (!player)
+                continue;
+
+            player->RemoveAurasDueToSpell(SPELL_CARNIVOROUS_BITE);
+            player->RemoveAurasDueToSpell(SPELL_CARNIVOROUS_BITE_HEROIC);
+        }
+
+        for (Creature* bot : GetEncounterBots(false))
+        {
+            if (!bot)
+                continue;
+
+            bot->RemoveAurasDueToSpell(SPELL_CARNIVOROUS_BITE);
+            bot->RemoveAurasDueToSpell(SPELL_CARNIVOROUS_BITE_HEROIC);
+        }
+    }
+
+    void CastShadowMendOnEncounterPlayers()
+    {
+        for (Player* player : GetEncounterPlayers(true))
+        {
+            if (!player)
+                continue;
+
+            player->CastSpell(player, SPELL_SHADOW_MEND, true);
+        }
+    }
+
     void DespawnFlamewallBlockers()
     {
         if (_blockerGuids.empty())
@@ -1318,6 +1352,9 @@ struct boss_shirrak_the_dead_watcher : public BossAI
         CleanupFlamewaveRunners();
 
         events.Reset();
+
+        RemoveCarnivorousBiteFromEncounterUnits();
+        CastShadowMendOnEncounterPlayers();
 
         me->InterruptNonMeleeSpells(true);
         me->AttackStop();
@@ -1433,6 +1470,7 @@ struct boss_shirrak_the_dead_watcher : public BossAI
     void JustDied(Unit* /*killer*/) override
     {
         _JustDied();
+        RemoveCarnivorousBiteFromEncounterUnits();
         ClearAllEncounterBotPhaseState();
         CleanupFlamewaveRunners();
         DespawnFlamewallBlockers();

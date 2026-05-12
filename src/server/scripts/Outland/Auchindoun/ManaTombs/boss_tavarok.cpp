@@ -28,7 +28,10 @@
 #include "Cell.h"
 #include "CellImpl.h"
 
+#include <chrono>
 #include <cmath>
+#include <list>
+#include <vector>
 
 using namespace std::chrono_literals;
 
@@ -39,8 +42,8 @@ enum Spells
     SPELL_ARCING_SMASH = 8374,
 
     // Custom
-    SPELL_CRYSTAL_PILLAR_VISUAL = 300393,      // visual on the pillar
-    SPELL_CRYSTAL_PILLAR_EXPLOSION = 300394    // AoE damage when pillar explodes
+    SPELL_CRYSTAL_PILLAR_VISUAL = 300393,
+    SPELL_CRYSTAL_PILLAR_EXPLOSION = 300394
 };
 
 enum Misc
@@ -55,6 +58,20 @@ enum Groups
     GROUP_ARCING_SMASH = 3,
     GROUP_CRYSTAL_PILLARS = 4
 };
+
+namespace TavarokBotTuning
+{
+    constexpr float PullRadius = 80.0f;
+    constexpr float SafeDistance = 40.0f;
+    constexpr float FollowScanRadius = 100.0f;
+
+    // Earthquake is cast 4 seconds after the pull. Start follow retries after the
+    // Earthquake window has had time to finish, then retry because NPCBot follow
+    // commands can be ignored while the bot is jumping/falling.
+    constexpr uint32 FollowRetryCount = 12;
+    constexpr auto FollowRetryFirstOffset = 6500ms;
+    constexpr auto FollowRetryPeriod = 400ms;
+}
 
 struct boss_tavarok : public BossAI
 {
@@ -77,25 +94,21 @@ struct boss_tavarok : public BossAI
         _JustEngagedWith();
 
         scheduler
-            // Gravity Well -> pull -> bots run out -> Earthquake 4s later
             .Schedule(15s, 25s, GROUP_GRAVITY_WELL, [this](TaskContext context)
                 {
                     DoGravityWell();
                     context.Repeat(35s, 45s);
                 })
-            // Crystal Prison (skip the current tank)
             .Schedule(12s, 22s, GROUP_CRYSTAL_PRISON, [this](TaskContext context)
                 {
                     DoCastOnRandomPlayerOrNPCBot(SPELL_CRYSTAL_PRISON, 100.0f, true);
                     context.Repeat(15s, 22s);
                 })
-            // Arcing Smash on current victim
             .Schedule(5900ms, GROUP_ARCING_SMASH, [this](TaskContext context)
                 {
                     DoCastVictim(SPELL_ARCING_SMASH);
                     context.Repeat(8s, 12s);
                 })
-            // Crystal Pillars: periodically spawn on two random targets
             .Schedule(20s, 30s, GROUP_CRYSTAL_PILLARS, [this](TaskContext context)
                 {
                     SummonCrystalPillars();
@@ -157,30 +170,36 @@ private:
 
     void DoGravityWell()
     {
-        // Push pillar events away from this Earthquake window
-        // so they don't land right before/during Quake.
         scheduler.DelayGroup(GROUP_CRYSTAL_PILLARS, 8s);
 
-        // Immediately pull all hostile players + NPCBots toward Tavarok.
-        PullHostilesToBoss(80.0f);
+        PullHostilesToBoss(TavarokBotTuning::PullRadius);
 
-        // Give a short moment for the pull animation to "complete" and then send bots out.
         scheduler.Schedule(500ms, [this](TaskContext /*context*/)
             {
-                MoveBotsToSafePositions(40.0f);
+                MoveBotsToSafePositions(TavarokBotTuning::SafeDistance);
             });
 
-        // 4s after the pull, cast Earthquake.
         scheduler.Schedule(4s, [this](TaskContext /*context*/)
             {
                 DoCastSelf(SPELL_EARTHQUAKE);
             });
 
-        // 1.5s after Earthquake (5.5s total), put bots back on follow.
-        scheduler.Schedule(5500ms, [this](TaskContext /*context*/)
-            {
-                SetBotsToFollow();
-            });
+        ScheduleBotsFollowRetries();
+    }
+
+    void ScheduleBotsFollowRetries()
+    {
+        for (uint32 i = 0; i < TavarokBotTuning::FollowRetryCount; ++i)
+        {
+            me->m_Events.AddEventAtOffset([this]()
+                {
+                    if (!me || !me->IsInWorld() || !me->IsAlive() || !me->IsInCombat())
+                        return;
+
+                    SetBotsToFollow();
+
+                }, TavarokBotTuning::FollowRetryFirstOffset + std::chrono::milliseconds(i * TavarokBotTuning::FollowRetryPeriod.count()));
+        }
     }
 
     void PullHostilesToBoss(float radius)
@@ -257,10 +276,8 @@ private:
             float y = my + dy * desiredDist;
             float z = uz;
 
-            // Adjust Z to ground to avoid floating.
             bot->UpdateAllowedPositionZ(x, y, z);
 
-            // Try to prefer line-of-sight; if no LOS at full distance, try half distance.
             if (!me->IsWithinLOS(x, y, z))
             {
                 float halfDist = desiredDist * 0.5f;
@@ -277,17 +294,16 @@ private:
         }
     }
 
-    // Sapphiron-style: find *all* nearby NPCBots and force follow, not just those on threat list.
     void SetBotsToFollow()
     {
         std::list<Unit*> nearby;
-        Bcore::AnyUnitInObjectRangeCheck check(me, 100.0f);
+        Bcore::AnyUnitInObjectRangeCheck check(me, TavarokBotTuning::FollowScanRadius);
         Bcore::UnitListSearcher<Bcore::AnyUnitInObjectRangeCheck> searcher(me, nearby, check);
-        Cell::VisitObjects(me, searcher, 100.0f);
+        Cell::VisitObjects(me, searcher, TavarokBotTuning::FollowScanRadius);
 
         for (Unit* u : nearby)
         {
-            if (!u || !u->IsAlive())
+            if (!u || !u->IsAlive() || !u->IsInWorld())
                 continue;
 
             if (!u->IsNPCBot())
@@ -297,15 +313,18 @@ private:
             if (!bot)
                 continue;
 
-            if (bot_ai* ai = bot->GetBotAI())
-                ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+            bot_ai* ai = bot->GetBotAI();
+            if (!ai)
+                continue;
+
+            ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
         }
     }
 
     void SummonCrystalPillars()
     {
-        // Build a pool of all valid player/bot targets in range
         std::vector<Unit*> pool;
+
         for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
             if (!ref || ref->IsOffline())
@@ -327,7 +346,6 @@ private:
         if (pool.empty())
             return;
 
-        // We only want up to 2 unique targets per wave
         uint8 maxTargets = std::min<uint8>(2u, static_cast<uint8>(pool.size()));
 
         for (uint8 i = 0; i < maxTargets; ++i)
@@ -337,7 +355,7 @@ private:
 
             uint32 index = urand(0, static_cast<uint32>(pool.size() - 1));
             Unit* target = pool[index];
-            pool.erase(pool.begin() + index); // avoid duplicates
+            pool.erase(pool.begin() + index);
 
             if (!target || !target->IsAlive())
                 continue;
@@ -355,7 +373,6 @@ private:
             Position spawnPos;
             spawnPos.Relocate(x, y, z, basePos.GetOrientation());
 
-            // Pillar still used as the explosion anchor
             me->SummonCreature(NPC_CRYSTAL_PILLAR, spawnPos, TEMPSUMMON_TIMED_DESPAWN, 10000);
         }
     }
@@ -374,8 +391,8 @@ struct npc_tavarok_crystal_pillar : public ScriptedAI
         me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
         me->AddUnitState(UNIT_STATE_ROOT);
 
-        // Pillar visual and timed explosion
         DoCastSelf(SPELL_CRYSTAL_PILLAR_VISUAL, true);
+        DoCastSelf(45579, false);
         events.ScheduleEvent(1, 8s);
     }
 
@@ -394,7 +411,6 @@ struct npc_tavarok_crystal_pillar : public ScriptedAI
         {
             if (eventId == 1)
             {
-                // Explosion, then despawn shortly after
                 DoCastSelf(SPELL_CRYSTAL_PILLAR_EXPLOSION, true);
                 me->DespawnOrUnsummon(1000ms);
             }

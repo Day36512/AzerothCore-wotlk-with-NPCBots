@@ -15,9 +15,19 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Config.h"
 #include "InstanceMapScript.h"
 #include "InstanceScript.h"
+#include "Player.h"
 #include "sethekk_halls.h"
+
+namespace
+{
+    constexpr uint32 AnzuSummonEventId = 14797;
+    constexpr char const* CONFIG_ANZU_ALWAYS_VISIBLE = "SethekkHalls.Anzu.AlwaysVisible";
+
+    Position const AnzuSummonPosition = { -88.02f, 288.18f, 75.2f, 6.0f };
+}
 
 DoorData const doorData[] =
 {
@@ -34,10 +44,9 @@ ObjectData const gameObjectData[] =
 ObjectData const creatureData[] =
 {
     { NPC_VOICE_OF_THE_RAVEN_GOD, DATA_VOICE_OF_THE_RAVEN_GOD },
+    { NPC_ANZU,                   DATA_ANZU_CREATURE          },
     { 0,                          0                           }
 };
-
-const uint32 anzuSummonEventId = 14797;
 
 class instance_sethekk_halls : public InstanceMapScript
 {
@@ -59,11 +68,36 @@ public:
             LoadObjectData(creatureData, gameObjectData);
         }
 
+        void OnPlayerEnter(Player* /*player*/) override
+        {
+            if (sConfigMgr->GetOption<bool>(CONFIG_ANZU_ALWAYS_VISIBLE, false))
+            {
+                TrySummonAnzu();
+            }
+        }
+
         void ProcessEvent(WorldObject* /*obj*/, uint32 eventId) override
         {
-            if (eventId == anzuSummonEventId)
-                if (!GetCreature(DATA_VOICE_OF_THE_RAVEN_GOD) && GetBossState(DATA_ANZU) != DONE)
-                    instance->SummonCreature(NPC_VOICE_OF_THE_RAVEN_GOD, Position(-88.02f, 288.18f, 75.2f, 6.0f));
+            if (eventId == AnzuSummonEventId)
+            {
+                TrySummonAnzu();
+            }
+        }
+
+    private:
+        void TrySummonAnzu()
+        {
+            if (GetBossState(DATA_ANZU) == DONE)
+            {
+                return;
+            }
+
+            if (GetCreature(DATA_VOICE_OF_THE_RAVEN_GOD) || GetCreature(DATA_ANZU_CREATURE))
+            {
+                return;
+            }
+
+            instance->SummonCreature(NPC_VOICE_OF_THE_RAVEN_GOD, AnzuSummonPosition);
         }
     };
 };

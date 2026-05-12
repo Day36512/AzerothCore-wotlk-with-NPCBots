@@ -32,6 +32,7 @@
 #include "Vehicle.h"
 #include "World.h"
 #include "GitRevision.h"
+#include <mutex>
 /*
 Npc Bot Manager by Trickerer (onlysuffering@gmail.com)
 Player NpcBots management
@@ -45,6 +46,111 @@ TODO: Move creature hooks here
 using namespace std::string_view_literals;
 
 static std::list<BotMgr::delayed_teleport_callback_type> delayed_bot_teleports;
+
+namespace NpcBotWandererParking
+{
+    struct ParkedWanderer
+    {
+        uint32 mapId = 0;
+        uint32 zoneId = 0;
+        Position position;
+    };
+
+    static std::unordered_map<uint32, ParkedWanderer> s_parkedByEntry;
+    static std::unordered_map<uint64, std::unordered_set<uint32>> s_entriesByZone;
+    static std::mutex s_parkingMutex;
+
+    uint64 MakeZoneKey(uint32 mapId, uint32 zoneId)
+    {
+        return (uint64(mapId) << 32) | uint64(zoneId);
+    }
+
+    bool IsParked(uint32 entry)
+    {
+        std::lock_guard<std::mutex> lock(s_parkingMutex);
+
+        return s_parkedByEntry.find(entry) != s_parkedByEntry.end();
+    }
+
+    void RemoveParkedEntry(uint32 entry)
+    {
+        std::lock_guard<std::mutex> lock(s_parkingMutex);
+
+        auto parkedItr = s_parkedByEntry.find(entry);
+        if (parkedItr == s_parkedByEntry.end())
+            return;
+
+        uint64 const key = MakeZoneKey(parkedItr->second.mapId, parkedItr->second.zoneId);
+
+        auto zoneItr = s_entriesByZone.find(key);
+        if (zoneItr != s_entriesByZone.end())
+        {
+            zoneItr->second.erase(entry);
+
+            if (zoneItr->second.empty())
+                s_entriesByZone.erase(zoneItr);
+        }
+
+        s_parkedByEntry.erase(parkedItr);
+    }
+
+    bool AddParkedWanderer(Creature const* bot)
+    {
+        if (!bot)
+            return false;
+
+        uint32 const entry = bot->GetEntry();
+        uint32 const zoneId = bot->GetZoneId();
+
+        if (!zoneId)
+            return false;
+
+        ParkedWanderer parked;
+        parked.mapId = bot->GetMapId();
+        parked.zoneId = zoneId;
+        parked.position.Relocate(bot);
+
+        std::lock_guard<std::mutex> lock(s_parkingMutex);
+
+        if (s_parkedByEntry.find(entry) != s_parkedByEntry.end())
+            return false;
+
+        s_parkedByEntry.emplace(entry, parked);
+        s_entriesByZone[MakeZoneKey(parked.mapId, parked.zoneId)].insert(entry);
+
+        return true;
+    }
+
+    std::vector<uint32> GetParkedEntriesForZone(uint32 mapId, uint32 zoneId)
+    {
+        std::lock_guard<std::mutex> lock(s_parkingMutex);
+
+        std::vector<uint32> entries;
+
+        auto zoneItr = s_entriesByZone.find(MakeZoneKey(mapId, zoneId));
+        if (zoneItr == s_entriesByZone.end())
+            return entries;
+
+        entries.reserve(zoneItr->second.size());
+
+        for (uint32 entry : zoneItr->second)
+            entries.push_back(entry);
+
+        return entries;
+    }
+
+    bool GetParkedWanderer(uint32 entry, ParkedWanderer& out)
+    {
+        std::lock_guard<std::mutex> lock(s_parkingMutex);
+
+        auto itr = s_parkedByEntry.find(entry);
+        if (itr == s_parkedByEntry.end())
+            return false;
+
+        out = itr->second;
+        return true;
+    }
+}
 
 BotMgr::BotMgr(Player* const master) : _owner(master), _dpstracker(new DPSTracker())
 {
@@ -180,6 +286,152 @@ bool BotMgr::CanBotParryWhileCasting(Creature const* bot)
 bool BotMgr::IsWanderingWorldBot(Creature const* bot)
 {
     return bot->IsWandererBot() && (!bot->FindMap() || !bot->GetMap()->GetEntry() || bot->GetMap()->GetEntry()->IsWorldMap());
+}
+
+void BotMgr::ParkInactiveWanderer(Creature* bot)
+{
+    if (!bot)
+        return;
+
+    if (!BotMgr::IsWanderingWorldBot(bot))
+        return;
+
+    bot_ai* ai = bot->GetBotAI();
+    if (!ai)
+        return;
+
+    // Never park battleground/arena bots.
+    if (ai->GetBG())
+        return;
+
+    Map* currentMap = bot->FindMap();
+    if (currentMap && currentMap->IsBattlegroundOrArena())
+        return;
+
+    if (!bot->IsInWorld())
+        return;
+
+    if (ai->IsDuringTeleport())
+        return;
+
+    if (!currentMap)
+        return;
+
+    if (!NpcBotWandererParking::AddParkedWanderer(bot))
+        return;
+
+    if (bot->IsInCombat())
+        bot->CombatStop();
+
+    if (bot->GetVictim())
+        bot->AttackStop();
+
+    if (bot->isMoving())
+        bot->BotStopMovement();
+
+    ai->SetCanAppearInWorld(false);
+
+    Position parkPos;
+    parkPos.Relocate(bot);
+
+    BotMgr::TeleportBot(bot, currentMap, &parkPos, true);
+}
+
+void BotMgr::UnparkInactiveWanderer(Creature* bot)
+{
+    if (!bot)
+        return;
+
+    bot_ai* ai = bot->GetBotAI();
+    if (!ai)
+        return;
+
+    ai->MarkWandererZoneActive();
+
+    NpcBotWandererParking::RemoveParkedEntry(bot->GetEntry());
+}
+
+void BotMgr::WakeInactiveWanderersInZone(Player const* player)
+{
+    if (!player)
+        return;
+
+    if (!player->IsInWorld())
+        return;
+
+    if (player->IsBeingTeleported())
+        return;
+
+    Map const* playerMap = player->FindMap();
+    if (!playerMap)
+        return;
+
+    uint32 const mapId = player->GetMapId();
+    uint32 const zoneId = player->GetZoneId();
+
+    if (!zoneId)
+        return;
+
+    std::vector<uint32> entries = NpcBotWandererParking::GetParkedEntriesForZone(mapId, zoneId);
+
+    for (uint32 entry : entries)
+    {
+        NpcBotWandererParking::ParkedWanderer parked;
+        if (!NpcBotWandererParking::GetParkedWanderer(entry, parked))
+            continue;
+
+        Creature* bot = const_cast<Creature*>(BotDataMgr::FindBot(entry));
+        if (!bot)
+        {
+            NpcBotWandererParking::RemoveParkedEntry(entry);
+            continue;
+        }
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai)
+        {
+            NpcBotWandererParking::RemoveParkedEntry(entry);
+            continue;
+        }
+
+        // Let an already queued park/wake teleport finish first.
+        // The next player-side zone tick can wake it.
+        if (ai->IsDuringTeleport())
+            continue;
+
+        ai->MarkWandererZoneActive();
+
+        if (!BotMgr::IsWanderingWorldBot(bot))
+        {
+            NpcBotWandererParking::RemoveParkedEntry(entry);
+            continue;
+        }
+
+        Map* map = sMapMgr->CreateBaseMap(parked.mapId);
+        if (!map)
+        {
+            NpcBotWandererParking::RemoveParkedEntry(entry);
+            continue;
+        }
+
+        Position wakePos = parked.position;
+
+        /*
+         * Remove from the parking cache before teleporting so this bot does not
+         * get queued repeatedly by several player aura ticks in the same zone.
+         */
+        NpcBotWandererParking::RemoveParkedEntry(entry);
+
+        if (!bot->IsInWorld())
+        {
+            BotMgr::TeleportBot(bot, map, &wakePos, true);
+        }
+        else
+        {
+            // Should be rare, but if it happens, make sure the cache/state is sane.
+            ai->MarkWandererZoneActive();
+        }
+    }
 }
 
 void BotMgr::Update(uint32 diff)
@@ -553,6 +805,13 @@ void BotMgr::_teleportBot(Creature* bot, Map* newMap, float x, float y, float z,
 {
     bot_ai* botai = detached_ai ? detached_ai : bot->GetBotAI();
     ASSERT(botai);
+
+    if (newMap && newMap->IsBattlegroundOrArena())
+    {
+        botai->MarkWandererZoneActive();
+        NpcBotWandererParking::RemoveParkedEntry(bot->GetEntry());
+    }
+
     botai->AbortTeleport();
     botai->SetIsDuringTeleport(true);
     botai->KillEvents(true);
@@ -618,9 +877,19 @@ void BotMgr::_teleportBot(Creature* bot, Map* newMap, float x, float y, float z,
             if (bot->FindMap())
                 bot->ResetMap();
             bot->SetMap(newMap);
-            if (!bot->IsWandererBot() && !botai->CanAppearInWorld())
+            if (!botai->CanAppearInWorld() && !newMap->IsBattlegroundOrArena())
             {
                 botai->AbortTeleport();
+
+                // Parked world wanderers are woken externally by player zone ticks.
+                // Do not leave them with a recurring TeleportFinishEvent.
+                if (bot->IsWandererBot() && NpcBotWandererParking::IsParked(bot->GetEntry()))
+                {
+                    botai->SetIsDuringTeleport(false);
+                    botai->canUpdate = false;
+                    return;
+                }
+
                 TeleportFinishEvent* delayedTeleportEvent = new TeleportFinishEvent(botai, reset);
                 botai->GetEvents()->AddEvent(delayedTeleportEvent, botai->GetEvents()->CalculateTime(urand(5000, 8000)));
                 botai->SetTeleportFinishEvent(delayedTeleportEvent);
@@ -2115,10 +2384,13 @@ std::vector<Unit*> BotMgr::GetAllGroupMembers(Unit const* source)
 
 void BotMgr::InviteBotToBG(ObjectGuid botguid, GroupQueueInfo* ginfo, Battleground* bg)
 {
-    Creature const* bot = BotDataMgr::FindBot(botguid.GetEntry());
+    Creature* bot = const_cast<Creature*>(BotDataMgr::FindBot(botguid.GetEntry()));
     ASSERT(bot);
 
+    BotMgr::UnparkInactiveWanderer(bot);
+
     bg->IncreaseInvitedCount(ginfo->teamId);
+
     //BOT_LOG_INFO("npcbots", "Battleground: invited NPCBot %u to BG instance %u bgtype %u '%s'",
     //    botguid.GetEntry(), bg->GetInstanceID(), bg->GetTypeID(), bg->GetName().c_str());
 }

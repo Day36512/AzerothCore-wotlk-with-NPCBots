@@ -293,19 +293,24 @@ private:
 
     void LaunchAirBombardment(uint8 shots, Milliseconds gap, float range)
     {
-        std::vector<ObjectGuid> used; used.reserve(shots);
+        auto used = std::make_shared<std::vector<ObjectGuid>>();
+        used->reserve(shots);
+
         for (uint8 i = 0; i < shots; ++i)
         {
-            _scheduler.Schedule(gap * i, [this, range, &used](TaskContext /*ctx*/)
+            _scheduler.Schedule(gap * i, [this, range, used](TaskContext /*ctx*/)
                 {
-                    // Try to avoid repeating the exact same target in the same volley when possible
                     Unit* choice = SelectRandomPlayerOrBot(range, /*preferNonVictim=*/true);
-                    for (uint8 attempt = 0; attempt < 3 && choice && std::find(used.begin(), used.end(), choice->GetGUID()) != used.end(); ++attempt)
+
+                    for (uint8 attempt = 0; attempt < 3 && choice &&
+                        std::find(used->begin(), used->end(), choice->GetGUID()) != used->end(); ++attempt)
+                    {
                         choice = SelectRandomPlayerOrBot(range, /*preferNonVictim=*/true);
+                    }
 
                     if (choice)
                     {
-                        used.push_back(choice->GetGUID());
+                        used->push_back(choice->GetGUID());
                         DoCast(choice, SPELL_FIREBALL, false);
                     }
                 });

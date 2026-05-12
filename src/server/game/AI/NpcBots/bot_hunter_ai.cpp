@@ -24,148 +24,149 @@ TODO: Master's Call
 
 enum HunterBaseSpells
 {
-    AUTO_SHOT_1                         = 75,
-    ARCANE_SHOT_1                       = 3044,
-    TRANQ_SHOT_1                        = 19801,
-    BLACK_ARROW_1                       = 3674,
-    SILENCING_SHOT_1                    = 34490,
-    CHIMERA_SHOT_1                      = 53209,
-    AIMED_SHOT_1                        = 19434,
-    STEADY_SHOT_1                       = 56641,
-    EXPLOSIVE_SHOT_1                    = 53301,
-    KILL_SHOT_1                         = 53351,
-    MULTISHOT_1                         = 2643,
-    VOLLEY_1                            = 1510,
-    SCATTER_SHOT_1                      = 19503,
-    CONCUSSIVE_SHOT_1                   = 5116,
-    DISTRACTING_SHOT_1                  = 20736,
-    SERPENT_STING_1                     = 1978,
-    SCORPID_STING_1                     = 3043,
-    VIPER_STING_1                       = 3034,
-    RAPID_FIRE_1                        = 3045,
-    FLARE_1                             = 1543,
-    TRUESHOT_AURA_1                     = 19506,
-    WYVERN_STING_1                      = 19386,
-    WING_CLIP_1                         = 2974,
-    RAPTOR_STRIKE_1                     = 2973,
-    MONGOOSE_BITE_1                     = 1495,
-    COUNTERATTACK_1                     = 19306,
-    DISENGAGE_1                         = 781,
-    IMMOLATION_TRAP_1                   = 13795,
-    FREEZING_TRAP_1                     = 1499,
-    FROST_TRAP_1                        = 13809,
-    EXPLOSIVE_TRAP_1                    = 13813,
-    FREEZING_ARROW_1                    = 60192,
-    SNAKE_TRAP_1                        = 34600,//NIY
-    HUNTERS_MARK_1                      = 1130,
-    SCARE_BEAST_1                       = 1513,
-    FEIGN_DEATH_1                       = 5384,
-    READINESS_1                         = 23989,
-    DETERRENCE_1                        = 19263,
-    MISDIRECTION_1                      = 34477,
-    MEND_PET_1                          = 136,
+    AUTO_SHOT_1 = 75,
+    ARCANE_SHOT_1 = 3044,
+    TRANQ_SHOT_1 = 19801,
+    BLACK_ARROW_1 = 3674,
+    SILENCING_SHOT_1 = 34490,
+    CHIMERA_SHOT_1 = 53209,
+    AIMED_SHOT_1 = 19434,
+    STEADY_SHOT_1 = 56641,
+    EXPLOSIVE_SHOT_1 = 53301,
+    KILL_SHOT_1 = 53351,
+    KILL_COMMAND_1 = 34026,
+    MULTISHOT_1 = 2643,
+    VOLLEY_1 = 1510,
+    SCATTER_SHOT_1 = 19503,
+    CONCUSSIVE_SHOT_1 = 5116,
+    DISTRACTING_SHOT_1 = 20736,
+    SERPENT_STING_1 = 1978,
+    SCORPID_STING_1 = 3043,
+    VIPER_STING_1 = 3034,
+    RAPID_FIRE_1 = 3045,
+    FLARE_1 = 1543,
+    TRUESHOT_AURA_1 = 19506,
+    WYVERN_STING_1 = 19386,
+    WING_CLIP_1 = 2974,
+    RAPTOR_STRIKE_1 = 2973,
+    MONGOOSE_BITE_1 = 1495,
+    COUNTERATTACK_1 = 19306,
+    DISENGAGE_1 = 781,
+    IMMOLATION_TRAP_1 = 13795,
+    FREEZING_TRAP_1 = 1499,
+    FROST_TRAP_1 = 13809,
+    EXPLOSIVE_TRAP_1 = 13813,
+    FREEZING_ARROW_1 = 60192,
+    SNAKE_TRAP_1 = 34600,//NIY
+    HUNTERS_MARK_1 = 1130,
+    SCARE_BEAST_1 = 1513,
+    FEIGN_DEATH_1 = 5384,
+    READINESS_1 = 23989,
+    DETERRENCE_1 = 19263,
+    MISDIRECTION_1 = 34477,
+    MEND_PET_1 = 136,
 
-    ASPECT_OF_THE_MONKEY_1              = 13163,
-    ASPECT_OF_THE_HAWK_1                = 13165,
-    ASPECT_OF_THE_CHEETAH_1             = 5118,
-    ASPECT_OF_THE_VIPER_1               = 34074,
-    ASPECT_OF_THE_BEAST_1               = 13161,//NIY
-    ASPECT_OF_THE_PACK_1                = 13159,
-    ASPECT_OF_THE_WILD_1                = 20043,
-    ASPECT_OF_THE_DRAGONHAWK_1          = 61846
+    ASPECT_OF_THE_MONKEY_1 = 13163,
+    ASPECT_OF_THE_HAWK_1 = 13165,
+    ASPECT_OF_THE_CHEETAH_1 = 5118,
+    ASPECT_OF_THE_VIPER_1 = 34074,
+    ASPECT_OF_THE_BEAST_1 = 13161,//NIY
+    ASPECT_OF_THE_PACK_1 = 13159,
+    ASPECT_OF_THE_WILD_1 = 20043,
+    ASPECT_OF_THE_DRAGONHAWK_1 = 61846
 };
 
 enum HunterPassives
 {
-//Talents
-    SUREFOOTED                          = 24283,//rank 3
-    ENTRAPMENT                          = 19388,//rank 3
-    RAPID_KILLING                       = 34949,//rank 2
-    IMPROVED_MEND_PET                   = 19573,//rank 2
-    LOCK_AND_LOAD                       = 56344,//rank 3
-    CONCUSSIVE_BARRAGE                  = 35102,//rank 2
-    PIERCING_SHOTS                      = 53238,//rank 3
-    EXPOSE_WEAKNESS                     = 34503,//rank 3
-    THRILL_OF_THE_HUNT                  = 34499,//rank 3
-    MASTER_MARKSMAN                     = 34489,//rank 5
-    MASTER_TACTICIAN1                   = 34506,
-    MASTER_TACTICIAN2                   = 34507,
-    MASTER_TACTICIAN3                   = 34508,
-    MASTER_TACTICIAN4                   = 34838,
-    MASTER_TACTICIAN5                   = 34839,
-    NOXIOUS_STINGS                      = 53297,//rank 3
-    WILD_QUIVER                         = 53217,//rank 3
-    SNIPER_TRAINING                     = 53304,//rank 3
+    //Talents
+    SUREFOOTED = 24283,//rank 3
+    ENTRAPMENT = 19388,//rank 3
+    RAPID_KILLING = 34949,//rank 2
+    IMPROVED_MEND_PET = 19573,//rank 2
+    LOCK_AND_LOAD = 56344,//rank 3
+    CONCUSSIVE_BARRAGE = 35102,//rank 2
+    PIERCING_SHOTS = 53238,//rank 3
+    EXPOSE_WEAKNESS = 34503,//rank 3
+    THRILL_OF_THE_HUNT = 34499,//rank 3
+    MASTER_MARKSMAN = 34489,//rank 5
+    MASTER_TACTICIAN1 = 34506,
+    MASTER_TACTICIAN2 = 34507,
+    MASTER_TACTICIAN3 = 34508,
+    MASTER_TACTICIAN4 = 34838,
+    MASTER_TACTICIAN5 = 34839,
+    NOXIOUS_STINGS = 53297,//rank 3
+    WILD_QUIVER = 53217,//rank 3
+    SNIPER_TRAINING = 53304,//rank 3
 
-    GLYPH_RAPTOR_STRIKE                 = 63086,
-    GLYPH_ASPECT_OF_THE_VIPER           = 56851,
-    GLYPH_FREEZING_TRAP                 = 56845,
-    GLYPH_EXPLOSIVE_TRAP                = 63068,
+    GLYPH_RAPTOR_STRIKE = 63086,
+    GLYPH_ASPECT_OF_THE_VIPER = 56851,
+    GLYPH_FREEZING_TRAP = 56845,
+    GLYPH_EXPLOSIVE_TRAP = 63068,
 
-    HUNTER_T8_P2                        = 67150,//serpent sting crits
-    HUNTER_T10_P2                       = 70727,//autoshot 15% dmg proc
-    HUNTER_T10_P4                       = 70730 //sting 20% ap proc
+    HUNTER_T8_P2 = 67150,//serpent sting crits
+    HUNTER_T10_P2 = 70727,//autoshot 15% dmg proc
+    HUNTER_T10_P4 = 70730 //sting 20% ap proc
 };
 
 enum HunterSpecial
 {
-    SPECIFIC_ASPECT_MONKEY              = 0x001,
-    SPECIFIC_ASPECT_HAWK                = 0x002,
-    SPECIFIC_ASPECT_CHEETAH             = 0x004,
-    SPECIFIC_ASPECT_VIPER               = 0x008,
-    SPECIFIC_ASPECT_BEAST               = 0x010,
-    SPECIFIC_ASPECT_PACK                = 0x020,
-    SPECIFIC_ASPECT_WILD                = 0x040,
-    SPECIFIC_ASPECT_DRAGONHAWK          = 0x080,
-    SPECIFIC_ASPECT_MY_ASPECT           = 0x100,
+    SPECIFIC_ASPECT_MONKEY = 0x001,
+    SPECIFIC_ASPECT_HAWK = 0x002,
+    SPECIFIC_ASPECT_CHEETAH = 0x004,
+    SPECIFIC_ASPECT_VIPER = 0x008,
+    SPECIFIC_ASPECT_BEAST = 0x010,
+    SPECIFIC_ASPECT_PACK = 0x020,
+    SPECIFIC_ASPECT_WILD = 0x040,
+    SPECIFIC_ASPECT_DRAGONHAWK = 0x080,
+    SPECIFIC_ASPECT_MY_ASPECT = 0x100,
     //SPECIFIC_ASPECT_ALL_AREA_AUTOUSE    = (SPECIFIC_ASPECT_PACK),
 
-    IMPROVED_CONCUSSION                 = 28445,
-    IMPROVED_WING_CLIP_NORMAL           = 47168,
-    IMPROVED_WING_CLIP_EX               = 35963,
+    IMPROVED_CONCUSSION = 28445,
+    IMPROVED_WING_CLIP_NORMAL = 47168,
+    IMPROVED_WING_CLIP_EX = 35963,
 
-    VOLLEY_DAMAGE_1                     = 42243,//rank 1
+    VOLLEY_DAMAGE_1 = 42243,//rank 1
     //EXPLOSIVE_TRAP_DAMAGE_1             = 13812,//same as EXPLOSIVE_TRAP_AURA_1
 
-    QUICK_SHOTS_BUFF                    = 6150,
-    RAPID_KILLING_BUFF                  = 35099,//rank 2
-    LOCK_AND_LOAD_BUFF                  = 56453,//rank 3
-    SNIPER_TRAINING_BUFF                = 64420,//rank 3
-    RAPID_RECUPERATION_BUFF             = 54227,//rank 2, rapid fire, hidden
-    RAPID_RECUPERATION_BUFF2            = 58882,//rapid killing, 6 sec
-    IMPROVED_STEADY_SHOT_BUFF           = 53220,
+    QUICK_SHOTS_BUFF = 6150,
+    RAPID_KILLING_BUFF = 35099,//rank 2
+    LOCK_AND_LOAD_BUFF = 56453,//rank 3
+    SNIPER_TRAINING_BUFF = 64420,//rank 3
+    RAPID_RECUPERATION_BUFF = 54227,//rank 2, rapid fire, hidden
+    RAPID_RECUPERATION_BUFF2 = 58882,//rapid killing, 6 sec
+    IMPROVED_STEADY_SHOT_BUFF = 53220,
 
-    FROST_TRAP_AURA                     = 13810,
-    FREEZING_TRAP_AURA_1                = 3355,
-    IMMOLATION_TRAP_AURA_1              = 13797,
-    EXPLOSIVE_TRAP_AURA_1               = 13812,//same as EXPLOSIVE_TRAP_DAMAGE_1
-    WYVERN_STING_DOT_AURA_1             = 24131,
-    FREEZING_ARROW_AURA                 = 60210,
-    EXPLOSIVE_SHOT_PERIODIC_DUMMY_AURA  = 53352,
+    FROST_TRAP_AURA = 13810,
+    FREEZING_TRAP_AURA_1 = 3355,
+    IMMOLATION_TRAP_AURA_1 = 13797,
+    EXPLOSIVE_TRAP_AURA_1 = 13812,//same as EXPLOSIVE_TRAP_DAMAGE_1
+    WYVERN_STING_DOT_AURA_1 = 24131,
+    FREEZING_ARROW_AURA = 60210,
+    EXPLOSIVE_SHOT_PERIODIC_DUMMY_AURA = 53352,
 
-    ASPECT_OF_THE_DRAGONHAWK_MONKEY     = 61848, //linked, hidden
+    ASPECT_OF_THE_DRAGONHAWK_MONKEY = 61848, //linked, hidden
 
-    GLYPH_OF_ARCANE_SHOT_ENERGIZE       = 61389,
-    RAPID_RECUPERATION_ENERGIZE         = 58883,//rapid killing
-    RAPID_RECUPERATION_ENERGIZE_PCT_1   = 64180,//rank 1, 2%
+    GLYPH_OF_ARCANE_SHOT_ENERGIZE = 61389,
+    RAPID_RECUPERATION_ENERGIZE = 58883,//rapid killing
+    RAPID_RECUPERATION_ENERGIZE_PCT_1 = 64180,//rank 1, 2%
 
-    GIFT_OF_NAARU_HUNTER                = 59543,
+    GIFT_OF_NAARU_HUNTER = 59543,
 
-    SPIRIT_BOND_PET                     = 24529,
-    KINDRED_SPIRITS_PET                 = 57475,
+    SPIRIT_BOND_PET = 24529,
+    KINDRED_SPIRITS_PET = 57475,
     //INTIMIDATION_1                      = 24394,
-    BESTIAL_WRATH_1                     = 19574,
+    BESTIAL_WRATH_1 = 19574,
     //BEAST_WITHIN_1                      = 34471,
 
-    GO_FOR_THE_THROAT_ENERGIZE          = 34953,
-    FRENZY_BUFF                         = 19615
+    GO_FOR_THE_THROAT_ENERGIZE = 34953,
+    FRENZY_BUFF = 19615
 };
 //talent tiers 20-32-44-56-68-80
 
 static const std::vector<uint32> Hunter_spells_damage
 { AIMED_SHOT_1, ARCANE_SHOT_1, BLACK_ARROW_1, COUNTERATTACK_1, CHIMERA_SHOT_1, EXPLOSIVE_SHOT_1, EXPLOSIVE_TRAP_1,
 IMMOLATION_TRAP_1, KILL_SHOT_1, MONGOOSE_BITE_1, MULTISHOT_1, RAPTOR_STRIKE_1, SCATTER_SHOT_1, SERPENT_STING_1,
-STEADY_SHOT_1, VOLLEY_1, WYVERN_STING_1 };
+STEADY_SHOT_1, VOLLEY_1, WYVERN_STING_1, KILL_COMMAND_1 };
 static const std::vector<uint32> Hunter_spells_cc
 { CONCUSSIVE_SHOT_1, FREEZING_ARROW_1, FREEZING_TRAP_1, FROST_TRAP_1, SCARE_BEAST_1, SCATTER_SHOT_1,
 SILENCING_SHOT_1, WING_CLIP_1, WYVERN_STING_1 };
@@ -178,7 +179,7 @@ MISDIRECTION_1, RAPID_FIRE_1, READINESS_1, SCORPID_STING_1, /*SNAKE_TRAP_1, */TR
 class hunter_bot : public CreatureScript
 {
 public:
-    hunter_bot() : CreatureScript("hunter_bot") { }
+    hunter_bot() : CreatureScript("hunter_bot") {}
 
     CreatureAI* GetAI(Creature* creature) const override
     {
@@ -235,7 +236,7 @@ public:
         void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override { bot_ai::EnterEvadeMode(why); }
         void MoveInLineOfSight(Unit* u) override { bot_ai::MoveInLineOfSight(u); }
         void JustDied(Unit* u) override { _myaspect = 0; UnsummonAll(false); bot_ai::JustDied(u); }
-        void DoNonCombatActions(uint32 /*diff*/) { }
+        void DoNonCombatActions(uint32 /*diff*/) {}
 
         void CheckAspects(uint32 diff)
         {
@@ -345,7 +346,7 @@ public:
 
             if ((_myaspect == ASPECT_OF_THE_DRAGONHAWK_1 && idMap[ASPECT_OF_THE_DRAGONHAWK_1] == ASPECT_OF_THE_DRAGONHAWK) ||
                 (!ASPECT_OF_THE_DRAGONHAWK && ((_myaspect == ASPECT_OF_THE_HAWK_1 && idMap[ASPECT_OF_THE_HAWK_1] == ASPECT_OF_THE_HAWK) ||
-                _myaspect == ASPECT_OF_THE_MONKEY_1)))
+                    _myaspect == ASPECT_OF_THE_MONKEY_1)))
                 return;
 
             if (ASPECT_OF_THE_DRAGONHAWK &&
@@ -474,8 +475,8 @@ public:
                 //        if (++movingCount >= 2)
                         //if (targets.size() > 1)
                 //        {
-                            if (doCast(me, GetSpell(FROST_TRAP_1)))
-                                return;
+                if (doCast(me, GetSpell(FROST_TRAP_1)))
+                    return;
                 //            break;
                 //        }
                 //    }
@@ -731,6 +732,334 @@ public:
             DoRangedAttack(diff);
         }
 
+        bool IsDurableHunterTarget(Unit const* target) const
+        {
+            if (!target || !target->IsAlive())
+                return false;
+
+            if (target->IsPlayer() || target->IsControlledByPlayer())
+                return true;
+
+            if (Creature const* creature = target->ToCreature())
+                if (creature->IsDungeonBoss() || creature->isWorldBoss())
+                    return true;
+
+            return target->GetHealth() > me->GetMaxHealth() / 2 * (1 + target->getAttackers().size());
+        }
+
+        AuraEffect const* GetOwnedSerpentSting(Unit const* target) const
+        {
+            return target ? target->GetAuraEffect(SPELL_AURA_MOD_DAMAGE_FROM_CASTER, SPELLFAMILY_HUNTER, 0x4000, 0x0, 0x0, me->GetGUID()) : nullptr;
+        }
+
+        AuraEffect const* GetOwnedScorpidSting(Unit const* target) const
+        {
+            return target ? target->GetAuraEffect(SPELL_AURA_MOD_HIT_CHANCE, SPELLFAMILY_HUNTER, 0x8000, 0x0, 0x0, me->GetGUID()) : nullptr;
+        }
+
+        AuraEffect const* GetOwnedViperSting(Unit const* target) const
+        {
+            return target ? target->GetAuraEffect(SPELL_AURA_PERIODIC_MANA_LEECH, SPELLFAMILY_HUNTER, 0x0, 0x80, 0x0, me->GetGUID()) : nullptr;
+        }
+
+        bool HasExplosiveShotTicking(Unit const* target) const
+        {
+            if (!target)
+                return false;
+
+            Aura const* explosive = target->GetAura(EXPLOSIVE_SHOT_PERIODIC_DUMMY_AURA, me->GetGUID());
+            return explosive && explosive->GetDuration() > 600;
+        }
+
+        bool TryHunterMark(Unit* target, uint32 diff, bool can_do_arcane)
+        {
+            if (!IsSpellReady(HUNTERS_MARK_1, diff) || !can_do_arcane || Rand() > 85)
+                return false;
+            if (target->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_STALKED, SPELLFAMILY_HUNTER, 0x400))
+                return false;
+
+            return doCast(target, GetSpell(HUNTERS_MARK_1));
+        }
+
+        bool TryHunterSting(Unit* target, uint32 diff, bool can_do_nature, bool preferSerpent)
+        {
+            if (GetSpellCooldown(SERPENT_STING_1) > diff || stingTimer > diff || !can_do_nature || Rand() > 90)
+                return false;
+
+            uint32 STING = 0;
+            AuraEffect const* sting = nullptr;
+            bool const durable = IsDurableHunterTarget(target);
+
+            if (preferSerpent && GetSpell(SERPENT_STING_1) && HasRole(BOT_ROLE_DPS) && durable)
+            {
+                sting = GetOwnedSerpentSting(target);
+                if (!sting || sting->GetBase()->GetDuration() < 3000)
+                    STING = SERPENT_STING_1;
+            }
+
+            if (!STING && !preferSerpent && GetSpell(SCORPID_STING_1) && target->IsCreature() &&
+                target->ToCreature()->GetCreatureTemplate()->rank != CREATURE_ELITE_NORMAL)
+            {
+                sting = GetOwnedScorpidSting(target);
+                if (!sting || sting->GetBase()->GetCasterGUID() == me->GetGUID())
+                    STING = SCORPID_STING_1;
+            }
+
+            if (!STING && GetSpell(VIPER_STING_1) && target->IsPlayer() &&
+                target->GetPowerType() == POWER_MANA && target->GetHealth() > me->GetMaxHealth() / 2 &&
+                target->GetMaxPower(POWER_MANA) > me->GetMaxPower(POWER_MANA))
+            {
+                sting = GetOwnedViperSting(target);
+                if (!sting)
+                    STING = VIPER_STING_1;
+            }
+
+            if (!STING && GetSpell(SERPENT_STING_1) && HasRole(BOT_ROLE_DPS) && durable)
+            {
+                sting = GetOwnedSerpentSting(target);
+                if (!sting || sting->GetBase()->GetDuration() < 3000)
+                    STING = SERPENT_STING_1;
+            }
+
+            if (sting && sting->GetBase()->GetCasterGUID() == me->GetGUID() && sting->GetBase()->GetDuration() >= 3000)
+            {
+                stingTimer = 3000;
+                return false;
+            }
+
+            if (STING && doCast(target, GetSpell(STING)))
+            {
+                stingTimer = 8000;
+                return true;
+            }
+
+            return false;
+        }
+
+        void TryHunterMajorCooldowns(Unit* target, uint32 diff, bool can_do_normal)
+        {
+            if (!target || !HasRole(BOT_ROLE_DPS))
+                return;
+
+            bool const durable = IsDurableHunterTarget(target);
+            bool const burstTarget = durable || target->IsPlayer() || target->getAttackers().size() >= 3;
+
+            if (IsSpellReady(KILL_COMMAND_1, diff, false) && botPet && botPet->IsAlive() && burstTarget)
+            {
+                if (doCast(me, GetSpell(KILL_COMMAND_1)))
+                {
+                }
+            }
+
+            if (IsSpellReady(RAPID_FIRE_1, diff, false) && can_do_normal && !me->isMoving() && Rand() < 65 && burstTarget &&
+                !me->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_RANGED_HASTE, SPELLFAMILY_HUNTER, 0x20))
+            {
+                if (doCast(me, GetSpell(RAPID_FIRE_1)))
+                {
+                }
+            }
+        }
+
+        bool TryHunterAoE(Unit* target, uint32 diff, bool can_do_normal, float maxRangeNormal)
+        {
+            if (!HasRole(BOT_ROLE_DPS))
+                return false;
+
+            if (IsSpellReady(MULTISHOT_1, diff) && can_do_normal && Rand() < 80)
+            {
+                if (FindSplashTarget(maxRangeNormal))
+                    if (doCast(target, GetSpell(MULTISHOT_1)))
+                        return true;
+            }
+
+            if (IsSpellReady(VOLLEY_1, diff) && !JumpingOrFalling() && Rand() < 75)
+            {
+                if (Unit* volleyTarget = FindAOETarget(maxRangeNormal))
+                    if (doCast(volleyTarget, GetSpell(VOLLEY_1)))
+                        return true;
+            }
+
+            return false;
+        }
+
+        bool TryExplosiveShot(Unit* target, uint32 diff, bool can_do_fire)
+        {
+            if (!IsSpellReady(EXPLOSIVE_SHOT_1, diff) || !can_do_fire || !HasRole(BOT_ROLE_DPS))
+                return false;
+            if (HasExplosiveShotTicking(target))
+                return false;
+
+            return doCast(target, GetSpell(EXPLOSIVE_SHOT_1));
+        }
+
+        bool TryKillShot(Unit* target, uint32 diff, bool can_do_normal)
+        {
+            if (IsSpellReady(KILL_SHOT_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) &&
+                target->HasAuraState(AURA_STATE_HEALTHLESS_20_PERCENT))
+                return doCast(target, GetSpell(KILL_SHOT_1));
+
+            return false;
+        }
+
+        bool DoHunterMeleeActions(Unit* target, uint32 diff, bool can_do_normal)
+        {
+            if (!can_do_normal)
+                return true;
+
+            //MONGOOSE BITE
+            if (IsSpellReady(MONGOOSE_BITE_1, diff) && HasRole(BOT_ROLE_DPS) && Rand() < 50)
+            {
+                if (doCast(target, GetSpell(MONGOOSE_BITE_1)))
+                    return true;
+            }
+            //COUNTERATTACK
+            if (IsSpellReady(COUNTERATTACK_1, diff) && HasRole(BOT_ROLE_DPS) &&
+                me->HasReactive(REACTIVE_HUNTER_PARRY) && Rand() < 90)
+            {
+                if (doCast(target, GetSpell(COUNTERATTACK_1)))
+                    return true;
+            }
+            //WING CLIP
+            if (IsSpellReady(WING_CLIP_1, diff) && (!IsTank() || target->isMoving()) &&
+                Rand() < 80 && !CCed(target, true) && !target->HasAuraWithMechanic(1u << MECHANIC_SNARE))
+            {
+                if (doCast(target, GetSpell(WING_CLIP_1)))
+                    return true;
+            }
+            //RAPTOR STRIKE
+            if (IsSpellReady(RAPTOR_STRIKE_1, diff, false) && HasRole(BOT_ROLE_DPS) && Rand() < 40 &&
+                !me->GetCurrentSpell(CURRENT_MELEE_SPELL))
+            {
+                if (doCast(target, GetSpell(RAPTOR_STRIKE_1)))
+                    return true;
+            }
+
+            return true; //do not try ranged shots while trapped in melee range
+        }
+
+        bool DoBeastMasteryActions(Unit* target, uint32 diff, bool can_do_nature, bool can_do_fire, bool can_do_arcane, bool can_do_normal, float maxRangeNormal)
+        {
+            if (TryHunterAoE(target, diff, can_do_normal, maxRangeNormal))
+                return true;
+
+            //BM's hunter damage exists to feed the pet and keep the target debuffed; do not starve Serpent.
+            if (TryHunterSting(target, diff, can_do_nature, true))
+                return true;
+
+            if (IsSpellReady(ARCANE_SHOT_1, diff) && can_do_arcane)
+                if (doCast(target, GetSpell(ARCANE_SHOT_1)))
+                    return true;
+
+            if (IsSpellReady(AIMED_SHOT_1, diff) && can_do_normal && IsDurableHunterTarget(target))
+                if (doCast(target, GetSpell(AIMED_SHOT_1)))
+                    return true;
+
+            if (IsSpellReady(STEADY_SHOT_1, diff) && can_do_normal)
+                if (doCast(target, GetSpell(STEADY_SHOT_1)))
+                    return true;
+
+            return false;
+        }
+
+        bool DoMarksmanshipActions(Unit* target, uint32 diff, bool can_do_nature, bool can_do_arcane, bool can_do_normal, float maxRangeNormal)
+        {
+            //Serpent first: Chimera Shot is the whole machine, not a decoration.
+            if (TryHunterSting(target, diff, can_do_nature, true))
+                return true;
+
+            if (IsSpellReady(CHIMERA_SHOT_1, diff) && can_do_nature)
+            {
+                if (GetOwnedSerpentSting(target) || GetOwnedScorpidSting(target))
+                {
+                    if (doCast(target, GetSpell(CHIMERA_SHOT_1)))
+                        return true;
+                }
+                else
+                    SetSpellCooldown(CHIMERA_SHOT_1, 500); //wait for a useful sting
+            }
+
+            if (TryHunterAoE(target, diff, can_do_normal, maxRangeNormal))
+                return true;
+
+            if (IsSpellReady(AIMED_SHOT_1, diff) && can_do_normal)
+                if (doCast(target, GetSpell(AIMED_SHOT_1)))
+                    return true;
+
+            if (IsSpellReady(ARCANE_SHOT_1, diff) && can_do_arcane)
+                if (doCast(target, GetSpell(ARCANE_SHOT_1)))
+                    return true;
+
+            if (IsSpellReady(STEADY_SHOT_1, diff) && can_do_normal)
+                if (doCast(target, GetSpell(STEADY_SHOT_1)))
+                    return true;
+
+            return false;
+        }
+
+        bool DoSurvivalActions(Unit* target, uint32 diff, bool can_do_nature, bool can_do_fire, bool can_do_arcane, bool can_do_shadow, bool can_do_normal, float maxRangeNormal)
+        {
+            if (TryHunterAoE(target, diff, can_do_normal, maxRangeNormal))
+                return true;
+
+            //Noxious Stings and steady-shot glyph value make Serpent worth maintaining even for Survival.
+            if (TryHunterSting(target, diff, can_do_nature, true))
+                return true;
+
+            //Black Arrow shares trap category, so put it before random filler but after Serpent setup.
+            if (IsSpellReady(BLACK_ARROW_1, diff) && can_do_shadow && IsDurableHunterTarget(target))
+                if (doCast(target, GetSpell(BLACK_ARROW_1)))
+                    return true;
+
+            if (TryExplosiveShot(target, diff, can_do_fire))
+                return true;
+
+            //Lock and Load can make Explosive free/ready while its DoT is still ticking. Use a filler
+            //between Explosive Shots so the bot does not gleefully clip its own explosion.
+            if (me->HasAura(LOCK_AND_LOAD_BUFF) && HasExplosiveShotTicking(target))
+            {
+                if (IsSpellReady(AIMED_SHOT_1, diff) && can_do_normal)
+                    if (doCast(target, GetSpell(AIMED_SHOT_1)))
+                        return true;
+
+                if (IsSpellReady(ARCANE_SHOT_1, diff) && can_do_arcane)
+                    if (doCast(target, GetSpell(ARCANE_SHOT_1)))
+                        return true;
+            }
+
+            if (IsSpellReady(AIMED_SHOT_1, diff) && can_do_normal && IsDurableHunterTarget(target))
+                if (doCast(target, GetSpell(AIMED_SHOT_1)))
+                    return true;
+
+            if (IsSpellReady(STEADY_SHOT_1, diff) && can_do_normal)
+                if (doCast(target, GetSpell(STEADY_SHOT_1)))
+                    return true;
+
+            return false;
+        }
+
+        bool DoDefaultHunterActions(Unit* target, uint32 diff, bool can_do_nature, bool can_do_arcane, bool can_do_normal, float maxRangeNormal)
+        {
+            if (TryHunterAoE(target, diff, can_do_normal, maxRangeNormal))
+                return true;
+
+            if (TryHunterSting(target, diff, can_do_nature, true))
+                return true;
+
+            if (IsSpellReady(ARCANE_SHOT_1, diff) && can_do_arcane)
+                if (doCast(target, GetSpell(ARCANE_SHOT_1)))
+                    return true;
+
+            if (IsSpellReady(AIMED_SHOT_1, diff) && can_do_normal)
+                if (doCast(target, GetSpell(AIMED_SHOT_1)))
+                    return true;
+
+            if (IsSpellReady(STEADY_SHOT_1, diff) && can_do_normal)
+                if (doCast(target, GetSpell(STEADY_SHOT_1)))
+                    return true;
+
+            return false;
+        }
+
         void DoRangedAttack(uint32 diff)
         {
             Unit* mytar = opponent ? opponent : disttarget ? disttarget : nullptr;
@@ -761,7 +1090,8 @@ public:
             else if (HasRole(BOT_ROLE_DPS) && dist > 5 && dist < maxRangeNormal)
             {
                 if (doCast(mytar, AUTO_SHOT_1))
-                {}
+                {
+                }
             }
 
             CheckScatter(diff);
@@ -802,49 +1132,13 @@ public:
             //MELEE SECTION
             if (dist < 5)
             {
-                if (!can_do_normal)
-                    return;
-
-                //MONGOOSE BITE
-                if (IsSpellReady(MONGOOSE_BITE_1, diff) && HasRole(BOT_ROLE_DPS) && Rand() < 50)
-                {
-                    if (doCast(mytar, GetSpell(MONGOOSE_BITE_1)))
-                        return;
-                }
-                //COUNTERATTACK
-                if (IsSpellReady(COUNTERATTACK_1, diff) && HasRole(BOT_ROLE_DPS) &&
-                    me->HasReactive(REACTIVE_HUNTER_PARRY) && Rand() < 90)
-                {
-                    if (doCast(mytar, GetSpell(COUNTERATTACK_1)))
-                        return;
-                }
-                //WING CLIP
-                if (IsSpellReady(WING_CLIP_1, diff) && (!IsTank() || mytar->isMoving()) &&
-                    Rand() < 80 && !CCed(mytar, true) && !mytar->HasAuraWithMechanic(1u<<MECHANIC_SNARE))
-                {
-                    if (doCast(mytar, GetSpell(WING_CLIP_1)))
-                        return;
-                }
-                //RAPTOR STRIKE
-                if (IsSpellReady(RAPTOR_STRIKE_1, diff, false) && HasRole(BOT_ROLE_DPS) && Rand() < 40 &&
-                    !me->GetCurrentSpell(CURRENT_MELEE_SPELL))
-                {
-                    if (doCast(mytar, GetSpell(RAPTOR_STRIKE_1)))
-                        return;
-                }
-
-                return; //don't try to do anything else in melee
+                DoHunterMeleeActions(mytar, diff, can_do_normal);
+                return;
             }
 
             //RANGED SECTION
-
-            //HUNTERS MARK //100 yd range so don't check it
-            if (IsSpellReady(HUNTERS_MARK_1, diff) && can_do_arcane && Rand() < 65 &&
-                !mytar->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_STALKED, SPELLFAMILY_HUNTER, 0x400))
-            {
-                if (doCast(mytar, GetSpell(HUNTERS_MARK_1)))
-                    return;
-            }
+            if (TryHunterMark(mytar, diff, can_do_arcane))
+                return;
 
             CheckMisdirect(diff);
 
@@ -852,13 +1146,8 @@ public:
             if (dist > maxRangeLong)
                 return;
 
-            //KILL SHOT
-            if (IsSpellReady(KILL_SHOT_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) &&
-                mytar->HasAuraState(AURA_STATE_HEALTHLESS_20_PERCENT))
-            {
-                if (doCast(mytar, GetSpell(KILL_SHOT_1)))
-                    return;
-            }
+            if (TryKillShot(mytar, diff, can_do_normal))
+                return;
 
             //attack range check 2
             if (dist > maxRangeNormal)
@@ -869,7 +1158,7 @@ public:
 
             //CONCUSSIVE SHOT
             if (IsSpellReady(CONCUSSIVE_SHOT_1, diff) && can_do_arcane && Rand() < 35 &&
-                !CCed(mytar, true) && !mytar->HasAuraWithMechanic(1u<<MECHANIC_SNARE))
+                !CCed(mytar, true) && !mytar->HasAuraWithMechanic(1u << MECHANIC_SNARE))
             {
                 if (doCast(mytar, GetSpell(CONCUSSIVE_SHOT_1)))
                     return;
@@ -882,128 +1171,30 @@ public:
                 if (doCast(mytar, GetSpell(DISTRACTING_SHOT_1)))
                     return;
             }
-            //MULTI-SHOT shares cd with aimed shot
-            if (IsSpellReady(MULTISHOT_1, diff) && HasRole(BOT_ROLE_DPS) && Rand() < 70)
-            {
-                if (Rand() < 30 || !GetSpell(STEADY_SHOT_1) || FindSplashTarget(maxRangeNormal))
-                {
-                    if (doCast(mytar, GetSpell(MULTISHOT_1)))
-                        return;
-                }
-            }
-            //VOLLEY
-            if (IsSpellReady(VOLLEY_1, diff) && HasRole(BOT_ROLE_DPS) && !JumpingOrFalling() && Rand() < 75)
-            {
-                if (Unit* target = FindAOETarget(maxRangeNormal))
-                {
-                    if (doCast(target, GetSpell(VOLLEY_1)))
-                        return;
-                }
-            }
-            //RAPID FIRE
-            if (IsSpellReady(RAPID_FIRE_1, diff, false) && can_do_normal && HasRole(BOT_ROLE_DPS) && !me->isMoving() && Rand() < 55 &&
-                (mytar->GetHealth() > me->GetMaxHealth() * (1 + mytar->getAttackers().size()) || mytar->IsPlayer()) &&
-                !me->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_RANGED_HASTE, SPELLFAMILY_HUNTER, 0x20))
-            {
-                if (doCast(me, GetSpell(RAPID_FIRE_1)))
-                {}
-            }
-            //BLACK ARROW
-            //Black Arrow shares cooldown with fire traps
-            if (IsSpellReady(BLACK_ARROW_1, diff) && can_do_shadow && HasRole(BOT_ROLE_DPS) &&
-                mytar->GetHealth() > me->GetMaxHealth()/4 * (1 + mytar->getAttackers().size()))
-            {
-                if (doCast(mytar, GetSpell(BLACK_ARROW_1)))
-                    return;
-            }
-            //CHIMERA SHOT: no viper
-            if (IsSpellReady(CHIMERA_SHOT_1, diff) && can_do_nature && HasRole(BOT_ROLE_DPS))
-            {
-                //Serpent
-                if (mytar->GetAuraEffect(SPELL_AURA_MOD_DAMAGE_FROM_CASTER, SPELLFAMILY_HUNTER, 0x4000, 0x0, 0x0, me->GetGUID()))
-                {
-                    if (doCast(mytar, GetSpell(CHIMERA_SHOT_1)))
-                        return;
-                }
-                //Scorpid
-                else if (mytar->GetAuraEffect(SPELL_AURA_MOD_HIT_CHANCE, SPELLFAMILY_HUNTER, 0x8000, 0x0, 0x0, me->GetGUID()))
-                {
-                    if (!mytar->HasAuraType(SPELL_AURA_MOD_DISARM) &&
-                        (mytar->IsPlayer() || mytar->GetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID)))
-                    {
-                        if (doCast(mytar, GetSpell(CHIMERA_SHOT_1)))
-                            return;
-                    }
-                }
 
-                SetSpellCooldown(CHIMERA_SHOT_1, 500); //fail
-            }
-            //STING
-            if (GetSpellCooldown(SERPENT_STING_1) <= diff && can_do_nature && stingTimer <= diff && Rand() < 60)
-            {
-                uint32 STING = 0;
-                AuraEffect const* sting = nullptr;
-                if (GetSpell(SCORPID_STING_1) && mytar->IsCreature() &&
-                    mytar->ToCreature()->GetCreatureTemplate()->rank != CREATURE_ELITE_NORMAL)
-                {
-                    sting = mytar->GetAuraEffect(SPELL_AURA_MOD_HIT_CHANCE, SPELLFAMILY_HUNTER, 0x8000, 0x0, 0x0);
-                    if (!sting || sting->GetBase()->GetCasterGUID() == me->GetGUID())
-                        STING = SCORPID_STING_1;
-                }
-                //VIPER STING: pvp only
-                if (!STING && GetSpell(VIPER_STING_1) && mytar->IsPlayer() &&
-                    mytar->GetPowerType() == POWER_MANA && mytar->GetHealth() > me->GetMaxHealth()/2 &&
-                    mytar->GetMaxPower(POWER_MANA) > me->GetMaxPower(POWER_MANA))
-                {
-                    sting = mytar->GetAuraEffect(SPELL_AURA_PERIODIC_MANA_LEECH, SPELLFAMILY_HUNTER, 0x0, 0x80, 0x0, me->GetGUID());
-                    if (!sting)
-                        STING = VIPER_STING_1;
-                }
-                if (!STING && GetSpell(SERPENT_STING_1) && HasRole(BOT_ROLE_DPS) &&
-                    mytar->GetHealth() > me->GetMaxHealth()/2 * (1 + mytar->getAttackers().size()))
-                {
-                    sting = mytar->GetAuraEffect(SPELL_AURA_MOD_DAMAGE_FROM_CASTER, SPELLFAMILY_HUNTER, 0x4000, 0x0, 0x0, me->GetGUID());
-                    if (!sting)
-                        STING = SERPENT_STING_1;
-                }
+            if (!HasRole(BOT_ROLE_DPS))
+                return;
 
-                if (sting && sting->GetBase()->GetCasterGUID() == me->GetGUID() &&
-                    sting->GetBase()->GetDuration() >= 3000)
-                {
-                    stingTimer = 3000;
-                }
-                else
-                {
-                    if (STING && doCast(mytar, GetSpell(STING)))
-                    {
-                        stingTimer = 8000;
-                        return;
-                    }
-                }
-            }
-            //EXPLOSIVE SHOT: replaces Arcane Shot at 60
-            if (IsSpellReady(EXPLOSIVE_SHOT_1, diff) && can_do_fire && HasRole(BOT_ROLE_DPS))
+            TryHunterMajorCooldowns(mytar, diff, can_do_normal);
+
+            switch (GetSpec())
             {
-                if (doCast(mytar, GetSpell(EXPLOSIVE_SHOT_1)))
+            case BOT_SPEC_HUNTER_BEASTMASTERY:
+                if (DoBeastMasteryActions(mytar, diff, can_do_nature, can_do_fire, can_do_arcane, can_do_normal, maxRangeNormal))
                     return;
-            }
-            //ARCANE SHOT: shares cd with Explosive Shot
-            if (IsSpellReady(ARCANE_SHOT_1, diff) && can_do_arcane && HasRole(BOT_ROLE_DPS) && !GetSpell(EXPLOSIVE_SHOT_1))
-            {
-                if (doCast(mytar, GetSpell(ARCANE_SHOT_1)))
+                break;
+            case BOT_SPEC_HUNTER_MARKSMANSHIP:
+                if (DoMarksmanshipActions(mytar, diff, can_do_nature, can_do_arcane, can_do_normal, maxRangeNormal))
                     return;
-            }
-            //AIMED SHOT shares cd with multishot
-            if (IsSpellReady(AIMED_SHOT_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS))
-            {
-                if (doCast(mytar, GetSpell(AIMED_SHOT_1)))
+                break;
+            case BOT_SPEC_HUNTER_SURVIVAL:
+                if (DoSurvivalActions(mytar, diff, can_do_nature, can_do_fire, can_do_arcane, can_do_shadow, can_do_normal, maxRangeNormal))
                     return;
-            }
-            //STEADY SHOT
-            if (IsSpellReady(STEADY_SHOT_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS))
-            {
-                if (doCast(mytar, GetSpell(STEADY_SHOT_1)))
+                break;
+            default:
+                if (DoDefaultHunterActions(mytar, diff, can_do_nature, can_do_arcane, can_do_normal, maxRangeNormal))
                     return;
+                break;
             }
         }
 
@@ -1123,7 +1314,7 @@ public:
                 //Marked for Death (part 2): 10% crit damage bonus for Aimed Shot, Arcane Shot, Steady Shot, Kill Shot and Chimera Shot
                 if ((GetSpec() == BOT_SPEC_HUNTER_MARKSMANSHIP) && lvl >= 55 &&
                     (baseId == AIMED_SHOT_1 || baseId == ARCANE_SHOT_1 || baseId == STEADY_SHOT_1 ||
-                    baseId == KILL_SHOT_1 || baseId == CHIMERA_SHOT_1))
+                        baseId == KILL_SHOT_1 || baseId == CHIMERA_SHOT_1))
                     pctbonus += 0.05f;
             }
 
@@ -1156,7 +1347,7 @@ public:
             //T.N.T: 6% bonus damage for Explosive Shot, Explosive Trap, Immolation Trap and Black Arrow
             if ((GetSpec() == BOT_SPEC_HUNTER_SURVIVAL) && lvl >= 25 &&
                 (baseId == EXPLOSIVE_SHOT_1 || baseId == EXPLOSIVE_SHOT_PERIODIC_DUMMY_AURA ||
-                baseId == EXPLOSIVE_TRAP_AURA_1 || baseId == IMMOLATION_TRAP_AURA_1 || baseId == BLACK_ARROW_1))
+                    baseId == EXPLOSIVE_TRAP_AURA_1 || baseId == IMMOLATION_TRAP_AURA_1 || baseId == BLACK_ARROW_1))
                 pctbonus += 0.06f;
             //Ferocious Inspiration part 2: 9% bonus damage for Arcane Shot and Steady Shot
             if ((GetSpec() == BOT_SPEC_HUNTER_BEASTMASTERY) &&
@@ -1175,8 +1366,8 @@ public:
             //Sniper Training part 2: 6% bonus damage for Steady Shot, Aimed Shot, Black Arrow and Explosive Shot
             if ((GetSpec() == BOT_SPEC_HUNTER_SURVIVAL) && lvl >= 50 &&
                 ((spellInfo->SpellFamilyFlags[0] & 0x20000) ||
-                (spellInfo->SpellFamilyFlags[1] & 0x8000001) ||
-                (spellInfo->SpellFamilyFlags[2] & 0x200)))
+                    (spellInfo->SpellFamilyFlags[1] & 0x8000001) ||
+                    (spellInfo->SpellFamilyFlags[2] & 0x200)))
             {
                 if (Aura const* snip = me->GetAura(SNIPER_TRAINING_BUFF))
                 {
@@ -1219,7 +1410,7 @@ public:
             //T.N.T: 6% bonus damage for Explosive Shot, Explosive Trap, Immolation Trap and Black Arrow
             if ((GetSpec() == BOT_SPEC_HUNTER_SURVIVAL) && lvl >= 25 &&
                 (baseId == EXPLOSIVE_SHOT_1 || baseId == EXPLOSIVE_SHOT_PERIODIC_DUMMY_AURA ||
-                baseId == EXPLOSIVE_TRAP_AURA_1 || baseId == IMMOLATION_TRAP_AURA_1 || baseId == BLACK_ARROW_1))
+                    baseId == EXPLOSIVE_TRAP_AURA_1 || baseId == IMMOLATION_TRAP_AURA_1 || baseId == BLACK_ARROW_1))
                 pctbonus += 0.06f;
             //The Beast Within part 1: 10% bonus damage for all abilities
             if ((GetSpec() == BOT_SPEC_HUNTER_BEASTMASTERY) && lvl >= 50)
@@ -1257,13 +1448,13 @@ public:
             //Efficiency: -15% mana cost for Stings and Shots
             if ((GetSpec() == BOT_SPEC_HUNTER_MARKSMANSHIP) && lvl >= 25 &&
                 ((spellInfo->SpellFamilyFlags[0] & 0x7FA00) ||
-                (spellInfo->SpellFamilyFlags[1] & 0x88801081) ||
-                (spellInfo->SpellFamilyFlags[2] & 0x1)))
+                    (spellInfo->SpellFamilyFlags[1] & 0x88801081) ||
+                    (spellInfo->SpellFamilyFlags[2] & 0x1)))
                 pctbonus += 0.15f;
             //Resourcefulness: -60% mana cost for Traps, melee spells and Black Arrow
             if ((GetSpec() == BOT_SPEC_HUNTER_SURVIVAL) && lvl >= 35 &&
                 ((spellInfo->SpellFamilyFlags[0] & 0xDE) ||
-                (spellInfo->SpellFamilyFlags[1] & 0x84000)))
+                    (spellInfo->SpellFamilyFlags[1] & 0x84000)))
                 pctbonus += 0.6f;
             //Glyph of Volley: -20% mana cost for Volley
             if (lvl >= 40 && baseId == VOLLEY_1)
@@ -1430,8 +1621,8 @@ public:
             //Hawk Eye: +6 yd range for Ranged Abilities
             if (lvl >= 10 &&
                 ((spellInfo->SpellFamilyFlags[0] & 0x7FA01) ||
-                (spellInfo->SpellFamilyFlags[1] & 0x88801081) ||
-                (spellInfo->SpellFamilyFlags[2] & 0x401)))
+                    (spellInfo->SpellFamilyFlags[1] & 0x88801081) ||
+                    (spellInfo->SpellFamilyFlags[2] & 0x401)))
                 flatbonus += 6.f;
             //Glyph of Scatter Shot
             if (lvl >= 20 && baseId == SCATTER_SHOT_1)
@@ -1481,10 +1672,10 @@ public:
                 Unit const* victim = me->GetVictim();
                 if (victim &&
                     (victim->GetAuraEffect(SPELL_AURA_MOD_DAMAGE_FROM_CASTER, SPELLFAMILY_HUNTER, 0x4000, 0x0, 0x0, me->GetGUID()) ||
-                    victim->GetAuraEffect(SPELL_AURA_PERIODIC_MANA_LEECH, SPELLFAMILY_HUNTER, 0x0, 0x80, 0x0, me->GetGUID()) ||
-                    victim->GetAuraEffect(SPELL_AURA_MOD_HIT_CHANCE, SPELLFAMILY_HUNTER, 0x8000, 0x0, 0x0, me->GetGUID()) ||
-                    victim->GetAuraEffect(SPELL_AURA_MOD_STUN, SPELLFAMILY_HUNTER, 0x0, 0x1000, 0x0, me->GetGUID()) ||
-                    victim->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_HUNTER, 0x0, 0x100, 0x0, me->GetGUID())))
+                        victim->GetAuraEffect(SPELL_AURA_PERIODIC_MANA_LEECH, SPELLFAMILY_HUNTER, 0x0, 0x80, 0x0, me->GetGUID()) ||
+                        victim->GetAuraEffect(SPELL_AURA_MOD_HIT_CHANCE, SPELLFAMILY_HUNTER, 0x8000, 0x0, 0x0, me->GetGUID()) ||
+                        victim->GetAuraEffect(SPELL_AURA_MOD_STUN, SPELLFAMILY_HUNTER, 0x0, 0x1000, 0x0, me->GetGUID()) ||
+                        victim->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_HUNTER, 0x0, 0x100, 0x0, me->GetGUID())))
                 {
                     int32 cost = spellInfo->CalcPowerCost(me, spellInfo->GetSchoolMask());
                     //CastSpellExtraArgs args(true);
@@ -1525,18 +1716,18 @@ public:
             //Aspect helper
             switch (baseId)
             {
-                case ASPECT_OF_THE_MONKEY_1:
-                case ASPECT_OF_THE_HAWK_1:
-                case ASPECT_OF_THE_CHEETAH_1:
-                case ASPECT_OF_THE_VIPER_1:
-                case ASPECT_OF_THE_BEAST_1:
-                case ASPECT_OF_THE_PACK_1:
-                case ASPECT_OF_THE_WILD_1:
-                case ASPECT_OF_THE_DRAGONHAWK_1:
-                    _myaspect = baseId;
-                    break;
-                default:
-                    break;
+            case ASPECT_OF_THE_MONKEY_1:
+            case ASPECT_OF_THE_HAWK_1:
+            case ASPECT_OF_THE_CHEETAH_1:
+            case ASPECT_OF_THE_VIPER_1:
+            case ASPECT_OF_THE_BEAST_1:
+            case ASPECT_OF_THE_PACK_1:
+            case ASPECT_OF_THE_WILD_1:
+            case ASPECT_OF_THE_DRAGONHAWK_1:
+                _myaspect = baseId;
+                break;
+            default:
+                break;
             }
         }
 
@@ -1614,7 +1805,7 @@ public:
                 //normal creatures are rooted for 10 sec, elites+ for 6 sec
                 if (target->IsCreature())
                 {
-                    if (urand(1,100) <= 30)
+                    if (urand(1, 100) <= 30)
                     {
                         uint32 clip = target->ToCreature()->GetCreatureTemplate()->rank == CREATURE_ELITE_NORMAL ? IMPROVED_WING_CLIP_NORMAL : IMPROVED_WING_CLIP_EX;
                         me->CastSpell(target, clip, true);
@@ -1632,7 +1823,7 @@ public:
                 }
 
                 //zzzOLD Improved Concussion Shot: chance to stun target for 3 sec
-                if (urand(1,100) <= 15)
+                if (urand(1, 100) <= 15)
                 {
                     me->CastSpell(target, IMPROVED_CONCUSSION, true);
                 }
@@ -1640,7 +1831,7 @@ public:
             if ((GetSpec() == BOT_SPEC_HUNTER_MARKSMANSHIP) && lvl >= 50 && baseId == STEADY_SHOT_1)
             {
                 //Improved Steady Shot: 15% chance
-                if (urand(1,100) <= 15)
+                if (urand(1, 100) <= 15)
                 {
                     me->CastSpell(me, IMPROVED_STEADY_SHOT_BUFF, true);
                 }
@@ -1861,26 +2052,26 @@ public:
             //fix scale
             switch (myPetType)
             {
-                case BOT_PET_RAVAGER:
-                case BOT_PET_WASP:
-                case BOT_PET_TEROMOTH:
-                case BOT_PET_SCORPID:
-                case BOT_PET_TURTLE:
-                case BOT_PET_BEAR:
-                case BOT_PET_WARPSTALKER:
-                case BOT_PET_COREHOUND:
-                    myPet->SetObjectScale(0.75f);
-                    break;
-                case BOT_PET_CHIMAERA:
-                    myPet->SetObjectScale(0.67f);
-                    break;
-                case BOT_PET_RAPTOR:
-                case BOT_PET_DEVILSAUR:
-                case BOT_PET_RHINO:
-                    myPet->SetObjectScale(0.5f);
-                    break;
-                default:
-                    break;
+            case BOT_PET_RAVAGER:
+            case BOT_PET_WASP:
+            case BOT_PET_TEROMOTH:
+            case BOT_PET_SCORPID:
+            case BOT_PET_TURTLE:
+            case BOT_PET_BEAR:
+            case BOT_PET_WARPSTALKER:
+            case BOT_PET_COREHOUND:
+                myPet->SetObjectScale(0.75f);
+                break;
+            case BOT_PET_CHIMAERA:
+                myPet->SetObjectScale(0.67f);
+                break;
+            case BOT_PET_RAPTOR:
+            case BOT_PET_DEVILSAUR:
+            case BOT_PET_RHINO:
+                myPet->SetObjectScale(0.5f);
+                break;
+            default:
+                break;
             }
 
             botPet = myPet;
@@ -1918,35 +2109,35 @@ public:
         {
             switch (data)
             {
-                case BOTAI_MISC_PET_TYPE:
-                    return myPetType;
-                case BOTAI_MISC_PET_AVAILABLE_1:
-                    return BOT_PET_WOLF;
-                case BOTAI_MISC_PET_AVAILABLE_2:
-                    return BOT_PET_CUNNING_START;
-                case BOTAI_MISC_PET_AVAILABLE_3:
-                    return BOT_PET_FEROCITY_START;
-                case BOTAI_MISC_PET_AVAILABLE_4:
-                    return BOT_PET_TENACITY_START;
-                case BOTAI_MISC_PET_AVAILABLE_5:
-                    return _spec == BOT_SPEC_HUNTER_BEASTMASTERY && me->GetLevel() >= 80 ? BOT_PET_SILITHID : 0;
-                case BOTAI_MISC_PET_AVAILABLE_6:
-                    return _spec == BOT_SPEC_HUNTER_BEASTMASTERY && me->GetLevel() >= 80 ? BOT_PET_CHIMAERA : 0;
-                case BOTAI_MISC_PET_AVAILABLE_7:
-                    return _spec == BOT_SPEC_HUNTER_BEASTMASTERY && me->GetLevel() >= 80 ? BOT_PET_SPIRITBEAST : 0;
-                case BOTAI_MISC_PET_AVAILABLE_8:
-                    return _spec == BOT_SPEC_HUNTER_BEASTMASTERY && me->GetLevel() >= 80 ? BOT_PET_COREHOUND : 0;
-                case BOTAI_MISC_PET_AVAILABLE_9:
-                    return _spec == BOT_SPEC_HUNTER_BEASTMASTERY && me->GetLevel() >= 80 ? BOT_PET_DEVILSAUR : 0;
-                case BOTAI_MISC_PET_AVAILABLE_10:
-                    return _spec == BOT_SPEC_HUNTER_BEASTMASTERY && me->GetLevel() >= 80 ? BOT_PET_RHINO : 0;
-                case BOTAI_MISC_PET_AVAILABLE_11:
-                    return _spec == BOT_SPEC_HUNTER_BEASTMASTERY && me->GetLevel() >= 80 ? BOT_PET_WORM : 0;
-                case BOTAI_MISC_AURA_TYPE:
-                    return _myaspect;
-                    break;
-                default:
-                    return 0;
+            case BOTAI_MISC_PET_TYPE:
+                return myPetType;
+            case BOTAI_MISC_PET_AVAILABLE_1:
+                return BOT_PET_WOLF;
+            case BOTAI_MISC_PET_AVAILABLE_2:
+                return BOT_PET_CUNNING_START;
+            case BOTAI_MISC_PET_AVAILABLE_3:
+                return BOT_PET_FEROCITY_START;
+            case BOTAI_MISC_PET_AVAILABLE_4:
+                return BOT_PET_TENACITY_START;
+            case BOTAI_MISC_PET_AVAILABLE_5:
+                return _spec == BOT_SPEC_HUNTER_BEASTMASTERY && me->GetLevel() >= 80 ? BOT_PET_SILITHID : 0;
+            case BOTAI_MISC_PET_AVAILABLE_6:
+                return _spec == BOT_SPEC_HUNTER_BEASTMASTERY && me->GetLevel() >= 80 ? BOT_PET_CHIMAERA : 0;
+            case BOTAI_MISC_PET_AVAILABLE_7:
+                return _spec == BOT_SPEC_HUNTER_BEASTMASTERY && me->GetLevel() >= 80 ? BOT_PET_SPIRITBEAST : 0;
+            case BOTAI_MISC_PET_AVAILABLE_8:
+                return _spec == BOT_SPEC_HUNTER_BEASTMASTERY && me->GetLevel() >= 80 ? BOT_PET_COREHOUND : 0;
+            case BOTAI_MISC_PET_AVAILABLE_9:
+                return _spec == BOT_SPEC_HUNTER_BEASTMASTERY && me->GetLevel() >= 80 ? BOT_PET_DEVILSAUR : 0;
+            case BOTAI_MISC_PET_AVAILABLE_10:
+                return _spec == BOT_SPEC_HUNTER_BEASTMASTERY && me->GetLevel() >= 80 ? BOT_PET_RHINO : 0;
+            case BOTAI_MISC_PET_AVAILABLE_11:
+                return _spec == BOT_SPEC_HUNTER_BEASTMASTERY && me->GetLevel() >= 80 ? BOT_PET_WORM : 0;
+            case BOTAI_MISC_AURA_TYPE:
+                return _myaspect;
+                break;
+            default:
+                return 0;
             }
         }
 
@@ -1954,12 +2145,12 @@ public:
         {
             switch (data)
             {
-                case BOTAI_MISC_PET_TYPE:
-                    myPetType = value;
-                    UnsummonAll(false);
-                    break;
-                default:
-                    break;
+            case BOTAI_MISC_PET_TYPE:
+                myPetType = value;
+                UnsummonAll(false);
+                break;
+            default:
+                break;
             }
 
             bot_ai::SetAIMiscValue(data, value);
@@ -2006,7 +2197,6 @@ public:
         void InitSpells() override
         {
             uint8 lvl = me->GetLevel();
-            //bool isBeas = GetSpec() == BOT_SPEC_HUNTER_BEASTMASTERY;
             bool isMark = GetSpec() == BOT_SPEC_HUNTER_MARKSMANSHIP;
             bool isSurv = GetSpec() == BOT_SPEC_HUNTER_SURVIVAL;
 
@@ -2015,6 +2205,7 @@ public:
             InitSpellMap(TRANQ_SHOT_1);
             InitSpellMap(STEADY_SHOT_1);
             InitSpellMap(KILL_SHOT_1);
+            /*Talent*/lvl >= 66 ? InitSpellMap(KILL_COMMAND_1) : RemoveSpell(KILL_COMMAND_1);
             InitSpellMap(MULTISHOT_1);
             InitSpellMap(VOLLEY_1);
             InitSpellMap(CONCUSSIVE_SHOT_1);
@@ -2039,7 +2230,6 @@ public:
             InitSpellMap(DETERRENCE_1);
             InitSpellMap(MISDIRECTION_1);
             InitSpellMap(MEND_PET_1);
-
             InitSpellMap(ASPECT_OF_THE_MONKEY_1);
             InitSpellMap(ASPECT_OF_THE_HAWK_1);
             InitSpellMap(ASPECT_OF_THE_CHEETAH_1);
@@ -2049,17 +2239,17 @@ public:
             InitSpellMap(ASPECT_OF_THE_WILD_1);
             InitSpellMap(ASPECT_OF_THE_DRAGONHAWK_1);
 
-  /*Talent*/lvl >= (isMark ? 20 : 70) ? InitSpellMap(AIMED_SHOT_1) : RemoveSpell(AIMED_SHOT_1);
-  /*Talent*/lvl >= 30 && isMark ? InitSpellMap(READINESS_1) : RemoveSpell(READINESS_1);
-  /*Talent*/lvl >= 40 && isMark ? InitSpellMap(TRUESHOT_AURA_1) : RemoveSpell(TRUESHOT_AURA_1);
-  /*Talent*/lvl >= 50 && isMark ? InitSpellMap(SILENCING_SHOT_1) : RemoveSpell(SILENCING_SHOT_1);
-  /*Talent*/lvl >= 60 && isMark ? InitSpellMap(CHIMERA_SHOT_1) : RemoveSpell(CHIMERA_SHOT_1);
+            /*Talent*/lvl >= (isMark ? 20 : 70) ? InitSpellMap(AIMED_SHOT_1) : RemoveSpell(AIMED_SHOT_1);
+            /*Talent*/lvl >= 30 && isMark ? InitSpellMap(READINESS_1) : RemoveSpell(READINESS_1);
+            /*Talent*/lvl >= 40 && isMark ? InitSpellMap(TRUESHOT_AURA_1) : RemoveSpell(TRUESHOT_AURA_1);
+            /*Talent*/lvl >= 50 && isMark ? InitSpellMap(SILENCING_SHOT_1) : RemoveSpell(SILENCING_SHOT_1);
+            /*Talent*/lvl >= 60 && isMark ? InitSpellMap(CHIMERA_SHOT_1) : RemoveSpell(CHIMERA_SHOT_1);
 
-  /*Talent*/lvl >= (isSurv ? 20 : isMark ? 70 : 99) ? InitSpellMap(SCATTER_SHOT_1) : RemoveSpell(SCATTER_SHOT_1);
-  /*Talent*/lvl >= 30 && isSurv ? InitSpellMap(COUNTERATTACK_1) : RemoveSpell(COUNTERATTACK_1);
-  /*Talent*/lvl >= 40 && isSurv ? InitSpellMap(WYVERN_STING_1) : RemoveSpell(WYVERN_STING_1);
-  /*Talent*/lvl >= 50 && isSurv ? InitSpellMap(BLACK_ARROW_1) : RemoveSpell(BLACK_ARROW_1);
-  /*Talent*/lvl >= 60 && isSurv ? InitSpellMap(EXPLOSIVE_SHOT_1) : RemoveSpell(EXPLOSIVE_SHOT_1);
+            /*Talent*/lvl >= (isSurv ? 20 : isMark ? 70 : 99) ? InitSpellMap(SCATTER_SHOT_1) : RemoveSpell(SCATTER_SHOT_1);
+            /*Talent*/lvl >= 30 && isSurv ? InitSpellMap(COUNTERATTACK_1) : RemoveSpell(COUNTERATTACK_1);
+            /*Talent*/lvl >= 40 && isSurv ? InitSpellMap(WYVERN_STING_1) : RemoveSpell(WYVERN_STING_1);
+            /*Talent*/lvl >= 50 && isSurv ? InitSpellMap(BLACK_ARROW_1) : RemoveSpell(BLACK_ARROW_1);
+            /*Talent*/lvl >= 60 && isSurv ? InitSpellMap(EXPLOSIVE_SHOT_1) : RemoveSpell(EXPLOSIVE_SHOT_1);
         }
 
         void ApplyClassPassives() const override
@@ -2106,42 +2296,42 @@ public:
             switch (basespell)
             {
                 //case RAPID_FIRE_1:
-                case FLARE_1:
-                case MEND_PET_1:
-                case IMMOLATION_TRAP_1:
-                case FREEZING_TRAP_1:
-                case FROST_TRAP_1:
-                case EXPLOSIVE_TRAP_1:
-                case VOLLEY_1:
+            case FLARE_1:
+            case MEND_PET_1:
+            case IMMOLATION_TRAP_1:
+            case FREEZING_TRAP_1:
+            case FROST_TRAP_1:
+            case EXPLOSIVE_TRAP_1:
+            case VOLLEY_1:
                 //case ASPECT_OF_THE_MONKEY_1:
                 //case ASPECT_OF_THE_HAWK_1:
                 //case ASPECT_OF_THE_CHEETAH_1:
                 //case ASPECT_OF_THE_VIPER_1:
                 //case ASPECT_OF_THE_BEAST_1:
-                case ASPECT_OF_THE_PACK_1:
-                case ASPECT_OF_THE_WILD_1:
+            case ASPECT_OF_THE_PACK_1:
+            case ASPECT_OF_THE_WILD_1:
                 //case ASPECT_OF_THE_DRAGONHAWK_1:
-                    return true;
-                default:
-                    return false;
+                return true;
+            default:
+                return false;
             }
         }
 
         bool HasAbilitiesSpecifics() const override { return true; }
-        void FillAbilitiesSpecifics(Player const* player, std::list<std::string> &specList) override
+        void FillAbilitiesSpecifics(Player const* player, std::list<std::string>& specList) override
         {
             uint32 textId;
             switch (_myaspect)
             {
-                case ASPECT_OF_THE_MONKEY_1:     textId = BOT_TEXT_MONKEY;     break;
-                case ASPECT_OF_THE_HAWK_1:       textId = BOT_TEXT_HAWK;       break;
-                case ASPECT_OF_THE_CHEETAH_1:    textId = BOT_TEXT_CHEETAH;    break;
-                case ASPECT_OF_THE_VIPER_1:      textId = BOT_TEXT_VIPER;      break;
-                case ASPECT_OF_THE_BEAST_1:      textId = BOT_TEXT_BEAST;      break;
-                case ASPECT_OF_THE_PACK_1:       textId = BOT_TEXT_PACK;       break;
-                case ASPECT_OF_THE_WILD_1:       textId = BOT_TEXT_WILD;       break;
-                case ASPECT_OF_THE_DRAGONHAWK_1: textId = BOT_TEXT_DRAGONHAWK; break;
-                default:                         textId = BOT_TEXT_NOASPECT;   break;
+            case ASPECT_OF_THE_MONKEY_1:     textId = BOT_TEXT_MONKEY;     break;
+            case ASPECT_OF_THE_HAWK_1:       textId = BOT_TEXT_HAWK;       break;
+            case ASPECT_OF_THE_CHEETAH_1:    textId = BOT_TEXT_CHEETAH;    break;
+            case ASPECT_OF_THE_VIPER_1:      textId = BOT_TEXT_VIPER;      break;
+            case ASPECT_OF_THE_BEAST_1:      textId = BOT_TEXT_BEAST;      break;
+            case ASPECT_OF_THE_PACK_1:       textId = BOT_TEXT_PACK;       break;
+            case ASPECT_OF_THE_WILD_1:       textId = BOT_TEXT_WILD;       break;
+            case ASPECT_OF_THE_DRAGONHAWK_1: textId = BOT_TEXT_DRAGONHAWK; break;
+            default:                         textId = BOT_TEXT_NOASPECT;   break;
             }
             specList.push_back(LocalizedNpcText(player, BOT_TEXT_ASPECT) + ": " + LocalizedNpcText(player, textId));
         }
@@ -2186,30 +2376,30 @@ public:
                     //case ASPECT_OF_THE_MONKEY_1:
                     //    mask |= SPECIFIC_ASPECT_MONKEY;
                     //    break;
-                    case ASPECT_OF_THE_HAWK_1:
-                        mask |= SPECIFIC_ASPECT_HAWK;
-                        break;
-                    case ASPECT_OF_THE_CHEETAH_1:
-                        mask |= SPECIFIC_ASPECT_CHEETAH;
-                        break;
+                case ASPECT_OF_THE_HAWK_1:
+                    mask |= SPECIFIC_ASPECT_HAWK;
+                    break;
+                case ASPECT_OF_THE_CHEETAH_1:
+                    mask |= SPECIFIC_ASPECT_CHEETAH;
+                    break;
                     //case ASPECT_OF_THE_VIPER_1:
                     //    mask |= SPECIFIC_ASPECT_VIPER;
                     //    break;
                     //case ASPECT_OF_THE_BEAST_1:
                     //    mask |= SPECIFIC_ASPECT_BEAST;
                     //    break;
-                    case ASPECT_OF_THE_PACK_1:
-                        mask |= SPECIFIC_ASPECT_PACK;
-                        break;
-                    case ASPECT_OF_THE_WILD_1:
-                        mask |= SPECIFIC_ASPECT_WILD;
-                        break;
-                    case ASPECT_OF_THE_DRAGONHAWK_1:
-                        mask |= SPECIFIC_ASPECT_DRAGONHAWK;
-                        break;
-                    default:
-                        isAspect = false; //next aura
-                        break;
+                case ASPECT_OF_THE_PACK_1:
+                    mask |= SPECIFIC_ASPECT_PACK;
+                    break;
+                case ASPECT_OF_THE_WILD_1:
+                    mask |= SPECIFIC_ASPECT_WILD;
+                    break;
+                case ASPECT_OF_THE_DRAGONHAWK_1:
+                    mask |= SPECIFIC_ASPECT_DRAGONHAWK;
+                    break;
+                default:
+                    isAspect = false; //next aura
+                    break;
                 }
 
                 if (isAspect)

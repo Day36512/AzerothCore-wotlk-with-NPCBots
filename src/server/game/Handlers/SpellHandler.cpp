@@ -753,6 +753,9 @@ void WorldSession::HandleMirrorImageDataRequest(WorldPacket& recvData)
     if (!unit)
         return;
 
+    if (sScriptMgr->OnBeforeMirrorImageDataRequest(this, unit, guid))
+        return;
+
     //npcbot
     if (unit->GetTypeId() == TYPEID_UNIT)
     {

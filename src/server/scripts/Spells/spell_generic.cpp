@@ -364,13 +364,9 @@ class spell_gen_reduced_above_60 : public SpellScript
 
     void RecalculateDamage()
     {
-        if (Unit* target = GetHitUnit())
-            if (target->GetLevel() > 60)
-            {
-                int32 damage = GetHitDamage();
-                AddPct(damage, -4 * int8(std::min(target->GetLevel(), uint8(85)) - 60)); // prevents reduce by more than 100%
-                SetHitDamage(damage);
-            }
+        // Intentionally no-op.
+        // Keep the script class and hook in place so we do not have to remove
+        // registrations or alter spell_script_names bindings elsewhere.
     }
 
     void Register() override
@@ -383,16 +379,16 @@ class spell_gen_reduced_above_60_aura : public AuraScript
 {
     PrepareAuraScript(spell_gen_reduced_above_60_aura);
 
-    void CalculateAmount(AuraEffect const* /*aurEff*/, int32& amount, bool&   /*canBeRecalculated*/)
+    void CalculateAmount(AuraEffect const* /*aurEff*/, int32& /*amount*/, bool& /*canBeRecalculated*/)
     {
-        if (Unit* owner = GetUnitOwner())
-            if (owner->GetLevel() > 60)
-                AddPct(amount, -4 * int8(std::min(owner->GetLevel(), uint8(85)) - 60)); // prevents reduce by more than 100%
+        // Intentionally no-op.
+        // Leaving amount unchanged disables the above-60 scaling while preserving
+        // the script class, registration pattern, and spell_script_names usage.
     }
 
     void Register() override
     {
-        if (m_scriptSpellId != 20004) // Lifestealing enchange - no aura effect
+        if (m_scriptSpellId != 20004) // Lifestealing enchant - no aura effect
             DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_gen_reduced_above_60_aura::CalculateAmount, EFFECT_ALL, SPELL_AURA_ANY);
     }
 };
@@ -492,14 +488,13 @@ class spell_gen_disabled_above_level : public SpellScript
     PrepareSpellScript(spell_gen_disabled_above_level)
 
 public:
-    spell_gen_disabled_above_level(uint8 level) : SpellScript(), _level(level) { }
+    spell_gen_disabled_above_level(uint8 level) : SpellScript(), _level(level) {}
 
     SpellCastResult CheckRequirement()
     {
-        if (Unit* target = GetExplTargetUnit())
-            if (target->GetLevel() >= _level)
-                return SPELL_FAILED_DONT_REPORT;
-
+        // Intentionally no-op.
+        // Keep the script, constructor arg, and registration wiring intact.
+        (void)_level;
         return SPELL_CAST_OK;
     }
 
@@ -644,13 +639,11 @@ class spell_gen_disabled_above_63 : public AuraScript
 {
     PrepareAuraScript(spell_gen_disabled_above_63);
 
-    void CalculateAmount(AuraEffect const* /*aurEff*/, int32& amount, bool&   /*canBeRecalculated*/)
+    void CalculateAmount(AuraEffect const* /*aurEff*/, int32& /*amount*/, bool& /*canBeRecalculated*/)
     {
-        Unit* target = GetUnitOwner();
-        if (target->GetLevel() <= 63)
-            amount = amount * target->GetLevel() / 60;
-        else
-            SetDuration(1);
+        // Intentionally no-op.
+        // Preserve script registration and spell_script_names bindings,
+        // but remove the level scaling / above-63 disable behavior.
     }
 
     void Register() override
@@ -951,12 +944,8 @@ class spell_gen_proc_above_75 : public SpellScript
 
     SpellCastResult CheckLevel()
     {
-        Unit* caster = GetCaster();
-        if (caster->GetLevel() < 75)
-        {
-            return SPELL_FAILED_LOWLEVEL;
-        }
-
+        // Intentionally no-op.
+        // Keep the script registered, but remove the level restriction.
         return SPELL_CAST_OK;
     }
 
@@ -1026,13 +1015,10 @@ class spell_gen_proc_reduced_above_60 : public AuraScript
 {
     PrepareAuraScript(spell_gen_proc_reduced_above_60);
 
-    bool CheckProc(ProcEventInfo& eventInfo)
+    bool CheckProc(ProcEventInfo& /*eventInfo*/)
     {
-        // Xinef: mostly its 33.(3)% reduce by 70 and 66.(6)% by 80
-        if (eventInfo.GetActor() && eventInfo.GetActor()->GetLevel() > 60)
-            if (roll_chance_f((eventInfo.GetActor()->GetLevel() - 60) * 3.33f))
-                return false;
-
+        // Intentionally no-op.
+        // Keep the script and proc hook in place, but do not reduce proc chance above 60.
         return true;
     }
 
@@ -6107,18 +6093,20 @@ class spell_gen_filter_party_level_80 : public SpellScript
 {
     PrepareSpellScript(spell_gen_filter_party_level_80);
 
-    void FilterTargets(std::list<WorldObject*>& targets)
+    void FilterTargets(std::list<WorldObject*>& /*targets*/)
     {
-        targets.remove_if([&](WorldObject* target) -> bool
-        {
-            Unit* unit = target->ToUnit();
-            return unit && unit->GetLevel() >= 80;
-        });
+        // Intentionally no-op.
+        // Keep the script and area-target hook intact,
+        // but do not filter out level 80+ units.
     }
 
     void Register() override
     {
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_gen_filter_party_level_80::FilterTargets, EFFECT_ALL, TARGET_UNIT_SRC_AREA_PARTY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(
+            spell_gen_filter_party_level_80::FilterTargets,
+            EFFECT_ALL,
+            TARGET_UNIT_SRC_AREA_PARTY
+        );
     }
 };
 

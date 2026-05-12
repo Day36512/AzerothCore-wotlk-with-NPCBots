@@ -18,6 +18,7 @@
 #include "AuctionHouseMgr.h"
 #include "AuctionHouseSearcher.h"
 #include "Chat.h"
+#include "Creature.h"
 #include "GameTime.h"
 #include "Language.h"
 #include "Log.h"
@@ -28,6 +29,62 @@
 #include "World.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
+
+static bool ResolveAuctionHouseIdForPost(Creature* creature, AuctionHouseEntry const* runtimeAuctionHouseEntry, AuctionHouseId& outHouseId)
+{
+    if (!creature || !runtimeAuctionHouseEntry)
+        return false;
+
+    if (sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_INTERACTION_AUCTION))
+    {
+        outHouseId = AuctionHouseId::Neutral;
+        return true;
+    }
+
+    // Stock path for normal DB-spawned auctioneers.
+    if (CreatureData const* auctioneerData = sObjectMgr->GetCreatureData(creature->GetSpawnId()))
+    {
+        if (CreatureTemplate const* auctioneerInfo = sObjectMgr->GetCreatureTemplate(auctioneerData->id1))
+        {
+            if (AuctionHouseEntry const* templateAuctionHouseEntry = AuctionHouseMgr::GetAuctionHouseEntryFromFactionTemplate(auctioneerInfo->faction))
+            {
+                outHouseId = AuctionHouseId(templateAuctionHouseEntry->houseId);
+                return true;
+            }
+
+            LOG_ERROR("network.opcode",
+                "AuctionHouseHandler: failed to resolve auction house from template faction for auctioneer guid {} spawnId {} entry {} templateFaction {}. Falling back to runtime faction {}.",
+                creature->GetGUID().ToString(), creature->GetSpawnId(), creature->GetEntry(), auctioneerInfo->faction, creature->GetFaction());
+        }
+        else
+        {
+            LOG_ERROR("network.opcode",
+                "AuctionHouseHandler: non existing auctioneer template for guid {} spawnId {} entry {}. Falling back to runtime faction {}.",
+                creature->GetGUID().ToString(), creature->GetSpawnId(), creature->GetEntry(), creature->GetFaction());
+        }
+    }
+    else
+    {
+        if (creature->ToTempSummon())
+        {
+            LOG_DEBUG("network.opcode",
+                "AuctionHouseHandler: using runtime faction auction house resolution for temporary auctioneer guid {} entry {} faction {}.",
+                creature->GetGUID().ToString(), creature->GetEntry(), creature->GetFaction());
+        }
+        else
+        {
+            LOG_ERROR("network.opcode",
+                "AuctionHouseHandler: data for auctioneer not found for guid {} spawnId {} entry {}. Falling back to runtime faction {}.",
+                creature->GetGUID().ToString(), creature->GetSpawnId(), creature->GetEntry(), creature->GetFaction());
+        }
+    }
+
+    // Portable AH / temp summon fallback:
+    // If there is no persisted creature spawn, use the currently spawned creature faction
+    // that already passed interaction + AuctionHouseEntry resolution.
+    outHouseId = AuctionHouseId(runtimeAuctionHouseEntry->houseId);
+    return true;
+}
 
 //void called when player click on auctioneer npc
 void WorldSession::HandleAuctionHelloOpcode(WorldPacket& recvData)
@@ -172,16 +229,26 @@ void WorldSession::HandleAuctionSellItem(WorldPacket& recvData)
         return;
     }
 
+    AuctionHouseId resolvedAuctionHouseId;
+    if (!ResolveAuctionHouseIdForPost(creature, auctionHouseEntry, resolvedAuctionHouseId))
+    {
+        LOG_ERROR("network.opcode",
+            "AuctionHouseHandler: failed to resolve posting house for auctioneer guid {} entry {} faction {}.",
+            creature->GetGUID().ToString(), creature->GetEntry(), creature->GetFaction());
+        SendAuctionCommandResult(0, AUCTION_SELL_ITEM, ERR_AUCTION_DATABASE_ERROR);
+        return;
+    }
+
     etime *= MINUTE;
 
     switch (etime)
     {
-        case 1*MIN_AUCTION_TIME:
-        case 2*MIN_AUCTION_TIME:
-        case 4*MIN_AUCTION_TIME:
-            break;
-        default:
-            return;
+    case 1 * MIN_AUCTION_TIME:
+    case 2 * MIN_AUCTION_TIME:
+    case 4 * MIN_AUCTION_TIME:
+        break;
+    default:
+        return;
     }
 
     if (GetPlayer()->HasUnitState(UNIT_STATE_DIED))
@@ -206,8 +273,8 @@ void WorldSession::HandleAuctionSellItem(WorldPacket& recvData)
             itemEntry = item->GetTemplate()->ItemId;
 
         if (sAuctionMgr->GetAItem(item->GetGUID()) || !item->CanBeTraded() || item->IsNotEmptyBag() ||
-                item->GetTemplate()->HasFlag(ITEM_FLAG_CONJURED) || item->GetUInt32Value(ITEM_FIELD_DURATION) ||
-                item->GetCount() < count[i] || itemEntry != item->GetTemplate()->ItemId)
+            item->GetTemplate()->HasFlag(ITEM_FLAG_CONJURED) || item->GetUInt32Value(ITEM_FIELD_DURATION) ||
+            item->GetCount() < count[i] || itemEntry != item->GetTemplate()->ItemId)
         {
             SendAuctionCommandResult(0, AUCTION_SELL_ITEM, ERR_AUCTION_DATABASE_ERROR);
             return;
@@ -265,30 +332,7 @@ void WorldSession::HandleAuctionSellItem(WorldPacket& recvData)
 
         AuctionEntry* AH = new AuctionEntry;
         AH->Id = sObjectMgr->GenerateAuctionID();
-
-        if (sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_INTERACTION_AUCTION))
-            AH->houseId = AuctionHouseId::Neutral;
-        else
-        {
-            CreatureData const* auctioneerData = sObjectMgr->GetCreatureData(creature->GetSpawnId());
-            if (!auctioneerData)
-            {
-                LOG_ERROR("network.opcode", "Data for auctioneer not found ({})", auctioneer.ToString());
-                delete AH;
-                return;
-            }
-
-            CreatureTemplate const* auctioneerInfo = sObjectMgr->GetCreatureTemplate(auctioneerData->id1);
-            if (!auctioneerInfo)
-            {
-                LOG_ERROR("network.opcode", "Non existing auctioneer ({})", auctioneer.ToString());
-                delete AH;
-                return;
-            }
-
-            const AuctionHouseEntry* AHEntry = sAuctionMgr->GetAuctionHouseEntryFromFactionTemplate(auctioneerInfo->faction);
-            AH->houseId = AuctionHouseId(AHEntry->houseId);
-        }
+        AH->houseId = resolvedAuctionHouseId;
 
         // Required stack size of auction matches to current item stack size, just move item to auctionhouse
         if (itemsCount == 1 && item->GetCount() == count[i])
@@ -330,6 +374,7 @@ void WorldSession::HandleAuctionSellItem(WorldPacket& recvData)
             if (!newItem)
             {
                 LOG_ERROR("network.opcode", "CMSG_AUCTION_SELL_ITEM: Could not create clone of item {}", item->GetEntry());
+                delete AH;
                 SendAuctionCommandResult(0, AUCTION_SELL_ITEM, ERR_AUCTION_DATABASE_ERROR);
                 return;
             }
@@ -445,7 +490,7 @@ void WorldSession::HandleAuctionPlaceBid(WorldPacket& recvData)
 
     // price too low for next bid if not buyout
     if ((price < auction->buyout || auction->buyout == 0) &&
-            price < auction->bid + AuctionEntry::CalculateAuctionOutBid(auction->bid))
+        price < auction->bid + AuctionEntry::CalculateAuctionOutBid(auction->bid))
     {
         //auction has already higher bid, client tests it!
         return;
@@ -566,8 +611,8 @@ void WorldSession::HandleAuctionRemoveItem(WorldPacket& recvData)
 
         // item will deleted or added to received mail list
         MailDraft(auction->BuildAuctionMailSubject(AUCTION_CANCELED), AuctionEntry::BuildAuctionMailBody(ObjectGuid::Empty, 0, auction->buyout, auction->deposit))
-        .AddItem(pItem)
-        .SendMailTo(trans, player, auction, MAIL_CHECK_MASK_COPIED);
+            .AddItem(pItem)
+            .SendMailTo(trans, player, auction, MAIL_CHECK_MASK_COPIED);
     }
     else
     {

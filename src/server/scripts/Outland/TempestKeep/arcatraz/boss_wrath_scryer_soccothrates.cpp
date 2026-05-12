@@ -19,6 +19,9 @@
 #include "ScriptedCreature.h"
 #include "arcatraz.h"
 
+#include "SpellScript.h"
+#include "ScriptMgr.h"
+
 enum Say
 {
     // Wrath-Scryer Soccothrates
@@ -237,7 +240,92 @@ private:
     EventMap events2;
 };
 
+class spell_custom_felfire : public SpellScript
+{
+    PrepareSpellScript(spell_custom_felfire);
+
+private:
+    static constexpr uint32 DUNGEON_RAID_DAMAGE_PCT = 70;  // 30% reduction
+    static constexpr uint32 BOT_PET_EXTRA_DAMAGE_PCT = 75; // additional 25% reduction
+
+    static bool IsDungeonOrRaidMap(Unit* target, Unit* caster)
+    {
+        Map* map = nullptr;
+
+        if (target && target->IsInWorld())
+            map = target->GetMap();
+
+        if (!map && caster && caster->IsInWorld())
+            map = caster->GetMap();
+
+        return map && (map->IsDungeon() || map->IsRaid());
+    }
+
+    static bool IsNPCBotOrPet(Unit const* unit)
+    {
+        if (!unit)
+            return false;
+
+        return unit->IsNPCBot() || unit->IsPet();
+    }
+
+    static int32 ScaleDamage(int32 damage, uint32 numerator, uint32 denominator)
+    {
+        if (damage <= 0)
+            return damage;
+
+        return int32((int64(damage) * int64(numerator) + int64(denominator / 2)) / int64(denominator));
+    }
+
+    bool Validate(SpellInfo const* spellInfo) override
+    {
+        if (!spellInfo)
+            return false;
+
+        if (spellInfo->Effects[EFFECT_0].Effect != SPELL_EFFECT_SCHOOL_DAMAGE)
+        {
+            LOG_ERROR("spells", "spell_custom_felfire: spell {} EFFECT_0 must be SPELL_EFFECT_SCHOOL_DAMAGE.", spellInfo->Id);
+            return false;
+        }
+
+        return true;
+    }
+
+    void HandleEffect0Damage(SpellEffIndex /*effIndex*/)
+    {
+        Unit* target = GetHitUnit();
+        Unit* caster = GetCaster();
+
+        if (!target)
+            return;
+
+        if (!IsDungeonOrRaidMap(target, caster))
+            return;
+
+        int32 damage = GetHitDamage();
+        if (damage <= 0)
+            return;
+
+        uint32 numerator = DUNGEON_RAID_DAMAGE_PCT;
+        uint32 denominator = 100;
+
+        if (IsNPCBotOrPet(target))
+        {
+            numerator *= BOT_PET_EXTRA_DAMAGE_PCT;
+            denominator *= 100;
+        }
+
+        SetHitDamage(ScaleDamage(damage, numerator, denominator));
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_custom_felfire::HandleEffect0Damage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+    }
+};
+
 void AddSC_boss_wrath_scryer_soccothrates()
 {
     RegisterArcatrazCreatureAI(boss_wrath_scryer_soccothrates);
+    RegisterSpellScript(spell_custom_felfire);
 }

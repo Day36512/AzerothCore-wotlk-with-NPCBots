@@ -4,29 +4,38 @@
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * at your option any later version.
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "CellImpl.h"
 #include "Config.h"
+#include "Creature.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
 #include "InstanceMapScript.h"
 #include "InstanceScript.h"
 #include "Log.h"
+#include "Map.h"
 #include "Player.h"
+#include "Unit.h"
 #include "WorldStateDefines.h"
 #include "the_black_morass.h"
 
+#include <list>
+#include <vector>
+
 namespace BlackMorassConfig
 {
-    // Delay after Chrono Lord Deja / Temporus before portal spawning resumes.
-    // Default preserves the current behavior: 2m30s = 150000 ms.
+    // Delay after Chrono Lord Deja / Temporus die before portal spawning resumes.
+    // Default preserves the previous intended post-boss delay: 2m30s = 150000 ms.
     inline Milliseconds GetPostBossGateRespawnDelay()
     {
         uint32 delayMs = sConfigMgr->GetOption<uint32>("BlackMorass.GateRespawnDelayMs", 150000);
@@ -36,6 +45,16 @@ namespace BlackMorassConfig
             delayMs = 30 * MINUTE * IN_MILLISECONDS;
 
         return Milliseconds(delayMs);
+    }
+
+    inline Milliseconds GetTrashPortalFallbackDelay(uint8 currentRift)
+    {
+        return currentRift >= 13 ? 2min : 90s;
+    }
+
+    inline bool IsBossPortalRift(uint8 currentRift)
+    {
+        return currentRift == 6 || currentRift == 12 || currentRift == 18;
     }
 }
 
@@ -74,8 +93,10 @@ public:
             _currentRift = 0;
             _shieldPercent = 100;
             _encounterNPCs.clear();
-            _noBossSpawnDelay = true; // Delay after bosses
+            _portalSpawningEnabled = true;
+            _encounterStartBeastsKilled = false;
             _eventStatus = EVENT_PREPARE;
+            _lastPortalPosition = Position(0.0f, 0.0f, 0.0f, 0.0f);
         }
 
         void CleanupInstance()
@@ -89,8 +110,10 @@ public:
             for (Position const& pos : PortalLocation)
                 _availableRiftPositions.push_back(pos);
 
-            // Prevent getting stuck if event fails during boss break.
-            _noBossSpawnDelay = true;
+            // Prevent getting stuck if event fails during a boss break.
+            _portalSpawningEnabled = true;
+            _encounterStartBeastsKilled = false;
+            _lastPortalPosition = Position(0.0f, 0.0f, 0.0f, 0.0f);
 
             if (Creature* medivh = GetCreature(DATA_MEDIVH))
                 medivh->Respawn();
@@ -162,14 +185,20 @@ public:
                 case DATA_CHRONO_LORD_DEJA:
                 case DATA_TEMPORUS:
                 {
-                    _noBossSpawnDelay = false;
+                    // Boss portals are not allowed to advance from the trash fallback timer.
+                    // Once the boss dies, this is the only place that resumes the event.
+                    _portalSpawningEnabled = false;
+                    _scheduler.CancelGroup(CONTEXT_GROUP_RIFTS);
 
                     Milliseconds const delay = BlackMorassConfig::GetPostBossGateRespawnDelay();
 
                     _scheduler.Schedule(delay, [this](TaskContext)
                         {
-                            _noBossSpawnDelay = true;
-                            ScheduleNextPortal(0s, Position(0.0f, 0.0f, 0.0f, 0.0f));
+                            if (_eventStatus != EVENT_IN_PROGRESS || _currentRift >= 18)
+                                return;
+
+                            _portalSpawningEnabled = true;
+                            ScheduleNextPortal(0s, _lastPortalPosition);
                         });
 
                     break;
@@ -201,15 +230,17 @@ public:
 
         void ScheduleNextPortal(Milliseconds time, Position lastPosition)
         {
-            // Only one rift can be scheduled at any time.
+            // Only one rift timer can be scheduled at any time.
             _scheduler.CancelGroup(CONTEXT_GROUP_RIFTS);
 
             _scheduler.Schedule(time, [this, lastPosition](TaskContext context)
                 {
+                    context.SetGroup(CONTEXT_GROUP_RIFTS);
+
                     if (GetCreature(DATA_MEDIVH))
                     {
-                        // Spawning prevented: after-boss-delay or event failed/not started or last portal spawned.
-                        if (!_noBossSpawnDelay || _eventStatus == EVENT_PREPARE || _currentRift >= 18)
+                        // Spawning prevented: post-boss delay, event failed/not started, or last portal spawned.
+                        if (!_portalSpawningEnabled || _eventStatus == EVENT_PREPARE || _currentRift >= 18)
                             return;
 
                         Position spawnPos;
@@ -231,18 +262,19 @@ public:
                             }
 
                             _availableRiftPositions.remove(spawnPos);
+                            _lastPortalPosition = spawnPos;
 
                             DoUpdateWorldState(WORLD_STATE_BLACK_MORASS_RIFT, ++_currentRift);
 
                             instance->SummonCreature(NPC_TIME_RIFT, spawnPos);
 
-                            // Queue next portal if group doesn't kill keepers fast enough.
-                            context.Repeat((_currentRift >= 13 ? 2min : 90s));
+                            // Trash waves keep the original safety timer.
+                            // Boss waves stop here and resume only from SetBossState(..., DONE).
+                            if (!BlackMorassConfig::IsBossPortalRift(_currentRift))
+                                context.Repeat(BlackMorassConfig::GetTrashPortalFallbackDelay(_currentRift));
                         }
                         // If no rift positions are available, the next rift will be scheduled in OnCreatureRemove.
                     }
-
-                    context.SetGroup(CONTEXT_GROUP_RIFTS);
                 });
         }
 
@@ -289,7 +321,7 @@ public:
             {
                 _availableRiftPositions.push_back(creature->GetHomePosition());
 
-                if (_eventStatus == EVENT_IN_PROGRESS && _noBossSpawnDelay)
+                if (_eventStatus == EVENT_IN_PROGRESS && _portalSpawningEnabled)
                     ScheduleNextPortal(0s, creature->GetHomePosition());
 
                 _encounterNPCs.erase(creature->GetGUID());
@@ -330,6 +362,8 @@ public:
             case DATA_MEDIVH:
             {
                 _eventStatus = EVENT_IN_PROGRESS;
+
+                KillEncounterStartBeasts();
 
                 DoUpdateWorldState(WORLD_STATE_BLACK_MORASS, _eventStatus);
                 DoUpdateWorldState(WORLD_STATE_BLACK_MORASS_SHIELD, _shieldPercent);
@@ -459,12 +493,77 @@ public:
             _scheduler.Update(diff);
         }
 
+    private:
+        bool ShouldKillEncounterStartCreature(Creature* creature) const
+        {
+            if (!creature || !creature->IsInWorld() || !creature->IsAlive())
+                return false;
+
+            if (creature->FindMap() != instance)
+                return false;
+
+            // Black Morass wildlife uses hostile faction 16.  Matching faction here is more reliable
+            // than a local radius/cell scan because it catches every loaded creature currently in this
+            // instance map when Medivh starts the event.
+            if (creature->GetFaction() != 16)
+                return false;
+
+            // Safety guards.  These should not normally match faction 16, but keep them here so this
+            // cleanup can never kill player-owned units if a custom template is misconfigured.
+            if (creature->IsNPCBotOrPet())
+                return false;
+
+            if (creature->IsPet())
+                return false;
+
+            if (creature->IsControlledByPlayer())
+                return false;
+
+            if (creature->GetCharmerOrOwnerPlayerOrPlayerItself())
+                return false;
+
+            return true;
+        }
+
+        void KillEncounterStartBeasts()
+        {
+            if (_encounterStartBeastsKilled)
+                return;
+
+            _encounterStartBeastsKilled = true;
+
+            std::vector<ObjectGuid> creatureGuids;
+            creatureGuids.reserve(instance->GetCreatureBySpawnIdStore().size());
+
+            for (auto const& pair : instance->GetCreatureBySpawnIdStore())
+            {
+                Creature* creature = pair.second;
+                if (ShouldKillEncounterStartCreature(creature))
+                    creatureGuids.push_back(creature->GetGUID());
+            }
+
+            uint32 killedCount = 0;
+            for (ObjectGuid const& guid : creatureGuids)
+            {
+                Creature* creature = instance->GetCreature(guid);
+                if (!ShouldKillEncounterStartCreature(creature))
+                    continue;
+
+                creature->KillSelf(false);
+                ++killedCount;
+            }
+
+            LOG_INFO("scripts", "The Black Morass: killed {} loaded faction 16 creature(s) at encounter start.", killedCount);
+        }
+
     protected:
         std::list<Position> _availableRiftPositions;
         GuidSet _encounterNPCs;
+        Position _lastPortalPosition;
         uint8 _currentRift;
         int8 _shieldPercent;
-        bool _noBossSpawnDelay;
+        bool _portalSpawningEnabled;
+        bool _encounterStartBeastsKilled;
         EventStatus _eventStatus;
         TaskScheduler _scheduler;
     };

@@ -23,131 +23,131 @@ TODO: rituals (not directly feasable), demonic circle, demonic empowerment, demo
 
 enum WarlockBaseSpells
 {
-    CURSE_OF_WEAKNESS_1                 = 702,
-    CURSE_OF_AGONY_1                    = 980,
-    CURSE_OF_TONGUES_1                  = 1714,
-    CURSE_OF_EXHAUSTION_1               = 18223,
-    CURSE_OF_THE_ELEMENTS_1             = 1490,
-    CURSE_OF_DOOM_1                     = 603,//NI
-    SHADOW_BOLT_1                       = 686,
-    IMMOLATE_1                          = 348,
-    CORRUPTION_1                        = 172,
-    SEED_OF_CORRUPTION_1                = 27243,
-    INCINERATE_1                        = 29722,
-    SEARING_PAIN_1                      = 5676,
-    SHADOWBURN_1                        = 17877,
-    CONFLAGRATE_1                       = 17962,
-    SOUL_FIRE_1                         = 6353,
-    CHAOS_BOLT_1                        = 50796,
-    RAIN_OF_FIRE_1                      = 5740,
-    HELLFIRE_1                          = 1949,
-    SHADOWFLAME_1                       = 47897,
-    SHADOWFURY_1                        = 30283,
-    HAUNT_1                             = 48181,
-    UNSTABLE_AFFLICTION_1               = 30108,
-    FEAR_1                              = 5782,
-    HOWL_OF_TERROR_1                    = 5484,
-    DEATH_COIL_1                        = 6789,
-    SOULSHATTER_1                       = 29858,
+    CURSE_OF_WEAKNESS_1 = 702,
+    CURSE_OF_AGONY_1 = 980,
+    CURSE_OF_TONGUES_1 = 1714,
+    CURSE_OF_EXHAUSTION_1 = 18223,
+    CURSE_OF_THE_ELEMENTS_1 = 1490,
+    CURSE_OF_DOOM_1 = 603,//NI
+    SHADOW_BOLT_1 = 686,
+    IMMOLATE_1 = 348,
+    CORRUPTION_1 = 172,
+    SEED_OF_CORRUPTION_1 = 27243,
+    INCINERATE_1 = 29722,
+    SEARING_PAIN_1 = 5676,
+    SHADOWBURN_1 = 17877,
+    CONFLAGRATE_1 = 17962,
+    SOUL_FIRE_1 = 6353,
+    CHAOS_BOLT_1 = 50796,
+    RAIN_OF_FIRE_1 = 5740,
+    HELLFIRE_1 = 1949,
+    SHADOWFLAME_1 = 47897,
+    SHADOWFURY_1 = 30283,
+    HAUNT_1 = 48181,
+    UNSTABLE_AFFLICTION_1 = 30108,
+    FEAR_1 = 5782,
+    HOWL_OF_TERROR_1 = 5484,
+    DEATH_COIL_1 = 6789,
+    SOULSHATTER_1 = 29858,
 
-    DRAIN_SOUL_1                        = 1120,
-    DRAIN_MANA_1                        = 5138,
-    BANISH_1                            = 710,
+    DRAIN_SOUL_1 = 1120,
+    DRAIN_MANA_1 = 5138,
+    BANISH_1 = 710,
 
-    DEMON_SKIN_1                        = 687,
-    DEMON_ARMOR_1                       = 706,
-    FEL_ARMOR_1                         = 28176,
-    DETECT_INVISIBILITY_1               = 132,
-    UNENDING_BREATH_1                   = 5697,
-    SHADOW_WARD_1                       = 6229,
-    LIFE_TAP_1                          = 1454,
-    DARK_PACT_1                         = 18220,
+    DEMON_SKIN_1 = 687,
+    DEMON_ARMOR_1 = 706,
+    FEL_ARMOR_1 = 28176,
+    DETECT_INVISIBILITY_1 = 132,
+    UNENDING_BREATH_1 = 5697,
+    SHADOW_WARD_1 = 6229,
+    LIFE_TAP_1 = 1454,
+    DARK_PACT_1 = 18220,
 
-    CREATE_HEALTHSTONE_1                = 6201,
-    CREATE_SOULSTONE_1                  = 693,
+    CREATE_HEALTHSTONE_1 = 6201,
+    CREATE_SOULSTONE_1 = 693,
 
-    CHAOTIC_MIND                        = 61188, //8 sec duration, no cd
+    CHAOTIC_MIND = 61188, //8 sec duration, no cd
 
-    RITUAL_OF_SUMMONING_1               = 698,
-    RITUAL_OF_SOULS_1                   = 29893
+    RITUAL_OF_SUMMONING_1 = 698,
+    RITUAL_OF_SOULS_1 = 29893
 };
 enum WarlockPassives
 {
-    IMPROVED_SHADOW_BOLT                = 17803,//rank 5
-    IMPROVED_DRAIN_SOUL                 = 18372,//rank 2
-    SOUL_SIPHON                         = 17805,//rank 2
-    AFTERMATH                           = 18120,//rank 2
-    IMPROVED_FEAR                       = 53759,//rank 2
-    NIGHTFALL                           = 18095,//rank 2
-    SHADOW_EMBRACE                      = 32394,//rank 5
-    SIPHON_LIFE                         = 63108,
-    BACKLASH                            = 34939,//rank 3
-    MOLTEN_CORE                         = 47247,//rank 3
-    NETHER_PROTECTION                   = 30302,//rank 3
-    ERADICATION                         = 47197,//rank 3
-    DEMONIC_RESILIENCE                  = 30321,//rank 3
-    SOUL_LEECH                          = 30296,//rank 3
-    PYROCLASM                           = 63245,//rank 3
-    DECIMATION                          = 63158,//rank 2
-    IMPROVED_SOUL_LEECH                 = 54118,//rank 2
-    PANDEMIC                            = 58435,
-    BACKDRAFT                           = 47260,//rank 3
-    EVERLASTING_AFFLICTION              = 47205,//rank 5
+    IMPROVED_SHADOW_BOLT = 17803,//rank 5
+    IMPROVED_DRAIN_SOUL = 18372,//rank 2
+    SOUL_SIPHON = 17805,//rank 2
+    AFTERMATH = 18120,//rank 2
+    IMPROVED_FEAR = 53759,//rank 2
+    NIGHTFALL = 18095,//rank 2
+    SHADOW_EMBRACE = 32394,//rank 5
+    SIPHON_LIFE = 63108,
+    BACKLASH = 34939,//rank 3
+    MOLTEN_CORE = 47247,//rank 3
+    NETHER_PROTECTION = 30302,//rank 3
+    ERADICATION = 47197,//rank 3
+    DEMONIC_RESILIENCE = 30321,//rank 3
+    SOUL_LEECH = 30296,//rank 3
+    PYROCLASM = 63245,//rank 3
+    DECIMATION = 63158,//rank 2
+    IMPROVED_SOUL_LEECH = 54118,//rank 2
+    PANDEMIC = 58435,
+    BACKDRAFT = 47260,//rank 3
+    EVERLASTING_AFFLICTION = 47205,//rank 5
 
     //Special
-    GLYPH_CORRUPTION                    = 56218,
-    GLYPH_LIFE_TAP                      = 63320,
-    GLYPH_FEAR                          = 56244,
-    GLYPH_QUICK_DECAY                   = 70947,
-    GLYPH_CONFLAGRATE                   = 56235,
-    GLYPH_SHADOWFLAME                   = 63310
+    GLYPH_CORRUPTION = 56218,
+    GLYPH_LIFE_TAP = 63320,
+    GLYPH_FEAR = 56244,
+    GLYPH_QUICK_DECAY = 70947,
+    GLYPH_CONFLAGRATE = 56235,
+    GLYPH_SHADOWFLAME = 63310
 };
 
 enum WarlockSpecial
 {
-    CHAOS_BOLT_PASSIVE                  = 58284,
-    DEMONIC_IMMOLATE_PASSIVE            = 75445,
+    CHAOS_BOLT_PASSIVE = 58284,
+    DEMONIC_IMMOLATE_PASSIVE = 75445,
 
-    BACKLASH_BUFF                       = 34936,
-    BACKDRAFT_BUFF                      = 54277,//rank 3
-    SHADOW_TRANCE_BUFF                  = 17941,
-    MOLTEN_CORE_BUFF                    = 71165,//rank 3
-    DECIMATION_BUFF                     = 63167,//rank 2
-    CHAOTIC_MIND_BUFF                   = 61189,// "Soul Fire!" 6 sec duration Soul Fire instant cast
-    GLYPH_LIFE_TAP_BUFF                 = 63321,//"Life Tap"
+    BACKLASH_BUFF = 34936,
+    BACKDRAFT_BUFF = 54277,//rank 3
+    SHADOW_TRANCE_BUFF = 17941,
+    MOLTEN_CORE_BUFF = 71165,//rank 3
+    DECIMATION_BUFF = 63167,//rank 2
+    CHAOTIC_MIND_BUFF = 61189,// "Soul Fire!" 6 sec duration Soul Fire instant cast
+    GLYPH_LIFE_TAP_BUFF = 63321,//"Life Tap"
 
-    SHADOW_MASTERY_DEBUFF               = 17800,// Improved Shadow Bolt talent debuff
+    SHADOW_MASTERY_DEBUFF = 17800,// Improved Shadow Bolt talent debuff
 
-    SIPHON_LIFE_HEAL                    = 63106,
-    LIFE_TAP_ENERGIZE                   = 31818,
+    SIPHON_LIFE_HEAL = 63106,
+    LIFE_TAP_ENERGIZE = 31818,
 
-    SEED_OF_CORRUPTION_FINAL_DAMAGE_1   = 27285,
+    SEED_OF_CORRUPTION_FINAL_DAMAGE_1 = 27285,
 
-    SOULSTONE_RESURRECTION_1            = 20707,
-    SOULSTONE_RESURRECTION_2            = 20762,
-    SOULSTONE_RESURRECTION_3            = 20763,
-    SOULSTONE_RESURRECTION_4            = 20764,
-    SOULSTONE_RESURRECTION_5            = 20765,
-    SOULSTONE_RESURRECTION_6            = 27239,
-    SOULSTONE_RESURRECTION_7            = 47883,
+    SOULSTONE_RESURRECTION_1 = 20707,
+    SOULSTONE_RESURRECTION_2 = 20762,
+    SOULSTONE_RESURRECTION_3 = 20763,
+    SOULSTONE_RESURRECTION_4 = 20764,
+    SOULSTONE_RESURRECTION_5 = 20765,
+    SOULSTONE_RESURRECTION_6 = 27239,
+    SOULSTONE_RESURRECTION_7 = 47883,
 
-    BLOOD_PACT_1                        = 6307,
-    FEL_INTELLIGENCE_1                  = 54424,
+    BLOOD_PACT_1 = 6307,
+    FEL_INTELLIGENCE_1 = 54424,
 
-    SOUL_LINK_PET                       = 25228,//split effect lvl 20 req
-    FEL_SYNERGY_HEAL                    = 54181,
-    LIFE_TAP_ENERGIZE_PET               = 32553
+    SOUL_LINK_PET = 25228,//split effect lvl 20 req
+    FEL_SYNERGY_HEAL = 54181,
+    LIFE_TAP_ENERGIZE_PET = 32553
 };
 
 enum CurseType : uint32
 {
-    CURSE_NONE                  = 0,
-    CURSE_WEAKNESS              = 1,
-    CURSE_AGONY                 = 2,
-    CURSE_DOOM                  = 3,
-    CURSE_ELEMENTS              = 4,
-    CURSE_TONGUES               = 5,
-    CURSE_EXHAUSTION            = 6,
+    CURSE_NONE = 0,
+    CURSE_WEAKNESS = 1,
+    CURSE_AGONY = 2,
+    CURSE_DOOM = 3,
+    CURSE_ELEMENTS = 4,
+    CURSE_TONGUES = 5,
+    CURSE_EXHAUSTION = 6,
 
     CURSE_FLAG_MY_WEAKNESS,
     CURSE_FLAG_MY_AGONY,
@@ -156,22 +156,22 @@ enum CurseType : uint32
     CURSE_FLAG_MY_TONGUES,
     CURSE_FLAG_MY_EXHAUSTION,
 
-    CURSE_MASK_WEAKNESS         = (1 << CURSE_WEAKNESS),
-    CURSE_MASK_AGONY            = (1 << CURSE_AGONY),
-    CURSE_MASK_DOOM             = (1 << CURSE_DOOM),
-    CURSE_MASK_ELEMENTS         = (1 << CURSE_ELEMENTS),
-    CURSE_MASK_TONGUES          = (1 << CURSE_TONGUES),
-    CURSE_MASK_EXHAUSTION       = (1 << CURSE_EXHAUSTION),
+    CURSE_MASK_WEAKNESS = (1 << CURSE_WEAKNESS),
+    CURSE_MASK_AGONY = (1 << CURSE_AGONY),
+    CURSE_MASK_DOOM = (1 << CURSE_DOOM),
+    CURSE_MASK_ELEMENTS = (1 << CURSE_ELEMENTS),
+    CURSE_MASK_TONGUES = (1 << CURSE_TONGUES),
+    CURSE_MASK_EXHAUSTION = (1 << CURSE_EXHAUSTION),
 
-    CURSE_MASK_MY_WEAKNESS      = (1 << CURSE_FLAG_MY_WEAKNESS),
-    CURSE_MASK_MY_AGONY         = (1 << CURSE_FLAG_MY_AGONY),
-    CURSE_MASK_MY_DOOM          = (1 << CURSE_FLAG_MY_DOOM),
-    CURSE_MASK_MY_ELEMENTS      = (1 << CURSE_FLAG_MY_ELEMENTS),
-    CURSE_MASK_MY_TONGUES       = (1 << CURSE_FLAG_MY_TONGUES),
-    CURSE_MASK_MY_EXHAUSTION    = (1 << CURSE_FLAG_MY_EXHAUSTION),
+    CURSE_MASK_MY_WEAKNESS = (1 << CURSE_FLAG_MY_WEAKNESS),
+    CURSE_MASK_MY_AGONY = (1 << CURSE_FLAG_MY_AGONY),
+    CURSE_MASK_MY_DOOM = (1 << CURSE_FLAG_MY_DOOM),
+    CURSE_MASK_MY_ELEMENTS = (1 << CURSE_FLAG_MY_ELEMENTS),
+    CURSE_MASK_MY_TONGUES = (1 << CURSE_FLAG_MY_TONGUES),
+    CURSE_MASK_MY_EXHAUSTION = (1 << CURSE_FLAG_MY_EXHAUSTION),
 
-    CURSE_MASK_MY_CURSE_ANY     = (CURSE_MASK_MY_WEAKNESS | CURSE_MASK_MY_AGONY | CURSE_MASK_MY_DOOM | \
-                                CURSE_MASK_MY_ELEMENTS | CURSE_MASK_MY_TONGUES | CURSE_MASK_MY_EXHAUSTION)
+    CURSE_MASK_MY_CURSE_ANY = (CURSE_MASK_MY_WEAKNESS | CURSE_MASK_MY_AGONY | CURSE_MASK_MY_DOOM | \
+        CURSE_MASK_MY_ELEMENTS | CURSE_MASK_MY_TONGUES | CURSE_MASK_MY_EXHAUSTION)
 };
 
 static const std::vector<uint32> Warlock_spells_damage
@@ -188,7 +188,7 @@ UNENDING_BREATH_1/*, CREATE_HEALTHSTONE_1, CREATE_SOULSTONE_1, RITUAL_OF_SUMMONI
 class warlock_bot : public CreatureScript
 {
 public:
-    warlock_bot() : CreatureScript("warlock_bot") { }
+    warlock_bot() : CreatureScript("warlock_bot") {}
 
     CreatureAI* GetAI(Creature* creature) const override
     {
@@ -347,17 +347,17 @@ public:
                     uint32 spellId;
                     switch (spellInfo->Id)
                     {
-                        case   693: spellId = SOULSTONE_RESURRECTION_1; break; //rank 1
-                        case 20752: spellId = SOULSTONE_RESURRECTION_2; break; //rank 2
-                        case 20755: spellId = SOULSTONE_RESURRECTION_3; break; //rank 3
-                        case 20756: spellId = SOULSTONE_RESURRECTION_4; break; //rank 4
-                        case 20757: spellId = SOULSTONE_RESURRECTION_5; break; //rank 5
-                        case 27238: spellId = SOULSTONE_RESURRECTION_6; break; //rank 6
-                        case 47884: spellId = SOULSTONE_RESURRECTION_7; break; //rank 7
-                        default:
-                            BOT_LOG_ERROR("entities.player", "bot_warlockAI: unknown soulstone Id {}", spellInfo->Id);
-                            spellId = SOULSTONE_RESURRECTION_1;
-                            break;
+                    case   693: spellId = SOULSTONE_RESURRECTION_1; break; //rank 1
+                    case 20752: spellId = SOULSTONE_RESURRECTION_2; break; //rank 2
+                    case 20755: spellId = SOULSTONE_RESURRECTION_3; break; //rank 3
+                    case 20756: spellId = SOULSTONE_RESURRECTION_4; break; //rank 4
+                    case 20757: spellId = SOULSTONE_RESURRECTION_5; break; //rank 5
+                    case 27238: spellId = SOULSTONE_RESURRECTION_6; break; //rank 6
+                    case 47884: spellId = SOULSTONE_RESURRECTION_7; break; //rank 7
+                    default:
+                        BOT_LOG_ERROR("entities.player", "bot_warlockAI: unknown soulstone Id {}", spellInfo->Id);
+                        spellId = SOULSTONE_RESURRECTION_1;
+                        break;
                     }
                     me->CastSpell(target, spellId, false);
                 }
@@ -694,6 +694,432 @@ public:
             DoNormalAttack(diff);
         }
 
+        Aura const* GetOwnedAuraByBaseSpell(Unit const* target, uint32 baseSpell) const
+        {
+            if (!target)
+                return nullptr;
+
+            for (auto const& [_, auraApp] : target->GetAppliedAuras())
+            {
+                Aura const* aura = auraApp->GetBase();
+                if (!aura || aura->GetCasterGUID() != me->GetGUID())
+                    continue;
+
+                if (aura->GetSpellInfo()->GetFirstRankSpell()->Id == baseSpell)
+                    return aura;
+            }
+
+            return nullptr;
+        }
+
+        bool ShouldRefreshOwnedAura(Unit const* target, uint32 baseSpell, uint32 refreshMs) const
+        {
+            Aura const* aura = GetOwnedAuraByBaseSpell(target, baseSpell);
+            return !aura || aura->GetDuration() <= int32(refreshMs);
+        }
+
+        bool IsDurableWarlockTarget(Unit const* target) const
+        {
+            if (!target || !target->IsAlive())
+                return false;
+
+            if (target->IsPlayer() || target->IsControlledByPlayer())
+                return true;
+
+            if (Creature const* creature = target->ToCreature())
+                if (creature->IsDungeonBoss() || creature->isWorldBoss())
+                    return true;
+
+            uint64 healthFloor = uint64(me->GetMaxHealth()) * uint64(1 + target->getAttackers().size()) / 2;
+            return uint64(target->GetHealth()) > healthFloor;
+        }
+
+        bool HasMyImmolate(Unit const* target) const
+        {
+            return target && target->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_WARLOCK, 0x4, 0x0, 0x0, me->GetGUID());
+        }
+
+
+        bool TryMaintainLifeTapBuff(uint32 diff)
+        {
+            if (lifeTapCheckTimer > diff || !HasRole(BOT_ROLE_DPS) || Rand() > 75)
+                return false;
+
+            lifeTapCheckTimer = 10000;
+
+            if (me->GetLevel() < 15 || me->GetAuraEffect(SPELL_AURA_MOD_SPELL_DAMAGE_OF_STAT_PERCENT, SPELLFAMILY_WARLOCK, 208, 0))
+                return false;
+
+            if (!IsSpellReady(LIFE_TAP_1, diff) || GetHealthPCT(me) <= 40 || GetManaPCT(me) < 25)
+                return false;
+
+            return doCast(me, GetSpell(LIFE_TAP_1));
+        }
+
+        bool TryWarlockDefensiveDamage(Unit* mytar, uint32 diff, bool can_do_shadow, float dist)
+        {
+            if (!HasRole(BOT_ROLE_DPS))
+                return false;
+
+            //Death Coil is mainly a survival button here, not part of the ordinary damage loop.
+            if (IsSpellReady(DEATH_COIL_1, diff) && can_do_shadow && GetHealthPCT(me) < 35 && dist < CalcSpellMaxRange(DEATH_COIL_1))
+                if (doCast(mytar, GetSpell(DEATH_COIL_1)))
+                    return true;
+
+            return false;
+        }
+
+        bool TryApplyCurse(Unit* mytar, uint32 diff, bool can_do_shadow, float dist)
+        {
+            if (curseCheckTimer > diff || !can_do_shadow || GetSpellCooldown(CURSE_OF_WEAKNESS_1) > diff || Rand() > 85)
+                return false;
+            if (dist >= CalcSpellMaxRange(CURSE_OF_WEAKNESS_1) || mytar->GetHealth() <= me->GetMaxHealth() / 4)
+                return false;
+
+            curseCheckTimer = 2500;
+
+            uint32 curses = _getCursesMask(mytar);
+
+            //Refresh my Agony before it falls off if it is already the chosen curse.
+            if ((curses & CURSE_MASK_MY_AGONY) && GetSpell(CURSE_OF_AGONY_1) && HasRole(BOT_ROLE_DPS) &&
+                ShouldRefreshOwnedAura(mytar, CURSE_OF_AGONY_1, 3500) &&
+                mytar->GetHealth() > me->GetMaxHealth() / 4 * (1 + mytar->getAttackers().size()))
+            {
+                if (doCast(mytar, GetSpell(CURSE_OF_AGONY_1)))
+                    return true;
+            }
+
+            if (curses & CURSE_MASK_MY_CURSE_ANY)
+                return false;
+
+            if (!(curses & CURSE_MASK_ELEMENTS) && GetSpell(CURSE_OF_THE_ELEMENTS_1) && !IAmFree() &&
+                (GetSpec() != BOT_SPEC_WARLOCK_AFFLICTION || Rand() < 33) &&
+                master->GetGroup() && master->GetGroup()->GetMembersCount() > 2)
+            {
+                if (doCast(mytar, GetSpell(CURSE_OF_THE_ELEMENTS_1)))
+                    return true;
+            }
+
+            if (!(curses & CURSE_MASK_MY_AGONY) && GetSpell(CURSE_OF_AGONY_1) && HasRole(BOT_ROLE_DPS) &&
+                mytar->GetHealth() > me->GetMaxHealth() / 4 * (1 + mytar->getAttackers().size()))
+            {
+                if (doCast(mytar, GetSpell(CURSE_OF_AGONY_1)))
+                    return true;
+            }
+
+            if (!(curses & CURSE_MASK_TONGUES) && GetSpell(CURSE_OF_TONGUES_1) && mytar->GetHealth() > me->GetMaxHealth() / 2 &&
+                mytar->IsNonMeleeSpellCast(false, false, true))
+            {
+                if (doCast(mytar, GetSpell(CURSE_OF_TONGUES_1)))
+                    return true;
+            }
+
+            if (!(curses & CURSE_MASK_EXHAUSTION) && GetSpell(CURSE_OF_EXHAUSTION_1) && !CCed(mytar, true) &&
+                mytar->IsControlledByPlayer() && !mytar->HasAuraWithMechanic(1u << MECHANIC_SNARE))
+            {
+                if (doCast(mytar, GetSpell(CURSE_OF_EXHAUSTION_1)))
+                    return true;
+            }
+
+            if (!(curses & CURSE_MASK_WEAKNESS) && GetSpell(CURSE_OF_WEAKNESS_1) && me->GetMap()->IsDungeon() &&
+                mytar->GetMaxHealth() > me->GetMaxHealth() * 2)
+            {
+                if (doCast(mytar, GetSpell(CURSE_OF_WEAKNESS_1)))
+                    return true;
+            }
+
+            return false;
+        }
+
+        bool TryWarlockAoE(Unit* mytar, uint32 diff, bool can_do_shadow, bool can_do_fire)
+        {
+            if (!HasRole(BOT_ROLE_DPS))
+                return false;
+
+            //Destruction's control AoE. Keep this before channelled AoE.
+            if (IsSpellReady(SHADOWFURY_1, diff) && can_do_shadow && !CCed(mytar, true) && Rand() < 55)
+            {
+                if (FindSplashTarget(CalcSpellMaxRange(SHADOWFURY_1)) && doCast(mytar, GetSpell(SHADOWFURY_1)))
+                    return true;
+            }
+
+            //Affliction should prefer Seed over Rain of Fire when a real cluster exists.
+            if (IsSpellReady(SEED_OF_CORRUPTION_1, diff) && can_do_shadow && Rand() < 90)
+            {
+                if (Unit* target = FindAOETarget(CalcSpellMaxRange(SEED_OF_CORRUPTION_1)))
+                {
+                    if (!target->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_WARLOCK, 0x0, 0x10, 0x0, me->GetGUID()) &&
+                        target->GetHealth() > me->GetMaxHealth() / 3)
+                    {
+                        if (doCast(target, GetSpell(SEED_OF_CORRUPTION_1)))
+                            return true;
+                    }
+                }
+
+                SetSpellCooldown(SEED_OF_CORRUPTION_1, 1000); //fail
+            }
+
+            if (longCasted && IsSpellReady(SHADOWFLAME_1, diff) && can_do_shadow && Rand() < 65)
+            {
+                std::list<Unit*> targets;
+                GetNearbyTargetsInConeList(targets, 8); //radius 10 yd
+                if (!targets.empty() && doCast(me, GetSpell(SHADOWFLAME_1)))
+                    return true;
+            }
+
+            if (IsSpellReady(HELLFIRE_1, diff) && !IAmFree() && !JumpingOrFalling() && GetHealthPCT(me) > 90 && Rand() < 25)
+            {
+                std::list<Unit*> targets;
+                GetNearbyTargetsList(targets, 12.f, 0);
+                for (std::list<Unit*>::iterator itr = targets.begin(); itr != targets.end();)
+                {
+                    Unit* u = *itr;
+                    bool erase = false;
+                    if (u->isMoving())
+                    {
+                        if (me->GetDistance(u) > 10.f && !u->HasInArc(float(M_PI) / 2, me))
+                            erase = true;
+                    }
+                    else if (me->GetDistance(u) > 9.5f)
+                        erase = true;
+
+                    if (erase)
+                    {
+                        targets.erase(itr++);
+                        continue;
+                    }
+                    ++itr;
+                }
+
+                if (targets.size() >= 4 && doCast(me, GetSpell(HELLFIRE_1)))
+                    return true;
+            }
+
+            if (IsSpellReady(RAIN_OF_FIRE_1, diff) && can_do_fire && !JumpingOrFalling() && Rand() < 45 &&
+                (GetSpec() != BOT_SPEC_WARLOCK_AFFLICTION || !GetSpell(SEED_OF_CORRUPTION_1)))
+            {
+                if (Unit* raintarget = FindAOETarget(CalcSpellMaxRange(RAIN_OF_FIRE_1)))
+                    if (doCast(raintarget, GetSpell(RAIN_OF_FIRE_1)))
+                        return true;
+            }
+
+            return false;
+        }
+
+        bool TrySoulFire(Unit* mytar, uint32 diff, bool can_do_fire, float dist)
+        {
+            if (!IsSpellReady(SOUL_FIRE_1, diff) || !can_do_fire || dist >= CalcSpellMaxRange(SOUL_FIRE_1))
+                return false;
+
+            if (mytar->IsPolymorphed() || me->HasAuraTypeWithAffectMask(SPELL_AURA_NO_REAGENT_USE, sSpellMgr->GetSpellInfo(SOUL_FIRE_1)) ||
+                me->HasAura(CHAOTIC_MIND_BUFF) || me->HasAura(DECIMATION_BUFF) ||
+                (me->HasAura(BACKDRAFT_BUFF) && mytar->GetHealth() > me->GetMaxHealth() / 8 * (1 + mytar->getAttackers().size())))
+            {
+                if (doCast(mytar, GetSpell(SOUL_FIRE_1)))
+                    return true;
+            }
+
+            return false;
+        }
+
+        bool DoAfflictionActions(Unit* mytar, uint32 diff, bool can_do_shadow, bool can_do_fire, float dist)
+        {
+            bool const durable = IsDurableWarlockTarget(mytar);
+
+            if (TryWarlockAoE(mytar, diff, can_do_shadow, can_do_fire))
+                return true;
+
+            if (durable && IsSpellReady(HAUNT_1, diff) && can_do_shadow && dist < CalcSpellMaxRange(HAUNT_1) &&
+                ShouldRefreshOwnedAura(mytar, HAUNT_1, 3500))
+            {
+                if (doCast(mytar, GetSpell(HAUNT_1)))
+                    return true;
+            }
+
+            if (durable && IsSpellReady(UNSTABLE_AFFLICTION_1, diff) && can_do_shadow && dist < CalcSpellMaxRange(UNSTABLE_AFFLICTION_1) &&
+                ShouldRefreshOwnedAura(mytar, UNSTABLE_AFFLICTION_1, 3000))
+            {
+                if (doCast(mytar, GetSpell(UNSTABLE_AFFLICTION_1)))
+                    return true;
+            }
+
+            if (durable && IsSpellReady(CORRUPTION_1, diff) && can_do_shadow && dist < CalcSpellMaxRange(CORRUPTION_1) &&
+                !mytar->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_WARLOCK, 0x0, 0x10, 0x0, me->GetGUID()) &&
+                ShouldRefreshOwnedAura(mytar, CORRUPTION_1, 4500))
+            {
+                if (doCast(mytar, GetSpell(CORRUPTION_1)))
+                    return true;
+            }
+
+            if (IsSpellReady(DRAIN_SOUL_1, diff) && can_do_shadow && mytar->IsCreature() && GetHealthPCT(mytar) < 25 &&
+                mytar->GetHealth() > me->GetMaxHealth() / 2 && dist < CalcSpellMaxRange(DRAIN_SOUL_1))
+            {
+                if (doCast(mytar, GetSpell(DRAIN_SOUL_1)))
+                    return true;
+            }
+
+            //Low-level affliction before Unstable Affliction exists can still use Immolate on durable targets.
+            if (!GetSpell(UNSTABLE_AFFLICTION_1) && durable && IsSpellReady(IMMOLATE_1, diff) && can_do_fire &&
+                dist < CalcSpellMaxRange(IMMOLATE_1) && ShouldRefreshOwnedAura(mytar, IMMOLATE_1, 3000))
+            {
+                if (doCast(mytar, GetSpell(IMMOLATE_1)))
+                    return true;
+            }
+
+            if (IsSpellReady(SHADOW_BOLT_1, diff) && can_do_shadow && dist < CalcSpellMaxRange(SHADOW_BOLT_1))
+                if (doCast(mytar, GetSpell(SHADOW_BOLT_1)))
+                    return true;
+
+            return false;
+        }
+
+        bool DoDemonologyActions(Unit* mytar, uint32 diff, bool can_do_shadow, bool can_do_fire, float dist)
+        {
+            bool const durable = IsDurableWarlockTarget(mytar);
+
+            if (TryWarlockAoE(mytar, diff, can_do_shadow, can_do_fire))
+                return true;
+
+            if (TrySoulFire(mytar, diff, can_do_fire, dist))
+                return true;
+
+            if (durable && IsSpellReady(CORRUPTION_1, diff) && can_do_shadow && dist < CalcSpellMaxRange(CORRUPTION_1) &&
+                !mytar->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_WARLOCK, 0x0, 0x10, 0x0, me->GetGUID()) &&
+                ShouldRefreshOwnedAura(mytar, CORRUPTION_1, 4500))
+            {
+                if (doCast(mytar, GetSpell(CORRUPTION_1)))
+                    return true;
+            }
+
+            if (durable && IsSpellReady(IMMOLATE_1, diff) && can_do_fire && dist < CalcSpellMaxRange(IMMOLATE_1) &&
+                ShouldRefreshOwnedAura(mytar, IMMOLATE_1, 3000))
+            {
+                if (doCast(mytar, GetSpell(IMMOLATE_1)))
+                    return true;
+            }
+
+            if (me->HasAura(MOLTEN_CORE_BUFF) && HasMyImmolate(mytar) && IsSpellReady(INCINERATE_1, diff) && can_do_fire &&
+                dist < CalcSpellMaxRange(INCINERATE_1))
+            {
+                if (doCast(mytar, GetSpell(INCINERATE_1)))
+                    return true;
+            }
+
+            if (IsTank() && IsSpellReady(SEARING_PAIN_1, diff) && can_do_fire && dist < CalcSpellMaxRange(SEARING_PAIN_1))
+            {
+                if (doCast(mytar, GetSpell(SEARING_PAIN_1)))
+                    return true;
+            }
+
+            if (IsSpellReady(SHADOW_BOLT_1, diff) && can_do_shadow && dist < CalcSpellMaxRange(SHADOW_BOLT_1))
+                if (doCast(mytar, GetSpell(SHADOW_BOLT_1)))
+                    return true;
+
+            return false;
+        }
+
+        bool DoDestructionActions(Unit* mytar, uint32 diff, bool can_do_shadow, bool can_do_fire, float dist)
+        {
+            bool const durable = IsDurableWarlockTarget(mytar);
+
+            if (TryWarlockAoE(mytar, diff, can_do_shadow, can_do_fire))
+                return true;
+
+            if (IsSpellReady(SHADOWBURN_1, diff) && can_do_shadow && dist < CalcSpellMaxRange(SHADOWBURN_1) &&
+                mytar->HasAuraState(AURA_STATE_HEALTHLESS_35_PERCENT))
+            {
+                if (doCast(mytar, GetSpell(SHADOWBURN_1)))
+                    return true;
+            }
+
+            if (durable && IsSpellReady(IMMOLATE_1, diff) && can_do_fire && dist < CalcSpellMaxRange(IMMOLATE_1) &&
+                ShouldRefreshOwnedAura(mytar, IMMOLATE_1, 3500))
+            {
+                if (doCast(mytar, GetSpell(IMMOLATE_1)))
+                    return true;
+            }
+
+            if (IsSpellReady(CONFLAGRATE_1, diff) && can_do_fire && dist < CalcSpellMaxRange(CONFLAGRATE_1) &&
+                mytar->HasAuraState(AURA_STATE_CONFLAGRATE) && HasMyImmolate(mytar))
+            {
+                if (doCast(mytar, GetSpell(CONFLAGRATE_1)))
+                    return true;
+            }
+
+            if (IsSpellReady(CHAOS_BOLT_1, diff) && can_do_fire && dist < CalcSpellMaxRange(CHAOS_BOLT_1))
+            {
+                if (doCast(mytar, GetSpell(CHAOS_BOLT_1)))
+                    return true;
+            }
+
+            if (TrySoulFire(mytar, diff, can_do_fire, dist))
+                return true;
+
+            if (longCasted && IsSpellReady(SEARING_PAIN_1, diff) && can_do_fire && mytar->IsPlayer() && Rand() < 35 &&
+                dist < CalcSpellMaxRange(SEARING_PAIN_1))
+            {
+                if (doCast(mytar, GetSpell(SEARING_PAIN_1)))
+                    return true;
+            }
+
+            if (IsSpellReady(INCINERATE_1, diff) && can_do_fire && HasMyImmolate(mytar) && dist < CalcSpellMaxRange(INCINERATE_1))
+            {
+                if (doCast(mytar, GetSpell(INCINERATE_1)))
+                    return true;
+            }
+
+            if (IsSpellReady(SHADOW_BOLT_1, diff) && can_do_shadow && dist < CalcSpellMaxRange(SHADOW_BOLT_1))
+                if (doCast(mytar, GetSpell(SHADOW_BOLT_1)))
+                    return true;
+
+            return false;
+        }
+
+        bool DoDefaultWarlockActions(Unit* mytar, uint32 diff, bool can_do_shadow, bool can_do_fire, float dist)
+        {
+            bool const durable = IsDurableWarlockTarget(mytar);
+
+            if (TryWarlockAoE(mytar, diff, can_do_shadow, can_do_fire))
+                return true;
+
+            if (durable && IsSpellReady(CORRUPTION_1, diff) && can_do_shadow && dist < CalcSpellMaxRange(CORRUPTION_1) &&
+                !mytar->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_WARLOCK, 0x0, 0x10, 0x0, me->GetGUID()) &&
+                ShouldRefreshOwnedAura(mytar, CORRUPTION_1, 4500))
+            {
+                if (doCast(mytar, GetSpell(CORRUPTION_1)))
+                    return true;
+            }
+
+            if (durable && IsSpellReady(IMMOLATE_1, diff) && can_do_fire && dist < CalcSpellMaxRange(IMMOLATE_1) &&
+                ShouldRefreshOwnedAura(mytar, IMMOLATE_1, 3000))
+            {
+                if (doCast(mytar, GetSpell(IMMOLATE_1)))
+                    return true;
+            }
+
+            if (IsSpellReady(SHADOW_BOLT_1, diff) && can_do_shadow && dist < CalcSpellMaxRange(SHADOW_BOLT_1))
+                if (doCast(mytar, GetSpell(SHADOW_BOLT_1)))
+                    return true;
+
+            if (IsSpellReady(INCINERATE_1, diff) && can_do_fire && HasMyImmolate(mytar) && dist < CalcSpellMaxRange(INCINERATE_1))
+                if (doCast(mytar, GetSpell(INCINERATE_1)))
+                    return true;
+
+            return false;
+        }
+
+        void DoWandFallback(Unit* mytar, uint32 diff)
+        {
+            if (Spell const* shot = me->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL))
+            {
+                if (shot->GetSpellInfo()->Id == SHOOT_WAND && shot->m_targets.GetUnitTarget() != mytar)
+                    me->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
+            }
+            else if (IsSpellReady(SHOOT_WAND, diff) && !me->isMoving() && me->GetDistance(mytar) < 30 && GetEquips(BOT_SLOT_RANGED) &&
+                doCast(mytar, SHOOT_WAND))
+                return;
+        }
+
         void DoNormalAttack(uint32 diff)
         {
             Unit* mytar = opponent ? opponent : disttarget ? disttarget : nullptr;
@@ -712,282 +1138,49 @@ public:
                 return;
 
             auto [can_do_shadow, can_do_fire] = CanAffectVictimBools(mytar, SPELL_SCHOOL_SHADOW, SPELL_SCHOOL_FIRE);
-
             float dist = me->GetDistance(mytar);
 
             //spell reflections
-            if (IsSpellReady(CURSE_OF_THE_ELEMENTS_1, diff)  && can_do_shadow&& dist < CalcSpellMaxRange(CURSE_OF_THE_ELEMENTS_1) &&
-                CanRemoveReflectSpells(mytar, CURSE_OF_THE_ELEMENTS_1) &&
-                doCast(mytar, CURSE_OF_THE_ELEMENTS_1))
+            if (IsSpellReady(CURSE_OF_THE_ELEMENTS_1, diff) && can_do_shadow && dist < CalcSpellMaxRange(CURSE_OF_THE_ELEMENTS_1) &&
+                CanRemoveReflectSpells(mytar, CURSE_OF_THE_ELEMENTS_1) && doCast(mytar, CURSE_OF_THE_ELEMENTS_1))
                 return;
-            else if (IsSpellReady(CURSE_OF_WEAKNESS_1, diff) && can_do_shadow && dist < CalcSpellMaxRange(CURSE_OF_WEAKNESS_1) &&
-                CanRemoveReflectSpells(mytar, CURSE_OF_WEAKNESS_1) &&
-                doCast(mytar, CURSE_OF_WEAKNESS_1))
+            if (IsSpellReady(CURSE_OF_WEAKNESS_1, diff) && can_do_shadow && dist < CalcSpellMaxRange(CURSE_OF_WEAKNESS_1) &&
+                CanRemoveReflectSpells(mytar, CURSE_OF_WEAKNESS_1) && doCast(mytar, CURSE_OF_WEAKNESS_1))
                 return;
 
-            //Offensive heal (Death Coil)
-            if (IsSpellReady(DEATH_COIL_1, diff) && can_do_shadow && HasRole(BOT_ROLE_DPS) && dist < CalcSpellMaxRange(DEATH_COIL_1) &&
-                GetHealthPCT(me) < 35)
-            {
-                //if (me->IsNonMeleeSpellCast(true))
-                //    me->InterruptNonMeleeSpells(true);
-                if (doCast(mytar, GetSpell(DEATH_COIL_1)))
-                    return;
-            }
+            if (TryWarlockDefensiveDamage(mytar, diff, can_do_shadow, dist))
+                return;
 
-            //Life Tap / Dark Pact for Glyph of Life Tap
-            if (lifeTapCheckTimer <= diff && HasRole(BOT_ROLE_DPS) && Rand() < 75)
-            {
-                lifeTapCheckTimer = 10000;
-                if (me->GetLevel() >= 15 && !me->GetAuraEffect(SPELL_AURA_MOD_SPELL_DAMAGE_OF_STAT_PERCENT, SPELLFAMILY_WARLOCK, 208, 0))
-                {
-                    //doesn't work: wrong spell proc entry 10.12.2020
-                    //if (IsSpellReady(DARK_PACT_1, diff) && botPet && GetManaPCT(me) > 70)
-                    //{
-                    //    if (doCast(me, GetSpell(DARK_PACT_1)))
-                    //        return;
-                    //}
-                    //else
-                    if (IsSpellReady(LIFE_TAP_1, diff) && GetHealthPCT(me) > 30)
-                    {
-                        if (doCast(me, GetSpell(LIFE_TAP_1)))
-                            return;
-                    }
-                }
-            }
-            //Shadowfury
-            if (IsSpellReady(SHADOWFURY_1, diff) && can_do_shadow && HasRole(BOT_ROLE_DPS) && !CCed(mytar, true) && Rand() < 55)
-            {
-                if (FindSplashTarget(CalcSpellMaxRange(SHADOWFURY_1)) &&
-                    doCast(mytar, GetSpell(SHADOWFURY_1)))
-                    return;
-            }
-            //Hellfire
-            if (IsSpellReady(HELLFIRE_1, diff) && HasRole(BOT_ROLE_DPS) && !IAmFree() && !JumpingOrFalling() &&
-                GetHealthPCT(me) > 90 && Rand() < 25)
-            {
-                std::list<Unit*> targets;
-                GetNearbyTargetsList(targets, 12.f, 0);
-                for (std::list<Unit*>::iterator itr = targets.begin(); itr != targets.end();)
-                {
-                    Unit* u = *itr;
-                    bool erase = false;
-                    if (u->isMoving())
-                    {
-                        if (me->GetDistance(u) > 10.f && !u->HasInArc(float(M_PI)/2, me))
-                            erase = true;
-                    }
-                    else if (me->GetDistance(u) > 9.5f)
-                        erase = true;
+            if (TryMaintainLifeTapBuff(diff))
+                return;
 
-                    if (erase)
-                    {
-                        targets.erase(itr++);
-                        continue;
-                    }
-                    ++itr;
-                }
-                if (targets.size() >= 4 && doCast(me, GetSpell(HELLFIRE_1)))
-                    return;
-            }
-            //Rain of Fire
-            if (IsSpellReady(RAIN_OF_FIRE_1, diff) && HasRole(BOT_ROLE_DPS) && !JumpingOrFalling() && Rand() < 45 &&
-                (GetSpec() != BOT_SPEC_WARLOCK_AFFLICTION || !GetSpell(SEED_OF_CORRUPTION_1)))
-            {
-                if (Unit* raintarget = FindAOETarget(CalcSpellMaxRange(RAIN_OF_FIRE_1)))
-                {
-                    if (doCast(raintarget, GetSpell(RAIN_OF_FIRE_1)))
-                        return;
-                }
-            }
-            //Searing Pain (PvP)
-            if (longCasted && IsSpellReady(SEARING_PAIN_1, diff) && can_do_fire && HasRole(BOT_ROLE_DPS) &&
-                GetSpec() != BOT_SPEC_WARLOCK_AFFLICTION &&
-                mytar->IsPlayer() && Rand() < 35 && dist < CalcSpellMaxRange(SEARING_PAIN_1))
-            {
-                if (doCast(mytar, GetSpell(SEARING_PAIN_1)))
-                    return;
-            }
-            //Shadowflame
-            if (longCasted && IsSpellReady(SHADOWFLAME_1, diff) && can_do_shadow && HasRole(BOT_ROLE_DPS) && Rand() < 65)
-            {
-                std::list<Unit*> targets;
-                GetNearbyTargetsInConeList(targets, 8); //radius 10 yd
-                if (!targets.empty() && doCast(me, GetSpell(SHADOWFLAME_1)))
-                    return;
-            }
-            //Curse, checking affliction range
-            if (curseCheckTimer <= diff && can_do_shadow && GetSpellCooldown(CURSE_OF_WEAKNESS_1) <= diff && Rand() < 85 &&
-                dist < CalcSpellMaxRange(CURSE_OF_WEAKNESS_1) && mytar->GetHealth() > me->GetMaxHealth() / 4)
-            {
-                curseCheckTimer = 2500;
-                uint32 curses = _getCursesMask(mytar);
-                if (!(curses & CURSE_MASK_MY_CURSE_ANY))
-                {
-                    if (!(curses & CURSE_MASK_ELEMENTS) && GetSpell(CURSE_OF_THE_ELEMENTS_1) && !IAmFree() &&
-                        (GetSpec() != BOT_SPEC_WARLOCK_AFFLICTION || Rand() < 33) &&
-                        master->GetGroup() && master->GetGroup()->GetMembersCount() > 2)
-                    {
-                        if (doCast(mytar, GetSpell(CURSE_OF_THE_ELEMENTS_1)))
-                            return;
-                    }
-                    if (!(curses & CURSE_MASK_MY_AGONY) && GetSpell(CURSE_OF_AGONY_1) && HasRole(BOT_ROLE_DPS) &&
-                        mytar->GetHealth() > me->GetMaxHealth() / 4 * (1 + mytar->getAttackers().size()))
-                    {
-                        if (doCast(mytar, GetSpell(CURSE_OF_AGONY_1)))
-                            return;
-                    }
-                    if (!(curses & CURSE_MASK_TONGUES) && GetSpell(CURSE_OF_TONGUES_1) && mytar->GetHealth() > me->GetMaxHealth() / 2 &&
-                        mytar->IsNonMeleeSpellCast(false, false, true))
-                    {
-                        if (doCast(mytar, GetSpell(CURSE_OF_TONGUES_1)))
-                            return;
-                    }
-                    if (!(curses & CURSE_MASK_EXHAUSTION) && GetSpell(CURSE_OF_EXHAUSTION_1) && !CCed(mytar, true) &&
-                        mytar->IsControlledByPlayer() && !mytar->HasAuraWithMechanic(1u<<MECHANIC_SNARE))
-                    {
-                        if (doCast(mytar, GetSpell(CURSE_OF_EXHAUSTION_1)))
-                            return;
-                    }
-                    if (!(curses & CURSE_MASK_WEAKNESS) && GetSpell(CURSE_OF_WEAKNESS_1) && me->GetMap()->IsDungeon() &&
-                        mytar->GetMaxHealth() > me->GetMaxHealth() * 2)
-                    {
-                        if (doCast(mytar, GetSpell(CURSE_OF_WEAKNESS_1)))
-                            return;
-                    }
-                }
-            }
+            if (TryApplyCurse(mytar, diff, can_do_shadow, dist))
+                return;
 
             if (!HasRole(BOT_ROLE_DPS))
                 return;
 
-            //Chaos Bolt
-            if (IsSpellReady(CHAOS_BOLT_1, diff) && can_do_fire && dist < CalcSpellMaxRange(CHAOS_BOLT_1))
+            switch (GetSpec())
             {
-                if (doCast(mytar, GetSpell(CHAOS_BOLT_1)))
+            case BOT_SPEC_WARLOCK_AFFLICTION:
+                if (DoAfflictionActions(mytar, diff, can_do_shadow, can_do_fire, dist))
                     return;
-            }
-            //Soul Fire 1
-            if (IsSpellReady(SOUL_FIRE_1, diff) && can_do_fire && Rand() < 150 && dist < CalcSpellMaxRange(SOUL_FIRE_1) &&
-                (mytar->IsPolymorphed() || me->HasAuraTypeWithAffectMask(SPELL_AURA_NO_REAGENT_USE, sSpellMgr->GetSpellInfo(SOUL_FIRE_1))))
-            {
-                if (doCast(mytar, GetSpell(SOUL_FIRE_1)))
+                break;
+            case BOT_SPEC_WARLOCK_DEMONOLOGY:
+                if (DoDemonologyActions(mytar, diff, can_do_shadow, can_do_fire, dist))
                     return;
-            }
-            //Conflagrate (always glyphed, does not consume dot)
-            if (longCasted && IsSpellReady(CONFLAGRATE_1, diff) && can_do_fire && dist < CalcSpellMaxRange(CONFLAGRATE_1) &&
-                mytar->HasAuraState(AURA_STATE_CONFLAGRATE) &&
-                mytar->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_WARLOCK, 0x4, 0x0, 0x0, me->GetGUID()))
-            {
-                if (doCast(mytar, GetSpell(CONFLAGRATE_1)))
+                break;
+            case BOT_SPEC_WARLOCK_DESTRUCTION:
+                if (DoDestructionActions(mytar, diff, can_do_shadow, can_do_fire, dist))
                     return;
-            }
-            //Shadowburn
-            if (longCasted && IsSpellReady(SHADOWBURN_1, diff) && can_do_shadow && dist < CalcSpellMaxRange(SHADOWBURN_1) &&
-                mytar->HasAuraState(AURA_STATE_HEALTHLESS_35_PERCENT))
-            {
-                if (doCast(mytar, GetSpell(SHADOWBURN_1)))
+                break;
+            default:
+                if (DoDefaultWarlockActions(mytar, diff, can_do_shadow, can_do_fire, dist))
                     return;
-            }
-            //Immolate
-            if (IsSpellReady(IMMOLATE_1, diff) && can_do_fire && Rand() < 85 && dist < CalcSpellMaxRange(IMMOLATE_1) &&
-                (GetSpec() != BOT_SPEC_WARLOCK_AFFLICTION || !GetSpell(UNSTABLE_AFFLICTION_1)) &&
-                (GetSpell(CONFLAGRATE_1) || mytar->GetHealth() > me->GetMaxHealth()/4 * (1 + mytar->getAttackers().size())) &&
-                !mytar->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_WARLOCK, 0x4, 0x0, 0x0, me->GetGUID()))
-            {
-                if (doCast(mytar, GetSpell(IMMOLATE_1)))
-                    return;
-            }
-            //Haunt
-            if (IsSpellReady(HAUNT_1, diff) && can_do_shadow && Rand() < 125 && dist < CalcSpellMaxRange(HAUNT_1) &&
-                mytar->GetHealth() > me->GetMaxHealth()/4 * (1 + mytar->getAttackers().size()) &&
-                !mytar->GetAuraEffect(SPELL_AURA_MOD_DAMAGE_FROM_CASTER, SPELLFAMILY_WARLOCK, 0x0, 0x40000, 0x0, me->GetGUID()))
-            {
-                if (doCast(mytar, GetSpell(HAUNT_1)))
-                    return;
-            }
-            //Unstable Affliction
-            if (IsSpellReady(UNSTABLE_AFFLICTION_1, diff) && can_do_shadow && Rand() < 115 && dist < CalcSpellMaxRange(UNSTABLE_AFFLICTION_1) &&
-                mytar->GetHealth() > me->GetMaxHealth()/4 * (1 + mytar->getAttackers().size()) &&
-                !mytar->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_WARLOCK, 0x0, 0x100, 0x0, me->GetGUID()))
-            {
-                if (doCast(mytar, GetSpell(UNSTABLE_AFFLICTION_1)))
-                    return;
-            }
-            //Seed of Corruption
-            if (IsSpellReady(SEED_OF_CORRUPTION_1, diff) && Rand() < 85)
-            {
-                Unit* target = FindAOETarget(CalcSpellMaxRange(SEED_OF_CORRUPTION_1));
-                if (target && !target->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_WARLOCK, 0x0, 0x10, 0x0, me->GetGUID()))
-                {
-                    if (doCast(target, GetSpell(SEED_OF_CORRUPTION_1)))
-                        return;
-                }
-
-                SetSpellCooldown(SEED_OF_CORRUPTION_1, 1000); //fail
-            }
-            //Corruption
-            if (IsSpellReady(CORRUPTION_1, diff) && can_do_shadow && Rand() < 90 && dist < CalcSpellMaxRange(CORRUPTION_1) &&
-                mytar->GetHealth() > me->GetMaxHealth()/4 * (1 + mytar->getAttackers().size()) &&
-                !mytar->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_WARLOCK, 0x2, 0x0, 0x0, me->GetGUID()) &&//corruption
-                !mytar->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_WARLOCK, 0x0, 0x10, 0x0, me->GetGUID()))//seed of corruption
-            {
-                if (doCast(mytar, GetSpell(CORRUPTION_1)))
-                    return;
-            }
-            //Drain Soul: only if can quad damage
-            if (IsSpellReady(DRAIN_SOUL_1, diff) && can_do_shadow && mytar->IsCreature() &&
-                Rand() < (50 + 85 * me->GetMap()->IsDungeon()) && GetHealthPCT(mytar) < 25 &&
-                mytar->GetHealth() > me->GetMaxHealth() / 2 && dist < CalcSpellMaxRange(DRAIN_SOUL_1))
-            {
-                if (doCast(mytar, GetSpell(DRAIN_SOUL_1)))
-                    return;
-            }
-            //Soul Fire (conditional)
-            if (IsSpellReady(SOUL_FIRE_1, diff) && can_do_fire && Rand() < 90 && dist < CalcSpellMaxRange(SOUL_FIRE_1) &&
-                mytar->GetHealth() > me->GetMaxHealth()/8 * (1 + mytar->getAttackers().size()) && me->HasAura(BACKDRAFT_BUFF))
-            {
-                if (doCast(mytar, GetSpell(SOUL_FIRE_1)))
-                    return;
-            }
-            //Main: Shadow Bolt, Incinerate, Searing Pain (tank), checking destruction range
-            if (dist < CalcSpellMaxRange(SHADOW_BOLT_1))
-            {
-                uint32 boltinerate =
-                    IsTank() && GetSpell(SEARING_PAIN_1) ? SEARING_PAIN_1 :
-                    GetSpell(SHADOW_BOLT_1) && GetSpec() == BOT_SPEC_WARLOCK_AFFLICTION ? SHADOW_BOLT_1 :
-                    GetSpell(INCINERATE_1) && mytar->HasAuraState(AURA_STATE_CONFLAGRATE) ?
-                    //mytar->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_WARLOCK, 0x4, 0x0, 0x0) &&
-                    //mytar->GetAuraEffect(SPELL_AURA_MOD_ATTACKER_SPELL_CRIT_CHANCE, SPELLFAMILY_WARLOCK, 213, 0) &&
-                    //(me->GetMap()->IsRaid() || !me->HasAura(SHADOW_TRANCE_BUFF)) ?
-                    INCINERATE_1 : SHADOW_BOLT_1;
-
-                bool can_cast_boltinerate;
-                switch (boltinerate)
-                {
-                    case SEARING_PAIN_1: case INCINERATE_1:
-                        can_cast_boltinerate = can_do_fire;
-                        break;
-                    case SHADOW_BOLT_1:
-                        can_cast_boltinerate = can_do_shadow;
-                        break;
-                    default:
-                        can_cast_boltinerate = true;
-                        break;
-                }
-
-                if (boltinerate && can_cast_boltinerate && doCast(mytar, GetSpell(boltinerate)))
-                    return;
+                break;
             }
 
-            if (Spell const* shot = me->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL))
-            {
-                if (shot->GetSpellInfo()->Id == SHOOT_WAND && shot->m_targets.GetUnitTarget() != mytar)
-                    me->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
-            }
-            else if (IsSpellReady(SHOOT_WAND, diff) && !me->isMoving() && me->GetDistance(mytar) < 30 && GetEquips(BOT_SLOT_RANGED) &&
-                doCast(mytar, SHOOT_WAND))
-                return;
+            DoWandFallback(mytar, diff);
         }
 
         void ApplyClassSpellCritMultiplierAll(Unit const* victim, float& crit_chance, SpellInfo const* spellInfo, SpellSchoolMask /*schoolMask*/, WeaponAttackType /*attackType*/) const override
@@ -1138,7 +1331,7 @@ public:
             //Contagion: 5% bonus damage for Curse of Agony, Corruption and Seed of Corruption
             if ((GetSpec() == BOT_SPEC_WARLOCK_AFFLICTION) &&
                 lvl >= 40 && (baseId == CORRUPTION_1 || baseId == SEED_OF_CORRUPTION_1 ||
-                baseId == SEED_OF_CORRUPTION_FINAL_DAMAGE_1 || baseId == CURSE_OF_AGONY_1))
+                    baseId == SEED_OF_CORRUPTION_FINAL_DAMAGE_1 || baseId == CURSE_OF_AGONY_1))
                 pctbonus += 0.05f;
 
             //Warlock T82P Bonus (64931): 20/10% bonus damage for Unstable Affliction and Immolate
@@ -1301,12 +1494,12 @@ public:
             {
                 switch (baseId)
                 {
-                    case CHAOS_BOLT_1: case HELLFIRE_1: case IMMOLATE_1: case INCINERATE_1: case RAIN_OF_FIRE_1:
-                    case SEARING_PAIN_1: case SHADOW_BOLT_1: case SOUL_FIRE_1: case SHADOWBURN_1: case SHADOWFURY_1:
-                        reduceBonus += 70;
-                        break;
-                    default:
-                        break;
+                case CHAOS_BOLT_1: case HELLFIRE_1: case IMMOLATE_1: case INCINERATE_1: case RAIN_OF_FIRE_1:
+                case SEARING_PAIN_1: case SHADOW_BOLT_1: case SOUL_FIRE_1: case SHADOWBURN_1: case SHADOWFURY_1:
+                    reduceBonus += 70;
+                    break;
+                default:
+                    break;
                 }
             }
 
@@ -1375,7 +1568,7 @@ public:
             //Amplify Curse: -0.5 sec global cooldown for Curses
             if (lvl >= 20 && spellInfo->SpellFamilyName == SPELLFAMILY_WARLOCK &&
                 ((spellInfo->SpellFamilyFlags[0] & 0x408400) || (spellInfo->SpellFamilyFlags[1] & 0x200202) ||
-                (spellInfo->SpellFamilyFlags[2] & 0x800)))
+                    (spellInfo->SpellFamilyFlags[2] & 0x800)))
                 timebonus += 500.f;
 
             //Fear Cast Time Reduction (23047): -0.2 sec global cooldown for Fear
@@ -1470,7 +1663,7 @@ public:
             //}
             longCasted = !instaCast &&
                 (baseId == SHADOW_BOLT_1 || baseId == INCINERATE_1 || baseId == CHAOS_BOLT_1 ||
-                baseId == SOUL_FIRE_1 || baseId == HAUNT_1 || baseId == SEARING_PAIN_1); //damaging spells
+                    baseId == SOUL_FIRE_1 || baseId == HAUNT_1 || baseId == SEARING_PAIN_1); //damaging spells
         }
 
         void SpellHit(Unit* wcaster, SpellInfo const* spell) override
@@ -1623,7 +1816,7 @@ public:
             if (lvl >= 60 && target != me && GetSpec() != BOT_SPEC_WARLOCK_AFFLICTION &&
                 spell->SpellFamilyName == SPELLFAMILY_WARLOCK && !spell->IsPositive())
             {
-                if (urand(1,100) <= 5)
+                if (urand(1, 100) <= 5)
                     me->CastSpell(me, CHAOTIC_MIND, true);
             }
             if (baseId == IMMOLATE_1 || baseId == CORRUPTION_1)
@@ -1747,7 +1940,7 @@ public:
                 (entry == BOT_PET_FELHUNTER && me->GetLevel() < 30) ||
                 (entry == BOT_PET_FELGUARD && (me->GetLevel() < 50 || _spec != BOT_SPEC_WARLOCK_DEMONOLOGY)) ||
                 (entry != BOT_PET_IMP && entry != BOT_PET_VOIDWALKER && entry != BOT_PET_SUCCUBUS &&
-                entry != BOT_PET_FELHUNTER && entry != BOT_PET_FELGUARD))
+                    entry != BOT_PET_FELHUNTER && entry != BOT_PET_FELGUARD))
                 entry = 0;
 
             myPetType = entry;
@@ -1775,13 +1968,13 @@ public:
             //fix scale and equips
             switch (myPetType)
             {
-                case BOT_PET_FELHUNTER:
-                    myPet->SetObjectScale(1.1f);
-                    break;
-                case BOT_PET_FELGUARD:
-                    myPet->SetObjectScale(0.75f);
-                    myPet->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 0, 22199);
-                    break;
+            case BOT_PET_FELHUNTER:
+                myPet->SetObjectScale(1.1f);
+                break;
+            case BOT_PET_FELGUARD:
+                myPet->SetObjectScale(0.75f);
+                myPet->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 0, 22199);
+                break;
             }
 
             botPet = myPet;
@@ -1808,12 +2001,12 @@ public:
                 //party aura hack removal helper
                 switch (summon->GetEntry())
                 {
-                    case BOT_PET_IMP:
-                        me->RemoveAurasDueToSpell(InitSpell(me, BLOOD_PACT_1));
-                        break;
-                    case BOT_PET_FELHUNTER:
-                        me->RemoveAurasDueToSpell(InitSpell(me, FEL_INTELLIGENCE_1));
-                        break;
+                case BOT_PET_IMP:
+                    me->RemoveAurasDueToSpell(InitSpell(me, BLOOD_PACT_1));
+                    break;
+                case BOT_PET_FELHUNTER:
+                    me->RemoveAurasDueToSpell(InitSpell(me, FEL_INTELLIGENCE_1));
+                    break;
                 }
             }
         }
@@ -1827,22 +2020,22 @@ public:
         {
             switch (data)
             {
-                case CREATE_HEALTHSTONE_1:
-                    return uint32(hasHealthstone);
-                case BOTAI_MISC_PET_TYPE:
-                    return myPetType;
-                case BOTAI_MISC_PET_AVAILABLE_1:
-                    return BOT_PET_IMP;
-                case BOTAI_MISC_PET_AVAILABLE_2:
-                    return me->GetLevel() >= 10 ? BOT_PET_VOIDWALKER : 0;
-                case BOTAI_MISC_PET_AVAILABLE_3:
-                    return me->GetLevel() >= 20 ? BOT_PET_SUCCUBUS : 0;
-                case BOTAI_MISC_PET_AVAILABLE_4:
-                    return me->GetLevel() >= 30 ? BOT_PET_FELHUNTER : 0;
-                case BOTAI_MISC_PET_AVAILABLE_5:
-                    return me->GetLevel() >= 50 && GetSpec() == BOT_SPEC_WARLOCK_DEMONOLOGY ? BOT_PET_FELGUARD : 0;
-                default:
-                    return 0;
+            case CREATE_HEALTHSTONE_1:
+                return uint32(hasHealthstone);
+            case BOTAI_MISC_PET_TYPE:
+                return myPetType;
+            case BOTAI_MISC_PET_AVAILABLE_1:
+                return BOT_PET_IMP;
+            case BOTAI_MISC_PET_AVAILABLE_2:
+                return me->GetLevel() >= 10 ? BOT_PET_VOIDWALKER : 0;
+            case BOTAI_MISC_PET_AVAILABLE_3:
+                return me->GetLevel() >= 20 ? BOT_PET_SUCCUBUS : 0;
+            case BOTAI_MISC_PET_AVAILABLE_4:
+                return me->GetLevel() >= 30 ? BOT_PET_FELHUNTER : 0;
+            case BOTAI_MISC_PET_AVAILABLE_5:
+                return me->GetLevel() >= 50 && GetSpec() == BOT_SPEC_WARLOCK_DEMONOLOGY ? BOT_PET_FELGUARD : 0;
+            default:
+                return 0;
             }
         }
 
@@ -1850,15 +2043,15 @@ public:
         {
             switch (data)
             {
-                case CREATE_HEALTHSTONE_1:
-                    hasHealthstone = bool(value);
-                    break;
-                case BOTAI_MISC_PET_TYPE:
-                    myPetType = value;
-                    UnsummonAll(false);
-                    break;
-                default:
-                    break;
+            case CREATE_HEALTHSTONE_1:
+                hasHealthstone = bool(value);
+                break;
+            case BOTAI_MISC_PET_TYPE:
+                myPetType = value;
+                UnsummonAll(false);
+                break;
+            default:
+                break;
             }
 
             bot_ai::SetAIMiscValue(data, value);
@@ -1951,14 +2144,14 @@ public:
             InitSpellMap(RITUAL_OF_SUMMONING_1); //manual only
             InitSpellMap(RITUAL_OF_SOULS_1); //not casted
 
-  /*Talent*/lvl >= 30 && isAffl ? InitSpellMap(CURSE_OF_EXHAUSTION_1) : RemoveSpell(CURSE_OF_EXHAUSTION_1);
-  /*Talent*/lvl >= 50 && isAffl ? InitSpellMap(UNSTABLE_AFFLICTION_1) : RemoveSpell(UNSTABLE_AFFLICTION_1);
-  /*Talent*/lvl >= 60 && isAffl ? InitSpellMap(HAUNT_1) : RemoveSpell(HAUNT_1);
+            /*Talent*/lvl >= 30 && isAffl ? InitSpellMap(CURSE_OF_EXHAUSTION_1) : RemoveSpell(CURSE_OF_EXHAUSTION_1);
+            /*Talent*/lvl >= 50 && isAffl ? InitSpellMap(UNSTABLE_AFFLICTION_1) : RemoveSpell(UNSTABLE_AFFLICTION_1);
+            /*Talent*/lvl >= 60 && isAffl ? InitSpellMap(HAUNT_1) : RemoveSpell(HAUNT_1);
 
-  /*Talent*/lvl >= 20 && isDest ? InitSpellMap(SHADOWBURN_1) : RemoveSpell(SHADOWBURN_1);
-  /*Talent*/lvl >= 40 && isDest ? InitSpellMap(CONFLAGRATE_1) : RemoveSpell(CONFLAGRATE_1);
-  /*Talent*/lvl >= 50 && isDest ? InitSpellMap(SHADOWFURY_1) : RemoveSpell(SHADOWFURY_1);
-  /*Talent*/lvl >= 60 && isDest ? InitSpellMap(CHAOS_BOLT_1) : RemoveSpell(CHAOS_BOLT_1);
+            /*Talent*/lvl >= 20 && isDest ? InitSpellMap(SHADOWBURN_1) : RemoveSpell(SHADOWBURN_1);
+            /*Talent*/lvl >= 40 && isDest ? InitSpellMap(CONFLAGRATE_1) : RemoveSpell(CONFLAGRATE_1);
+            /*Talent*/lvl >= 50 && isDest ? InitSpellMap(SHADOWFURY_1) : RemoveSpell(SHADOWFURY_1);
+            /*Talent*/lvl >= 60 && isDest ? InitSpellMap(CHAOS_BOLT_1) : RemoveSpell(CHAOS_BOLT_1);
         }
 
         void ApplyClassPassives() const override
@@ -2006,24 +2199,24 @@ public:
         {
             switch (basespell)
             {
-                case RAIN_OF_FIRE_1:
-                case SHADOWFLAME_1:
-                case HOWL_OF_TERROR_1:
-                case DETECT_INVISIBILITY_1:
-                case UNENDING_BREATH_1:
+            case RAIN_OF_FIRE_1:
+            case SHADOWFLAME_1:
+            case HOWL_OF_TERROR_1:
+            case DETECT_INVISIBILITY_1:
+            case UNENDING_BREATH_1:
                 //case RITUAL_OF_SUMMONING_1:
-                case SHADOW_WARD_1:
-                case LIFE_TAP_1:
-                case DARK_PACT_1:
-                    return true;
+            case SHADOW_WARD_1:
+            case LIFE_TAP_1:
+            case DARK_PACT_1:
+                return true;
                 //case FEL_ARMOR_1:
                 //    return true;
                 //case DEMON_ARMOR_1:
                 //    return !GetSpell(FEL_ARMOR_1);
                 //case DEMON_SKIN_1:
                 //    return !GetSpell(FEL_ARMOR_1) && !GetSpell(DEMON_ARMOR_1);
-                default:
-                    return false;
+            default:
+                return false;
             }
         }
 
@@ -2066,13 +2259,13 @@ public:
                 bool my_cast = auraApp->GetBase()->GetCasterGUID() == me->GetGUID();
                 switch (auraApp->GetBase()->GetSpellInfo()->GetFirstRankSpell()->Id)
                 {
-                    case CURSE_OF_WEAKNESS_1:       mask |= CURSE_MASK_WEAKNESS | (my_cast ? CURSE_MASK_MY_WEAKNESS : CurseType(0));    break;
-                    case CURSE_OF_AGONY_1:          mask |= CURSE_MASK_AGONY | (my_cast ? CURSE_MASK_MY_AGONY : CurseType(0));          break;
-                    case CURSE_OF_DOOM_1:           mask |= CURSE_MASK_DOOM | (my_cast ? CURSE_MASK_MY_DOOM : CurseType(0));            break;
-                    case CURSE_OF_THE_ELEMENTS_1:   mask |= CURSE_MASK_ELEMENTS | (my_cast ? CURSE_MASK_MY_ELEMENTS : CurseType(0));    break;
-                    case CURSE_OF_TONGUES_1:        mask |= CURSE_MASK_TONGUES | (my_cast ? CURSE_MASK_MY_TONGUES : CurseType(0));      break;
-                    case CURSE_OF_EXHAUSTION_1:     mask |= CURSE_MASK_EXHAUSTION | (my_cast ? CURSE_MASK_MY_EXHAUSTION : CurseType(0));break;
-                    default:                                                                                                            break;
+                case CURSE_OF_WEAKNESS_1:       mask |= CURSE_MASK_WEAKNESS | (my_cast ? CURSE_MASK_MY_WEAKNESS : CurseType(0));    break;
+                case CURSE_OF_AGONY_1:          mask |= CURSE_MASK_AGONY | (my_cast ? CURSE_MASK_MY_AGONY : CurseType(0));          break;
+                case CURSE_OF_DOOM_1:           mask |= CURSE_MASK_DOOM | (my_cast ? CURSE_MASK_MY_DOOM : CurseType(0));            break;
+                case CURSE_OF_THE_ELEMENTS_1:   mask |= CURSE_MASK_ELEMENTS | (my_cast ? CURSE_MASK_MY_ELEMENTS : CurseType(0));    break;
+                case CURSE_OF_TONGUES_1:        mask |= CURSE_MASK_TONGUES | (my_cast ? CURSE_MASK_MY_TONGUES : CurseType(0));      break;
+                case CURSE_OF_EXHAUSTION_1:     mask |= CURSE_MASK_EXHAUSTION | (my_cast ? CURSE_MASK_MY_EXHAUSTION : CurseType(0));break;
+                default:                                                                                                            break;
                 }
             }
 
