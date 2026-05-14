@@ -1375,7 +1375,7 @@ public:
 
                 //check if combat is starting
                 const bool engaged = (!member->IsInCombat() || !target->IsInCombat()) && target == member->GetVictim(); //BotActionTypes::BOT_ACTION_PULL / master attacks
-                const bool engaged_by = target->ToCreature()->CanHaveThreatList() && target->GetThreatManager().GetThreat(member) < member->GetMaxHealth() / 4;
+                const bool engaged_by = target->ToCreature()->CanHaveThreatList() && target->GetThreatMgr().GetThreat(member) < member->GetMaxHealth() / 4;
 
                 if (!engaged && !engaged_by)
                     continue;
