@@ -613,7 +613,34 @@ namespace lfg
         LfgJoinResultData joinData;
         LfgGuidSet players;
         uint32 rDungeonId = 0;
+
+        bool hasNpcBotMember = false;
+
+        if (grp)
+        {
+            for (Group::MemberSlot const& slot : grp->GetMemberSlots())
+            {
+                if (slot.guid.IsCreature())
+                {
+                    hasNpcBotMember = true;
+                    break;
+                }
+            }
+        }
+
         bool isContinue = grp && grp->isLFGGroup() && GetState(gguid) != LFG_STATE_FINISHED_DUNGEON;
+
+        // NPCBot groups can remain flagged as an LFG group after a completed dungeon even when
+        // the player is trying to start a fresh queue. In that stale state, the old continue
+        // logic replaces the player's new dungeon selection with GetDungeon(gguid), which may
+        // be 0 or stale, causing LFG_JOIN_DUNGEON_INVALID.
+        if (isContinue && hasNpcBotMember)
+        {
+            uint32 currentDungeon = GetDungeon(gguid);
+
+            if (!currentDungeon || dungeons.find(currentDungeon) == dungeons.end())
+                isContinue = false;
+        }
 
         if (grp && (grp->isBGGroup() || grp->isBFGroup()))
             return;
@@ -779,7 +806,7 @@ namespace lfg
                                     break;
                                 }
 
-                                if (ObjectAccessor::GetCreature(*plrg, bguid))
+                                if (bot)
                                 {
                                     ++memberCount;
                                     players.insert(bguid);
@@ -836,7 +863,7 @@ namespace lfg
             return;
 
          // Do not allow to change dungeon in the middle of a current dungeon
-        if (!isRaid && isContinue && grp->GetMembersCount() == 5)
+        if (!isRaid && isContinue && grp->GetMembersCount() == 5 && !hasNpcBotMember)
         {
             dungeons.clear();
             dungeons.insert(GetDungeon(gguid));
