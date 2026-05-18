@@ -36,6 +36,18 @@ SpellProcEntry const* GetBotSpellProceEntryOverride(uint32 spellId)
     return ci != botSpellProcOverrides.cend() ? &ci->second : nullptr;
 }
 
+static SpellInfo* CloneBotSpellInfoOverride(uint32 spellId)
+{
+    if (auto itr = botSpellInfoOverrides.find(spellId); itr != botSpellInfoOverrides.end())
+        return &itr->second;
+
+    SpellInfo const* source = sSpellMgr->GetSpellInfo(spellId);
+    ASSERT(source, "CloneBotSpellInfoOverride: missing source SpellInfo for spell Id %u!", spellId);
+
+    auto result = botSpellInfoOverrides.emplace(spellId, *source);
+    return &result.first->second;
+}
+
 void GenerateBotCustomSpells()
 {
     botSpellInfoOverrides.clear();
@@ -46,8 +58,7 @@ void GenerateBotCustomSpells()
     //COMMON
     //1) SPELL_TELEPORT_LOCAL
     spellId = SPELL_TELEPORT_LOCAL; //7794
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->InterruptFlags = SPELL_INTERRUPT_FLAG_ABORT_ON_DMG;
     sinfo->CastTimeEntry = sSpellCastTimesStore.LookupEntry(6); //5000ms
@@ -64,8 +75,7 @@ void GenerateBotCustomSpells()
 
     // SPELL_NULLIFY_POISON
     spellId = SPELL_NULLIFY_POISON; //550
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->PreventionType = SPELL_PREVENTION_TYPE_NONE;
     sinfo->SpellLevel = 0;
@@ -97,8 +107,7 @@ void GenerateBotCustomSpells()
     //BLADEMASTER
     //2) SPELL_COMBAT_SPECIAL_2H_ATTACK
     spellId = SPELL_COMBAT_SPECIAL_2H_ATTACK; //44079
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->RangeEntry = sSpellRangeStore.LookupEntry(6); //6 - 100 yds
     sinfo->Attributes &= ~(SPELL_ATTR0_NOT_IN_COMBAT_ONLY_PEACEFUL);
@@ -108,8 +117,7 @@ void GenerateBotCustomSpells()
     //3) WINDWALK
     //3.1) TRANSPARENCY
     spellId = SPELL_TRANSPARENCY_50; //44816
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
     triggerSpellId = spellId;
 
     sinfo->Attributes |= (SPELL_ATTR0_NOT_SHAPESHIFTED | SPELL_ATTR0_ALLOW_WHILE_SITTING);
@@ -121,8 +129,7 @@ void GenerateBotCustomSpells()
     //3.1) END TRANSPARENCY
 
     spellId = SPELL_NETHERWALK; //31599
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellLevel = 0;
     sinfo->MaxLevel = 0;
@@ -174,8 +181,7 @@ void GenerateBotCustomSpells()
 
     //4) MIRROR IMAGE (BLADEMASTER)
     spellId = SPELL_MIRROR_IMAGE_BM; //69936
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->RangeEntry = sSpellRangeStore.LookupEntry(1); //1 - self only //6 - 100 yds
     sinfo->DurationEntry = sSpellDurationStore.LookupEntry(566); //566 - 0 sec //3 - 60 sec //1 - 10 sec //32 - 6 seconds
@@ -199,8 +205,7 @@ void GenerateBotCustomSpells()
     //5) SHADOW BLAST (SPLASH ATTACK)
     //TODO: balance
     spellId = SPELL_SHADOW_BLAST; //38085
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARLOCK;
     sinfo->SpellLevel = 60;
@@ -239,8 +244,7 @@ void GenerateBotCustomSpells()
 
     //6) SHADOW BOLT (BASE ATTACK)
     spellId = SPELL_SHADOW_BOLT1; //16408
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->PreventionType = SPELL_PREVENTION_TYPE_NONE;
     sinfo->SpellLevel = 60;
@@ -264,16 +268,14 @@ void GenerateBotCustomSpells()
 
     //7) ATTACK ANIMATION
     spellId = SPELL_ATTACK_MELEE_RANDOM; //42902
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->Attributes &= ~(SPELL_ATTR0_NOT_IN_COMBAT_ONLY_PEACEFUL);
     //7) END ATTACK ANIMATION
 
     //8) SPLASH ANIMATION
     spellId = SHADOWFURY_VISUAL; //48582
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellLevel = 0;
     sinfo->MaxLevel = 0;
@@ -304,8 +306,7 @@ void GenerateBotCustomSpells()
 
     //9) DEVOUR MAGIC
     spellId = SPELL_DEVOUR_MAGIC; //17012
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->InterruptFlags = 0xF;
     sinfo->SpellLevel = 0;
@@ -348,8 +349,7 @@ void GenerateBotCustomSpells()
 
     //10) DRAIN MANA
     spellId = SPELL_DRAIN_MANA; //25755
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellLevel = 0;
     sinfo->MaxLevel = 0;
@@ -381,8 +381,7 @@ void GenerateBotCustomSpells()
 
     //11) REPLENISH MANA
     spellId = SPELL_REPLENISH_MANA; //33394
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARLOCK;
     sinfo->SpellLevel = 0;
@@ -417,8 +416,7 @@ void GenerateBotCustomSpells()
 
     //12) REPLENISH HEALTH
     spellId = SPELL_REPLENISH_HEALTH; //34756
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARLOCK;
     sinfo->SpellLevel = 0;
@@ -454,8 +452,7 @@ void GenerateBotCustomSpells()
     //ARCHMAGE
     //13) BRILLIANCE AURA
     spellId = SPELL_BRILLIANCE_AURA; //1234
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellLevel = 0;
     sinfo->MaxLevel = 0;
@@ -491,8 +488,7 @@ void GenerateBotCustomSpells()
     //14) FIREBALL (MAIN_ATTACK)
     //TODO: balance
     spellId = SPELL_FIREBALL; //9488
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellLevel = 20;
     sinfo->BaseLevel = 20;
@@ -520,8 +516,7 @@ void GenerateBotCustomSpells()
     //15) BLIZZARD
     //TODO: balance
     spellId = SPELL_BLIZZARD; //15783
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_MAGE;
     sinfo->SpellLevel = 20;
@@ -553,8 +548,7 @@ void GenerateBotCustomSpells()
 
     //16) SUMMON WATER ELEMENTAL (dummy spell)
     spellId = SPELL_SUMMON_WATER_ELEMENTAL; //35593
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_MAGE;
     sinfo->SpellLevel = 20;
@@ -578,8 +572,7 @@ void GenerateBotCustomSpells()
     //17) WATERBOLT (MAIN_ATTACK)
     //TODO: balance, we only have 1 of 3 possible elementals so boost damage
     spellId = SPELL_WATERBOLT; //72898
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_GENERIC;
     sinfo->SpellLevel = 20;
@@ -604,8 +597,7 @@ void GenerateBotCustomSpells()
     //DREADLORD
     //18) VAMPIRIC AURA
     spellId = SPELL_VAMPIRIC_AURA; //20810
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->ProcFlags = PROC_FLAG_DONE_MELEE_AUTO_ATTACK | PROC_FLAG_DONE_SPELL_MELEE_DMG_CLASS;
     sinfo->SchoolMask = SPELL_SCHOOL_MASK_SHADOW | SPELL_SCHOOL_MASK_ARCANE;
@@ -647,8 +639,7 @@ void GenerateBotCustomSpells()
 
     //19) VAMPIRIC HEAL
     spellId = SPELL_TRIGGERED_HEAL; //25155
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->PreventionType = SPELL_PREVENTION_TYPE_NONE;
     sinfo->DmgClass = SPELL_DAMAGE_CLASS_NONE;
@@ -665,8 +656,7 @@ void GenerateBotCustomSpells()
 
     //20) SLEEP
     spellId = SPELL_SLEEP; //20663
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARLOCK;
     sinfo->SchoolMask = SPELL_SCHOOL_MASK_SHADOW | SPELL_SCHOOL_MASK_ARCANE;
@@ -706,8 +696,7 @@ void GenerateBotCustomSpells()
     //21) CARRION SWARM
     //TODO: balance
     spellId = SPELL_CARRION_SWARM; //34240
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARLOCK;
     sinfo->DmgClass = SPELL_DAMAGE_CLASS_MAGIC;
@@ -741,8 +730,7 @@ void GenerateBotCustomSpells()
 
     //22) INFERNO (dummy summon)
     spellId = SPELL_INFERNO; //12740
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARLOCK;
     sinfo->SpellLevel = 60;
@@ -765,8 +753,7 @@ void GenerateBotCustomSpells()
 
     //23) INFERNO VISUAL (dummy summon)
     spellId = SPELL_INFERNO_METEOR_VISUAL; //5739
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->ExplicitTargetMask = TARGET_FLAG_DEST_LOCATION;
 
@@ -777,8 +764,7 @@ void GenerateBotCustomSpells()
     //SPELL BREAKER
     //24) STEAL MAGIC
     spellId = SPELL_STEAL_MAGIC; //30036
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_PALADIN;
     sinfo->RangeEntry = sSpellRangeStore.LookupEntry(34); //25 yds
@@ -799,8 +785,7 @@ void GenerateBotCustomSpells()
 
     //24.1) STEAL MAGIC VISUAL
     spellId = SPELL_STEAL_MAGIC_VISUAL; //11084
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellLevel = 1;
     sinfo->BaseLevel = 1;
@@ -820,8 +805,7 @@ void GenerateBotCustomSpells()
 
     //25) FEEDBACK
     spellId = SPELL_FEEDBACK; //32897
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_PALADIN;
     sinfo->SchoolMask = SPELL_SCHOOL_MASK_ARCANE;
@@ -847,8 +831,7 @@ void GenerateBotCustomSpells()
     //26) BLACK ARROW
     //TODO: balance
     spellId = SPELL_BLACK_ARROW; //20733
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARLOCK;
     //sinfo->SpellFamilyFlags[0] = 0x0;
@@ -904,8 +887,7 @@ void GenerateBotCustomSpells()
     //27) DRAIN LIFE
     //TODO: balance
     spellId = SPELL_DRAIN_LIFE; //17238
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARLOCK;
     sinfo->DmgClass = SPELL_DAMAGE_CLASS_MAGIC;
@@ -948,8 +930,7 @@ void GenerateBotCustomSpells()
     //28) SILENCE
     //TODO: balance
     spellId = SPELL_SILENCE; //29943
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARLOCK;
     sinfo->DmgClass = SPELL_DAMAGE_CLASS_NONE;
@@ -984,8 +965,7 @@ void GenerateBotCustomSpells()
     //29) SHADOW BOLT (MAIN_ATTACK)
     //TODO: balance
     spellId = SPELL_SHADOW_BOLT2; //17509
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARLOCK;
     sinfo->SpellLevel = 20;
@@ -1009,8 +989,7 @@ void GenerateBotCustomSpells()
 
     //30) RAISE DEAD
     spellId = SPELL_RAISE_DEAD; //34011
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARLOCK;
     sinfo->SchoolMask = SPELL_SCHOOL_MASK_SHADOW;
@@ -1039,8 +1018,7 @@ void GenerateBotCustomSpells()
 
     //31) UNHOLY FRENZY
     spellId = SPELL_UNHOLY_FRENZY; //52499
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARLOCK;
     sinfo->DmgClass = SPELL_DAMAGE_CLASS_NONE;
@@ -1071,8 +1049,7 @@ void GenerateBotCustomSpells()
 
     //32) CRIPPLE
     spellId = SPELL_CRIPPLE; //50379
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARLOCK;
     sinfo->DmgClass = SPELL_DAMAGE_CLASS_NONE;
@@ -1095,8 +1072,7 @@ void GenerateBotCustomSpells()
 
     //33) CORPSE EXPLOSION
     spellId = SPELL_CORPSE_EXPLOSION; //61614
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARLOCK;
     sinfo->DmgClass = SPELL_DAMAGE_CLASS_NONE;
@@ -1131,8 +1107,7 @@ void GenerateBotCustomSpells()
     //SEA WITCH
     //35) FORKED LIGHTNING
     spellId = SPELL_FORKED_LIGHTNING; //63541
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_MAGE;
     sinfo->SchoolMask = SPELL_SCHOOL_MASK_NATURE | SPELL_SCHOOL_MASK_ARCANE;
@@ -1166,8 +1141,7 @@ void GenerateBotCustomSpells()
 
     //36) FORKED LIGHTNING EFFECT
     spellId = SPELL_FORKED_LIGHTNING_EFFECT; //50900
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_MAGE;
     sinfo->SchoolMask = SPELL_SCHOOL_MASK_NATURE | SPELL_SCHOOL_MASK_ARCANE;
@@ -1189,8 +1163,7 @@ void GenerateBotCustomSpells()
 
     //37) FROST ARROW
     spellId = SPELL_FROST_ARROW; //38942
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_MAGE;
     //sinfo->SpellFamilyFlags[0] = 0x0;
@@ -1236,8 +1209,7 @@ void GenerateBotCustomSpells()
 
     //38) FROST ARROW EFFECT
     spellId = SPELL_FROST_ARROW_EFFECT; //56095
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_GENERIC;
     //sinfo->SpellFamilyFlags[0] = 0x0;
@@ -1275,8 +1247,7 @@ void GenerateBotCustomSpells()
 
     //39) MANA SHIELD
     spellId = SPELL_MANA_SHIELD; //35064
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->Dispel = DISPEL_NONE;
     sinfo->PreventionType = SPELL_PREVENTION_TYPE_NONE;
@@ -1297,8 +1268,7 @@ void GenerateBotCustomSpells()
 
     //40) TORNADO
     spellId = SPELL_TORNADO; //34695
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_MAGE;
     sinfo->SchoolMask = SPELL_SCHOOL_MASK_NATURE | SPELL_SCHOOL_MASK_ARCANE;
@@ -1332,8 +1302,7 @@ void GenerateBotCustomSpells()
 
     //41) TORNADO EFFECT
     spellId = SPELL_TORNADO_EFFECT; //21990
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_MAGE;
     //sinfo->SpellFamilyFlags[0] = 0x0;
@@ -1389,8 +1358,7 @@ void GenerateBotCustomSpells()
 
     //42) TORNADO EFFECT2
     spellId = SPELL_TORNADO_EFFECT2; //34683
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_MAGE;
     //sinfo->SpellFamilyFlags[0] = 0x0;
@@ -1432,8 +1400,7 @@ void GenerateBotCustomSpells()
 
     //43) TORNADO EFFECT3
     spellId = SPELL_TORNADO_EFFECT3; //39261
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_MAGE;
     //sinfo->SpellFamilyFlags[0] = 0x0;
@@ -1480,8 +1447,7 @@ void GenerateBotCustomSpells()
 
     //44) SHOOT
     spellId = SPELL_SHOOT_BOW; //41188
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_MAGE;
     sinfo->DmgClass = SPELL_DAMAGE_CLASS_RANGED;
@@ -1513,8 +1479,7 @@ void GenerateBotCustomSpells()
     //CRYPT LORD
     //45) IMPALE
     spellId = SPELL_IMPALE; //53458
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARRIOR;
     sinfo->PreventionType = SPELL_PREVENTION_TYPE_PACIFY;
@@ -1570,8 +1535,7 @@ void GenerateBotCustomSpells()
 
     //46) IMPALE DAMAGE
     spellId = SPELL_IMPALE_DAMAGE; //53454
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARRIOR;
     sinfo->PreventionType = SPELL_PREVENTION_TYPE_NONE;
@@ -1646,8 +1610,7 @@ void GenerateBotCustomSpells()
 
     //47) IMPALE VISUAL
     spellId = SPELL_IMPALE_VISUAL; //53454
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARRIOR;
     sinfo->PreventionType = SPELL_PREVENTION_TYPE_NONE;
@@ -1702,8 +1665,7 @@ void GenerateBotCustomSpells()
 
     //48) CARRION BEETLES
     spellId = SPELL_CARRION_BEETLES; //53520
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARRIOR;
     sinfo->PreventionType = SPELL_PREVENTION_TYPE_PACIFY;
@@ -1738,8 +1700,7 @@ void GenerateBotCustomSpells()
 
     //49) LOCUST SWARM
     spellId = SPELL_LOCUST_SWARM; //28785
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARRIOR;
     sinfo->PreventionType = SPELL_PREVENTION_TYPE_PACIFY;
@@ -1799,8 +1760,7 @@ void GenerateBotCustomSpells()
 
     //50) SOUL BITE
     spellId = SPELL_SOUL_BITE; //11016
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SpellFamilyName = SPELLFAMILY_WARRIOR;
     sinfo->PreventionType = SPELL_PREVENTION_TYPE_PACIFY;
@@ -1877,8 +1837,7 @@ void GenerateBotCustomSpells()
 
     //51) ENERGIZE VISUAL
     spellId = SPELL_ENERGIZE_VISUAL; //59198
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
 
     sinfo->SchoolMask = SPELL_SCHOOL_MASK_SHADOW;
     sinfo->SpellLevel = 1;
@@ -1891,8 +1850,7 @@ void GenerateBotCustomSpells()
 
     //XX) FIXES
     spellId = 48155; // Mind Flay (Rank 8)
-    botSpellInfoOverrides.insert({ spellId, *sSpellMgr->GetSpellInfo(spellId) });
-    sinfo = &botSpellInfoOverrides.at(spellId);
+    sinfo = CloneBotSpellInfoOverride(spellId);
     sinfo->InterruptFlags &= SPELL_INTERRUPT_FLAG_MOVEMENT;
 
     for (auto& p : botSpellInfoOverrides)

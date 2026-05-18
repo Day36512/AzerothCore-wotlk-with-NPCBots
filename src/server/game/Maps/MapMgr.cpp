@@ -40,6 +40,27 @@
 #include "botmgr.h"
 //end npcbot
 
+namespace NpcBotLfgPortalAccess
+{
+    bool GroupHasNpcBotMember(Group const* group)
+    {
+        if (!group)
+            return false;
+
+        for (Group::MemberSlot const& slot : group->GetMemberSlots())
+        {
+            if (!slot.guid.IsCreature())
+                continue;
+
+            Creature const* bot = BotDataMgr::FindBot(slot.guid.GetEntry());
+            if (bot && bot->IsNPCBot())
+                return true;
+        }
+
+        return false;
+    }
+}
+
 MapMgr::MapMgr()
 {
     i_timer[3].SetInterval(sWorld->getIntConfig(CONFIG_INTERVAL_MAPUPDATE));
@@ -188,13 +209,28 @@ Map::EnterState MapMgr::PlayerCannotEnter(uint32 mapid, Player* player, bool log
     }
 
     // xinef: dont allow LFG Group to enter other instance that is selected
-    if (group)
-        if (group->isLFGGroup())
-            if (!sLFGMgr->inLfgDungeonMap(group->GetGUID(), mapid, targetDifficulty))
+    if (group && group->isLFGGroup())
+    {
+        bool bypassLfgPortalRestriction = false;
+
+        if (NpcBotLfgPortalAccess::GroupHasNpcBotMember(group))
+        {
+            lfg::LfgState const lfgState = sLFGMgr->GetState(group->GetGUID());
+
+            if (lfgState == lfg::LFG_STATE_FINISHED_DUNGEON ||
+                lfgState == lfg::LFG_STATE_NONE ||
+                !sLFGMgr->GetDungeon(group->GetGUID()))
             {
-                player->SendTransferAborted(mapid, TRANSFER_ABORT_MAP_NOT_ALLOWED);
-                return Map::CANNOT_ENTER_UNSPECIFIED_REASON;
+                bypassLfgPortalRestriction = true;
             }
+        }
+
+        if (!bypassLfgPortalRestriction && !sLFGMgr->inLfgDungeonMap(group->GetGUID(), mapid, targetDifficulty))
+        {
+            player->SendTransferAborted(mapid, TRANSFER_ABORT_MAP_NOT_ALLOWED);
+            return Map::CANNOT_ENTER_UNSPECIFIED_REASON;
+        }
+    }
 
     if (!player->IsAlive())
     {

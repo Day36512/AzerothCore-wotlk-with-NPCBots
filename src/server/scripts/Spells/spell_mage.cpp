@@ -68,6 +68,7 @@ enum MageSpells
     SPELL_MAGE_CHILLED_R1 = 12484,
     SPELL_MAGE_CHILLED_R2 = 12485,
     SPELL_MAGE_CHILLED_R3 = 12486,
+    SPELL_MAGE_HEATING_UP = 48107,
     SPELL_MAGE_MANA_SURGE = 37445,
     SPELL_MAGE_FROST_NOVA = 122,
     SPELL_MAGE_LIVING_BOMB_R1 = 44457,
@@ -1280,39 +1281,47 @@ class spell_mage_hot_streak : public AuraScript
 
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
-        return ValidateSpellInfo({ SPELL_MAGE_HOT_STREAK_PROC });
+        return ValidateSpellInfo(
+            {
+                SPELL_MAGE_HOT_STREAK_PROC,
+                SPELL_MAGE_HEATING_UP
+            });
     }
 
     void HandleProc(AuraEffect const* aurEff, ProcEventInfo& eventInfo)
     {
         PreventDefaultAction();
 
-        // Non-crit - reset counter
+        Unit* mage = GetTarget();
+        if (!mage)
+            return;
+
+        // Non-crit: lose Heating Up.
         if (!(eventInfo.GetHitMask() & PROC_EX_CRITICAL_HIT))
         {
-            _critStreak = 0;
+            mage->RemoveAurasDueToSpell(SPELL_MAGE_HEATING_UP);
             return;
         }
 
-        // Crit - increment counter
-        ++_critStreak;
-
-        // Two crits in a row - proc Hot Streak if chance succeeds
-        if (_critStreak >= 2)
+        // Crit while Heating Up is active: convert to Hot Streak.
+        if (mage->HasAura(SPELL_MAGE_HEATING_UP))
         {
-            _critStreak = 0;
+            mage->RemoveAurasDueToSpell(SPELL_MAGE_HEATING_UP);
+
             if (roll_chance_i(aurEff->GetAmount()))
-                GetTarget()->CastSpell(GetTarget(), SPELL_MAGE_HOT_STREAK_PROC, true, nullptr, aurEff);
+                mage->CastSpell(mage, SPELL_MAGE_HOT_STREAK_PROC, true, nullptr, aurEff);
+
+            return;
         }
+
+        // First crit: bank Heating Up.
+        mage->CastSpell(mage, SPELL_MAGE_HEATING_UP, true, nullptr, aurEff);
     }
 
     void Register() override
     {
         OnEffectProc += AuraEffectProcFn(spell_mage_hot_streak::HandleProc, EFFECT_0, SPELL_AURA_DUMMY);
     }
-
-private:
-    uint8 _critStreak = 0;
 };
 
 // -11185 - Improved Blizzard
@@ -1645,9 +1654,9 @@ void AddSC_mage_spell_scripts()
     RegisterSpellScript(spell_mage_burnout_trigger);
     RegisterSpellScript(spell_mage_pet_scaling);
     RegisterSpellScript(spell_mage_brain_freeze);
-    RegisterSpellScript(spell_mage_combustion);
+    //RegisterSpellScript(spell_mage_combustion);
     RegisterSpellScript(spell_mage_glyph_of_eternal_water);
-    RegisterSpellScript(spell_mage_combustion_proc);
+    //RegisterSpellScript(spell_mage_combustion_proc);
     RegisterSpellScript(spell_mage_dragon_breath);
     RegisterSpellScript(spell_mage_empowered_fire);
     RegisterSpellScript(spell_mage_gen_extra_effects);

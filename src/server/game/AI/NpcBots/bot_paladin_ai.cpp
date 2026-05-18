@@ -14,6 +14,8 @@
 #include "SpellAuraEffects.h"
 #include "SpellMgr.h"
 //#include "WorldSession.h"
+
+#include <array>
 /*
 Paladin NpcBot (reworked by Trickerer onlysuffering@gmail.com)
 Complete - Around 95%
@@ -546,6 +548,8 @@ public:
 
         bool HOPTarget(Unit* target)
         {
+            if (!target || IsTank(target))
+                return false; // never Hand of Protection an active tank and dump their physical threat
             if ((target->IsPlayer() ? target->GetClass() : target->ToCreature()->GetBotClass()) == BOT_CLASS_PALADIN)
                 return false; //paladins should use their own damn bubble
             if (target->HasAuraTypeWithMiscvalue(SPELL_AURA_SCHOOL_IMMUNITY, 1) || target->HasAuraTypeWithMiscvalue(SPELL_AURA_SCHOOL_IMMUNITY, 127))
@@ -700,7 +704,7 @@ public:
 
         bool HealTarget(Unit* target, uint32 diff) override
         {
-            if (!target || !target->IsAlive() || target->GetShapeshiftForm() == FORM_SPIRITOFREDEMPTION || me->GetDistance(target) > 40)
+            if (!target || !target->IsAlive() || target->GetShapeshiftForm() == FORM_SPIRITOFREDEMPTION || me->GetDistance(target) > 40 || !target->GetMaxHealth())
                 return false;
             uint8 hp = GetHealthPCT(target);
             if (hp > GetHealHpPctThreshold())
@@ -874,6 +878,11 @@ public:
             CheckSeal(diff);
             CheckAura(diff);
 
+            if (TryMaintainRighteousFury(diff))
+                return;
+            if (TryProtectionSacredShield(nullptr, diff))
+                return;
+
             if (ProcessImmediateNonAttackTarget())
                 return;
 
@@ -922,7 +931,7 @@ public:
             uint32 VENGEANCE = (me->GetRaceMask() & sRaceMgr->GetAllianceRaceMask()) ? GetSpell(SEAL_OF_VENGEANCE_1) : GetSpell(SEAL_OF_CORRUPTION_1);
 
             bool const durable = victim && IsDurablePaladinTarget(victim);
-            bool const multiTarget = me->getAttackers().size() > 1;
+            bool const multiTarget = me->getAttackers().size() > 1 || (victim && HasNearbyPaladinAOETargets(8.f, 3));
             uint32 SEAL = 0;
 
             if (IsMelee() && GetManaPCT(me) < 18 && WISDOM)
@@ -1385,7 +1394,8 @@ public:
 
         bool TryAvengingWrath(Unit* target, uint32 diff, bool canHoly, float dist)
         {
-            if (!canHoly || !IsSpellReady(AVENGING_WRATH_1, diff, false) || avDelayTimer > diff || dist > 30 || Rand() > 50)
+            uint8 const useChance = IsTank() ? 80 : 50;
+            if (!canHoly || !IsSpellReady(AVENGING_WRATH_1, diff, false) || avDelayTimer > diff || dist > 30 || Rand() > useChance)
                 return false;
 
             bool const execute = target && target->HasAuraState(AURA_STATE_HEALTHLESS_20_PERCENT);
@@ -1424,7 +1434,7 @@ public:
 
         bool TryHolyWrath(Unit* target, uint32 diff)
         {
-            if (!IsSpellReady(HOLY_WRATH_1, diff) || Rand() > 75)
+            if (!target || !IsSpellReady(HOLY_WRATH_1, diff) || Rand() > 75)
                 return false;
 
             if ((target->GetCreatureType() == CREATURE_TYPE_UNDEAD || target->GetCreatureType() == CREATURE_TYPE_DEMON) &&
@@ -1432,6 +1442,114 @@ public:
                 return true;
 
             if (FindUndeadCCTarget(8.5f, HOLY_WRATH_1, false) && doCast(me, GetSpell(HOLY_WRATH_1)))
+                return true;
+
+            return false;
+        }
+
+        bool HasSacredShieldLikeAura(Unit const* target) const
+        {
+            return target && target->GetAuraEffect(SPELL_AURA_DUMMY, SPELLFAMILY_PALADIN, 0x0, 0x80000, 0x0);
+        }
+
+        bool TargetNeedsJudgementsOfTheJust(Unit const* target) const
+        {
+            if (GetSpec() != BOT_SPEC_PALADIN_PROTECTION || me->GetLevel() < 55 || !target || !target->IsAlive())
+                return false;
+            if (target->GetAuraEffect(JUDGEMENTS_OF_THE_JUST_AURA, EFFECT_1, me->GetGUID()))
+                return false;
+            if (target->IsPlayer())
+                return true;
+
+            Creature const* creature = target->ToCreature();
+            if (!creature)
+                return IsDurablePaladinTarget(target);
+
+            if (creature->IsDungeonBoss() || creature->isWorldBoss())
+                return true;
+            if (creature->GetCreatureTemplate()->rank != CREATURE_ELITE_NORMAL)
+                return true;
+
+            return target->GetHealth() > me->GetMaxHealth() / 2;
+        }
+
+        bool TryMaintainRighteousFury(uint32 diff)
+        {
+            if (!IsTank() || IsCasting() || me->IsMounted() || Feasting())
+                return false;
+
+            uint32 const RIGHTEOUS_FURY = GetSpell(RIGHTEOUS_FURY_1);
+            if (!RIGHTEOUS_FURY || me->HasAura(RIGHTEOUS_FURY) || !IsSpellReady(RIGHTEOUS_FURY_1, diff))
+                return false;
+
+            // Righteous Fury falling off in combat is catastrophic for a tank. Reapply it immediately.
+            if (me->IsInCombat() || !me->getAttackers().empty() || GetBG() || IsWanderer())
+                if (doCast(me, RIGHTEOUS_FURY))
+                    return true;
+
+            return false;
+        }
+
+        bool TryProtectionLayOnHands(uint32 diff)
+        {
+            if (!IsTank() || !IsSpellReady(LAY_ON_HANDS_1, diff, false) || shieldDelayTimer > diff)
+                return false;
+            if (!me->IsInCombat() && me->getAttackers().empty())
+                return false;
+            if (me->HasAuraTypeWithMiscvalue(SPELL_AURA_SCHOOL_IMMUNITY, 127))
+                return false;
+
+            uint8 const hp = GetHealthPCT(me);
+            uint8 const panicPct = me->getAttackers().size() >= 3 ? 24 : 18;
+            if (hp > panicPct)
+                return false;
+
+            me->InterruptNonMeleeSpells(false);
+            if (doCast(me, GetSpell(LAY_ON_HANDS_1)))
+            {
+                if (!IAmFree())
+                    ReportSpellCast(LAY_ON_HANDS_1, LocalizedNpcText(master, BOT_TEXT__ON_MYSELF), master);
+                return true;
+            }
+
+            return false;
+        }
+
+        bool TryProtectionSacredShield(Unit* target, uint32 diff)
+        {
+            if (!IsTank() || !IsSpellReady(SACRED_SHIELD_1, diff) || IsCasting() || me->IsMounted() || Feasting())
+                return false;
+            if (HasSacredShieldLikeAura(me))
+                return false;
+
+            bool const tankingNow = me->IsInCombat() || !me->getAttackers().empty() || (target && target->GetVictim() == me);
+            bool const meaningfulFight = tankingNow && (me->getAttackers().size() >= 2 || GetHealthPCT(me) < 95 || IsDurablePaladinTarget(target));
+            if (!meaningfulFight)
+                return false;
+
+            if (doCast(me, GetSpell(SACRED_SHIELD_1)))
+                return true;
+
+            return false;
+        }
+
+        bool TryProtectionEmergencyStun(Unit* target, uint32 diff, float dist)
+        {
+            if (!target || !IsSpellReady(HAMMER_OF_JUSTICE_1, diff) || CCed(target) || dist >= 10)
+                return false;
+            if (target->GetDiminishing(DIMINISHING_STUN) > DIMINISHING_LEVEL_2)
+                return false;
+            if (IsImmunedToMySpellEffect(target, sSpellMgr->GetSpellInfo(HAMMER_OF_JUSTICE_1), EFFECT_0))
+                return false;
+
+            Unit* victim = target->GetVictim();
+            bool const interrupt = target->IsNonMeleeSpellCast(false, false, true);
+            bool const rescue = victim && victim != me && IsInBotParty(victim) && !IsTank(victim);
+            bool const pressureStop = GetHealthPCT(me) < 55 && target->GetVictim() == me;
+            if (!(interrupt || rescue || pressureStop))
+                return false;
+
+            if (doCast(target, GetSpell(HAMMER_OF_JUSTICE_1)))
                 return true;
 
             return false;
@@ -1447,18 +1565,31 @@ public:
                     return true;
             }
 
-            // Divine Protection is the tank wall. Do not wait until the paladin is already paste.
-            if (IsSpellReady(DIVINE_PROTECTION_1, diff, false) && shieldDelayTimer <= diff && IsTank() && Rand() < 85 &&
-                !me->getAttackers().empty() && GetHealthPCT(me) < 72 - 15 * me->HasAuraType(SPELL_AURA_PERIODIC_HEAL))
+            if (TryProtectionLayOnHands(diff))
+                return true;
+
+            // Divine Protection is the tank wall. Use it before the paladin is already paste.
+            if (IsSpellReady(DIVINE_PROTECTION_1, diff, false) && shieldDelayTimer <= diff && IsTank() &&
+                !me->getAttackers().empty())
             {
-                if (doCast(me, GetSpell(DIVINE_PROTECTION_1)))
-                    return true;
+                bool const heavyPressure = me->getAttackers().size() >= 3 || (target && target->GetVictim() == me && IsDurablePaladinTarget(target));
+                uint8 const wallPct = heavyPressure ? 82 : 68;
+                uint8 const hotPenalty = me->HasAuraType(SPELL_AURA_PERIODIC_HEAL) ? 12 : 0;
+                if (GetHealthPCT(me) < wallPct - hotPenalty && Rand() < (heavyPressure ? 95 : 85))
+                    if (doCast(me, GetSpell(DIVINE_PROTECTION_1)))
+                        return true;
             }
+
+            if (TryMaintainRighteousFury(diff))
+                return true;
+
+            if (TryProtectionSacredShield(target, diff))
+                return true;
 
             // Divine Plea belongs here too, but Holy uses a stricter gate elsewhere so it does not
             // gleefully halve its healing while the tank is being turned into jam.
-            if (IsSpellReady(DIVINE_PLEA_1, diff) && Rand() < 35 &&
-                GetManaPCT(me) < (IsTank() ? 90 : GetSpec() == BOT_SPEC_PALADIN_HOLY ? 30 : 12) &&
+            if (IsSpellReady(DIVINE_PLEA_1, diff) && Rand() < (IsTank() ? 70 : 35) &&
+                GetManaPCT(me) < (IsTank() ? 92 : GetSpec() == BOT_SPEC_PALADIN_HOLY ? 30 : 12) &&
                 !(GetSpec() == BOT_SPEC_PALADIN_HOLY && HasUrgentHealingNeed(65)) &&
                 !me->GetAuraEffect(SPELL_AURA_OBS_MOD_POWER, SPELLFAMILY_PALADIN, 0x0, 0x80004000, 0x1))
             {
@@ -1475,12 +1606,13 @@ public:
                 return false;
 
             Unit* victim = target->GetVictim();
+            bool const targetTaunted = target->HasAuraType(SPELL_AURA_MOD_TAUNT);
 
             // Hand of Reckoning: snap threat back to the paladin when a party member is getting hit.
-            if (IsSpellReady(HAND_OF_RECKONING_1, diff, false) && canHoly && victim && victim != me && Rand() < 70 && dist < 30 &&
-                !target->HasAuraType(SPELL_AURA_MOD_TAUNT) && IsInBotParty(victim) &&
-                (!IsTank(victim) || GetHealthPCT(victim) < 45 ||
-                    (GetHealthPCT(me) > 67 &&
+            if (IsSpellReady(HAND_OF_RECKONING_1, diff, false) && canHoly && victim && victim != me && Rand() < 92 && dist < 30 &&
+                !targetTaunted && IsInBotParty(victim) &&
+                (!IsTank(victim) || GetHealthPCT(victim) < 55 ||
+                    (GetHealthPCT(me) > 62 &&
                         ((IsOffTank() && !IsOffTank(victim) && IsPointedOffTankingTarget(target)) ||
                             (!IsOffTank() && IsOffTank(victim) && IsPointedTankingTarget(target))))))
             {
@@ -1488,28 +1620,27 @@ public:
                     return true;
             }
 
-            // Righteous Defense: protect the party member being hit.
+            // Righteous Defense: protect the party member being hit, especially non-tanks and low-health tanks.
             if (IsSpellReady(RIGHTEOUS_DEFENSE_1, diff, false) && !IAmFree() && victim && victim != me &&
-                me->GetDistance(victim) < 40 && !target->HasAuraType(SPELL_AURA_MOD_TAUNT) && IsInBotParty(victim) &&
-                (!IsTank(victim) || GetHealthPCT(victim) < 35) && Rand() < 35 + 20 * victim->getAttackers().size())
+                me->GetDistance(victim) < 40 && !targetTaunted && IsInBotParty(victim) &&
+                (!IsTank(victim) || GetHealthPCT(victim) < 45) && Rand() < 60 + 15 * victim->getAttackers().size())
             {
                 if (doCast(victim, GetSpell(RIGHTEOUS_DEFENSE_1)))
                     return true;
             }
 
-            // Distant pickup when current target is already on the paladin.
-            if (!IAmFree() && victim == me &&
-                !(me->GetLevel() >= 40 && target->IsCreature() &&
-                    (target->ToCreature()->IsDungeonBoss() || target->ToCreature()->isWorldBoss())))
+            // Distant pickup when current target is already on the paladin. This is what makes
+            // Protection feel like a tank instead of a well-armored tunnel-vision machine.
+            if (!IAmFree() && (victim == me || !victim) && GetHealthPCT(me) > 35)
             {
-                if (IsSpellReady(HAND_OF_RECKONING_1, diff, false) && Rand() < 30)
+                if (IsSpellReady(HAND_OF_RECKONING_1, diff, false) && canHoly && Rand() < 70)
                 {
                     if (Unit* tUnit = FindDistantTauntTarget())
                         if (doCast(tUnit, GetSpell(HAND_OF_RECKONING_1)))
                             return true;
                 }
 
-                if (IsSpellReady(RIGHTEOUS_DEFENSE_1, diff, false) && Rand() < 30)
+                if (IsSpellReady(RIGHTEOUS_DEFENSE_1, diff, false) && Rand() < 70)
                 {
                     if (Unit* tUnit = FindDistantTauntTarget(40, true))
                         if (doCast(tUnit, GetSpell(RIGHTEOUS_DEFENSE_1)))
@@ -1686,8 +1817,8 @@ public:
             bool const multiTarget = me->getAttackers().size() > 1 || HasNearbyPaladinAOETargets(8.f, 3);
 
             // Holy Shield is mitigation and threat; tanks should maintain it deliberately.
-            if (IsSpellReady(HOLY_SHIELD_1, diff) && canHoly && CanBlock() && GetManaPCT(me) > 20 &&
-                (me->IsInCombat() || !me->getAttackers().empty()) &&
+            if (IsSpellReady(HOLY_SHIELD_1, diff) && canHoly && CanBlock() && GetManaPCT(me) > 15 &&
+                (me->IsInCombat() || !me->getAttackers().empty() || (target && target->GetVictim() == me)) &&
                 !me->HasAuraTypeWithMiscvalue(SPELL_AURA_SCHOOL_IMMUNITY, 127))
             {
                 if (doCast(me, GetSpell(HOLY_SHIELD_1)))
@@ -1699,23 +1830,25 @@ public:
 
             TryAvengingWrath(target, diff, canHoly, dist); // off-GCD-style buff; keep going if it succeeds
 
-            if (IsSpellReady(AVENGERS_SHIELD_1, diff) && canHoly && CanBlock() && dist < 30 && Rand() < 80 &&
-                (dist > 8 || multiTarget || durable || target->IsNonMeleeSpellCast(false, false, true)))
+            // Casters and loose pull targets get shielded in the face before the normal melee cadence.
+            if (IsSpellReady(AVENGERS_SHIELD_1, diff) && canHoly && CanBlock() && dist < 30 && Rand() < 90 &&
+                (dist > 8 || target->IsNonMeleeSpellCast(false, false, true) || (multiTarget && me->getAttackers().size() <= 1)))
             {
                 if (doCast(target, GetSpell(AVENGERS_SHIELD_1)))
                     return true;
             }
 
-            if (TryJudgement(target, diff, canHoly, dist, GetManaPCT(me) < 45, true))
+            // Keep Judgements of the Just on serious targets; it is mitigation, not decoration.
+            if (TargetNeedsJudgementsOfTheJust(target) && TryJudgement(target, diff, canHoly, dist, false, true))
                 return true;
 
-            if (IsSpellReady(SHIELD_OF_RIGHTEOUSNESS_1, diff) && canHoly && CanBlock() && dist < 5 && Rand() < 95)
+            if (IsSpellReady(SHIELD_OF_RIGHTEOUSNESS_1, diff) && canHoly && CanBlock() && dist < 5 && Rand() < 98)
             {
                 if (doCast(target, GetSpell(SHIELD_OF_RIGHTEOUSNESS_1)))
                     return true;
             }
 
-            if (IsSpellReady(HAMMER_OF_THE_RIGHTEOUS_1, diff) && canHoly && dist < 5 && Rand() < 90)
+            if (IsSpellReady(HAMMER_OF_THE_RIGHTEOUS_1, diff) && canHoly && dist < 5 && Rand() < 98)
             {
                 Item const* weapMH = GetEquips(BOT_SLOT_MAINHAND);
                 if (weapMH &&
@@ -1725,15 +1858,28 @@ public:
                     return true;
             }
 
-            if (IsSpellReady(CONSECRATION_1, diff) && canHoly && GetManaPCT(me) > (multiTarget ? 25 : 45) && dist < 5 &&
-                !target->isMoving() && Rand() < (multiTarget ? 70 : 25))
+            if (TryJudgement(target, diff, canHoly, dist, GetManaPCT(me) < 50, true))
+                return true;
+
+            if (IsSpellReady(CONSECRATION_1, diff) && canHoly && GetManaPCT(me) > (multiTarget ? 20 : 45) && dist < 5 &&
+                Rand() < (multiTarget ? 90 : 35))
             {
-                if ((multiTarget || durable) && doCast(me, GetSpell(CONSECRATION_1)))
+                if ((multiTarget || (durable && !target->isMoving())) && doCast(me, GetSpell(CONSECRATION_1)))
                     return true;
             }
 
+            if (TryProtectionEmergencyStun(target, diff, dist))
+                return true;
+
             if (TryHolyWrath(target, diff))
                 return true;
+
+            if (IsSpellReady(AVENGERS_SHIELD_1, diff) && canHoly && CanBlock() && dist < 30 && Rand() < 55 &&
+                (multiTarget || durable))
+            {
+                if (doCast(target, GetSpell(AVENGERS_SHIELD_1)))
+                    return true;
+            }
 
             if (IsSpellReady(EXORCISM_1, diff) && canHoly && dist < 30 && Rand() < 35 &&
                 (dist > 12 || target->GetCreatureType() == CREATURE_TYPE_UNDEAD || target->GetCreatureType() == CREATURE_TYPE_DEMON))
@@ -1742,7 +1888,7 @@ public:
                     return true;
             }
 
-            if (IsSpellReady(CRUSADER_STRIKE_1, diff) && canNormal && dist < 5 && Rand() < 50)
+            if (IsSpellReady(CRUSADER_STRIKE_1, diff) && canNormal && dist < 5 && Rand() < 60)
             {
                 if (doCast(target, GetSpell(CRUSADER_STRIKE_1)))
                     return true;
@@ -2266,6 +2412,29 @@ public:
                 value += 6.f;
 
             value = value * pctbonus;
+        }
+
+        void ApplyClassThreatMods(SpellInfo const* spellInfo, float& threat) const override
+        {
+            if (!spellInfo || GetSpec() != BOT_SPEC_PALADIN_PROTECTION || !IsTank())
+                return;
+
+            uint32 const baseId = spellInfo->GetFirstRankSpell()->Id;
+            bool const coreTankThreat = spellInfo->GetCategory() == SPELLCATEGORY_JUDGEMENT ||
+                baseId == SHIELD_OF_RIGHTEOUSNESS_1 || baseId == HAMMER_OF_THE_RIGHTEOUS_1 ||
+                baseId == AVENGERS_SHIELD_1 || baseId == CONSECRATION_1 || baseId == HOLY_SHIELD_1 ||
+                baseId == HOLY_WRATH_1 || baseId == HAMMER_OF_WRATH_1;
+
+            if (!coreTankThreat)
+                return;
+
+            // Righteous Fury does the heavy lifting; this is a small Protection-only hardening layer
+            // so a tank bot keeps mobs glued while still leaving the global tank-threat config meaningful.
+            threat *= 1.25f;
+
+            if (me->GetLevel() >= 55 &&
+                (baseId == SHIELD_OF_RIGHTEOUSNESS_1 || baseId == HAMMER_OF_THE_RIGHTEOUS_1 || spellInfo->GetCategory() == SPELLCATEGORY_JUDGEMENT))
+                threat *= 1.10f;
         }
 
         void OnClassSpellGo(SpellInfo const* spellInfo) override

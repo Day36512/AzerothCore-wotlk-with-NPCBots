@@ -34,6 +34,7 @@
 #include "ObjectMgr.h"
 #include "Opcodes.h"
 #include "Player.h"
+#include "RBAC.h"
 #include "ScriptMgr.h"
 #include "SharedDefines.h"
 #include "SocialMgr.h"
@@ -43,7 +44,7 @@
 //npcbot
 #include "botconfig.h"
 #include "botmgr.h"
-#include "Chat.h"
+#include "botdatamgr.h"
 #include "Creature.h"
 //end npcbot
 
@@ -500,7 +501,9 @@ namespace lfg
 
             uint32 lockData = 0;
 
-            if (dungeon->expansion > expansion || (onlySeasonalBosses && !dungeon->seasonal))
+            if (!player->GetSession()->HasPermission(rbac::RBAC_PERM_JOIN_DUNGEON_FINDER))
+                lockData = LFG_LOCKSTATUS_RAID_LOCKED;
+            else if (dungeon->expansion > expansion || (onlySeasonalBosses && !dungeon->seasonal))
                 lockData = LFG_LOCKSTATUS_INSUFFICIENT_EXPANSION;
             else if (IsDungeonDisabled(dungeon->map, dungeon->difficulty))
                 lockData = LFG_LOCKSTATUS_RAID_LOCKED;
@@ -610,7 +613,38 @@ namespace lfg
         LfgJoinResultData joinData;
         LfgGuidSet players;
         uint32 rDungeonId = 0;
+
+        bool hasNpcBotMember = false;
+
+        if (grp)
+        {
+            for (Group::MemberSlot const& slot : grp->GetMemberSlots())
+            {
+                if (!slot.guid.IsCreature())
+                    continue;
+
+                Creature const* bot = BotDataMgr::FindBot(slot.guid.GetEntry());
+                if (bot && bot->IsNPCBot())
+                {
+                    hasNpcBotMember = true;
+                    break;
+                }
+            }
+        }
+
         bool isContinue = grp && grp->isLFGGroup() && GetState(gguid) != LFG_STATE_FINISHED_DUNGEON;
+
+        // NPCBot groups can remain flagged as an LFG group after a completed dungeon even when
+        // the player is trying to start a fresh queue. In that stale state, the old continue
+        // logic replaces the player's new dungeon selection with GetDungeon(gguid), which may
+        // be 0 or stale, causing LFG_JOIN_DUNGEON_INVALID.
+        if (isContinue && hasNpcBotMember)
+        {
+            uint32 currentDungeon = GetDungeon(gguid);
+
+            if (!currentDungeon || dungeons.find(currentDungeon) == dungeons.end())
+                isContinue = false;
+        }
 
         if (grp && (grp->isBGGroup() || grp->isBFGroup()))
             return;
@@ -705,7 +739,11 @@ namespace lfg
         if (!isRaid && joinData.result == LFG_JOIN_OK)
         {
             // Check player or group member restrictions
-            if (player->InBattleground() || (player->InBattlegroundQueue() && !sWorld->getBoolConfig(CONFIG_ALLOW_JOIN_BG_AND_LFG)))
+            if (!player->GetSession()->HasPermission(rbac::RBAC_PERM_JOIN_DUNGEON_FINDER))
+            {
+                joinData.result = LFG_JOIN_NOT_MEET_REQS;
+            }
+            else if (player->InBattleground() || (player->InBattlegroundQueue() && !sWorld->getBoolConfig(CONFIG_ALLOW_JOIN_BG_AND_LFG)))
             {
                 joinData.result = LFG_JOIN_USING_BG_SYSTEM;
             }
@@ -728,7 +766,11 @@ namespace lfg
                     {
                         if (Player* plrg = itr->GetSource())
                         {
-                            if (plrg->HasAura(LFG_SPELL_DUNGEON_DESERTER))
+                            if (!plrg->GetSession()->HasPermission(rbac::RBAC_PERM_JOIN_DUNGEON_FINDER))
+                            {
+                                joinData.result = LFG_JOIN_PARTY_NOT_MEET_REQS;
+                            }
+                            else if (plrg->HasAura(LFG_SPELL_DUNGEON_DESERTER))
                             {
                                 joinData.result = LFG_JOIN_PARTY_DESERTER;
                             }
@@ -768,7 +810,7 @@ namespace lfg
                                     break;
                                 }
 
-                                if (ObjectAccessor::GetCreature(*plrg, bguid))
+                                if (bot)
                                 {
                                     ++memberCount;
                                     players.insert(bguid);
@@ -825,7 +867,7 @@ namespace lfg
             return;
 
          // Do not allow to change dungeon in the middle of a current dungeon
-        if (!isRaid && isContinue && grp->GetMembersCount() == 5)
+        if (!isRaid && isContinue && grp->GetMembersCount() == 5 && !hasNpcBotMember)
         {
             dungeons.clear();
             dungeons.insert(GetDungeon(gguid));

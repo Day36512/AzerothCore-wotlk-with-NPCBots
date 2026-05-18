@@ -291,7 +291,9 @@ public:
     uint32 GetSkill();
     uint32 GetSpell();
 
-    // RandomPropertyId (signed but stored as unsigned)
+    // Positive = ItemRandomProperties.dbc ID.
+    // Negative = ItemRandomSuffix.dbc ID.
+    // ITEM_FIELD_PROPERTY_SEED stores the suffix factor used by the client for $i tooltip values.
     [[nodiscard]] int32 GetItemRandomPropertyId() const { return GetInt32Value(ITEM_FIELD_RANDOM_PROPERTIES_ID); }
     [[nodiscard]] uint32 GetItemSuffixFactor() const { return GetUInt32Value(ITEM_FIELD_PROPERTY_SEED); }
     void SetItemRandomProperties(int32 randomPropId);

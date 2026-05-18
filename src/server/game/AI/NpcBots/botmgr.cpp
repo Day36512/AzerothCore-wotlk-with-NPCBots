@@ -180,7 +180,7 @@ void BotMgr::Initialize()
     BotDataMgr::LoadNpcBots();
     BotDataMgr::LoadWanderMap();
     BotDataMgr::GenerateWanderingBots();
-    BotDataMgr::CreateWanderingBotsSortedGear();
+    BotDataMgr::CreateGeneratedBotsSortedGear();
     BotDataMgr::LoadNpcBotGroupData();
     BotDataMgr::LoadNpcBotGearStorage();
     BotDataMgr::LoadNpcBotGearSets();
@@ -971,6 +971,12 @@ void BotMgr::_teleportBot(Creature* bot, Map* newMap, float x, float y, float z,
 
 void BotMgr::TeleportBot(Creature* bot, Map* newMap, Position const* pos, bool quick, bool reset, bot_ai* detached_ai)
 {
+    if (!bot || !newMap || !pos)
+    {
+        BOT_LOG_ERROR("npcbots", "TeleportBot: invalid teleport request bot {} map {} pos {}", bool(bot), bool(newMap), bool(pos));
+        return;
+    }
+
     _teleportBot(bot, newMap, pos->GetPositionX(), pos->GetPositionY(), pos->GetPositionZ(), pos->GetOrientation(), quick, reset, detached_ai);
 }
 
@@ -2429,9 +2435,15 @@ void BotMgr::AddDelayedTeleportCallback(delayed_teleport_callback_type&& callbac
 }
 void BotMgr::HandleDelayedTeleports()
 {
-    for (auto& func : delayed_bot_teleports)
-        func();
-    delayed_bot_teleports.clear();
+    std::list<delayed_teleport_callback_type> callbacks;
+    {
+        delayed_teleport_lock_type lock(*_getTpLock());
+        callbacks.swap(delayed_bot_teleports);
+    }
+
+    for (auto& func : callbacks)
+        if (func)
+            func();
 }
 
 #ifdef _MSC_VER

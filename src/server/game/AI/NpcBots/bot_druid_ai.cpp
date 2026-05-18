@@ -185,9 +185,7 @@ enum DruidSpecial
     INFECTED_WOUNDS_EFFECT = 58181,//rank 3
     PRIMAL_FURY_EFFECT_ENERGIZE = 16959,//5 rage
 
-    FORCE_OF_NATURE_1 = 33831, //not casted
-
-    PRE_PULL_HEAL_TIMER = 1500
+    FORCE_OF_NATURE_1 = 33831 //not casted
 };
 
 static const std::vector<uint32> Druid_spells_damage
@@ -350,7 +348,7 @@ public:
         {
             if (!HasRole(BOT_ROLE_HEAL)) return false;
             if (!gPlayer || GC_Timer > diff || IAmFree()) return false;
-            if (IsCasting()) return false; // if I'm already casting
+            if (IsCasting()) return false;
             if (Rand() > 30 + 50 * (me->GetMap()->IsRaid())) return false;
             if (!gPlayer->GetGroup()) return false;
 
@@ -359,9 +357,8 @@ public:
             if (!tranq && !growt)
                 return false;
 
-            uint8 LHPcount = 0;
-            uint8 pct = 100;
-            Unit* healTarget = nullptr;
+            uint8 lowHpCount = 0;
+            uint8 criticalCount = 0;
             std::vector<Unit*> members = BotMgr::GetAllGroupMembers(master);
             std::vector<Unit*> groupUnits;
             groupUnits.reserve(members.size());
@@ -371,48 +368,34 @@ public:
                 if (me->GetMap() != member->FindMap() || member->isPossessed() || member->IsCharmed() ||
                     !member->IsAlive() || me->GetDistance(member) > 40)
                     continue;
-                if (growt)
-                    groupUnits.push_back(member);
-                if (tranq && GetHealthPCT(member) < 80)
-                {
-                    if (GetHealthPCT(member) < pct)
-                    {
-                        pct = GetHealthPCT(member);
-                        healTarget = member;
-                    }
-                    ++LHPcount;
-                    if (LHPcount > 2)
-                        break;
-                }
+
+                groupUnits.push_back(member);
+
+                uint8 hp = GetHealthPCT(member);
+                if (hp < 80)
+                    ++lowHpCount;
+                if (hp < 65)
+                    ++criticalCount;
             }
 
-            if (LHPcount > 2 && tranq &&
-                doCast(me, GetSpell(TRANQUILITY_1)))
-                return true;
-
-            healTarget = nullptr;
-            for (Unit* gUnit : groupUnits)
+            if (growt)
             {
-                LHPcount = 0;
-                for (Unit* member : members)
+                for (Unit* gUnit : groupUnits)
                 {
-                    if (me->GetMap() != member->FindMap() || member->isPossessed() || member->IsCharmed() ||
-                        !member->IsAlive() || me->GetDistance(member) > 40)
-                        continue;
-                    if (gUnit->GetDistance(member) < 15 && (GetLostHP(member) > 2000 || GetHealthPCT(member) < 90))
-                        if (++LHPcount >= 3)
-                            break;
-                }
+                    uint8 count = 0;
+                    for (Unit* member : groupUnits)
+                    {
+                        if (gUnit->GetDistance(member) < 15 && (GetLostHP(member) > 1500 || GetHealthPCT(member) < 92))
+                            if (++count >= 3)
+                                break;
+                    }
 
-                if (LHPcount >= 3)
-                {
-                    healTarget = gUnit;
-                    break;
+                    if (count >= 3 && doCast(gUnit, GetSpell(WILD_GROWTH_1)))
+                        return true;
                 }
             }
 
-            if (LHPcount >= 3 && growt && healTarget &&
-                doCast(healTarget, GetSpell(WILD_GROWTH_1)))
+            if (tranq && (criticalCount >= 3 || lowHpCount > 4) && doCast(me, GetSpell(TRANQUILITY_1)))
                 return true;
 
             return false;
@@ -551,14 +534,8 @@ public:
             //Innervate
             doInnervate(diff);
 
-            // Keep tank HoTs rolling during combat before falling back to the
-            // normal reactive healing logic. This makes resto druids behave
-            // like HoT healers instead of waiting for the tank to become a
-            // smoking crater before planting flowers.
-            if (MaintainTankHots(diff))
+            if (MassGroupHeal(master, diff))
                 return;
-
-            MassGroupHeal(master, diff);
             if (me->IsInCombat())
                 CheckBattleRez(diff);
             else
@@ -572,6 +549,9 @@ public:
                 CureGroup(GetSpell(CURE_POISON_1), diff);
                 CureGroup(GetSpell(REMOVE_CURSE_1), diff);
             }
+
+            if (MaintainTankHots(diff))
+                return;
 
             DoPrePullTankHealing(diff);
 
@@ -1231,6 +1211,15 @@ public:
                         return true;
                 }
             }
+            if (!IsTank(target) && IsSpellReady(REJUVENATION_1, diff) && xppct > 35 &&
+                hp < (me->GetMap()->IsRaid() ? 92 : 85) &&
+                (target->IsInCombat() || !target->getAttackers().empty() || pointed) &&
+                !target->GetAuraEffect(SPELL_AURA_PERIODIC_HEAL, SPELLFAMILY_DRUID, 0x10, 0x0, 0x0, me->GetGUID()))
+            {
+                if (doCast(target, GetSpell(REJUVENATION_1)))
+                    return true;
+            }
+
             if (IsSpellReady(NOURISH_1, diff) && xppct <= 65 && xphploss > _heals[REJUVENATION_1])
             {
                 const uint8 minHots = 2;
@@ -1365,85 +1354,187 @@ public:
             }
         }
 
-        void DoPrePullTankHealing(uint32 diff)
+        bool DoPrePullTankHealing(uint32 diff)
         {
-            if (prePullHealTimer > diff || GC_Timer > diff)
-                return;
-            if (me->IsInCombat() || master->IsInCombat() || me->IsMounted() || me->GetVehicle() ||
-                !HasRole(BOT_ROLE_HEAL) || HasRole(BOT_ROLE_TANK))
-                return;
-            if (IAmFree() || IsCasting())
-                return;
-            if (master->GetBotMgr()->IsPartyInCombat(false))
-                return;
+            if (!HasRole(BOT_ROLE_HEAL) || HasRole(BOT_ROLE_TANK) || IAmFree())
+                return false;
+            if (!master || !master->GetBotMgr())
+                return false;
+            if (me->IsInCombat() || master->IsInCombat() || master->GetBotMgr()->IsPartyInCombat(false))
+                return false;
+            if (prePullHealTimer > diff || GC_Timer > diff || me->IsMounted() || me->GetVehicle() || IsCasting())
+                return false;
 
-            prePullHealTimer = PRE_PULL_HEAL_TIMER;
+            prePullHealTimer = 1500;
 
             // Do not burn the last of the healer's mana pre-HoTing. Once combat starts,
             // the normal emergency healing code takes over.
             if (me->GetPowerType() != POWER_MANA || GetManaPCT(me) < 55)
-                return;
+                return false;
 
-            // Healing from non-restoration forms is unreliable and can lead to ugly
-            // form churn. Tree form and caster form are fine.
-            if (_form != BOT_STANCE_NONE && _form != DRUID_TREE_FORM)
-                if (!removeShapeshiftForm())
-                    return;
+            static constexpr float PRE_PULL_TANK_RANGE = 40.0f;
+            static constexpr float PRE_PULL_HOSTILE_SCAN_RANGE = 50.0f;
 
-            for (Unit* member : BotMgr::GetAllGroupMembers(master))
+            auto isPrePullTank = [this](Unit const* member) -> bool
+                {
+                    if (!member)
+                        return false;
+
+                    // First use the core NPCBots meaning of "tank". For NPCBots this is normally
+                    // the BOT_ROLE_TANK flag; for players it can also include group MT/MA/LFG role.
+                    if (IsTank(member))
+                        return true;
+
+                    // Be forgiving for owned NPCBots that are protection/feral/blood/frost but whose
+                    // explicit role flag was not toggled. Without this, a prot-looking paladin can fail
+                    // pre-pull healing if BOT_ROLE_TANK is not actually set.
+                    Creature const* bot = member->ToCreature();
+                    if (!bot || !bot->IsNPCBot())
+                        return false;
+
+                    bot_ai const* ai = bot->GetBotAI();
+                    if (!ai)
+                        return false;
+
+                    if (ai->HasRole(BOT_ROLE_TANK) || ai->HasRole(BOT_ROLE_TANK_OFF))
+                        return true;
+
+                    switch (bot->GetBotClass())
+                    {
+                    case BOT_CLASS_WARRIOR:
+                        return ai->GetSpec() == BOT_SPEC_WARRIOR_PROTECTION;
+                    case BOT_CLASS_PALADIN:
+                        return ai->GetSpec() == BOT_SPEC_PALADIN_PROTECTION;
+                    case BOT_CLASS_DRUID:
+                        return ai->GetSpec() == BOT_SPEC_DRUID_FERAL;
+                    case BOT_CLASS_DEATH_KNIGHT:
+                        return ai->GetSpec() == BOT_SPEC_DK_BLOOD || ai->GetSpec() == BOT_SPEC_DK_FROST;
+                    default:
+                        return false;
+                    }
+                };
+
+            auto isPrePullHostile = [this](Unit const* candidate) -> bool
+                {
+                    if (!candidate || !candidate->IsAlive())
+                        return false;
+                    if (candidate == me || candidate == master)
+                        return false;
+                    if (!candidate->ToCreature())
+                        return false;
+                    if (candidate->IsNPCBot() || candidate->IsPet() || candidate->IsCritter() || candidate->IsControlledByPlayer())
+                        return false;
+
+                    return me->IsValidAttackTarget(candidate);
+                };
+
+            auto hasPrePullHostileNearUnit = [&](Unit* origin) -> bool
+                {
+                    if (!origin || !origin->IsInWorld() || origin->FindMap() != me->GetMap())
+                        return false;
+
+                    // Use Unit::SelectNearbyTarget instead of GridNotifiers searchers here.
+                    // The priest/druid bot scripts do not reliably have the Bcore/Acore searcher
+                    // helpers visible, and this keeps the pre-pull check compile-safe in script files.
+                    Unit* nearby = origin->SelectNearbyTarget(nullptr, PRE_PULL_HOSTILE_SCAN_RANGE);
+                    return isPrePullHostile(nearby);
+                };
+
+            auto hasPrePullHostileNearTank = [&](Unit* tank) -> bool
+                {
+                    // Scan around the tank first, then owner, then healer. This avoids relying on
+                    // GetNearbyTargetsList(), which is an attack-target helper and can be empty before combat.
+                    return hasPrePullHostileNearUnit(tank) || hasPrePullHostileNearUnit(master) || hasPrePullHostileNearUnit(me);
+                };
+
+            // Healing from bear/cat/moonkin/travel forms is unreliable and ugly. Tree form
+            // and caster form are fine.
+            switch (_form)
             {
-                if (!member || member == me || !member->IsAlive() || me->GetMap() != member->FindMap())
-                    continue;
-                if (member->isPossessed() || member->IsCharmed())
-                    continue;
-                if (member->IsInCombat() || !member->getAttackers().empty())
-                    continue;
-                if (!IsTank(member))
-                    continue;
-                if (me->GetDistance(member) > 40.f)
-                    continue;
+            case DRUID_BEAR_FORM:
+            case DRUID_CAT_FORM:
+            case DRUID_MOONKIN_FORM:
+            case DRUID_TRAVEL_FORM:
+            case DRUID_AQUATIC_FORM:
+            case DRUID_FLIGHT_FORM:
+                if (!removeShapeshiftForm())
+                    return false;
+                break;
+            default:
+                break;
+            }
 
-                Unit* nearby = member->SelectNearbyTarget(nullptr, 50.f);
-                if (!nearby || !nearby->IsAlive() || !nearby->ToCreature() ||
-                    nearby->IsNPCBot() || nearby->IsPet() || nearby->IsCritter() || nearby->IsControlledByPlayer() ||
-                    !me->IsValidAttackTarget(nearby))
-                    continue;
-
-                // One HoT per AI update/GCD. Priority is cheap instant coverage first,
-                // then Regrowth, then Lifebloom stack maintenance.
-                if (uint32 REJUVENATION = GetSpell(REJUVENATION_1))
+            auto tryHealTank = [&](Unit* member) -> bool
                 {
-                    if (IsSpellReady(REJUVENATION_1, diff) &&
-                        !member->GetAuraEffect(SPELL_AURA_PERIODIC_HEAL, SPELLFAMILY_DRUID, 0x10, 0x0, 0x0, me->GetGUID()))
-                    {
-                        if (doCast(member, REJUVENATION))
-                            return;
-                    }
-                }
+                    if (!member || member == me || !member->IsAlive() || !member->IsInMap(me))
+                        return false;
+                    if (member->isPossessed() || member->IsCharmed())
+                        return false;
+                    if (member->IsNPCBot() && member->ToCreature()->IsTempBot())
+                        return false;
+                    if (me->GetDistance(member) > PRE_PULL_TANK_RANGE)
+                        return false;
+                    if (!isPrePullTank(member))
+                        return false;
+                    if (member->IsInCombat() || !member->getAttackers().empty())
+                        return false;
+                    if (!hasPrePullHostileNearTank(member))
+                        return false;
 
-                if (uint32 REGROWTH = GetSpell(REGROWTH_1))
-                {
-                    if (IsSpellReady(REGROWTH_1, diff) &&
-                        !member->GetAuraEffect(SPELL_AURA_PERIODIC_HEAL, SPELLFAMILY_DRUID, 0x40, 0x0, 0x0, me->GetGUID()))
+                    // One HoT per AI update/GCD. Priority is cheap instant coverage first,
+                    // then Regrowth, then Lifebloom stack maintenance.
+                    if (uint32 REJUVENATION = GetSpell(REJUVENATION_1))
                     {
-                        if (doCast(member, REGROWTH))
-                            return;
-                    }
-                }
-
-                if (uint32 LIFEBLOOM = GetSpell(LIFEBLOOM_1))
-                {
-                    if (IsSpellReady(LIFEBLOOM_1, diff))
-                    {
-                        AuraEffect const* bloom = member->GetAuraEffect(SPELL_AURA_PERIODIC_HEAL, SPELLFAMILY_DRUID, 0x0, 0x10, 0x0, me->GetGUID());
-                        if (!bloom || bloom->GetBase()->GetStackAmount() < 3 || bloom->GetBase()->GetDuration() < 3500)
+                        if (IsSpellReady(REJUVENATION_1, diff) &&
+                            !member->GetAuraEffect(SPELL_AURA_PERIODIC_HEAL, SPELLFAMILY_DRUID, 0x10, 0x0, 0x0, me->GetGUID()))
                         {
-                            if (doCast(member, LIFEBLOOM))
-                                return;
+                            if (doCast(member, REJUVENATION))
+                                return true;
                         }
                     }
-                }
-            }
+
+                    if (uint32 REGROWTH = GetSpell(REGROWTH_1))
+                    {
+                        if (IsSpellReady(REGROWTH_1, diff) &&
+                            !member->GetAuraEffect(SPELL_AURA_PERIODIC_HEAL, SPELLFAMILY_DRUID, 0x40, 0x0, 0x0, me->GetGUID()))
+                        {
+                            if (doCast(member, REGROWTH))
+                                return true;
+                        }
+                    }
+
+                    if (uint32 LIFEBLOOM = GetSpell(LIFEBLOOM_1))
+                    {
+                        if (IsSpellReady(LIFEBLOOM_1, diff))
+                        {
+                            AuraEffect const* bloom = member->GetAuraEffect(SPELL_AURA_PERIODIC_HEAL, SPELLFAMILY_DRUID, 0x0, 0x10, 0x0, me->GetGUID());
+                            if (!bloom || bloom->GetBase()->GetStackAmount() < 3 || bloom->GetBase()->GetDuration() < 3500)
+                            {
+                                if (doCast(member, LIFEBLOOM))
+                                    return true;
+                            }
+                        }
+                    }
+
+                    return false;
+                };
+
+            // Use both group membership and the owner's direct bot map. In some NPCBots states,
+            // BotMgr::GetAllGroupMembers(master) may not surface every owned bot the way combat
+            // helper code expects, so this makes the pre-pull pass more stubborn.
+            std::vector<Unit*> members = BotMgr::GetAllGroupMembers(master);
+            for (Unit* member : members)
+                if (tryHealTank(member))
+                    return true;
+
+            for (auto const& [_, bot] : *master->GetBotMgr()->GetBotMap())
+                if (tryHealTank(bot))
+                    return true;
+
+            if (tryHealTank(master))
+                return true;
+
+            return false;
         }
 
 
@@ -1464,7 +1555,22 @@ public:
             if (tankHotMaintenanceTimer > diff || GC_Timer > diff || me->IsMounted() || me->GetVehicle() || IsCasting())
                 return false;
 
-            tankHotMaintenanceTimer = TANK_HOT_CHECK_INTERVAL;
+            tankHotMaintenanceTimer = me->GetMap()->IsRaid() ? 1500 : TANK_HOT_CHECK_INTERVAL;
+
+            if (me->GetMap()->IsRaid())
+            {
+                uint8 injuredCount = 0;
+                for (Unit* member : BotMgr::GetAllGroupMembers(master))
+                {
+                    if (!member || member == me || !member->IsAlive() || !member->IsInMap(me) || me->GetDistance(member) > 40.f)
+                        continue;
+                    if (member->isPossessed() || member->IsCharmed())
+                        continue;
+                    if (GetHealthPCT(member) < 88 || GetLostHP(member) > 2500)
+                        if (++injuredCount >= 3)
+                            return false;
+                }
+            }
 
             // Leave enough mana for emergency casts. This layer is maintenance,
             // not panic healing. The normal HealTarget() path still handles
@@ -1553,7 +1659,7 @@ public:
                             return true;
                     }
 
-                    return me->GetMap()->IsRaid();
+                    return false;
                 };
 
             auto tryMaintainTankHots = [&](Unit* tank) -> bool

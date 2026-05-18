@@ -43,12 +43,14 @@ private:
     void _RewardKillCredit(Player* player);
     void _RewardPlayer(Player* player, bool isDungeon);
     void _RewardGroup();
+    uint8 _GetPlayerLevel(Player const* player);
 
     Player* _killer;
     Unit* _victim;
     Group* _group;
     float _groupRate;
     Player* _maxNotGrayMember;
+    uint8 _maxNotGrayMemberLevel;
     uint32 _count;
     //npcbot
     uint32 _bots_count_xp = 0;

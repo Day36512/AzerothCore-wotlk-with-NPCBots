@@ -19,38 +19,43 @@
 #include "ScriptedCreature.h"
 #include "shadow_labyrinth.h"
 
+using namespace std::chrono_literals;
+
 enum Text
 {
-    SAY_INTRO                   = 0,
-    SAY_AGGRO                   = 1,
-    SAY_HELP                    = 2,
-    SAY_SLAY                    = 3,
-    SAY_DEATH                   = 4
+    SAY_INTRO = 0,
+    SAY_AGGRO = 1,
+    SAY_HELP = 2,
+    SAY_SLAY = 3,
+    SAY_DEATH = 4
 };
 
 enum Spells
 {
     // Vorpil
-    SPELL_RAIN_OF_FIRE          = 33617,
-    SPELL_DRAW_SHADOWS          = 33563,
-    SPELL_SHADOWBOLT_VOLLEY     = 33841,
-    SPELL_BANISH                = 38791,
+    SPELL_RAIN_OF_FIRE = 33617,
+    SPELL_DRAW_SHADOWS = 33563,
+    SPELL_SHADOWBOLT_VOLLEY = 33841,
+    SPELL_BANISH = 38791,
 
     // Void Traveler
-    SPELL_SACRIFICE             = 33587,
-    SPELL_SHADOW_NOVA           = 33846,
-    SPELL_EMPOWERING_SHADOWS    = 33783,
+    SPELL_SACRIFICE = 33587,
+    SPELL_SHADOW_NOVA = 33846,
+    SPELL_EMPOWERING_SHADOWS = 33783,
 
-    SPELL_VOID_PORTAL_VISUAL    = 33569
+    SPELL_VOID_PORTAL_VISUAL = 33569
 };
 
 enum Npc
 {
-    NPC_VOID_TRAVELER           = 19226,
-    NPC_VOID_PORTAL             = 19224
+    NPC_VOID_TRAVELER = 19226,
+    NPC_VOID_PORTAL = 19224
 };
 
-float VorpilPosition[3] = {-253.548f, -263.646f, 17.0864f};
+static constexpr float VOID_TRAVELER_WALK_SPEED_RATE = 0.80f;
+static constexpr float VOID_TRAVELER_RUN_SPEED_RATE = 0.32f;
+
+float VorpilPosition[3] = { -253.548f, -263.646f, 17.0864f };
 
 // x, y, z, and orientation
 float VoidPortalCoords[5][4] =
@@ -97,23 +102,23 @@ struct boss_grandmaster_vorpil : public BossAI
     {
         switch (count)
         {
-            case 1:
-            case 2:
-                return 13300ms;
-            case 3:
-                return 12100ms;
-            case 4:
-                return 10900ms;
-            case 5:
-            case 6:
-                return 9700ms;
-            case 7:
-            case 8:
-                return 7200ms;
-            case 9:
-                return 6s;
-            default:
-                return 4800ms;
+        case 1:
+        case 2:
+            return 13300ms;
+        case 3:
+            return 12100ms;
+        case 4:
+            return 10900ms;
+        case 5:
+        case 6:
+            return 9700ms;
+        case 7:
+        case 8:
+            return 7200ms;
+        case 9:
+            return 6s;
+        default:
+            return 4800ms;
         }
         return 1s;
     }
@@ -150,37 +155,37 @@ struct boss_grandmaster_vorpil : public BossAI
         Talk(SAY_AGGRO);
         summonPortals();
         scheduler.Schedule(9700ms, 20s, [this](TaskContext context)
-        {
-            DoCastAOE(SPELL_SHADOWBOLT_VOLLEY);
-            context.Repeat();
-        }).Schedule(36400ms, [this](TaskContext context)
-        {
-            DoCastAOE(SPELL_DRAW_SHADOWS, true);
-
-            me->NearTeleportTo(VorpilPosition[0], VorpilPosition[1], VorpilPosition[2], 0.0f);
-            me->GetMotionMaster()->Clear();
-
-            scheduler.Schedule(1s, [this](TaskContext /*context*/)
             {
-                DoCastSelf(SPELL_RAIN_OF_FIRE);
-                me->ResumeChasingVictim();
-            });
-
-            context.Repeat(36400ms, 44950ms);
-        }).Schedule(10900ms, [this](TaskContext context)
-        {
-            spawnVoidTraveler();
-            context.Repeat(counterVoidSpawns(context.GetRepeatCounter()));
-        });
-
-        if (IsHeroic())
-        {
-            scheduler.Schedule(17s, 28s, [this](TaskContext context)
-            {
-                DoCastRandomTarget(SPELL_BANISH, 0, 30.0f, true);
+                DoCastAOE(SPELL_SHADOWBOLT_VOLLEY);
                 context.Repeat();
-            });
-        }
+            }).Schedule(36400ms, [this](TaskContext context)
+                {
+                    DoCastAOE(SPELL_DRAW_SHADOWS, true);
+
+                    me->NearTeleportTo(VorpilPosition[0], VorpilPosition[1], VorpilPosition[2], 0.0f);
+                    me->GetMotionMaster()->Clear();
+
+                    scheduler.Schedule(1s, [this](TaskContext /*context*/)
+                        {
+                            DoCastSelf(SPELL_RAIN_OF_FIRE);
+                            me->ResumeChasingVictim();
+                        });
+
+                    context.Repeat(36400ms, 44950ms);
+                }).Schedule(10900ms, [this](TaskContext context)
+                    {
+                        spawnVoidTraveler();
+                        context.Repeat(counterVoidSpawns(context.GetRepeatCounter()));
+                    });
+
+                if (IsHeroic())
+                {
+                    scheduler.Schedule(17s, 28s, [this](TaskContext context)
+                        {
+                            DoCastRandomTarget(SPELL_BANISH, 0, 30.0f, false);
+                            context.Repeat();
+                        });
+                }
     }
 
     void MoveInLineOfSight(Unit* who) override
@@ -202,6 +207,13 @@ struct npc_voidtraveler : public ScriptedAI
     {
         me->SetReactState(REACT_PASSIVE);
 
+        // Void Travelers should slowly drift toward Vorpil, not run at normal creature speed.
+        // Walk mode is preferred visually, while MOVE_RUN is also capped as a fallback for
+        // movement generators that select run speed internally.
+        me->SetWalk(true);
+        me->SetSpeed(MOVE_WALK, VOID_TRAVELER_WALK_SPEED_RATE, true);
+        me->SetSpeed(MOVE_RUN, VOID_TRAVELER_RUN_SPEED_RATE, true);
+
         if (TempSummon* summon = me->ToTempSummon())
         {
             if (Unit* vorpil = summon->GetSummonerUnit())
@@ -210,40 +222,42 @@ struct npc_voidtraveler : public ScriptedAI
             }
         }
 
-        _scheduler.Schedule(1s, [this](TaskContext context)
-        {
-            if (TempSummon* summon = me->ToTempSummon())
+        _scheduler.Schedule(250ms, [this](TaskContext context)
             {
-                if (Unit* vorpil = summon->GetSummonerUnit())
+                if (TempSummon* summon = me->ToTempSummon())
                 {
-                    if (me->IsWithinMeleeRange(vorpil))
+                    if (Unit* vorpil = summon->GetSummonerUnit())
                     {
-                        DoCastSelf(SPELL_SACRIFICE);
-                        _scheduler.Schedule(1200ms, [this](TaskContext /*context*/)
+                        if (me->IsWithinMeleeRange(vorpil))
                         {
-                            if (TempSummon* summon = me->ToTempSummon())
-                            {
-                                if (Unit* vorpil = summon->GetSummonerUnit())
-                                {
-                                    DoCastAOE(SPELL_SHADOW_NOVA, true);
-                                    me->CastSpell(vorpil, SPELL_EMPOWERING_SHADOWS, true, nullptr, nullptr, vorpil->GetGUID());
-                                    vorpil->ModifyHealth(int32(vorpil->CountPctFromMaxHealth(4)));
-                                }
-                            }
+                            me->GetMotionMaster()->Clear();
 
-                            _scheduler.Schedule(100ms, [this](TaskContext /*context*/)
-                            {
-                                me->KillSelf();
-                            });
-                        });
-                    }
-                    else
-                    {
-                        context.Repeat();
+                            DoCastSelf(SPELL_SACRIFICE);
+                            _scheduler.Schedule(1200ms, [this](TaskContext /*context*/)
+                                {
+                                    if (TempSummon* summon = me->ToTempSummon())
+                                    {
+                                        if (Unit* vorpil = summon->GetSummonerUnit())
+                                        {
+                                            DoCastAOE(SPELL_SHADOW_NOVA, true);
+                                            me->CastSpell(vorpil, SPELL_EMPOWERING_SHADOWS, true, nullptr, nullptr, vorpil->GetGUID());
+                                            vorpil->ModifyHealth(int32(vorpil->CountPctFromMaxHealth(4)));
+                                        }
+                                    }
+
+                                    _scheduler.Schedule(100ms, [this](TaskContext /*context*/)
+                                        {
+                                            me->KillSelf();
+                                        });
+                                });
+
+                            return;
+                        }
+
+                        context.Repeat(250ms);
                     }
                 }
-            }
-        });
+            });
     }
 
     void UpdateAI(uint32 diff) override

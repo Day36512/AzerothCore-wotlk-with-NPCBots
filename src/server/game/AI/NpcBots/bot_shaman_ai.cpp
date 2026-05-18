@@ -22,8 +22,7 @@
 /*
 Shaman NpcBot (reworked by Trickerer onlysuffering@gmail.com)
 Complete - around 90%
-TODO: Elemental mastery (exclusive cd with NatSw), Lava Lash
-Problems:
+TODO:
 Unsummon elemental totems if Elementals are killed
 Aura application bug for bot in other subgroup, maybe caused by creatorGUID mismatch
 */
@@ -94,7 +93,7 @@ enum ShamanBaseSpells
 
     REINCARNATION_1 = 21169,
 
-    FERAL_SPIRIT_1 = 51533, //not casted
+    FERAL_SPIRIT_1 = 51533,
 
     //ROCKBITER_WEAPON_1                  = 8017, //disabled due to bonus handling method
     FLAMETONGUE_WEAPON_1 = 8024,
@@ -246,7 +245,7 @@ enum BotTotemType : uint32
 
     BOT_TOTEM_MASK_PRIMARY_USE = (BOT_TOTEM_MASK_STRENGTH_OF_EARTH | BOT_TOTEM_MASK_FLAMETONGUE | \
         BOT_TOTEM_MASK_WRATH | BOT_TOTEM_MASK_MANA_SPRING | \
-        BOT_TOTEM_WINDFURY | BOT_TOTEM_MASK_WRATH_OF_AIR),
+        BOT_TOTEM_MASK_WINDFURY | BOT_TOTEM_MASK_WRATH_OF_AIR),
 
     BOT_TOTEM_MASK_MY_TOTEM_ALL = (BOT_TOTEM_MASK_MY_TOTEM_FIRE | BOT_TOTEM_MASK_MY_TOTEM_EARTH | \
         BOT_TOTEM_MASK_MY_TOTEM_WATER | BOT_TOTEM_MASK_MY_TOTEM_AIR)
@@ -615,6 +614,11 @@ public:
             }
 
             //FIRE
+            //FIREsituative0 : Fire Elemental for real burn targets. Keep this before Magma/Totem of Wrath
+            //so the long-cooldown elemental is not immediately overwritten by the normal fire totem logic.
+            if (TryCastFireElementalTotem(diff, CotE))
+                return;
+
             //FIREsituative1 : magma
             if (_totemTimers[T_FIRE] <= diff && me->IsInCombat() && !IAmFree() && HasRole(BOT_ROLE_DPS) &&
                 GetSpell(MAGMA_TOTEM_1)/* && _totems[T_FIRE].second.type != BOT_TOTEM_MAGMA*/)
@@ -911,16 +915,15 @@ public:
             uint8 tCount = 0;
             for (Unit const* attacker : b_attackers)
             {
-                if (!attacker) continue;
-                if (me->GetDistance(attacker) > 9) continue;
-                if (me->IsValidAttackTarget(attacker))
-                {
-                    ++tCount;
+                if (!attacker)
+                    continue;
+                if (me->GetDistance(attacker) > 9)
+                    continue;
+                if (me->IsValidAttackTarget(attacker) && ++tCount >= 2)
                     break;
-                }
             }
 
-            if (tCount > 1)
+            if (tCount >= 2)
             {
                 if (doCast(me, GetSpell(THUNDERSTORM_1)))
                     return;
@@ -929,13 +932,36 @@ public:
 
         void Counter(uint32 diff)
         {
-            if (Rand() > 40)
+            if (!IsSpellReady(WIND_SHEAR_1, diff, false) || HasQueuedSpellAction(WIND_SHEAR_1))
                 return;
 
-            if (IsSpellReady(WIND_SHEAR_1, diff, false) && !HasQueuedSpellAction(WIND_SHEAR_1))
-                if (Unit const* target = FindCastingTarget(CalcSpellMaxRange(WIND_SHEAR_1), 0, WIND_SHEAR_1))
-                    if (EnqueueCounterSpellAction(target->GetGUID(), WIND_SHEAR_1, !HasRole(BOT_ROLE_HEAL)))
-                        return;
+            float const range = CalcSpellMaxRange(WIND_SHEAR_1);
+
+            bool urgent = false;
+            for (Unit const* target : { opponent, disttarget })
+            {
+                if (!target || !target->IsAlive() || me->GetMap() != target->FindMap())
+                    continue;
+
+                if (me->GetDistance(target) > range)
+                    continue;
+
+                if (target->IsNonMeleeSpellCast(false, false, true))
+                {
+                    urgent = true;
+                    break;
+                }
+            }
+
+            if (!urgent && Rand() > 65)
+                return;
+
+            if (Unit const* target = FindCastingTarget(range, 0, WIND_SHEAR_1))
+            {
+                bool interruptCurrentCast = GetSpec() != BOT_SPEC_SHAMAN_RESTORATION || !HasRole(BOT_ROLE_HEAL);
+                if (EnqueueCounterSpellAction(target->GetGUID(), WIND_SHEAR_1, interruptCurrentCast))
+                    return;
+            }
         }
 
         void CheckShield(uint32 diff)
@@ -1030,8 +1056,8 @@ public:
             if (!CheckAttackTarget())
                 return;
 
-            CheckHex(diff);
             Counter(diff);
+            CheckHex(diff);
 
             if (IsCasting())
                 return;
@@ -1055,6 +1081,51 @@ public:
                 return true;
 
             return target->GetMaxHealth() > me->GetMaxHealth() * 2;
+        }
+
+        bool IsMajorShamanCooldownTarget(Unit const* target) const
+        {
+            if (!target)
+                return false;
+
+            Creature const* creature = target->ToCreature();
+            if (creature && (creature->IsDungeonBoss() || creature->isWorldBoss()))
+                return true;
+
+            // Players and very high-health custom creatures are worth real cooldowns;
+            // ordinary trash, even elite trash, should not eat ten-minute elemental uptime.
+            if (target->IsPlayer())
+                return true;
+
+            return uint64(target->GetMaxHealth()) > uint64(me->GetMaxHealth()) * 8;
+        }
+
+        bool TryCastFireElementalTotem(uint32 diff, bool CotE)
+        {
+            if (GetSpec() != BOT_SPEC_SHAMAN_ELEMENTAL || !HasRole(BOT_ROLE_DPS))
+                return false;
+
+            if (_totemTimers[T_FIRE] > diff || _totems[T_FIRE].second._type == BOT_TOTEM_ELEMENTAL_FIRE)
+                return false;
+
+            uint32 fireElem = GetSpell(FIRE_ELEMENTAL_TOTEM_1);
+            if (!fireElem || !IsSpellReady(FIRE_ELEMENTAL_TOTEM_1, diff, false))
+                return false;
+
+            Unit const* target = me->GetVictim();
+            if (!IsMajorShamanCooldownTarget(target))
+                return false;
+
+            // In instances, keep the elemental for boss-class targets. Outside, the health
+            // heuristic above is enough for world elites and PvP pressure.
+            if (me->GetMap()->IsDungeon())
+            {
+                Creature const* creature = target ? target->ToCreature() : nullptr;
+                if (!creature || (!creature->IsDungeonBoss() && !creature->isWorldBoss()))
+                    return false;
+            }
+
+            return doCast(me, fireElem, CotE ? TRIGGERED_CAST_DIRECTLY : TRIGGERED_NONE);
         }
 
         bool TargetHasMyFlameShock(Unit const* target, uint32 refreshMs = 0) const
@@ -1126,7 +1197,7 @@ public:
             return shock && doCast(target, shock);
         }
 
-        bool TryUseElementalMastery(Unit* target, uint32 diff, bool canFire, bool canNature)
+        bool TryUseElementalMastery(Unit* target, uint32 diff, bool canFire, bool canNature, float dist)
         {
             if (!target || GetSpec() != BOT_SPEC_SHAMAN_ELEMENTAL)
                 return false;
@@ -1137,10 +1208,19 @@ public:
             if (!(canFire || canNature))
                 return false;
 
-            if (!IsDurableShamanTarget(target) && target->GetHealth() > me->GetMaxHealth() / 2)
+            // Elemental Mastery is a real burn cooldown. Do not throw it into a half-dead
+            // normal mob just because the button happens to be glowing.
+            if (!IsDurableShamanTarget(target))
                 return false;
 
-            if (Rand() > 65)
+            bool const lavaReady = IsSpellReady(LAVA_BURST_1, diff) && canFire &&
+                dist < CalcSpellMaxRange(LAVA_BURST_1) && TargetHasMyFlameShock(target);
+            bool const chainReady = IsSpellReady(CHAIN_LIGHTNING_1, diff) &&
+                ShouldUseChainLightning(target, dist, canNature, true);
+            bool const boltReady = IsSpellReady(LIGHTNING_BOLT_1, diff) && canNature &&
+                dist < CalcSpellMaxRange(LIGHTNING_BOLT_1);
+
+            if (!lavaReady && !chainReady && !boltReady)
                 return false;
 
             return doCast(me, GetSpell(ELEMENTAL_MASTERY_1));
@@ -1224,18 +1304,25 @@ public:
 
             bool const durable = IsDurableShamanTarget(mytar);
 
-            TryUseElementalMastery(mytar, diff, canFire, canNature);
+            TryUseElementalMastery(mytar, diff, canFire, canNature, dist);
 
             // Flame Shock first when Lava Burst is available or the target will live long enough.
             if ((GetSpell(LAVA_BURST_1) || durable) &&
                 TryCastFlameShock(mytar, diff, dist, canFire, 4500))
                 return true;
 
-            // Lava Burst should be a defining Elemental button, not a 60% coin-flip.
+            bool const hasFlameShock = TargetHasMyFlameShock(mytar);
+            bool const canApplyFlameShockSoon = GetSpell(FLAME_SHOCK_1) && canFire && dist <= 25.f &&
+                GetSpellCooldown(EARTH_SHOCK_1) <= diff + 1200;
+
+            // Lava Burst should be a defining Elemental button, not a 60% coin-flip. Prefer
+            // the Flame Shock guaranteed-crit setup, but do not stand idle if shock cooldown
+            // prevents setup and the target is sturdy enough to justify raw Lava Burst damage.
             if (IsSpellReady(LAVA_BURST_1, diff) && canFire &&
                 dist < CalcSpellMaxRange(LAVA_BURST_1) &&
                 (me->getAttackers().empty() || dist > 10.f || !IsMelee()) &&
-                (TargetHasMyFlameShock(mytar) || durable || mytar->HasAuraState(AURA_STATE_HEALTHLESS_20_PERCENT)))
+                (hasFlameShock || mytar->HasAuraState(AURA_STATE_HEALTHLESS_20_PERCENT) ||
+                    (durable && !canApplyFlameShockSoon)))
             {
                 if (doCast(mytar, GetSpell(LAVA_BURST_1)))
                     return true;
@@ -1603,6 +1690,29 @@ public:
             }
         }
 
+        bool TryUseTidalForce(Unit const* target, uint32 diff, uint8 hp, int32 xppct, int32 xphploss)
+        {
+            if (!target || GetSpec() != BOT_SPEC_SHAMAN_RESTORATION || !HasRole(BOT_ROLE_HEAL))
+                return false;
+
+            if (!IsSpellReady(TIDAL_FORCE_1, diff, false) || IsCasting())
+                return false;
+
+            if (me->GetAuraEffect(TIDAL_FORCE_BUFF, 0, me->GetGUID()))
+                return false;
+
+            if (!me->IsInCombat() && !target->IsInCombat())
+                return false;
+
+            if (hp > 45 && xppct > 45)
+                return false;
+
+            if (xphploss < _heals[LESSER_HEALING_WAVE_1] && hp > 25)
+                return false;
+
+            return doCast(me, GetSpell(TIDAL_FORCE_1));
+        }
+
         bool HealTarget(Unit* target, uint32 diff) override
         {
             if (!target || !target->IsAlive() || target->GetShapeshiftForm() == FORM_SPIRITOFREDEMPTION || me->GetDistance(target) > 40)
@@ -1635,6 +1745,10 @@ public:
                         return true;
                 }
             }
+
+            // Tidal Force is a Restoration panic lever. Use it before the normal heal ladder
+            // when the target is actually in danger, then let the next heal consume the crit stacks.
+            TryUseTidalForce(target, diff, hp, xppct, xphploss);
 
             if (IsCasting()) return false;
 
@@ -2822,7 +2936,7 @@ public:
             /*Talent*/lvl >= 40 && isEnha ? InitSpellMap(STORMSTRIKE_1) : RemoveSpell(STORMSTRIKE_1);
             /*Talent*/lvl >= 41 && isEnha ? InitSpellMap(LAVA_LASH_1) : RemoveSpell(LAVA_LASH_1);
             /*Talent*/lvl >= 50 && isEnha ? InitSpellMap(SHAMANISTIC_RAGE_1) : RemoveSpell(SHAMANISTIC_RAGE_1);
-            /*Talent*/lvl >= 60 && isEnha ? InitSpellMap(FERAL_SPIRIT_1) : RemoveSpell(FERAL_SPIRIT_1); //not casted
+            /*Talent*/lvl >= 60 && isEnha ? InitSpellMap(FERAL_SPIRIT_1) : RemoveSpell(FERAL_SPIRIT_1);
 
             /*Talent*/lvl >= 20 && isRest ? InitSpellMap(TIDAL_FORCE_1) : RemoveSpell(TIDAL_FORCE_1);
             /*Talent*/lvl >= 30 && isRest ? InitSpellMap(NATURES_SWIFTNESS_1) : RemoveSpell(NATURES_SWIFTNESS_1);

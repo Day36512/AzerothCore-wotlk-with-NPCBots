@@ -139,13 +139,16 @@ enum MageSpecial
     COMBUSTION_BUFF = 28682,
     BRAIN_FREEZE_BUFF = 57761,
     HOT_STREAK_BUFF = 48108,
+    // Custom Hot Streak helper aura. Change this id if your core uses a different spell for Heating Up.
+    HEATING_UP_BUFF = 48107,
     FINGERS_OF_FROST_BUFF = 44544,
     ARCANE_BLAST_DEBUFF = 36032,
     MISSILE_BARRAGE_BUFF = 44401,
     IMPROVED_BLIZZARD_CHILL = 12486,//rank 3
     FROSTBITE_TRIGGERED = 12494,
     WINTERS_CHILL_TRIGGERED = 12579,
-    IGNITE_TRIGGERED = 12654
+    IGNITE_TRIGGERED = 12654,
+    FIRE_BLAST_CRIT_AURA = 300140
 };
 
 static const std::vector<uint32> Mage_spells_damage
@@ -331,35 +334,54 @@ public:
             if (!CanBotAttackOnVehicle())
                 return;
 
-            CheckPots(diff);
+            // If Hot Streak is waiting, preserve the next legal GCD for Pyroblast.
+            // Do not clip the current hard-cast; simply avoid optional utility stealing the proc.
+            bool const hotStreakWaiting = HasHotStreakPyroblastPending();
 
-            CheckPoly(diff);
-            CheckBlink(diff);
-            CheckIceBlock(diff);
+            if (!hotStreakWaiting)
+            {
+                CheckPots(diff);
 
-            CheckRacials(diff);
+                CheckPoly(diff);
+                CheckBlink(diff);
+                CheckIceBlock(diff);
 
-            CheckShield(diff);
-            CureGroup(GetSpell(REMOVE_CURSE_1), diff);
-            CheckWard(diff);
+                CheckRacials(diff);
 
-            CheckFocusMagic(diff);
-            BuffAndHealGroup(diff);
+                CheckShield(diff);
+                CureGroup(GetSpell(REMOVE_CURSE_1), diff);
+                CheckWard(diff);
 
-            if (!me->IsInCombat())
-                DoNonCombatActions(diff);
+                CheckFocusMagic(diff);
+                BuffAndHealGroup(diff);
 
-            //pet
-            if ((!botPet || !botPet->IsAlive()) &&
-                IsSpellReady(SUMMON_WATER_ELEMENTAL_1, diff) && !IsCasting() && (IAmFree() || master->IsInCombat()))
-                if (doCast(me, GetSpell(SUMMON_WATER_ELEMENTAL_1)))
-                    return;
+                if (!me->IsInCombat())
+                    DoNonCombatActions(diff);
+
+                //pet
+                if ((!botPet || !botPet->IsAlive()) &&
+                    IsSpellReady(SUMMON_WATER_ELEMENTAL_1, diff) && !IsCasting() && (IAmFree() || master->IsInCombat()))
+                    if (doCast(me, GetSpell(SUMMON_WATER_ELEMENTAL_1)))
+                        return;
+            }
 
             if (ProcessImmediateNonAttackTarget())
                 return;
 
             if (!CheckAttackTarget())
                 return;
+
+            Unit* hotStreakTarget = opponent ? opponent : disttarget ? disttarget : nullptr;
+            if (hotStreakTarget)
+            {
+                const auto [can_do_frost, can_do_fire, can_do_arcane] =
+                    CanAffectVictimBools(hotStreakTarget, SPELL_SCHOOL_FROST, SPELL_SCHOOL_FIRE, SPELL_SCHOOL_ARCANE);
+                (void)can_do_frost;
+                (void)can_do_arcane;
+
+                if (TryHotStreakPyroblast(hotStreakTarget, diff, can_do_fire))
+                    return;
+            }
 
             CheckPolymorph(diff);//this should go AFTER getting target
 
@@ -368,7 +390,16 @@ public:
             CheckColdSnap(diff);
 
             if (IsCasting())
+            {
+                Unit* mytar = opponent ? opponent : disttarget ? disttarget : nullptr;
+
+                // Fire Blast can be woven during hard-casts, but with the custom
+                // guaranteed-crit passive it should be used as the second crit only.
+                if (!HasHotStreakPyroblastPending() && TryFireBlastForHeatingUp(mytar, diff))
+                    return;
+
                 return;
+            }
 
             if (me->HasInvisibilityAura())
                 return;
@@ -413,6 +444,239 @@ public:
             return target && target->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_MAGE, 0x0, 0x20000, 0x0, me->GetGUID());
         }
 
+        bool IsWorthLivingBomb(Unit const* target, Unit const* primary) const
+        {
+            if (!target || !target->IsAlive() || target->IsPolymorphed() || HasLivingBomb(target))
+                return false;
+
+            if (IsDurableMageTarget(target))
+                return true;
+
+            // Do not spend a GCD on Living Bomb if the target is likely to die before the explosion.
+            if (target == primary)
+                return target->GetHealth() > me->GetMaxHealth();
+
+            return target->GetHealth() > me->GetMaxHealth() * 2;
+        }
+
+        Unit* FindLivingBombTarget(Unit* primary, float maxRange) const
+        {
+            if (primary && me->GetDistance(primary) <= maxRange && IsWorthLivingBomb(primary, primary))
+                return primary;
+
+            std::list<Unit*> targets;
+            GetNearbyTargetsList(targets, maxRange, 1);
+
+            Unit* best = nullptr;
+            uint64 bestScore = 0;
+
+            for (Unit* target : targets)
+            {
+                if (!target || target == primary || !IsWorthLivingBomb(target, primary))
+                    continue;
+
+                uint64 score = target->GetHealth();
+                if (score > 5000000)
+                    score = 5000000;
+
+                if (IsDurableMageTarget(target))
+                    score += 5000000;
+                if (target->GetVictim() == master || target->GetVictim() == me)
+                    score += 1000000;
+
+                if (!best || score > bestScore)
+                {
+                    best = target;
+                    bestScore = score;
+                }
+            }
+
+            return best;
+        }
+
+        bool FireTargetPrimedForCombustion(Unit const* target) const
+        {
+            if (!target)
+                return false;
+
+            bool const scorchReady = me->GetLevel() < 25 || !GetSpell(SCORCH_1) || HasImprovedScorchDebuff(target);
+            bool const bombReady = me->GetLevel() < 60 || !GetSpell(LIVING_BOMB_1) || HasLivingBomb(target);
+
+            return scorchReady && bombReady;
+        }
+
+        Unit* FindFireAoETarget(float maxRange, float radius, uint8 minTargets) const
+        {
+            std::list<Unit*> targets;
+            GetNearbyTargetsList(targets, maxRange, 1);
+
+            Unit* best = nullptr;
+            uint8 bestCount = 0;
+            float bestDistance = maxRange + 1.0f;
+
+            for (Unit* center : targets)
+            {
+                if (!center || !center->IsAlive() || center->IsPolymorphed())
+                    continue;
+
+                uint8 count = 0;
+                for (Unit* target : targets)
+                {
+                    if (target && target->IsAlive() && !target->IsPolymorphed() &&
+                        target->GetDistance2d(center->GetPositionX(), center->GetPositionY()) <= radius)
+                        ++count;
+                }
+
+                float const dist = me->GetDistance(center);
+                if (count > bestCount || (count == bestCount && dist < bestDistance))
+                {
+                    best = center;
+                    bestCount = count;
+                    bestDistance = dist;
+                }
+            }
+
+            return bestCount >= minTargets ? best : nullptr;
+        }
+
+        bool DoFireLivingBomb(Unit* mytar, uint32 diff)
+        {
+            if (!mytar || !IsSpellReady(LIVING_BOMB_1, diff))
+                return false;
+
+            Unit* bombTarget = FindLivingBombTarget(mytar, CalcSpellMaxRange(LIVING_BOMB_1));
+            if (!bombTarget)
+                return false;
+
+            if (doCast(bombTarget, GetSpell(LIVING_BOMB_1)))
+                return true;
+
+            SetSpellCooldown(LIVING_BOMB_1, 1000);
+            return false;
+        }
+
+        bool HasHotStreakPyroblastPending() const
+        {
+            return GetSpec() == BOT_SPEC_MAGE_FIRE && HasRole(BOT_ROLE_DPS) &&
+                me->HasAura(HOT_STREAK_BUFF) && !me->HasInvisibilityAura();
+        }
+
+        bool HasHeatingUpActive() const
+        {
+            return GetSpec() == BOT_SPEC_MAGE_FIRE && HasRole(BOT_ROLE_DPS) &&
+                me->HasAura(HEATING_UP_BUFF) && !me->HasAura(HOT_STREAK_BUFF) &&
+                !me->HasInvisibilityAura();
+        }
+
+        bool CastFireBlastWhileCasting(Unit* target, uint32 spellId)
+        {
+            if (!target || !spellId)
+                return false;
+
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            if (!spellInfo)
+                return false;
+
+            spellInfo = spellInfo->TryGetSpellInfoOverride(me);
+
+            SpellCastTargets targets;
+            targets.SetUnitTarget(target);
+
+            // bot_ai::doCast() refuses while IsCasting() is true. This custom Fire Blast
+            // is allowed to weave through a hard-cast, so bypass only that bot-side gate.
+            Spell* spell = new Spell(me, spellInfo, TRIGGERED_IGNORE_CAST_IN_PROGRESS);
+            SpellCastResult result = spell->prepare(&targets);
+            if (result != SPELL_CAST_OK)
+                return false;
+
+            SetSpellCooldown(FIRE_BLAST_1, 10000);
+            return true;
+        }
+
+        bool TryFireBlastForHeatingUp(Unit* mytar, uint32 diff)
+        {
+            if (!mytar || GetSpec() != BOT_SPEC_MAGE_FIRE || !HasRole(BOT_ROLE_DPS))
+                return false;
+
+            if (me->HasInvisibilityAura() || mytar->IsPolymorphed())
+                return false;
+
+            // Hot Streak Pyroblast owns the next GCD. Do not weave Fire Blast while it is waiting.
+            if (HasHotStreakPyroblastPending())
+                return false;
+
+            // With the custom guaranteed-crit passive, Fire Blast is no longer a raw
+            // on-cooldown nuke. Save it for Heating Up so it forces the second crit
+            // and converts directly into Hot Streak.
+            if (!me->HasAura(FIRE_BLAST_CRIT_AURA) || !HasHeatingUpActive() ||
+                !IsSpellReady(FIRE_BLAST_1, diff, false))
+                return false;
+
+            if (me->GetDistance(mytar) > CalcSpellMaxRange(FIRE_BLAST_1))
+                return false;
+
+            const auto [can_do_frost, can_do_fire, can_do_arcane] =
+                CanAffectVictimBools(mytar, SPELL_SCHOOL_FROST, SPELL_SCHOOL_FIRE, SPELL_SCHOOL_ARCANE);
+            (void)can_do_frost;
+            (void)can_do_arcane;
+            if (!can_do_fire)
+                return false;
+
+            // Do not spend the guaranteed crit into a spell reflection. Normal reflect clearing
+            // can use cheaper frost options in DoNormalAttack() when the bot is not mid-cast.
+            if (CanRemoveReflectSpells(mytar, FIRE_BLAST_1))
+                return false;
+
+            uint32 spellId = GetSpell(FIRE_BLAST_1);
+            if (!spellId || CheckBotCast(mytar, spellId) != SPELL_CAST_OK)
+                return false;
+
+            if (IsCasting())
+            {
+                if (CastFireBlastWhileCasting(mytar, spellId))
+                    return true;
+            }
+            else if (doCast(mytar, spellId))
+                return true;
+
+            SetSpellCooldown(FIRE_BLAST_1, 500);
+            return false;
+        }
+
+        bool TryHotStreakPyroblast(Unit* mytar, uint32 diff, bool can_do_fire)
+        {
+            if (!HasHotStreakPyroblastPending() || !mytar || !can_do_fire)
+                return false;
+
+            if (mytar->IsPolymorphed())
+                return false;
+
+            // Never interrupt a hard-cast for Hot Streak. Bank the proc and spend it as soon
+            // as the current spell finishes and the next GCD is legal.
+            if (IsCasting() || GC_Timer > diff)
+                return false;
+
+            if (me->GetDistance(mytar) > CalcSpellMaxRange(PYROBLAST_1))
+                return false;
+
+            // Do not throw the proc into reflect. Let the normal reflect-clearing code work first.
+            if (CanRemoveReflectSpells(mytar, PYROBLAST_1))
+                return false;
+
+            // Pyroblast has no real cooldown when Hot Streak is active. Clear the bot's old
+            // 3 sec anti-doublecast guard so Pyro crits can chain into real Pyro usage.
+            if (!IsSpellReady(PYROBLAST_1, diff, false))
+                ResetSpellCooldown(PYROBLAST_1);
+
+            hotStreakPyroQueued = true;
+            if (doCast(mytar, GetSpell(PYROBLAST_1)))
+                return true;
+
+            hotStreakPyroQueued = false;
+            SetSpellCooldown(PYROBLAST_1, 250);
+            return false;
+        }
+
         bool HasMissileBarrage() const
         {
             return me->GetAuraEffect(SPELL_AURA_ADD_FLAT_MODIFIER, SPELLFAMILY_MAGE, 0x0, 0x2, 0x0);
@@ -437,9 +701,10 @@ public:
             bool const execute = mytar->HasAuraState(AURA_STATE_HEALTHLESS_35_PERCENT);
 
             // Custom fork Combustion: 12 sec fire crit window, no charges, castable while casting.
-            // It no longer needs the old stack/charge-style handling.
+            // Do not blow it on the first naked Fireball if the target still needs Scorch/Living Bomb setup.
+            bool const fireBurstReady = GetSpec() != BOT_SPEC_MAGE_FIRE || FireTargetPrimedForCombustion(mytar) || pressured || execute;
             if (GetSpec() == BOT_SPEC_MAGE_FIRE && IsSpellReady(COMBUSTION_1, diff, false) &&
-                !HasCombustionActive() && (durable || pressured || execute) && Rand() < 85)
+                !HasCombustionActive() && fireBurstReady && (durable || pressured || execute) && Rand() < 90)
                 doCast(me, GetSpell(COMBUSTION_1));
 
             if (IsSpellReady(ICY_VEINS_1, diff, false) && (GetSpec() == BOT_SPEC_MAGE_FROST || GetSpec() == BOT_SPEC_MAGE_ARCANE) &&
@@ -453,6 +718,7 @@ public:
 
             if ((GetSpec() == BOT_SPEC_MAGE_ARCANE || GetSpec() == BOT_SPEC_MAGE_FIRE) &&
                 IsSpellReady(PRESENCE_OF_MIND_1, diff, false) && GetManaPCT(me) > 10 && (durable || execute) && Rand() < 45 &&
+                !(GetSpec() == BOT_SPEC_MAGE_FIRE && me->HasAura(HOT_STREAK_BUFF)) &&
                 !me->GetAuraEffect(SPELL_AURA_ADD_PCT_MODIFIER, SPELLFAMILY_MAGE, 0x0, 0x80000, 0x0))
                 doCast(me, GetSpell(PRESENCE_OF_MIND_1));
         }
@@ -522,13 +788,26 @@ public:
                 }
             }
 
-            if (IsSpellReady(FLAMESTRIKE_1, diff) && me->HasAura(FIRESTARTER_BUFF) && Rand() < 90)
+            if (IsSpellReady(FLAMESTRIKE_1, diff))
             {
-                if (Unit* flamestrikeTarget = FindAOETarget(CalcSpellMaxRange(FLAMESTRIKE_1)))
-                    if (doCast(flamestrikeTarget, GetSpell(FLAMESTRIKE_1)))
-                        return true;
+                float const flamestrikeRange = CalcSpellMaxRange(FLAMESTRIKE_1);
 
-                SetSpellCooldown(FLAMESTRIKE_1, 1000);
+                if (me->HasAura(FIRESTARTER_BUFF) && Rand() < 95)
+                {
+                    if (Unit* flamestrikeTarget = FindFireAoETarget(flamestrikeRange, 8.0f, 3))
+                        if (doCast(flamestrikeTarget, GetSpell(FLAMESTRIKE_1)))
+                            return true;
+
+                    SetSpellCooldown(FLAMESTRIKE_1, 1000);
+                }
+                else if (!me->isMoving() && !JumpingOrFalling() && !me->HasAura(HOT_STREAK_BUFF) && Rand() < 70)
+                {
+                    if (Unit* flamestrikeTarget = FindFireAoETarget(flamestrikeRange, 8.0f, 4))
+                        if (doCast(flamestrikeTarget, GetSpell(FLAMESTRIKE_1)))
+                            return true;
+
+                    SetSpellCooldown(FLAMESTRIKE_1, 1500);
+                }
             }
 
             return false;
@@ -628,8 +907,11 @@ public:
                 return false;
             }
 
+            if (TryHotStreakPyroblast(mytar, diff, can_do_fire))
+                return true;
+
             if (IsSpellReady(PYROBLAST_1, diff) && dist < CalcSpellMaxRange(PYROBLAST_1) &&
-                (me->HasAura(HOT_STREAK_BUFF) || me->HasAura(PRESENCE_OF_MIND_1) ||
+                (me->HasAura(PRESENCE_OF_MIND_1) ||
                     (mytar->IsPolymorphed() && (me->getAttackers().empty() || *me->getAttackers().begin() == mytar))))
             {
                 if (doCast(mytar, GetSpell(PYROBLAST_1)))
@@ -643,22 +925,14 @@ public:
                     return true;
             }
 
-            if (IsSpellReady(LIVING_BOMB_1, diff) && dist < CalcSpellMaxRange(LIVING_BOMB_1) &&
-                durable && !HasLivingBomb(mytar) && Rand() < 115)
-            {
-                if (doCast(mytar, GetSpell(LIVING_BOMB_1)))
-                    return true;
-            }
+            if (DoFireLivingBomb(mytar, diff))
+                return true;
 
             if (DoFireMageAoE(mytar, diff, can_do_fire))
                 return true;
 
-            if (IsSpellReady(FIRE_BLAST_1, diff) && dist < CalcSpellMaxRange(FIRE_BLAST_1) &&
-                (me->isMoving() || mytar->GetHealth() < me->GetMaxHealth() || me->HasAura(IMPACT_BUFF)) && Rand() < 80)
-            {
-                if (doCast(mytar, GetSpell(FIRE_BLAST_1)))
-                    return true;
-            }
+            if (TryFireBlastForHeatingUp(mytar, diff))
+                return true;
 
             // Custom fork behavior: Scorch is strong execute below 35%, and in 5-man dungeons
             // it receives a flat 30% bonus all the time. Treat it as Fire's preferred filler there.
@@ -809,19 +1083,14 @@ public:
                 return;
 
             float const dist = me->GetDistance(mytar);
+            const auto [can_do_frost, can_do_fire, can_do_arcane] = CanAffectVictimBools(mytar, SPELL_SCHOOL_FROST, SPELL_SCHOOL_FIRE, SPELL_SCHOOL_ARCANE);
 
-            TryMageOffensiveCooldowns(mytar, diff);
+            // Optional cooldowns must not steal the first GCD after a Hot Streak proc.
+            if (!HasHotStreakPyroblastPending())
+                TryMageOffensiveCooldowns(mytar, diff);
 
             if (GC_Timer > diff)
                 return;
-
-            if (DoMageDefensiveControl(mytar, diff))
-                return;
-
-            if (DoMageMirrorImage(mytar, diff))
-                return;
-
-            const auto [can_do_frost, can_do_fire, can_do_arcane] = CanAffectVictimBools(mytar, SPELL_SCHOOL_FROST, SPELL_SCHOOL_FIRE, SPELL_SCHOOL_ARCANE);
 
             // Spell reflections: use cheap/instant options before entering spec rotation.
             if (IsSpellReady(ICE_LANCE_1, diff) && can_do_frost && dist < CalcSpellMaxRange(ICE_LANCE_1) && CanRemoveReflectSpells(mytar, ICE_LANCE_1) &&
@@ -829,6 +1098,17 @@ public:
                 return;
             if (IsSpellReady(FROSTBOLT_1, diff) && can_do_frost && dist < CalcSpellMaxRange(FROSTBOLT_1) && CanRemoveReflectSpells(mytar, FROSTBOLT_1) &&
                 doCast(mytar, FROSTBOLT_1))
+                return;
+
+            // Hot Streak Pyroblast beats defensive control, Mirror Image, AoE, Living Bomb,
+            // Fire Blast, and fillers. The only thing ahead of it is reflect clearing.
+            if (TryHotStreakPyroblast(mytar, diff, can_do_fire))
+                return;
+
+            if (DoMageDefensiveControl(mytar, diff))
+                return;
+
+            if (DoMageMirrorImage(mytar, diff))
                 return;
 
             switch (GetSpec())
@@ -1140,6 +1420,9 @@ public:
             if ((SPELL_SCHOOL_MASK_FIRE & spellInfo->GetSchoolMask()) && HasCombustionActive())
                 crit_chance += 100.f;
 
+            if (baseId == FIRE_BLAST_1 && me->HasAura(FIRE_BLAST_CRIT_AURA))
+                crit_chance += 100.f;
+
             //Incineration: 6% additional crit chance for Fire Blast, Scorch, Arcane Blast and Cone of Cold
             if (lvl >= 10 &&
                 (baseId == FIRE_BLAST_1 || baseId == SCORCH_1 ||
@@ -1179,8 +1462,10 @@ public:
             {
                 //!!!spell damage is not yet critical and will be multiplied by 1.5
                 //so we should put here bonus damage mult /1.5
-                //Burnout: 50% additional crit damage bonus for All spells
-                //well it's gonna be a little too much eh? skipped
+                //Burnout: 50% additional critical strike damage bonus for all spells.
+                // Spell damage is still pre-crit here; 0.334f becomes the full +50% crit bonus after the normal 1.5x crit multiplier.
+                if ((GetSpec() == BOT_SPEC_MAGE_FIRE) && lvl >= 50)
+                    pctbonus += 0.334f;
                 //Ice Shards: 50% additional crit damage bonus for Frost spells
                 if (lvl >= 15 && (SPELL_SCHOOL_MASK_FROST & spellInfo->GetSchoolMask()))
                     pctbonus += 0.334f;
@@ -1502,9 +1787,17 @@ public:
             }
 
             //special cases
-            //Pyroblast (special): ensure no double pyroblast casts
+            //Pyroblast has no real cooldown when Hot Streak is active. Only non-Hot-Streak
+            //Pyros keep the small anti-doublecast guard. If a hard-cast Pyroblast crits and
+            //creates Hot Streak, do not immediately eat the fresh proc or throttle it.
+            bool const hotStreakPyroblast = baseId == PYROBLAST_1 && hotStreakPyroQueued;
             if (baseId == PYROBLAST_1)
-                SetSpellCooldown(PYROBLAST_1, 3000);
+            {
+                if (hotStreakPyroblast || me->HasAura(HOT_STREAK_BUFF))
+                    ResetSpellCooldown(PYROBLAST_1);
+                else
+                    SetSpellCooldown(PYROBLAST_1, 3000);
+            }
 
             if (baseId == ICE_BLOCK_1)
             {
@@ -1552,10 +1845,13 @@ public:
                 //Brain Freeze (Fireball!)
                 if (baseId == FROSTFIRE_BOLT_1 || baseId == FIREBALL_1)
                     me->RemoveAurasDueToSpell(BRAIN_FREEZE_BUFF);
-                //Hot Streak
-                if (baseId == PYROBLAST_1)
-                    me->RemoveAurasDueToSpell(HOT_STREAK_BUFF);
             }
+            //Hot Streak should only be consumed by a Pyroblast that was actually cast to spend it.
+            //Do not eat a fresh Hot Streak generated by a hard-cast Pyroblast crit.
+            if (hotStreakPyroblast)
+                me->RemoveAurasDueToSpell(HOT_STREAK_BUFF);
+            if (baseId == PYROBLAST_1)
+                hotStreakPyroQueued = false;
             //Handle Cold Snap
             if (baseId == COLD_SNAP_1)
             {
@@ -1847,6 +2143,7 @@ public:
             poly = false;
             shielded = false;
             fbCasted = false;
+            hotStreakPyroQueued = false;
 
             DefaultInit();
         }
@@ -1959,6 +2256,7 @@ public:
             RefreshAura(IMPROVED_SCORCH, level >= 25 ? 1 : 0);
             RefreshAura(MOLTEN_SHIELDS, level >= 25 ? 1 : 0);
             RefreshAura(MASTER_OF_ELEMENTS, level >= 25 ? 1 : 0);
+            RefreshAura(FIRE_BLAST_CRIT_AURA, level >= 25 ? 1 : 0);//Fire Blast guaranteed crit / cast while casting
             RefreshAura(BLAZING_SPEED, isFire && level >= 35 ? 1 : 0);
             RefreshAura(PYROMANIAC, isFire && level >= 40 ? 1 : 0); //mana regen 2
             RefreshAura(FIRESTARTER2, isFire && level >= 51 ? 1 : 0);
@@ -1987,7 +2285,7 @@ public:
             RefreshAura(GLYPG_REMOVE_CURSE, level >= 18 ? 1 : 0);
             RefreshAura(GLYPH_ICY_VEINS, level >= 20 ? 1 : 0);
             RefreshAura(GLYPH_LIVING_BOMB, level >= 60 ? 1 : 0);
-            RefreshAura(GLYPH_ICE_LANCE, level >= 66 ? 1 : 0);
+            RefreshAura(GLYPH_ICE_LANCE, level >= 60 ? 1 : 0);
         }
 
         bool CanUseManually(uint32 basespell) const override
@@ -2057,6 +2355,7 @@ public:
         //Check
         /*exc.*/bool poly, shielded, fbCasted;
         /*exc.*/bool canFrostWard, canFireWard;
+        /*exc.*/bool hotStreakPyroQueued;
     };
 };
 

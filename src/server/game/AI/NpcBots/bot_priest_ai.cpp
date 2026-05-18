@@ -126,6 +126,7 @@ enum PriestSpecial
 
     PRE_PULL_SUPPORT_TIMER = 1500,
     TANK_SUPPORT_CHECK_TIMER = 850,
+    POWER_INFUSION_RETRY_TIMER = 1500,
 
     SHADOWFIEND_1 = 34433
 };
@@ -222,7 +223,7 @@ public:
                 return false;
 
             bool canHymn = IsSpellReady(DIVINE_HYMN_1, diff, false);
-            bool canPray = !!GetSpell(PRAYER_OF_HEALING_1);
+            bool canPray = IsSpellReady(PRAYER_OF_HEALING_1, diff);
             bool canCirc = IsSpellReady(CIRCLE_OF_HEALING_1, diff, false);
 
             uint8 LHPcount1, LHPcount2, LHPcount3;
@@ -265,10 +266,7 @@ public:
                 return true;
             if (LHPcount2 > 3)
             {
-                if (me->IsInCombat() && IsSpellReady(INNER_FOCUS_1, diff) && GetManaPCT(me) < 70 &&
-                    doCast(me, GetSpell(INNER_FOCUS_1)))
-                {
-                }
+                TryUseInnerFocusForSpell(PRAYER_OF_HEALING_1, me, diff);
                 if (doCast(me, GetSpell(PRAYER_OF_HEALING_1)))
                     return true;
             }
@@ -337,6 +335,8 @@ public:
 
         bool ShieldTarget(Unit* target, uint32 diff)
         {
+            if (!target || !target->IsAlive())
+                return false;
             if (!IsSpellReady(PW_SHIELD_1, diff) || IsCasting())
                 return false;
             if (target->HasAuraTypeWithFamilyFlags(SPELL_AURA_MECHANIC_IMMUNITY, SPELLFAMILY_PRIEST, 0x20000000) ||
@@ -349,15 +349,54 @@ public:
             return false;
         }
 
+        bool HasOwnedRenew(Unit const* target) const
+        {
+            return target && target->GetAuraEffect(SPELL_AURA_PERIODIC_HEAL, SPELLFAMILY_PRIEST, 0x40, 0x0, 0x0, me->GetGUID());
+        }
+
+        bool HasPrayerOfMendingAura(Unit const* target) const
+        {
+            return target && target->HasAuraType(SPELL_AURA_RAID_PROC_FROM_CHARGE_WITH_VALUE);
+        }
+
+        bool HasPriestCastSpeedBuff(Unit const* target) const
+        {
+            return target && target->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_CASTING_SPEED_NOT_STACK, SPELLFAMILY_PRIEST, 0x80000000);
+        }
+
+        bool HasSurgeOfLight() const
+        {
+            return me->GetAuraEffect(SURGE_OF_LIGHT_BUFF, 1) != nullptr;
+        }
+
+        void TryUseInnerFocusForSpell(uint32 baseSpell, Unit const* target, uint32 diff, uint8 targetHpPct = 100)
+        {
+            if (!me->IsInCombat() || !IsSpellReady(INNER_FOCUS_1, diff) || me->HasAura(INNER_FOCUS_1))
+                return;
+
+            bool const bigHeal = baseSpell == HEAL || baseSpell == GREATER_HEAL_1 || baseSpell == NORMAL_HEAL_1 || baseSpell == LESSER_HEAL_1;
+            bool const groupHeal = baseSpell == PRAYER_OF_HEALING_1 || baseSpell == DIVINE_HYMN_1;
+            bool const expensiveDamage = baseSpell == HOLY_FIRE_1 || baseSpell == MIND_BLAST_1;
+
+            if (!groupHeal && !bigHeal && !expensiveDamage)
+                return;
+
+            if (GetManaPCT(me) >= 85 && !(groupHeal || (target && targetHpPct <= 55)))
+                return;
+
+            doCast(me, GetSpell(INNER_FOCUS_1));
+        }
+
         bool TryPrayerOfMendingTarget(Unit* target, uint32 diff, bool mendingAlreadyOut)
         {
+            if (!target || !target->IsAlive() || target->isPossessed() || target->IsCharmed())
+                return false;
             if (mendingAlreadyOut)
                 return false;
 
             if (uint32 PRAYER_OF_MENDING = GetSpell(PRAYER_OF_MENDING_1))
             {
-                if (IsSpellReady(PRAYER_OF_MENDING_1, diff) &&
-                    !target->HasAuraType(SPELL_AURA_RAID_PROC_FROM_CHARGE_WITH_VALUE))
+                if (IsSpellReady(PRAYER_OF_MENDING_1, diff) && !HasPrayerOfMendingAura(target))
                 {
                     if (doCast(target, PRAYER_OF_MENDING))
                         return true;
@@ -369,10 +408,12 @@ public:
 
         bool TryRenewTarget(Unit* target, uint32 diff)
         {
+            if (!target || !target->IsAlive() || target->isPossessed() || target->IsCharmed())
+                return false;
+
             if (uint32 RENEW = GetSpell(RENEW_1))
             {
-                if (IsSpellReady(RENEW_1, diff) &&
-                    !target->GetAuraEffect(SPELL_AURA_PERIODIC_HEAL, SPELLFAMILY_PRIEST, 0x40, 0x0, 0x0, me->GetGUID()))
+                if (IsSpellReady(RENEW_1, diff) && !HasOwnedRenew(target))
                 {
                     if (doCast(target, RENEW))
                         return true;
@@ -384,14 +425,62 @@ public:
 
         bool TryPenanceHealTarget(Unit* target, uint32 diff)
         {
+            if (!target || !target->IsAlive() || target->IsCharmed() || target->isPossessed())
+                return false;
+
             if (uint32 PENANCE = GetSpell(PENANCE_1))
             {
-                if (IsSpellReady(PENANCE_1, diff) && !target->IsCharmed() && !target->isPossessed())
+                if (IsSpellReady(PENANCE_1, diff))
                 {
                     if (doCast(target, PENANCE))
                         return true;
                 }
             }
+
+            return false;
+        }
+
+        bool TrySurgeOfLightFlash(Unit* target, uint32 diff, int32 expectedLoss, uint8 hp)
+        {
+            if (!HasSurgeOfLight() || !target || !target->IsAlive() || target->IsCharmed() || target->isPossessed())
+                return false;
+            if (!IsSpellReady(FLASH_HEAL_1, diff))
+                return false;
+            if (hp > 90 && expectedLoss <= 0)
+                return false;
+
+            if (doCast(target, GetSpell(FLASH_HEAL_1)))
+                return true;
+
+            return false;
+        }
+
+        bool TryCircleOfHealingTarget(Unit* target, uint32 diff)
+        {
+            if (!target || !target->IsAlive() || !HasRole(BOT_ROLE_HEAL) || GetSpec() != BOT_SPEC_PRIEST_HOLY)
+                return false;
+            if (!IsSpellReady(CIRCLE_OF_HEALING_1, diff, false) || IsCasting())
+                return false;
+
+            Group const* gr = !IAmFree() ? master->GetGroup() : GetGroup();
+            if (!gr)
+                return false;
+
+            uint8 injuredNearTarget = 0;
+            for (Unit* member : BotMgr::GetAllGroupMembers(gr))
+            {
+                if (!member || me->GetMap() != member->FindMap() || !member->IsAlive() ||
+                    member->isPossessed() || member->IsCharmed() || (member->IsNPCBot() && member->ToCreature()->IsTempBot()))
+                    continue;
+                if (target->GetDistance(member) > 18.f || me->GetDistance(member) > 40.f)
+                    continue;
+                if (GetHealthPCT(member) <= 85 || (member->IsInCombat() && !member->getAttackers().empty()))
+                    if (++injuredNearTarget >= 2)
+                        break;
+            }
+
+            if (injuredNearTarget >= 2 && doCast(target, GetSpell(CIRCLE_OF_HEALING_1)))
+                return true;
 
             return false;
         }
@@ -733,6 +822,39 @@ public:
             return target->GetHealth() > scaledHealthFloor;
         }
 
+        Unit* FindShadowDotTarget(Unit const* currentTarget, uint32 baseSpell, uint32 refreshMs)
+        {
+            if (!GetSpell(baseSpell))
+                return nullptr;
+
+            std::list<Unit*> targets;
+            GetNearbyTargetsList(targets, CalcSpellMaxRange(baseSpell), 1);
+
+            Unit* best = nullptr;
+            uint64 bestScore = 0;
+            for (Unit* target : targets)
+            {
+                if (!target || target == currentTarget || !target->IsAlive() || CCed(target))
+                    continue;
+                if (!IsDurableShadowTarget(target) || !ShouldRefreshOwnedShadowDot(target, baseSpell, refreshMs))
+                    continue;
+
+                uint64 score = target->GetHealth();
+                if (target->GetVictim() && IsInBotParty(target->GetVictim()))
+                    score += uint64(me->GetMaxHealth()) * 2;
+                if (target->IsPlayer() || target->IsControlledByPlayer())
+                    score += uint64(me->GetMaxHealth());
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    best = target;
+                }
+            }
+
+            return best;
+        }
+
         bool DoShadowActions(Unit* mytar, uint32 diff, bool can_do_shadow, bool can_do_holy)
         {
             if (!mytar || !mytar->IsAlive())
@@ -758,7 +880,7 @@ public:
 
             // AoE mode: if enough targets are clustered, Mind Sear should take over instead
             // of carefully applying a full single-target DoT suite to disposable trash.
-            if (IsSpellReady(MIND_SEAR_1, diff) && (!moving || Rand() < 80))
+            if (!moving && IsSpellReady(MIND_SEAR_1, diff))
             {
                 if (Unit* searTarget = FindSplashTarget(CalcSpellMaxRange(MIND_SEAR_1), mytar, 14.f, 3)) // glyphed, cluster of 4
                 {
@@ -801,6 +923,27 @@ public:
                         return true;
             }
 
+            // Controlled multi-dotting: on two or three durable targets, apply VT/SW:P
+            // before falling back to single-target filler. Large clusters still use Mind Sear.
+            if (!moving && durableTarget)
+            {
+                if (IsSpellReady(VAMPIRIC_TOUCH_1, diff) && GetSpell(VAMPIRIC_TOUCH_1) &&
+                    !ShouldRefreshOwnedShadowDot(mytar, VAMPIRIC_TOUCH_1, 4500))
+                {
+                    if (Unit* dotTarget = FindShadowDotTarget(mytar, VAMPIRIC_TOUCH_1, 3500))
+                        if (doCast(dotTarget, GetSpell(VAMPIRIC_TOUCH_1)))
+                            return true;
+                }
+
+                if (IsSpellReady(SW_PAIN_1, diff) && GetOwnedShadowDotEffect(mytar, SW_PAIN_1) &&
+                    (me->GetLevel() < 60 || GetShadowWeavingStacks() >= 4))
+                {
+                    if (Unit* dotTarget = FindShadowDotTarget(mytar, SW_PAIN_1, 0))
+                        if (doCast(dotTarget, GetSpell(SW_PAIN_1)))
+                            return true;
+                }
+            }
+
             // Mind Blast after the important DoTs are handled.
             if (IsSpellReady(MIND_BLAST_1, diff))
             {
@@ -836,6 +979,72 @@ public:
                     return true;
 
                 if (IsSpellReady(SMITE_1, diff) && can_do_holy && me->GetLevel() < 20 && doCast(mytar, GetSpell(SMITE_1)))
+                    return true;
+            }
+
+            return false;
+        }
+
+        bool DoHolyDisciplineDamageActions(Unit* mytar, uint32 diff, bool can_do_shadow, bool can_do_holy)
+        {
+            if (!mytar || !mytar->IsAlive())
+                return false;
+
+            if (HasRole(BOT_ROLE_HEAL) && GetManaPCT(me) <= 35 && !botPet)
+                return false;
+
+            bool const durableTarget = IsDurableShadowTarget(mytar);
+            bool const moving = me->isMoving();
+
+            if (IsSpellReady(SHADOWFIEND_1, diff) && GetManaPCT(me) < 45)
+            {
+                SummonBotPet(mytar);
+                SetSpellCooldown(SHADOWFIEND_1, 180000); // (5 - 2) min with Veiled Shadows
+                return true;
+            }
+
+            // Discipline's signature nuke/heal button should be used as a nuke when the bot is assigned DPS.
+            if (GetSpec() == BOT_SPEC_PRIEST_DISCIPLINE && IsSpellReady(PENANCE_1, diff) && can_do_holy)
+            {
+                if (doCast(mytar, GetSpell(PENANCE_1)))
+                    return true;
+            }
+
+            if (IsSpellReady(SW_PAIN_1, diff) && can_do_shadow && durableTarget && !GetOwnedShadowDotEffect(mytar, SW_PAIN_1) &&
+                mytar->GetHealth() > me->GetMaxHealth() / 2 * (1 + mytar->getAttackers().size()))
+            {
+                if (doCast(mytar, GetSpell(SW_PAIN_1)))
+                    return true;
+            }
+
+            if (IsSpellReady(HOLY_FIRE_1, diff) && can_do_holy && !moving &&
+                (durableTarget || !GetSpell(SMITE_1)))
+            {
+                TryUseInnerFocusForSpell(HOLY_FIRE_1, mytar, diff);
+                if (doCast(mytar, GetSpell(HOLY_FIRE_1)))
+                    return true;
+            }
+
+            if (IsSpellReady(MIND_BLAST_1, diff) && can_do_shadow && !moving)
+            {
+                TryUseInnerFocusForSpell(MIND_BLAST_1, mytar, diff);
+                if (doCast(mytar, GetSpell(MIND_BLAST_1)))
+                    return true;
+            }
+
+            if (IsSpellReady(SW_DEATH_1, diff) && can_do_shadow && GetHealthPCT(me) > 65)
+            {
+                bool const execute = GetHealthPCT(mytar) < 15 || mytar->GetHealth() < me->GetMaxHealth() / 8;
+                bool const movementFiller = moving && durableTarget && GetHealthPCT(me) > 85 && Rand() < 35;
+
+                if ((execute || movementFiller) && doCast(mytar, GetSpell(SW_DEATH_1)))
+                    return true;
+            }
+
+            // Holy/Disc DPS otherwise needs a real filler. The old path stopped Smiting after Mind Flay's level.
+            if (IsSpellReady(SMITE_1, diff) && can_do_holy && !moving)
+            {
+                if (doCast(mytar, GetSpell(SMITE_1)))
                     return true;
             }
 
@@ -891,61 +1100,8 @@ public:
             }
             else
             {
-                if (IsSpellReady(SHADOWFIEND_1, diff) && GetManaPCT(me) < 50)
-                {
-                    SummonBotPet(mytar);
-                    SetSpellCooldown(SHADOWFIEND_1, 180000); // (5 - 2) min with Veiled Shadows
-                }
-
-                if (!HasRole(BOT_ROLE_HEAL) || GetManaPCT(me) > 35 || botPet)
-                {
-                    if (IsSpellReady(SW_DEATH_1, diff) && can_do_shadow && Rand() < 90 && GetHealthPCT(me) > 50 &&
-                        (me->GetMap()->IsRaid() || GetHealthPCT(mytar) < 15 || mytar->GetHealth() < me->GetMaxHealth() / 8) &&
-                        doCast(mytar, GetSpell(SW_DEATH_1)))
-                        return;
-                    if (IsSpellReady(VAMPIRIC_TOUCH_1, diff) && can_do_shadow && Rand() < 80 &&
-                        mytar->GetHealth() > me->GetMaxHealth() / 4 * (1 + mytar->getAttackers().size()) &&
-                        !mytar->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_PRIEST, 0x0, 0x400, 0x0, me->GetGUID()) &&
-                        doCast(mytar, GetSpell(VAMPIRIC_TOUCH_1)))
-                        return;
-                    if (IsSpellReady(SW_PAIN_1, diff) && can_do_shadow && Rand() < 100 &&
-                        mytar->GetHealth() > me->GetMaxHealth() / 2 * (1 + mytar->getAttackers().size()) &&
-                        !mytar->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_PRIEST, 0x8000, 0x0, 0x0, me->GetGUID()))
-                    {
-                        AuraEffect const* weav = me->GetAuraEffect(SPELL_AURA_MOD_DAMAGE_PERCENT_DONE, SPELLFAMILY_PRIEST, 0x0, 0x8, 0x0);
-                        if (me->GetLevel() < 60 || (weav && weav->GetBase()->GetStackAmount() >= 4))
-                            if (doCast(mytar, GetSpell(SW_PAIN_1)))
-                                return;
-                    }
-                    if (IsSpellReady(DEVOURING_PLAGUE_1, diff) && can_do_shadow && !Devcheck && Rand() < 100 &&
-                        (GetSpec() == BOT_SPEC_PRIEST_SHADOW || mytar->IsControlledByPlayer()) &&
-                        mytar->GetHealth() > me->GetMaxHealth() / 2 * (1 + mytar->getAttackers().size()) &&
-                        !(mytar->IsCreature() && (mytar->ToCreature()->HasMechanicTemplateImmunity(1u << (MECHANIC_INFECTED - 1)))) &&
-                        !mytar->GetAuraEffect(SPELL_AURA_PERIODIC_LEECH, SPELLFAMILY_PRIEST, 0x02000000, 0x0, 0x0, me->GetGUID()) &&
-                        doCast(mytar, GetSpell(DEVOURING_PLAGUE_1)))
-                        return;
-                    if (IsSpellReady(MIND_BLAST_1, diff) && can_do_shadow &&
-                        doCast(mytar, GetSpell(MIND_BLAST_1)))
-                        return;
-                    if (IsSpellReady(MIND_SEAR_1, diff) && can_do_shadow && (!me->isMoving() || Rand() < 80) &&
-                        mytar->GetVictim() && mytar->GetVictim()->getAttackers().size() > 3)
-                    {
-                        if (Unit* u = FindSplashTarget(CalcSpellMaxRange(MIND_SEAR_1), mytar, 14.f, 3)) //glyphed, cluster of 4
-                            if (doCast(u, GetSpell(MIND_SEAR_1)))
-                                return;
-                    }
-                    if (IsSpellReady(HOLY_FIRE_1, diff) && can_do_holy &&
-                        (HasRole(BOT_ROLE_HEAL) || me->GetShapeshiftForm() != FORM_SHADOW) &&
-                        doCast(mytar, GetSpell(HOLY_FIRE_1)))
-                        return;
-                    if (IsSpellReady(MIND_FLAY_1, diff) && can_do_shadow &&
-                        (!HasRole(BOT_ROLE_HEAL) || mytar->GetHealth() < me->GetMaxHealth() / 2) &&
-                        doCast(mytar, GetSpell(MIND_FLAY_1)))
-                        return;
-                    if (IsSpellReady(SMITE_1, diff) && can_do_holy && me->GetLevel() < 20 &&//MF is lvl 20, MB is lvl 10
-                        doCast(mytar, GetSpell(SMITE_1)))
-                        return;
-                }
+                if (DoHolyDisciplineDamageActions(mytar, diff, can_do_shadow, can_do_holy))
+                    return;
             }
 
             if (Spell const* shot = me->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL))
@@ -960,6 +1116,9 @@ public:
         bool HealTarget(Unit* target, uint32 diff) override
         {
             if (!target || !target->IsAlive() || target->GetShapeshiftForm() == FORM_SPIRITOFREDEMPTION || me->GetDistance(target) > 40)
+                return false;
+
+            if (!target->GetMaxHealth())
                 return false;
 
             uint8 hp = GetHealthPCT(target);
@@ -1035,6 +1194,24 @@ public:
 
             Unit const* u = target->GetVictim();
             bool tanking = u && IsTank(target) && u->IsCreature() && u->ToCreature()->isWorldBoss();
+            bool const pressured = tanking || !target->getAttackers().empty() || pointed || me->GetMap()->IsDungeon();
+
+            if (GetSpec() == BOT_SPEC_PRIEST_HOLY)
+            {
+                if (TrySurgeOfLightFlash(target, diff, xphploss, hp))
+                    return true;
+                if (TryCircleOfHealingTarget(target, diff))
+                    return true;
+                if (hp <= 90 && pressured && TryRenewTarget(target, diff))
+                    return true;
+            }
+            else if (GetSpec() == BOT_SPEC_PRIEST_DISCIPLINE)
+            {
+                if (hp >= 25 && (hp <= 88 || hppctps < 0 || pressured) && ShieldTarget(target, diff))
+                    return true;
+                if (hp <= 85 && xphploss > _heals[PENANCE_1] / 2 && TryPenanceHealTarget(target, diff))
+                    return true;
+            }
 
             //Penance
             if (IsSpellReady(PENANCE_1, diff) && !target->IsCharmed() && !target->isPossessed() && hp <= 80 &&
@@ -1046,16 +1223,13 @@ public:
             //Big Heal
             if (IsSpellReady(HEAL, diff) && (xppct > 15 || !GetSpell(FLASH_HEAL_1)) && (tanking || xphploss > _heals[HEAL]))
             {
-                if (me->IsInCombat() && IsSpellReady(INNER_FOCUS_1, diff) && GetManaPCT(me) < 70 &&
-                    doCast(me, GetSpell(INNER_FOCUS_1)))
-                {
-                }
+                TryUseInnerFocusForSpell(HEAL, target, diff, hp);
                 if (doCast(target, GetSpell(HEAL)))
                     return true;
             }
             //Renew
             if (IsSpellReady(RENEW_1, diff) && (tanking || !target->getAttackers().empty() || me->GetMap()->IsDungeon()) &&
-                !target->GetAuraEffect(SPELL_AURA_PERIODIC_HEAL, SPELLFAMILY_PRIEST, 0x40, 0x0, 0x0, me->GetGUID())
+                !HasOwnedRenew(target)
                 /*!target->HasAura(GetSpell(RENEW_1), me->GetGUID())*/)
             {
                 if (doCast(target, GetSpell(RENEW_1)))
@@ -1247,98 +1421,156 @@ public:
             }
         }
 
+        int32 GetPowerInfusionScore(Unit* target) const
+        {
+            if (!target || !target->IsAlive() || !target->IsInWorld() || me->GetMap() != target->FindMap())
+                return -100000;
+            if (target->GetPowerType() != POWER_MANA || !me->IsWithinDistInMap(target, 30))
+                return -100000;
+            if (IsTank(target) || HasPriestCastSpeedBuff(target))
+                return -100000;
+
+            bool const activelyCastingWork = target->GetVictim() || target->IsInCombat();
+            if (!activelyCastingWork)
+                return -100000;
+
+            if (target->IsNPCBot())
+            {
+                Creature* bot = target->ToCreature();
+                if (!bot || BotDataMgr::IsHeroExClass(bot->GetBotClass()))
+                    return -100000;
+
+                switch (bot->GetBotClass())
+                {
+                    case BOT_CLASS_MAGE:
+                    case BOT_CLASS_WARLOCK:
+                    case BOT_CLASS_PRIEST:
+                    case BOT_CLASS_DRUID:
+                    case BOT_CLASS_SHAMAN:
+                    case BOT_CLASS_PALADIN:
+                        break;
+                    default:
+                        return -100000;
+                }
+            }
+            else if (target->IsPlayer())
+            {
+                switch (target->GetClass())
+                {
+                    case CLASS_MAGE:
+                    case CLASS_WARLOCK:
+                    case CLASS_PRIEST:
+                    case CLASS_DRUID:
+                    case CLASS_SHAMAN:
+                    case CLASS_PALADIN:
+                        break;
+                    default:
+                        return -100000;
+                }
+            }
+            else
+                return -100000;
+
+            int32 score = 0;
+
+            if (target == me)
+                score += HasRole(BOT_ROLE_DPS) ? 900 : HasRole(BOT_ROLE_HEAL) ? 700 : 250;
+            else if (target == master)
+                score += 650;
+            else if (IsInBotParty(target))
+                score += 500;
+            else
+                return -100000;
+
+            if (target->IsNPCBot())
+            {
+                if (bot_ai const* ai = target->ToCreature()->GetBotAI())
+                {
+                    if (ai->HasRole(BOT_ROLE_HEAL))
+                        score += 350;
+                    if (ai->HasRole(BOT_ROLE_DPS))
+                        score += 300;
+                    if (ai->HasRole(BOT_ROLE_RANGED))
+                        score += 150;
+                }
+            }
+            else if (target->IsPlayer())
+                score += 250;
+
+            uint8 manaPct = GetManaPCT(target);
+            if (manaPct < 35)
+                score += 350;
+            else if (manaPct < 70)
+                score += 200;
+
+            if (target->GetVictim())
+                score += 200;
+
+            return score;
+        }
+
+        void ConsiderPowerInfusionTarget(Unit* target, Unit*& bestTarget, int32& bestScore) const
+        {
+            int32 const score = GetPowerInfusionScore(target);
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestTarget = target;
+            }
+        }
+
         void CheckPowerInfusion(uint32 diff)
         {
-            if (!IsSpellReady(POWER_INFUSION_1, diff, false) || IsCasting() || Rand() > 25)
+            if (!IsSpellReady(POWER_INFUSION_1, diff, false) || IsCasting() || Rand() > 35)
                 return;
+
+            Unit* bestTarget = nullptr;
+            int32 bestScore = -100000;
+
+            ConsiderPowerInfusionTarget(me, bestTarget, bestScore);
 
             if (IAmFree())
             {
-                if (me->GetVictim() && GetManaPCT(me) < 95 &&
-                    doCast(me, GetSpell(POWER_INFUSION_1)))
+                if (bestTarget && bestScore >= 700 && doCast(bestTarget, GetSpell(POWER_INFUSION_1)))
                     return;
 
+                SetSpellCooldown(POWER_INFUSION_1, POWER_INFUSION_RETRY_TIMER);
                 return;
             }
 
             Group const* gr = master->GetGroup();
-            Unit* u = nullptr;
             if (!gr)
             {
-                u = master;
-                if (u->IsAlive() && u->IsInWorld() && u->GetPowerType() == POWER_MANA && u->GetVictim() && !IsTank(u) &&
-                    GetManaPCT(u) < 70 && me->IsWithinDistInMap(u, 30) &&
-                    !u->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_CASTING_SPEED_NOT_STACK, SPELLFAMILY_PRIEST, 0x80000000) &&
-                    doCast(u, GetSpell(POWER_INFUSION_1)))
-                    return;
+                ConsiderPowerInfusionTarget(master, bestTarget, bestScore);
 
                 for (auto const& [_, bot] : *master->GetBotMgr()->GetBotMap())
+                    if (bot && bot->ToCreature()->GetBotClass() < BOT_CLASS_EX_START)
+                        ConsiderPowerInfusionTarget(bot, bestTarget, bestScore);
+            }
+            else
+            {
+                for (GroupReference const* itr = gr->GetFirstMember(); itr != nullptr; itr = itr->next())
                 {
-                    u = bot;
-                    if (u->IsAlive() && u->IsInWorld() && u->ToCreature()->GetBotAI()->HasRole(BOT_ROLE_HEAL) &&
-                        u->ToCreature()->GetBotClass() < BOT_CLASS_EX_START &&
-                        GetManaPCT(u) < 70 && me->IsWithinDistInMap(u, 30) &&
-                        !u->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_CASTING_SPEED_NOT_STACK, SPELLFAMILY_PRIEST, 0x80000000) &&
-                        doCast(u, GetSpell(POWER_INFUSION_1)))
-                        return;
-                }
-                for (auto const& [_, bot] : *master->GetBotMgr()->GetBotMap())
-                {
-                    u = bot;
-                    if (u->IsAlive() && u->IsInWorld() && u->GetPowerType() == POWER_MANA && u->GetVictim() && !IsTank(u) &&
-                        u->ToCreature()->GetBotClass() < BOT_CLASS_EX_START &&
-                        GetManaPCT(u) < 70 && me->IsWithinDistInMap(u, 30) &&
-                        !u->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_CASTING_SPEED_NOT_STACK, SPELLFAMILY_PRIEST, 0x80000000) &&
-                        doCast(u, GetSpell(POWER_INFUSION_1)))
-                        return;
-                }
+                    Unit* member = itr->GetSource();
+                    ConsiderPowerInfusionTarget(member, bestTarget, bestScore);
 
+                    Player const* player = itr->GetSource();
+                    if (!player || !player->IsInWorld() || me->GetMap() != player->FindMap() || !player->HaveBot())
+                        continue;
+
+                    for (auto const& [_, bot] : *player->GetBotMgr()->GetBotMap())
+                    {
+                        if (!bot || BotDataMgr::IsHeroExClass(bot->ToCreature()->GetBotClass()))
+                            continue;
+                        ConsiderPowerInfusionTarget(bot, bestTarget, bestScore);
+                    }
+                }
+            }
+
+            if (bestTarget && bestScore >= 700 && doCast(bestTarget, GetSpell(POWER_INFUSION_1)))
                 return;
-            }
 
-            for (GroupReference const* itr = gr->GetFirstMember(); itr != nullptr; itr = itr->next())
-            {
-                u = itr->GetSource();
-                if (u && u->IsAlive() && u->IsInWorld() && u->GetPowerType() == POWER_MANA && u->GetVictim() && !IsTank(u) &&
-                    GetManaPCT(u) < 70 && me->IsWithinDistInMap(u, 30) &&
-                    !u->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_CASTING_SPEED_NOT_STACK, SPELLFAMILY_PRIEST, 0x80000000) &&
-                    doCast(u, GetSpell(POWER_INFUSION_1)))
-                    return;
-            }
-            for (GroupReference const* itr = gr->GetFirstMember(); itr != nullptr; itr = itr->next())
-            {
-                Player const* player = itr->GetSource();
-                if (!player || !player->IsInWorld() || me->GetMap() != player->FindMap() || !player->HaveBot())
-                    continue;
-                for (auto const& [_, bot] : *player->GetBotMgr()->GetBotMap())
-                {
-                    u = bot;
-                    if (u->IsAlive() && u->IsInWorld() && u->ToCreature()->GetBotAI()->HasRole(BOT_ROLE_HEAL) &&
-                        !BotDataMgr::IsHeroExClass(u->ToCreature()->GetBotClass()) &&
-                        GetManaPCT(u) < 70 && me->IsWithinDistInMap(u, 30) &&
-                        !u->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_CASTING_SPEED_NOT_STACK, SPELLFAMILY_PRIEST, 0x80000000) &&
-                        doCast(u, GetSpell(POWER_INFUSION_1)))
-                        return;
-                }
-            }
-            for (GroupReference const* itr = gr->GetFirstMember(); itr != nullptr; itr = itr->next())
-            {
-                Player const* player = itr->GetSource();
-                if (!player || !player->IsInWorld() || me->GetMap() != player->FindMap() || !player->HaveBot())
-                    continue;
-                for (auto const& [_, bot] : *player->GetBotMgr()->GetBotMap())
-                {
-                    u = bot;
-                    if (u->IsAlive() && u->IsInWorld() && u->GetPowerType() == POWER_MANA && u->GetVictim() && !IsTank(u) &&
-                        u->ToCreature()->GetBotClass() < BOT_CLASS_EX_START &&
-                        GetManaPCT(u) < 70 && me->IsWithinDistInMap(u, 30) &&
-                        !u->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_CASTING_SPEED_NOT_STACK, SPELLFAMILY_PRIEST, 0x80000000) &&
-                        doCast(u, GetSpell(POWER_INFUSION_1)))
-                        return;
-                }
-            }
-
-            SetSpellCooldown(POWER_INFUSION_1, 1500); //fail
+            SetSpellCooldown(POWER_INFUSION_1, POWER_INFUSION_RETRY_TIMER); // fail
         }
 
         void doDefend(uint32 diff)
@@ -1477,10 +1709,10 @@ public:
                 lvl >= 35 && ((spellInfo->SpellFamilyFlags[0] & 0x2008000) || (spellInfo->SpellFamilyFlags[1] & 0x400)))
                 crit_chance += 6.f;
             //Improved Flash Heal (part 2): 10% additional critical chance on targets at or below 50% hp for Flash Heal
-            if ((GetSpec() == BOT_SPEC_PRIEST_DISCIPLINE) && lvl >= 40 && baseId == FLASH_HEAL_1 && GetHealthPCT(victim) <= 50)
+            if ((GetSpec() == BOT_SPEC_PRIEST_DISCIPLINE) && lvl >= 40 && victim && baseId == FLASH_HEAL_1 && GetHealthPCT(victim) <= 50)
                 crit_chance += 10.f;
             //Renewed Hope part 1: 4% additional critical chance on targets affected by Weakened Soul for Flash Heal, Greater Heal and Penance (Heal)
-            if ((GetSpec() == BOT_SPEC_PRIEST_DISCIPLINE) &&
+            if ((GetSpec() == BOT_SPEC_PRIEST_DISCIPLINE) && victim &&
                 lvl >= 45 && (baseId == FLASH_HEAL_1 || baseId == HEAL || baseId == PENANCE_HEAL_1) &&
                 victim->HasAuraTypeWithFamilyFlags(SPELL_AURA_MECHANIC_IMMUNITY, SPELLFAMILY_PRIEST, 0x20000000))
                 crit_chance += 4.f;
@@ -1552,7 +1784,7 @@ public:
             }
 
             //Glyph of Shadow Word: Death: 10% bonus damage for Shadow Word: Death on targets below 35% health
-            if (lvl >= 62 && baseId == SW_DEATH_1 && damageinfo.target->HasAuraState(AURA_STATE_HEALTHLESS_35_PERCENT))
+            if (lvl >= 62 && baseId == SW_DEATH_1 && damageinfo.target && damageinfo.target->HasAuraState(AURA_STATE_HEALTHLESS_35_PERCENT))
                 pctbonus += 0.1f;
 
             //other
@@ -1613,7 +1845,7 @@ public:
             if ((GetSpec() == BOT_SPEC_PRIEST_HOLY) && lvl >= 50 && baseId == RENEW_1)
                 flat_mod += me->SpellBaseHealingBonusDone(SPELL_SCHOOL_MASK_MAGIC) * 0.15f * me->CalculateDefaultCoefficient(spellInfo, damagetype) * 1.88f * me->CalculateLevelPenalty(spellInfo) * stack;
             //Test of Faith: 12% bonus healing on targets at or below 50% health
-            if ((GetSpec() == BOT_SPEC_PRIEST_HOLY) && lvl >= 50 && GetHealthPCT(victim) <= 50)
+            if ((GetSpec() == BOT_SPEC_PRIEST_HOLY) && lvl >= 50 && victim && GetHealthPCT(victim) <= 50)
                 pctbonus += 0.12f;
             //Divine Providence: 10% bonus healing for Circle of Healing, Binding Heal, Holy Nova, Prayer of Healing, Divine Hymn and Prayer of Mending
             if ((GetSpec() == BOT_SPEC_PRIEST_HOLY) && lvl >= 55 &&
@@ -1982,7 +2214,7 @@ public:
                 if (Aura* hymn = target->GetAura(spellId))
                 {
                     hymn->SetDuration(hymn->GetDuration() + 2000);
-                    hymn->SetDuration(hymn->GetMaxDuration() + 2000);
+                    hymn->SetMaxDuration(hymn->GetMaxDuration() + 2000);
                 }
             }
             //Priest T9 Shadow 2P Bonus (67193)
@@ -2226,7 +2458,7 @@ public:
             InitSpellMap(DEVOURING_PLAGUE_1);
             InitSpellMap(HYMN_OF_HOPE_1);
             InitSpellMap(LEVITATE_1);
-            InitSpellMap(SHADOWFIEND_1); //not casted
+            InitSpellMap(SHADOWFIEND_1);
 
             /*Talent*/lvl >= 20 && isDisc ? InitSpellMap(INNER_FOCUS_1) : RemoveSpell(INNER_FOCUS_1);
             /*Talent*/lvl >= 40 && isDisc ? InitSpellMap(POWER_INFUSION_1) : RemoveSpell(POWER_INFUSION_1);

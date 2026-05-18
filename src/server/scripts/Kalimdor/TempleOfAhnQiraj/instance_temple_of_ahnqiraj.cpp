@@ -234,23 +234,28 @@ public:
                 if (GetBossState(DATA_OURO) != DONE)
                     creature->Respawn();
                 break;
+
             case NPC_MASTERS_EYE:
-                if (GetBossState(DATA_TWIN_EMPERORS) != DONE)
+                if (GetBossState(DATA_TWIN_EMPERORS) != DONE && !creature->IsAlive())
                     creature->Respawn(true);
                 break;
+
             case NPC_CTHUN:
                 if (!creature->IsAlive())
                 {
                     for (ObjectGuid const& guid : CThunGraspGUIDs)
+                    {
                         if (GameObject* cthunGrasp = instance->GetGameObject(guid))
                             cthunGrasp->DespawnOrUnsummon(1s);
+                    }
                 }
                 break;
+
             default:
                 break;
             }
 
-            // Track hallway entries; if cleanup already active, kill immediately
+            // Track hallway entries; if cleanup already active, kill immediately.
             if (IsCleanupEntry(creature->GetEntry()))
             {
                 HallwayMobGuids.push_back(creature->GetGUID());

@@ -53,6 +53,7 @@
 #include "OutdoorPvPMgr.h"
 #include "OutdoorPvP.h"
 #include "SharedDefines.h"
+#include <algorithm>
 #include <mutex>
 #include <unordered_map>
 
@@ -871,6 +872,8 @@ void bot_ai::PaperdollWhisperEquipment(Player* player) const
 
     BotWhisper(BuildPaperdollSummaryMessage("BOTDOLL_SYNC", me, totalGearScore, GetBotClass(), GetSpec()), player);
 
+    uint32 sentSlots = 0;
+
     auto const GetPaperdollSlotToken = [](uint8 slot) -> char const*
         {
             switch (slot)
@@ -913,7 +916,11 @@ void bot_ai::PaperdollWhisperEquipment(Player* player) const
         std::ostringstream msg;
         msg << "BOTDOLL_SLOT " << token << " " << itemLink.str();
         BotWhisper(msg.str(), player);
+
+        ++sentSlots;
     }
+
+    BotWhisper(Acore::StringFormat("BOTDOLL_END {} {}", me->GetEntry(), sentSlots), player);
 }
 
 void bot_ai::PaperdollWhisperRoster(Player* player) const
@@ -1781,11 +1788,12 @@ bool bot_ai::CanBotMoveVehicle() const
 
     return false;
 }
-void bot_ai::MoveToSendPosition(Position const& mpos)
+void bot_ai::MoveToSendPosition(Position const& mpos) //Dinkle
 {
     EventRemoveBotAwaitState(BOT_AWAIT_SEND);
     if (me->GetExactDist(mpos) <= 100.0f && !CCed(me, true))
     {
+        CancelAllActions();
         SetBotCommandState(BOT_COMMAND_STAY);
         me->InterruptNonMeleeSpells(true);
         BotMovement(BOT_MOVE_POINT, &mpos, nullptr, false);
@@ -1800,7 +1808,7 @@ void bot_ai::MoveToSendPosition(Position const& mpos)
     }
     else
         BotWhisper("Position is too far away!");
-}
+} //end Dinkle
 void bot_ai::MoveToSendPosition(uint32 point_id)
 {
     MoveToSendPosition(sendpos[point_id]);
@@ -7272,6 +7280,41 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
             }
         }
     }
+    // Shattered Halls — Lesser Shadow Fissure avoidance
+    else if (unit->GetMapId() == 540)
+    {
+        static constexpr uint32 NPC_LESSER_SHADOW_FISSURE_NORMAL = 17471;
+        static constexpr uint32 NPC_LESSER_SHADOW_FISSURE_HEROIC = 20570;
+
+        std::list<Creature*> fissures;
+
+        auto lesserShadowFissureCheck = [](Creature const* c) -> bool
+            {
+                if (!c || !c->IsAlive())
+                    return false;
+
+                uint32 const entry = c->GetEntry();
+                return entry == NPC_LESSER_SHADOW_FISSURE_NORMAL ||
+                    entry == NPC_LESSER_SHADOW_FISSURE_HEROIC;
+            };
+
+        Bcore::CreatureListSearcher lesserShadowFissureSearcher(unit, fissures, lesserShadowFissureCheck);
+        Cell::VisitObjects(unit, lesserShadowFissureSearcher, 60.f);
+
+        for (Creature* fissure : fissures)
+        {
+            if (!fissure)
+                continue;
+
+            // Lesser Shadow Fissure is a creature-based ground hazard.
+            // Pad the radius so bots do not path along the visual edge while repositioning.
+            float radius = 12.0f
+                + fissure->GetObjectScale() * 2.0f
+                + DEFAULT_COMBAT_REACH * 1.5f;
+
+            spots.emplace_back(*fissure, radius);
+        }
+    }
     // The Underbog — Hungarfen's Mushrooms + Muselek's Freezing Trap
     else if (unit->GetMapId() == 546)
     {
@@ -8638,10 +8681,13 @@ void bot_ai::RegenerateEnergy()
 
         addvalue += _energyFraction;
 
-        if (addvalue == 0x0) //only if world rate for enegy is 0
+        if (addvalue <= 0.f)
+        {
+            _energyFraction = 0.f;
             return;
+        }
 
-        uint32 integerValue = uint32(fabs(addvalue));
+        uint32 integerValue = uint32(addvalue);
 
         curValue += integerValue;
 
@@ -15531,38 +15577,51 @@ bool bot_ai::_canEquip(ItemTemplate const* newProto, uint8 slot, bool ignoreItem
     return false;
 }
 
-bool bot_ai::_isItemFitForWanderingBot(uint8 slot, ItemTemplate const* proto) const
+bool bot_ai::_isItemFitForGeneratedBot([[maybe_unused]] uint8 category, uint8 slot, ItemTemplate const* proto) const
 {
     if (!_canEquip(proto, slot, true))
         return false;
 
-    auto item_stat_check = [](_ItemStat const& stat, uint32 wanted_stat) { return stat.ItemStatType == wanted_stat && stat.ItemStatValue > 0; };
-    auto item_has_stat = [&item_stat_check](ItemTemplate const* itemProto, uint32 wanted_stat) {
-        return std::ranges::any_of(itemProto->ItemStat, [=, &item_stat_check](_ItemStat const& stat) { return item_stat_check(stat, wanted_stat); });
+    auto item_stat_check = [](_ItemStat const& stat, ItemModType wanted_stat) { return stat.ItemStatType == static_cast<uint32>(wanted_stat) && stat.ItemStatValue > 0; };
+    auto item_has_stat = [&item_stat_check](ItemTemplate const* itemProto, ItemModType wanted_stat) {
+        return std::ranges::any_of(itemProto->ItemStat, [wanted_stat, &item_stat_check](_ItemStat const& stat) { return item_stat_check(stat, wanted_stat); });
         };
 
-    if (me->GetLevel() >= DEFAULT_MAX_LEVEL && me->GetMap()->IsBattlegroundOrArena() && Rand() < 50)
+    if (me->GetLevel() >= DEFAULT_MAX_LEVEL)
     {
-        if (Rand() < 20 && proto->ItemLevel < 245)
-            return false;
-        if (Rand() < 10 && proto->ItemLevel < 264)
-            return false;
-
-        switch (slot)
+        if (me->GetMap()->IsBattlegroundOrArena())
         {
-        case BOT_SLOT_HEAD:
-        case BOT_SLOT_SHOULDERS:
-        case BOT_SLOT_CHEST:
-        case BOT_SLOT_WAIST:
-        case BOT_SLOT_LEGS:
-        case BOT_SLOT_FEET:
-        case BOT_SLOT_WRIST:
-        case BOT_SLOT_HANDS:
-            if (!item_has_stat(proto, ITEM_MOD_RESILIENCE_RATING))
+            if (Rand() < 50)
+            {
+                if (Rand() < 20 && proto->ItemLevel < 245)
+                    return false;
+                if (Rand() < 10 && proto->ItemLevel < 264)
+                    return false;
+
+                switch (slot)
+                {
+                case BOT_SLOT_HEAD:
+                case BOT_SLOT_SHOULDERS:
+                case BOT_SLOT_CHEST:
+                case BOT_SLOT_WAIST:
+                case BOT_SLOT_LEGS:
+                case BOT_SLOT_FEET:
+                case BOT_SLOT_WRIST:
+                case BOT_SLOT_HANDS:
+                    if (!item_has_stat(proto, ITEM_MOD_RESILIENCE_RATING))
+                        return false;
+                    break;
+                default:
+                    break;
+                }
+            }
+        }
+
+        if (!((1u << slot) & BOT_SLOT_MASK_NON_STAT_MAXLEVEL) && BotDataMgr::IsTankingClass(_botclass))
+        {
+            const bool is_tank_item = std::ranges::any_of(std::array{ ITEM_MOD_DEFENSE_SKILL_RATING, ITEM_MOD_DODGE_RATING, ITEM_MOD_PARRY_RATING, ITEM_MOD_BLOCK_VALUE }, [proto, &item_has_stat](ItemModType mod) { return item_has_stat(proto, mod); });
+            if (IsTank() != is_tank_item)
                 return false;
-            break;
-        default:
-            break;
         }
     }
 
@@ -15610,12 +15669,12 @@ bool bot_ai::_isItemFitForWanderingBot(uint8 slot, ItemTemplate const* proto) co
             if (me->GetLevel() < 70)
                 break;
             return !item_has_stat(proto, ITEM_MOD_INTELLECT);
-            //case BOT_SLOT_OFFHAND:
-            //    if (!(proto->InventoryType == INVTYPE_SHIELD))
-            //        return false;
-            //    if (me->GetLevel() < 70)
-            //        break;
-            //    return !item_has_stat(proto, ITEM_MOD_INTELLECT);
+        case BOT_SLOT_OFFHAND:
+            if (!(proto->InventoryType == INVTYPE_SHIELD))
+                return false;
+            if (me->GetLevel() < 70)
+                break;
+            return !item_has_stat(proto, ITEM_MOD_INTELLECT);
         default:
             break;
         }
@@ -15647,9 +15706,13 @@ bool bot_ai::_isItemFitForWanderingBot(uint8 slot, ItemTemplate const* proto) co
         switch (slot)
         {
         case BOT_SLOT_MAINHAND:
-            return proto->InventoryType == INVTYPE_2HWEAPON;
+            if (!(proto->InventoryType == INVTYPE_2HWEAPON))
+                return false;
+            [[fallthrough]];
         default:
-            break;
+            if (me->GetLevel() < 70)
+                break;
+            return !item_has_stat(proto, ITEM_MOD_INTELLECT);
         }
         break;
     case BOT_SPEC_HUNTER_BEASTMASTERY:
@@ -15695,15 +15758,6 @@ bool bot_ai::_isItemFitForWanderingBot(uint8 slot, ItemTemplate const* proto) co
             return proto->SubClass == ITEM_SUBCLASS_WEAPON_MACE;
         case BOT_SLOT_RANGED:
             return me->GetLevel() < 64 || proto->SubClass == ITEM_SUBCLASS_WEAPON_THROWN;
-        default:
-            break;
-        }
-        break;
-    case BOT_SPEC_DK_FROST:
-        switch (slot)
-        {
-        case BOT_SLOT_MAINHAND:
-            return me->GetLevel() < 61 || proto->InventoryType == INVTYPE_2HWEAPON;
         default:
             break;
         }
@@ -15758,7 +15812,6 @@ bool bot_ai::_isItemFitForWanderingBot(uint8 slot, ItemTemplate const* proto) co
 
     return true;
 }
-
 
 void bot_ai::_removeEquipment(uint8 slot)
 {
@@ -17841,14 +17894,27 @@ void bot_ai::InitEquips()
     EquipmentInfo const* einfo = BotDataMgr::GetBotEquipmentInfo(me->GetEntry());
     ASSERT(einfo, "Trying to spawn bot with no equip info!");
 
-    if (IsWanderer() || me->IsSummon())
+    const bool is_wanderer = IsWanderer();
+    if (is_wanderer || me->IsSummon())
     {
         BOT_LOG_TRACE("npcbots", "Bot {} id {} class {} spec {} level {} generates gear...", me->GetName(), me->GetEntry(), uint32(_botclass), uint32(GetSpec()), uint32(me->GetLevel()));
 
-        auto fit_check = [this](uint8 slot, ItemTemplate const* proto) { return _isItemFitForWanderingBot(slot, proto); };
+        const uint8 lvl = me->GetLevel();
+        const uint8 gen_category = is_wanderer ? BOT_GENERATED_WANDERING : BOT_GENERATED_DUNGEON;
+        auto fit_check = [gen_category, this](uint8 slot, ItemTemplate const* proto) { return _isItemFitForGeneratedBot(gen_category, slot, proto); };
+
+        uint32 max_item_level = 0;
+        if (gen_category == BOT_GENERATED_DUNGEON)
+        {
+            Map const* mymap = me->GetMap();
+            ASSERT(mymap->IsNonRaidDungeon());
+            const Difficulty map_difficulty = mymap->ToInstanceMap()->GetDifficulty();
+            max_item_level = BotCfg::GetBotDungeonMaxItemLevel(lvl, mymap->GetId(), map_difficulty);
+        }
+        else
+            max_item_level = BotCfg::GetBotWandererMaxItemLevel(lvl);
 
         GenerateRand();
-        uint8 lvl = me->GetLevel();
         std::ostringstream gss;
         gss << "bot_ai::InitEquips(): Wanderer bot " << me->GetName() << " id " << me->GetEntry() << ' ' << "level " << uint32(lvl) << " generated gear:";
         for (auto i : NPCBots::index_array<uint8, BOT_INVENTORY_SIZE>)
@@ -17860,7 +17926,7 @@ void bot_ai::InitEquips()
             if ((i == BOT_SLOT_TRINKET1 || i == BOT_SLOT_TRINKET2 || i == BOT_SLOT_HEAD) && lvl < 30)
                 continue;
 
-            Item* item = BotDataMgr::GenerateWanderingBotItem(i, _botclass, lvl, fit_check);
+            Item* item = BotDataMgr::GenerateWanderingBotItem(gen_category, i, _botclass, lvl, max_item_level, fit_check);
             if (!item)
             {
                 if (i <= BOT_SLOT_RANGED && einfo->ItemEntry[i] != 0)
@@ -19080,18 +19146,22 @@ void bot_ai::CastBotItemCombatSpell(DamageInfo const& damageInfo, Item* item, It
         }
     }
 }
-//DELAYED ACTIONS
+//DELAYED ACTIONS Dinkle
 bool bot_ai::EnqueueAction(BotAction&& action, bool is_order)
 {
-    if (is_order && GetActionsQueueSize() >= (is_order ? MAX_BOT_ORDERS_QUEUE_SIZE : MAX_BOT_ACTIONS_QUEUE_SIZE))
+    std::size_t const maxSize = is_order ? MAX_BOT_ORDERS_QUEUE_SIZE : MAX_BOT_ACTIONS_QUEUE_SIZE;
+
+    if (GetActionsQueueSize() >= maxSize)
     {
         BOT_LOG_ERROR("scripts", "bot_ai::EnqueueAction: {}s limit reached for {} ({})!", is_order ? "order" : "action", me->GetName(), uint32(GetActionsQueueSize()));
         return false;
     }
 
-    _action_queue.insert(std::move(action));
-    return true;
+    action._sequence = _next_action_sequence++;
+    auto [_, inserted] = _action_queue.insert(std::move(action));
+    return inserted;
 }
+//end Dinkle
 void bot_ai::CancelAction(BotAction const& action)
 {
     if (!HasQueuedActions())
@@ -19223,10 +19293,10 @@ void bot_ai::_processQueuedActions()
         return;
 
     BotAction const& action = GetFirstActionInQueue();
-
-    if (action._exec_point <= now)
+    // Dinkle: This appears backwards. An action should usually execute once its time has come, but this check makes it execute only if its exec point is in the past. Maybe the idea is to have an additional delay after the timeout before the action can actually be executed?
+    if (action._exec_point > now)
         return;
-
+    //end Dinkle
     Unit* target = nullptr;
     switch (action._type)
     {
@@ -19234,8 +19304,6 @@ void bot_ai::_processQueuedActions()
     {
         if (CCed(me))
             break;
-
-        SetBotCommandState(BOT_COMMAND_ISSUED_ORDER);
 
         ObjectGuid guid = action.params.spell_cast_params.target_guid;
         if (guid == me->GetGUID())
@@ -19265,7 +19333,7 @@ void bot_ai::_processQueuedActions()
             return;
         }
 
-        const bool is_casting = IsCasting(target);
+        const bool is_casting = IsCasting();
         const bool is_target_casting = IsCasting(target);
         const uint32 spell_id = _spells.at(action.params.spell_cast_params.base_spell).spellId;
         SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spell_id);
@@ -19341,21 +19409,25 @@ void bot_ai::_processQueuedActions()
                 }
             }
         }
-
+        //Dinkle
         if (is_casting)
             me->InterruptNonMeleeSpells(false);
+
+        SetBotCommandState(BOT_COMMAND_ISSUED_ORDER);
 
         if (doCast(target, spell_id))
             CompleteAction(action);
         else
         {
+            RemoveBotCommandState(BOT_COMMAND_ISSUED_ORDER);
+
             const bool cancel_now = action.GetTimeout() > now + 1s;
             if constexpr (DEBUG_BOT_ACTIONS)
                 BOT_LOG_ERROR("entities.player", "bot_ai:_processQueuedActions: {} -> {} spell cast of {} failed{}!",
                     me->GetName(), target->GetName(), spell_id, cancel_now ? ", cancelled" : "");
             if (cancel_now)
                 CancelAction(action);
-        }
+        }//end Dinkle 
         break;
     }
     case BotActionTypes::BOT_ACTION_PULL:
@@ -23889,12 +23961,18 @@ int32 bot_ai::GetHPS(Unit const* u) const
 //Health percent per second
 int32 bot_ai::GetHPPCTPS(Unit const* u) const
 {
+    if (!u || !u->IsAlive() || u->GetMaxHealth() <= 1)
+        return 0;
+
     return int32(GetHPS(u) * 100.f / float(u->GetMaxHealth()));
 }
 //%health unit is going to have after x ms
 //0-100
 uint8 bot_ai::GetExpectedHPPCT(Unit const* u, uint32 mseconds) const
 {
+    if (!u || !u->IsAlive())
+        return 100;
+
     if (IAmFree())
         return GetHealthPCT(u);
 
@@ -23955,19 +24033,28 @@ bool bot_ai::IsTempBot() const
 
 uint32 bot_ai::GetLostHP(Unit const* unit)
 {
-    return unit->GetMaxHealth() - unit->GetHealth();
+    if (!unit || !unit->IsAlive())
+        return 0;
+
+    uint32 const maxHealth = unit->GetMaxHealth();
+    uint32 const health = unit->GetHealth();
+    return health >= maxHealth ? 0 : maxHealth - health;
 }
 uint8 bot_ai::GetHealthPCT(Unit const* u)
 {
     if (!u || !u->IsAlive() || u->GetMaxHealth() <= 1)
         return 100;
-    return uint8(((float(u->GetHealth())) / u->GetMaxHealth()) * 100);
+
+    uint64 const pct = (uint64(u->GetHealth()) * 100) / u->GetMaxHealth();
+    return uint8(std::min<uint64>(pct, 100));
 }
 uint8 bot_ai::GetManaPCT(Unit const* u)
 {
     if (!u || !u->IsAlive() || u->GetMaxPower(POWER_MANA) <= 1)
         return 100;
-    return (u->GetPower(POWER_MANA) * 10 / (1 + u->GetMaxPower(POWER_MANA) / 10));
+
+    uint64 const pct = (uint64(u->GetPower(POWER_MANA)) * 100) / u->GetMaxPower(POWER_MANA);
+    return uint8(std::min<uint64>(pct, 100));
 }
 
 MeleeHitOutcome bot_ai::GetNextAttackMeleeOutCome() const

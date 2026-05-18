@@ -231,7 +231,9 @@ enum UnkorTheRuthless
     FACTION_HOSTILE                 = 45,
     QUEST_DONTKILLTHEFATONE         = 9889,
 
-    SPELL_PULVERIZE                 = 2676
+    SPELL_PULVERIZE                 = 2676,
+
+    SUBMIT_DURATION                 = 120000
 };
 
 class npc_unkor_the_ruthless : public CreatureScript
@@ -250,13 +252,13 @@ public:
 
         bool IsFriendlySubmission;
         uint32 FriendlyTimer;
-        uint32 Pulverize_Timer;
+        uint32 PulverizeTimer;
 
         void Reset() override
         {
             IsFriendlySubmission = false;
             FriendlyTimer = 0;
-            Pulverize_Timer = 3000;
+            PulverizeTimer = 3000;
 
             me->SetStandState(UNIT_STAND_STATE_STAND);
             me->SetFaction(FACTION_HOSTILE);
@@ -297,9 +299,9 @@ public:
 
             // NPCBot path: validate the raw owner pointer against live players on this map
             // before ever dereferencing it.
-            Creature* creature = attacker->ToCreature();
-            if (creature && creature->IsNPCBot())
-                return NormalizeToMapPlayer(creature->GetBotOwner());
+            if (Creature* creature = attacker->ToCreature())
+                if (creature->IsNPCBot())
+                    return NormalizeToMapPlayer(creature->GetBotOwner());
 
             return nullptr;
         }
@@ -327,8 +329,8 @@ public:
             {
                 for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
                 {
-                    Player* groupie = itr->GetSource();
-                    rewardIfEligible(groupie);
+                    if (Player* groupie = itr->GetSource())
+                        rewardIfEligible(groupie);
                 }
             }
             else
@@ -337,7 +339,16 @@ public:
             }
         }
 
-        void DoNice()
+        bool HasQuestActive(Player* player) const
+        {
+            if (!player)
+                return false;
+
+            QuestStatus status = player->GetQuestStatus(QUEST_DONTKILLTHEFATONE);
+            return status == QUEST_STATUS_INCOMPLETE || status == QUEST_STATUS_COMPLETE;
+        }
+
+        void Submit()
         {
             if (IsFriendlySubmission)
                 return;
@@ -376,13 +387,18 @@ public:
 
         void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override
         {
-            // Never break the forced 60 second friendly window early.
+            // Never break the forced friendly window early.
             if (IsFriendlySubmission)
             {
                 me->AttackStop();
                 me->CombatStop(true);
                 me->GetThreatMgr().ClearAllThreat();
+                me->StopMoving();
+                me->GetMotionMaster()->Clear(false);
+                me->GetMotionMaster()->MoveIdle();
                 me->SetReactState(REACT_PASSIVE);
+                me->SetFaction(FACTION_FRIENDLY);
+                me->SetStandState(UNIT_STAND_STATE_SIT);
                 return;
             }
 
@@ -409,7 +425,7 @@ public:
             if (Player* player = ResolveResponsiblePlayer(done_by))
                 RewardQuestCredit(player);
 
-            DoNice();
+            Submit();
         }
 
         void UpdateAI(uint32 diff) override
@@ -427,20 +443,26 @@ public:
                 me->AttackStop();
                 me->CombatStop(true);
                 me->GetThreatMgr().ClearAllThreat();
+                me->StopMoving();
+                me->GetMotionMaster()->Clear(false);
+                me->GetMotionMaster()->MoveIdle();
+                me->SetReactState(REACT_PASSIVE);
+                me->SetFaction(FACTION_FRIENDLY);
+                me->SetStandState(UNIT_STAND_STATE_SIT);
                 return;
             }
 
             if (!UpdateVictim())
                 return;
 
-            if (Pulverize_Timer <= diff)
+            if (PulverizeTimer <= diff)
             {
                 DoCast(me, SPELL_PULVERIZE);
-                Pulverize_Timer = 9000;
+                PulverizeTimer = 9000;
             }
             else
             {
-                Pulverize_Timer -= diff;
+                PulverizeTimer -= diff;
             }
 
             DoMeleeAttackIfReady();

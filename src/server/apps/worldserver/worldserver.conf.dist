@@ -767,11 +767,14 @@ Logger.spells.scripts=2,Console Errors
 #Logger.entities.gameobject=4,Console Server
 #Logger.entities.object=4,Console Server
 #Logger.entities.pet=4,Console Server
+#Logger.entities.player.auctionhouse=4,Console Server
 #Logger.entities.player.character=4,Console Server
 #Logger.entities.player.dump=4,Console Server
 #Logger.entities.player.items=4,Console Server
 #Logger.entities.player.loading=4,Console Server
+#Logger.entities.player.mail=4,Console Server
 #Logger.entities.player.skills=4,Console Server
+#Logger.entities.player.trade=4,Console Server
 #Logger.entities.player=4,Console Server
 #Logger.entities.transport=4,Console Server
 #Logger.entities.unit.ai=4,Console Server
@@ -4358,14 +4361,6 @@ AllowTwoSide.Interaction.Calendar = 0
 AllowTwoSide.Interaction.Chat = 0
 
 #
-#    AllowTwoSide.Interaction.Emote
-#        Description: Allow emote messages between factions (e.g. "/e looks into the sky")
-#        Default:     0 - (Disabled)
-#                     1 - (Enabled)
-
-AllowTwoSide.Interaction.Emote = 0
-
-#
 #    AllowTwoSide.Interaction.Channel
 #        Description: Allow channel chat between factions.
 #        Default:     0 - (Disabled)
@@ -4405,38 +4400,6 @@ AllowTwoSide.Interaction.Arena = 0
 #                     1 - (Enabled)
 
 AllowTwoSide.Interaction.Auction = 0
-
-#
-#    AllowTwoSide.Interaction.Mail
-#        Description: Allow sending mails between factions.
-#        Default:     0 - (Disabled)
-#                     1 - (Enabled)
-
-AllowTwoSide.Interaction.Mail = 0
-
-#
-#    AllowTwoSide.WhoList
-#        Description: Show characters from both factions in the /who list.
-#        Default:     0 - (Disabled)
-#                     1 - (Enabled)
-
-AllowTwoSide.WhoList = 0
-
-#
-#    AllowTwoSide.AddFriend
-#        Description: Allow adding friends from other faction the friends list.
-#        Default:     0 - (Disabled)
-#                     1 - (Enabled)
-
-AllowTwoSide.AddFriend = 0
-
-#
-#    AllowTwoSide.Trade
-#        Description: Allow trading between factions.
-#        Default:     0 - (Disabled)
-#                     1 - (Enabled)
-
-AllowTwoSide.Trade = 0
 
 #
 #    TalentsInspecting
@@ -4752,6 +4715,27 @@ Respawn.DynamicRateGameObject = 1
 #        Default:     10 - (10 seconds)
 
 Respawn.DynamicMinimumGameObject = 10
+
+#
+#    Respawn.DynamicEscortNPC
+#        Description: Enable dynamic respawn behavior for escort quest NPCs.
+#                     When enabled, escort NPCs in spawn groups flagged as ESCORTQUESTNPC
+#                     will use special respawn handling.
+#        Default:     0 - (Disabled)
+#
+
+Respawn.DynamicEscortNPC = 0
+
+#
+#    Respawn.ForceCompatibilityMode
+#        Description: Force all spawns to use legacy (compatibility mode) respawn behavior,
+#                     regardless of their spawn group flags. When enabled, creatures and
+#                     gameobjects respawn in-place as they always have in AzerothCore.
+#                     Set to 1 to force legacy behavior for all spawns.
+#        Default:     0 - (Disabled, spawn groups control respawn mode)
+#
+
+Respawn.ForceCompatibilityMode = 0
 
 #
 ###################################################################################################
@@ -5311,6 +5295,18 @@ NpcBot.EnrageOnDismiss = 1
 #        Default:     0 - (NpcBot.DungeonBots.Enable)
 
 NpcBot.DungeonBots.Enable = 0
+
+#
+#    NpcBot.DungeonBots.MaxItemLevel.Ratio
+#        Description: Maximum item ilevel to generate for dungeon bots per level bracket compared
+#                     to dungeon max item level.
+#        Note:        If item generation attempt fails becuse of item ilevel restriction
+#                     the item will be generated again with this restriction ignored
+#        Example:     0,0,0,0,0,0,0,0,90 makes dungeon bots for Halls of Reflection only generate
+#                     items of ilevel 198N/209H or less instead of default max 219/232
+#        Default:     0,0,0,0,0,0,0,0,0
+
+NpcBot.DungeonBots.MaxItemLevel.Ratio = 0,0,0,0,0,0,0,0,0
 
 #
 #    NpcBot.WanderingBots.Continents.Count

@@ -652,7 +652,7 @@ private:
     bool _canCombineWeapons(ItemTemplate const* mh, ItemTemplate const* oh) const;
     bool _canEquip(ItemTemplate const* newProto, uint8 slot, bool ignoreItemLevel, Item const* newItem = nullptr, bool ignore_combine = false) const;
     void _removeEquipment(uint8 slot);
-    bool _isItemFitForWanderingBot(uint8 slot, ItemTemplate const* proto) const;
+    bool _isItemFitForGeneratedBot(uint8 category, uint8 slot, ItemTemplate const* proto) const;
     [[nodiscard]] BotEquipResult _unequip(uint8 slot, ObjectGuid receiver, bool store_to_bank, bool on_equip_from_bank = false);
     [[nodiscard]] BotEquipResult _equip(uint8 slot, Item* newItem, ObjectGuid receiver, bool store_to_bank, bool from_bank = false);
     [[nodiscard]] BotEquipResult _resetEquipment(uint8 slot, ObjectGuid receiver, bool store_to_bank);
@@ -819,6 +819,7 @@ private:
 
 public:
     //much simplier than SmartAI I guess...
+    // Dinkle: note that BotAction is ordered by execution point and then by sequence, so actions with same execution point will be executed in order they were added to queue
     struct BotAction
     {
         friend class bot_ai;
@@ -832,12 +833,19 @@ public:
 
         inline constexpr TimePoint GetTimeout() const noexcept { return _exec_point + Milliseconds{ _exec_window }; }
 
-        inline constexpr bool operator==(BotAction const& other) const noexcept { return _exec_point == other._exec_point; }
-        inline constexpr std::strong_ordering operator<=>(BotAction const& other) const noexcept { return _exec_point <=> other._exec_point; }
+        inline constexpr bool operator==(BotAction const& other) const noexcept { return _sequence == other._sequence; }
+        inline constexpr std::strong_ordering operator<=>(BotAction const& other) const noexcept
+        {
+            if (auto cmp = _exec_point <=> other._exec_point; cmp != 0)
+                return cmp;
+
+            return _sequence <=> other._sequence;
+        }
 
         BotActionTypes _type;
         uint32 _exec_window;
         TimePoint _exec_point;
+        uint64 _sequence = 0;
 
         union
         {
@@ -855,7 +863,7 @@ public:
 
         } params;
     };
-
+    //end Dinkle
     bool HasQueuedActions() const { return !_action_queue.empty(); }
     bool HasQueuedSpellAction(uint32 base_spell) const { return HasQueuedAction(BotActionTypes::BOT_ACTION_SPELLCAST, ObjectGuid::Empty, base_spell); }
     bool HasQueuedAction(BotActionTypes action_type, ObjectGuid guid_param, uint32 uparam, Optional<bool> bparam = std::nullopt) const;
@@ -871,7 +879,9 @@ public:
 
 private:
     void _processQueuedActions();
-
+    //Dinkle: to avoid possible overflow of sequence number (and thus breaking order of actions in queue) we will reset sequence number back to 1 when it reaches some very big value, and also clear the queue just in case if there are some very long delayed actions there
+    uint64 _next_action_sequence = 1;
+    //end Dinkle
     using ActionsQueue = std::set<BotAction>;
     ActionsQueue _action_queue;
 };

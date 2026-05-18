@@ -201,12 +201,12 @@ struct boss_grand_warlock_nethekurse : public BossAI
         {
             if (me->HealthBelowPct(90))
             {
-                DoCastRandomTarget(SPELL_DEATH_COIL, 0, 30.0f, true);
+                DoCastRandomTarget(SPELL_DEATH_COIL, 0, 30.0f, false);
             }
             context.Repeat();
         }).Schedule(8100ms, 17300ms, [this](TaskContext context)
         {
-            DoCastRandomTarget(SPELL_SHADOW_FISSURE, 0, 60.0f, true);
+            DoCastRandomTarget(SPELL_SHADOW_FISSURE, 0, 60.0f, false);
             context.Repeat(8450ms, 9450ms);
         }).Schedule(10950ms, 21850ms, [this](TaskContext context)
         {

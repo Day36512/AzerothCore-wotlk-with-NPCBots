@@ -626,30 +626,44 @@ public:
 
         void CheckMisdirect(uint32 diff)
         {
-            if (!IsSpellReady(MISDIRECTION_1, diff) || misdirectionTimer > diff || IAmFree() ||
-                !master->GetGroup() || Rand() > 20)
+            if (!IsSpellReady(MISDIRECTION_1, diff) || misdirectionTimer > diff || IAmFree() || Rand() > 20)
                 return;
 
             misdirectionTimer = urand(3000, 6000);
 
-            //find tank
-            //stacks
+            //Prefer a real party tank when one is already engaged.
             std::list<Unit*> tanks;
-            for (Unit* member : BotMgr::GetAllGroupMembers(master))
+            if (master->GetGroup())
             {
-                if (member->IsInWorld() && me->GetMap() == member->FindMap() && member->IsAlive() &&
-                    member->GetVictim() && member->IsInCombat() && IsTank(member))
+                for (Unit* member : BotMgr::GetAllGroupMembers(master))
                 {
-                    tanks.push_back(member);
+                    if (member->IsInWorld() && me->GetMap() == member->FindMap() && member->IsAlive() &&
+                        member->GetVictim() && member->IsInCombat() && IsTank(member))
+                    {
+                        tanks.push_back(member);
+                    }
                 }
             }
 
-            if (tanks.empty())
-                return;
+            if (!tanks.empty())
+            {
+                Unit* target = tanks.size() == 1 ? *tanks.begin() : Bcore::Containers::SelectRandomContainerElement(tanks);
+                if (doCast(target, GetSpell(MISDIRECTION_1)))
+                    return;
+            }
 
-            Unit* target = tanks.size() == 1 ? *tanks.begin() : Bcore::Containers::SelectRandomContainerElement(tanks);
-            if (doCast(target, GetSpell(MISDIRECTION_1)))
-                return;
+            //Solo hunters should not sit on Misdirection while the pet is doing the tanking.
+            if (botPet && botPet->IsAlive() && botPet->IsInWorld() && me->GetMap() == botPet->FindMap() &&
+                botPet->IsInCombat() && me->GetDistance(botPet) < CalcSpellMaxRange(MISDIRECTION_1, false))
+            {
+                Unit* petVictim = botPet->GetVictim();
+                if (petVictim && petVictim->IsAlive() &&
+                    (IsDurableHunterTarget(petVictim) || petVictim->IsPlayer() || petVictim->getAttackers().size() >= 2))
+                {
+                    if (doCast(botPet, GetSpell(MISDIRECTION_1)))
+                        return;
+                }
+            }
         }
 
         void UpdateAI(uint32 diff) override
@@ -762,6 +776,11 @@ public:
             return target ? target->GetAuraEffect(SPELL_AURA_PERIODIC_MANA_LEECH, SPELLFAMILY_HUNTER, 0x0, 0x80, 0x0, me->GetGUID()) : nullptr;
         }
 
+        bool HasChimeraRefreshableSting(Unit const* target) const
+        {
+            return GetOwnedSerpentSting(target) || GetOwnedScorpidSting(target) || GetOwnedViperSting(target);
+        }
+
         bool HasExplosiveShotTicking(Unit const* target) const
         {
             if (!target)
@@ -771,9 +790,33 @@ public:
             return explosive && explosive->GetDuration() > 600;
         }
 
+        bool HasOwnedBlackArrow(Unit const* target) const
+        {
+            if (!target)
+                return false;
+
+            if (uint32 blackArrow = GetSpell(BLACK_ARROW_1))
+                if (target->GetAura(blackArrow, me->GetGUID()))
+                    return true;
+
+            return target->GetAuraEffect(SPELL_AURA_PERIODIC_DAMAGE, SPELLFAMILY_HUNTER, 0x0, 0x100, 0x0, me->GetGUID()) != nullptr;
+        }
+
+        bool TryBlackArrow(Unit* target, uint32 diff, bool can_do_shadow)
+        {
+            if (!target || !IsSpellReady(BLACK_ARROW_1, diff) || !can_do_shadow || !HasRole(BOT_ROLE_DPS))
+                return false;
+            if (!IsDurableHunterTarget(target) || HasOwnedBlackArrow(target))
+                return false;
+
+            return doCast(target, GetSpell(BLACK_ARROW_1));
+        }
+
         bool TryHunterMark(Unit* target, uint32 diff, bool can_do_arcane)
         {
-            if (!IsSpellReady(HUNTERS_MARK_1, diff) || !can_do_arcane || Rand() > 85)
+            if (!target || !IsSpellReady(HUNTERS_MARK_1, diff) || !can_do_arcane || Rand() > 85)
+                return false;
+            if (!IsDurableHunterTarget(target))
                 return false;
             if (target->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_STALKED, SPELLFAMILY_HUNTER, 0x400))
                 return false;
@@ -783,7 +826,7 @@ public:
 
         bool TryHunterSting(Unit* target, uint32 diff, bool can_do_nature, bool preferSerpent)
         {
-            if (GetSpellCooldown(SERPENT_STING_1) > diff || stingTimer > diff || !can_do_nature || Rand() > 90)
+            if (!target || GetSpellCooldown(SERPENT_STING_1) > diff || stingTimer > diff || !can_do_nature || Rand() > 90)
                 return false;
 
             uint32 STING = 0;
@@ -884,7 +927,7 @@ public:
 
         bool TryExplosiveShot(Unit* target, uint32 diff, bool can_do_fire)
         {
-            if (!IsSpellReady(EXPLOSIVE_SHOT_1, diff) || !can_do_fire || !HasRole(BOT_ROLE_DPS))
+            if (!target || !IsSpellReady(EXPLOSIVE_SHOT_1, diff) || !can_do_fire || !HasRole(BOT_ROLE_DPS))
                 return false;
             if (HasExplosiveShotTicking(target))
                 return false;
@@ -894,7 +937,7 @@ public:
 
         bool TryKillShot(Unit* target, uint32 diff, bool can_do_normal)
         {
-            if (IsSpellReady(KILL_SHOT_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) &&
+            if (target && IsSpellReady(KILL_SHOT_1, diff) && can_do_normal && HasRole(BOT_ROLE_DPS) &&
                 target->HasAuraState(AURA_STATE_HEALTHLESS_20_PERCENT))
                 return doCast(target, GetSpell(KILL_SHOT_1));
 
@@ -939,18 +982,23 @@ public:
 
         bool DoBeastMasteryActions(Unit* target, uint32 diff, bool can_do_nature, bool can_do_fire, bool can_do_arcane, bool can_do_normal, float maxRangeNormal)
         {
+            bool const durable = IsDurableHunterTarget(target);
+
+            //BM's hunter damage exists to feed the pet and keep the target debuffed; do not starve Serpent on real targets.
+            if (durable && TryHunterSting(target, diff, can_do_nature, true))
+                return true;
+
             if (TryHunterAoE(target, diff, can_do_normal, maxRangeNormal))
                 return true;
 
-            //BM's hunter damage exists to feed the pet and keep the target debuffed; do not starve Serpent.
-            if (TryHunterSting(target, diff, can_do_nature, true))
+            if (!durable && TryHunterSting(target, diff, can_do_nature, true))
                 return true;
 
             if (IsSpellReady(ARCANE_SHOT_1, diff) && can_do_arcane)
                 if (doCast(target, GetSpell(ARCANE_SHOT_1)))
                     return true;
 
-            if (IsSpellReady(AIMED_SHOT_1, diff) && can_do_normal && IsDurableHunterTarget(target))
+            if (IsSpellReady(AIMED_SHOT_1, diff) && can_do_normal && durable)
                 if (doCast(target, GetSpell(AIMED_SHOT_1)))
                     return true;
 
@@ -963,20 +1011,25 @@ public:
 
         bool DoMarksmanshipActions(Unit* target, uint32 diff, bool can_do_nature, bool can_do_arcane, bool can_do_normal, float maxRangeNormal)
         {
-            //Serpent first: Chimera Shot is the whole machine, not a decoration.
-            if (TryHunterSting(target, diff, can_do_nature, true))
-                return true;
+            bool const hasChimeraSting = HasChimeraRefreshableSting(target);
 
+            //Chimera refreshes useful stings; do not waste the global reapplying Serpent when Chimera is ready to do it.
             if (IsSpellReady(CHIMERA_SHOT_1, diff) && can_do_nature)
             {
-                if (GetOwnedSerpentSting(target) || GetOwnedScorpidSting(target))
+                if (hasChimeraSting)
                 {
                     if (doCast(target, GetSpell(CHIMERA_SHOT_1)))
                         return true;
                 }
+                else if (TryHunterSting(target, diff, can_do_nature, true))
+                    return true;
                 else
                     SetSpellCooldown(CHIMERA_SHOT_1, 500); //wait for a useful sting
             }
+
+            //When Chimera is not ready, keep Serpent healthy for the next Chimera and Steady glyph value.
+            if (TryHunterSting(target, diff, can_do_nature, true))
+                return true;
 
             if (TryHunterAoE(target, diff, can_do_normal, maxRangeNormal))
                 return true;
@@ -998,36 +1051,42 @@ public:
 
         bool DoSurvivalActions(Unit* target, uint32 diff, bool can_do_nature, bool can_do_fire, bool can_do_arcane, bool can_do_shadow, bool can_do_normal, float maxRangeNormal)
         {
-            if (TryHunterAoE(target, diff, can_do_normal, maxRangeNormal))
-                return true;
-
-            //Noxious Stings and steady-shot glyph value make Serpent worth maintaining even for Survival.
-            if (TryHunterSting(target, diff, can_do_nature, true))
-                return true;
-
-            //Black Arrow shares trap category, so put it before random filler but after Serpent setup.
-            if (IsSpellReady(BLACK_ARROW_1, diff) && can_do_shadow && IsDurableHunterTarget(target))
-                if (doCast(target, GetSpell(BLACK_ARROW_1)))
-                    return true;
-
+            //Explosive Shot is Survival's signature button. Do not let Black Arrow, Volley, or a fresh Serpent steal its global.
             if (TryExplosiveShot(target, diff, can_do_fire))
                 return true;
 
-            //Lock and Load can make Explosive free/ready while its DoT is still ticking. Use a filler
-            //between Explosive Shots so the bot does not gleefully clip its own explosion.
+            //Lock and Load can make Explosive free/ready while its DoT is still ticking. Use fillers that do not
+            //consume Lock and Load charges; Arcane Shot is deliberately avoided here because it spends a charge.
             if (me->HasAura(LOCK_AND_LOAD_BUFF) && HasExplosiveShotTicking(target))
             {
                 if (IsSpellReady(AIMED_SHOT_1, diff) && can_do_normal)
                     if (doCast(target, GetSpell(AIMED_SHOT_1)))
                         return true;
 
-                if (IsSpellReady(ARCANE_SHOT_1, diff) && can_do_arcane)
-                    if (doCast(target, GetSpell(ARCANE_SHOT_1)))
+                if (IsSpellReady(STEADY_SHOT_1, diff) && can_do_normal)
+                    if (doCast(target, GetSpell(STEADY_SHOT_1)))
                         return true;
+
+                return false;
             }
+
+            //Noxious Stings and steady-shot glyph value make Serpent worth maintaining, but not ahead of Explosive Shot.
+            if (TryHunterSting(target, diff, can_do_nature, true))
+                return true;
+
+            //Black Arrow shares the fire-trap category. Keep it up on durable targets without reapplying into itself.
+            if (TryBlackArrow(target, diff, can_do_shadow))
+                return true;
+
+            if (TryHunterAoE(target, diff, can_do_normal, maxRangeNormal))
+                return true;
 
             if (IsSpellReady(AIMED_SHOT_1, diff) && can_do_normal && IsDurableHunterTarget(target))
                 if (doCast(target, GetSpell(AIMED_SHOT_1)))
+                    return true;
+
+            if (!GetSpell(EXPLOSIVE_SHOT_1) && IsSpellReady(ARCANE_SHOT_1, diff) && can_do_arcane)
+                if (doCast(target, GetSpell(ARCANE_SHOT_1)))
                     return true;
 
             if (IsSpellReady(STEADY_SHOT_1, diff) && can_do_normal)
@@ -1137,9 +1196,6 @@ public:
             }
 
             //RANGED SECTION
-            if (TryHunterMark(mytar, diff, can_do_arcane))
-                return;
-
             CheckMisdirect(diff);
 
             //attack range check 1
@@ -1147,6 +1203,10 @@ public:
                 return;
 
             if (TryKillShot(mytar, diff, can_do_normal))
+                return;
+
+            //Do not spend an execute global painting the target. Mark durable prey after Kill Shot gets first refusal.
+            if (TryHunterMark(mytar, diff, can_do_arcane))
                 return;
 
             //attack range check 2
@@ -1250,8 +1310,22 @@ public:
             if (!IsSpellReady(READINESS_1, diff) || !me->IsInCombat() || me->IsMounted() || Rand() > 30)
                 return;
 
-            //mainly used for rapid fire cd reset
-            bool cast = me->GetVictim() && !IsSpellReady(RAPID_FIRE_1, diff, false);
+            Unit* target = me->GetVictim();
+            if (!target)
+                return;
+
+            bool const rapidSpent = GetSpell(RAPID_FIRE_1) && !IsSpellReady(RAPID_FIRE_1, diff, false);
+            bool const signatureSpent =
+                (GetSpell(CHIMERA_SHOT_1) && !IsSpellReady(CHIMERA_SHOT_1, diff, false)) ||
+                (GetSpell(AIMED_SHOT_1) && !IsSpellReady(AIMED_SHOT_1, diff, false));
+            bool const executeSpent = target->HasAuraState(AURA_STATE_HEALTHLESS_20_PERCENT) &&
+                GetSpell(KILL_SHOT_1) && !IsSpellReady(KILL_SHOT_1, diff, false);
+
+            if (!IsDurableHunterTarget(target) && !executeSpent)
+                return;
+
+            //Readiness is too valuable to spend on Rapid Fire alone. Wait until a real shot cooldown is also spent.
+            bool const cast = rapidSpent && (signatureSpent || executeSpent || target->getAttackers().size() >= 3);
 
             if (cast && doCast(me, GetSpell(READINESS_1)))
                 return;
@@ -1266,7 +1340,7 @@ public:
             if (lvl >= 60 && (baseId == EXPLOSIVE_SHOT_1 || baseId == EXPLOSIVE_SHOT_PERIODIC_DUMMY_AURA))
                 crit_chance += 4.f;
             //Point of No Escape: 6% additional critical chance on targets affected by frosty traps
-            if ((GetSpec() == BOT_SPEC_HUNTER_SURVIVAL) && lvl >= 50)
+            if ((GetSpec() == BOT_SPEC_HUNTER_SURVIVAL) && lvl >= 50 && victim)
             {
                 if (victim->GetAuraEffect(SPELL_AURA_MOD_CRIT_CHANCE_FOR_CASTER, SPELLFAMILY_HUNTER, 0x18, 0x0, 0x0, me->GetGUID()))
                     crit_chance += 6.f;
