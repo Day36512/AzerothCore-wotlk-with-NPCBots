@@ -39,6 +39,7 @@
 #include "Mail.h"
 #include "MapMgr.h"
 #include "MotionMaster.h"
+#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "PathGenerator.h"
 #include "PointMovementGenerator.h"
@@ -4800,6 +4801,74 @@ std::pair<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool& res
             return false;
             };
 
+        // Magtheridon's Lair (Map 544) — Ranged DPS prioritize Hellfire Channelers.
+        // This keeps ranged/caster bots burning the seal team instead of tunneling Magtheridon
+        // or drifting onto incidental targets during the opener.
+        if (me->GetMapId() == 544 && me->IsInCombat() && HasRole(BOT_ROLE_DPS) && HasRole(BOT_ROLE_RANGED) && !IsTank())
+        {
+            static constexpr uint32 NPC_MAGTHERIDON_HELLFIRE_CHANNELER = 17256;
+
+            auto isAttackableChanneler = [this](Creature* c) -> bool
+                {
+                    if (!c)
+                        return false;
+
+                    if (!c->IsAlive())
+                        return false;
+
+                    if (c->GetEntry() != NPC_MAGTHERIDON_HELLFIRE_CHANNELER)
+                        return false;
+
+                    if (c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
+                        return false;
+
+                    if (!me->IsValidAttackTarget(c))
+                        return false;
+
+                    if (!(CanSeeEveryone() || (me->CanSeeOrDetect(c) && c->InSamePhase(me))))
+                        return false;
+
+                    if (!me->IsWithinLOSInMap(c))
+                        return false;
+
+                    return true;
+                };
+
+            if (Creature* current = mytar ? mytar->ToCreature() : nullptr)
+            {
+                if (isAttackableChanneler(current))
+                    return { current, nullptr };
+            }
+
+            std::list<Creature*> channelers;
+            me->GetCreatureListWithEntryInGrid(channelers, NPC_MAGTHERIDON_HELLFIRE_CHANNELER, 140.0f);
+
+            Creature* bestChanneler = nullptr;
+            float bestHealthPct = 101.0f;
+            float bestDistance = std::numeric_limits<float>::max();
+
+            for (Creature* channeler : channelers)
+            {
+                if (!isAttackableChanneler(channeler))
+                    continue;
+
+                float healthPct = channeler->GetHealthPct();
+                float distance = me->GetDistance(channeler);
+
+                if (!bestChanneler ||
+                    healthPct < bestHealthPct ||
+                    (healthPct == bestHealthPct && distance < bestDistance))
+                {
+                    bestChanneler = channeler;
+                    bestHealthPct = healthPct;
+                    bestDistance = distance;
+                }
+            }
+
+            if (bestChanneler)
+                return { bestChanneler, nullptr };
+        }
+
         // Blackwing Lair
         if (me->GetMapId() == 469 && GetBotClass() == BOT_CLASS_ROGUE && !HasRole(BOT_ROLE_DPS) && me->HasStealthAura() && isInWMOArea(WMOAreaGroupLashlayer)) // BWL - Bloodlord Lashlayer
             return { nullptr, nullptr };
@@ -7014,6 +7083,29 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
             spots.emplace_back(*c, radius);
         }
     }
+    // Magtheridon's Lair - Phase 3 debris markers
+    else if (unit->GetMapId() == 544)
+    {
+        static constexpr uint32 NPC_MAGTHERIDON_DEBRIS_TRIGGER = 17474;
+        static constexpr uint32 SPELL_MAGTHERIDON_DEBRIS_VISUAL = 30632;
+        static constexpr uint32 SPELL_MAGTHERIDON_DEBRIS_DAMAGE = 30631;
+
+        std::list<Creature*> debrisTriggers;
+        Bcore::AllCreaturesOfEntryInRange debrisCheck(unit, NPC_MAGTHERIDON_DEBRIS_TRIGGER, 60.0f);
+        Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> debrisSearcher(unit, debrisTriggers, debrisCheck);
+        Cell::VisitObjects(unit, debrisSearcher, 60.0f);
+
+        for (Creature* trigger : debrisTriggers)
+        {
+            if (!trigger || !trigger->IsInWorld())
+                continue;
+
+            if (!trigger->HasAura(SPELL_MAGTHERIDON_DEBRIS_VISUAL) && !trigger->HasAura(SPELL_MAGTHERIDON_DEBRIS_DAMAGE))
+                continue;
+
+            spots.emplace_back(*trigger, 13.0f + DEFAULT_COMBAT_REACH * 1.5f);
+        }
+    }
     // Dinkle Zul'Gurub
     else if (unit->GetMapId() == 309)
     {
@@ -7674,6 +7766,47 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
                 spots.emplace_back(*c, radius);
         }
     }
+    // Magtheridon's Lair - Blaze objects + Phase 3 debris markers
+    else if (unit->GetMapId() == 544)
+    {
+        static constexpr uint32 GO_MAGTHERIDON_BLAZE = 181832;
+
+        {
+            std::list<GameObject*> blazeObjects;
+            Bcore::AllGameObjectsWithEntryInRange blazeCheck(unit, GO_MAGTHERIDON_BLAZE, 60.0f);
+            Bcore::GameObjectListSearcher<Bcore::AllGameObjectsWithEntryInRange> blazeSearcher(unit, blazeObjects, blazeCheck);
+            Cell::VisitObjects(unit, blazeSearcher, 60.0f);
+
+            for (GameObject* blaze : blazeObjects)
+            {
+                if (!blaze || !blaze->IsInWorld())
+                    continue;
+
+                float radius = 11.0f + blaze->GetObjectSize() + DEFAULT_COMBAT_REACH * 1.5f;
+                spots.emplace_back(*blaze, radius);
+            }
+        }
+
+        static constexpr uint32 NPC_MAGTHERIDON_DEBRIS_TRIGGER = 17474;
+        static constexpr uint32 SPELL_MAGTHERIDON_DEBRIS_VISUAL = 30632;
+        static constexpr uint32 SPELL_MAGTHERIDON_DEBRIS_DAMAGE = 30631;
+
+        std::list<Creature*> debrisTriggers;
+        Bcore::AllCreaturesOfEntryInRange debrisCheck(unit, NPC_MAGTHERIDON_DEBRIS_TRIGGER, 60.0f);
+        Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> debrisSearcher(unit, debrisTriggers, debrisCheck);
+        Cell::VisitObjects(unit, debrisSearcher, 60.0f);
+
+        for (Creature* trigger : debrisTriggers)
+        {
+            if (!trigger || !trigger->IsInWorld())
+                continue;
+
+            if (!trigger->HasAura(SPELL_MAGTHERIDON_DEBRIS_VISUAL) && !trigger->HasAura(SPELL_MAGTHERIDON_DEBRIS_DAMAGE))
+                continue;
+
+            spots.emplace_back(*trigger, 13.0f + DEFAULT_COMBAT_REACH * 1.5f);
+        }
+        }
     // Utgarde Keep
     else if (unit->GetMapId() == 574)
     {
@@ -19335,8 +19468,24 @@ void bot_ai::_processQueuedActions()
 
         const bool is_casting = IsCasting();
         const bool is_target_casting = IsCasting(target);
-        const uint32 spell_id = _spells.at(action.params.spell_cast_params.base_spell).spellId;
+        auto spellItr = _spells.find(action.params.spell_cast_params.base_spell);
+        if (spellItr == _spells.end() || !spellItr->second.spellId)
+        {
+            if constexpr (DEBUG_BOT_ACTIONS)
+                BOT_LOG_ERROR("scripts", "bot_ai:_processQueuedActions: base spell {} not found!", action.params.spell_cast_params.base_spell);
+            CancelAction(action);
+            return;
+        }
+
+        const uint32 spell_id = spellItr->second.spellId;
         SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spell_id);
+        if (!spellInfo)
+        {
+            if constexpr (DEBUG_BOT_ACTIONS)
+                BOT_LOG_ERROR("scripts", "bot_ai:_processQueuedActions: spellInfo {} not found!", spell_id);
+            CancelAction(action);
+            return;
+        }
 
         if (spellInfo->HasEffect(SPELL_EFFECT_INTERRUPT_CAST) ||
             (spellInfo->HasEffect(SPELL_EFFECT_APPLY_AURA) && spellInfo->GetEffect(EFFECT_0).ApplyAuraName == SPELL_AURA_MOD_SILENCE))
@@ -21823,77 +21972,110 @@ bool bot_ai::FinishTeleport(bool reset)
 
     BotLogger::Log(NPCBOT_LOG_TELEPORT_FINISH, me, me->IsInGrid(), me->IsWandererBot(), CanAppearInWorld());
 
-    BotMgr::AddDelayedTeleportCallback([this, reset]() {
-        Map* map = master->FindMap();
-        //2) Cannot teleport: map not found or forbidden - delay teleport
-        if (!map || !master->IsAlive() || master->GetBotMgr()->RestrictBots(me, true))
+    ObjectGuid const botGuid = me->GetGUID();
+    uint32 const botEntry = me->GetEntry();
+    ObjectGuid const masterGuid = master->GetGUID();
+
+    BotMgr::AddDelayedTeleportCallback([botGuid, botEntry, masterGuid, reset]() {
+        Creature* bot = const_cast<Creature*>(BotDataMgr::FindBot(botEntry));
+        if (!bot || bot->GetGUID() != botGuid)
+            return;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai)
+            return;
+
+        if (bot->IsInWorld())
         {
-            //ChatHandler ch(master->GetSession());
-            //ch.PSendSysMessage("Your bot {} cannot teleport to you. Restricted bot access on this map...", me->GetName());
-            teleFinishEvent = new TeleportFinishEvent(this, reset);
-            Events.AddEvent(teleFinishEvent, Events.CalculateTime(5000));
+            ai->SetIsDuringTeleport(false);
             return;
         }
 
-        if (me->FindMap())
-            me->ResetMap();
+        Player* master = ObjectAccessor::FindConnectedPlayer(masterGuid);
+        if (!master || ai->GetBotOwner() != master || !master->GetSession() || master->GetSession()->PlayerLogout() || master->GetSession()->isLogingOut())
+        {
+            ai->TeleportHomeStart(!BotCfg::HideBotSpawns());
+            return;
+        }
 
-        me->SetMap(map);
+        BotMgr* masterBotMgr = master->GetBotMgr();
+        if (!masterBotMgr)
+        {
+            ai->TeleportHomeStart(!BotCfg::HideBotSpawns());
+            return;
+        }
+
+        Map* map = master->FindMap();
+        //2) Cannot teleport: map not found or forbidden - delay teleport
+        if (!map || !master->IsAlive() || masterBotMgr->RestrictBots(bot, true))
+        {
+            //ChatHandler ch(master->GetSession());
+            //ch.PSendSysMessage("Your bot {} cannot teleport to you. Restricted bot access on this map...", me->GetName());
+            TeleportFinishEvent* delayedTeleportEvent = new TeleportFinishEvent(ai, reset);
+            ai->GetEvents()->AddEvent(delayedTeleportEvent, ai->GetEvents()->CalculateTime(5000));
+            ai->SetTeleportFinishEvent(delayedTeleportEvent);
+            return;
+        }
+
+        if (bot->FindMap())
+            bot->ResetMap();
+
+        bot->SetMap(map);
         if (master->GetTransport())
         {
-            master->GetTransport()->AddPassenger(me, true);
-            me->m_movementInfo.transport.pos.Relocate(master->GetTransOffset());
-            me->Relocate(GetAbsoluteTransportPosition(master));
-            me->AddUnitState(UNIT_STATE_IGNORE_PATHFINDING);
+            master->GetTransport()->AddPassenger(bot, true);
+            bot->m_movementInfo.transport.pos.Relocate(master->GetTransOffset());
+            bot->Relocate(bot_ai::GetAbsoluteTransportPosition(master));
+            bot->AddUnitState(UNIT_STATE_IGNORE_PATHFINDING);
         }
         else
         {
             Position destpos;
-            _calculatePos(master, destpos);
-            me->Relocate(destpos);
+            ai->_calculatePos(master, destpos);
+            bot->Relocate(destpos);
         }
 
-        map->AddToMap(me);
-        me->BotStopMovement();
+        map->AddToMap(bot);
+        bot->BotStopMovement();
         if (reset)
-            this->Reset();
+            ai->Reset();
 
-        me->RefreshSwimmingFlag();
+        bot->RefreshSwimmingFlag();
 
         //bot->SetAI(oldAI);
         //me->IsAIEnabled = true;
-        canUpdate = true;
-        outdoorsTimer = 0;
+        ai->canUpdate = true;
+        ai->outdoorsTimer = 0;
 
         //master->m_Controlled.insert(me);
-        if (me->IsAlive())
+        if (bot->IsAlive())
         {
             //CastSpellExtraArgs args(TRIGGERED_FULL_MASK);
             //me->CastSpell(me, COSMETIC_TELEPORT_EFFECT, args);
-            me->CastSpell(me, COSMETIC_TELEPORT_EFFECT, true);
+            bot->CastSpell(bot, COSMETIC_TELEPORT_EFFECT, true);
         }
         //me->CastSpell(me, HONORLESS_TARGET, true);
 
         //Arena flags
-        Battleground const* bg = GetBG();
+        Battleground const* bg = ai->GetBG();
         if (bg && bg->isArena())
         {
-            TeamId teamId = bg->GetBotTeamId(me->GetGUID());
+            TeamId teamId = bg->GetBotTeamId(bot->GetGUID());
             uint32 flag_spell = teamId == TEAM_ALLIANCE ? master->GetTeamId() == TEAM_HORDE ? ARENA_FLAG_TEAM_H_GOLD : ARENA_FLAG_TEAM_A_GOLD :
                 master->GetTeamId() == TEAM_HORDE ? ARENA_FLAG_TEAM_H_GREEN : ARENA_FLAG_TEAM_A_GREEN;
-            me->CastSpell(me, flag_spell, true);
+            bot->CastSpell(bot, flag_spell, true);
         }
 
         //update group member online state
         if (Group* gr = master->GetGroup())
-            if (gr->IsMember(me->GetGUID()))
+            if (gr->IsMember(bot->GetGUID()))
                 gr->SendUpdate();
 
         //map hooks
         if (InstanceScript* iscr = master->GetInstanceScript())
-            iscr->OnNPCBotEnter(me);
+            iscr->OnNPCBotEnter(bot);
 
-        SetIsDuringTeleport(false);
+        ai->SetIsDuringTeleport(false);
         });
 
     return true;

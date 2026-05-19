@@ -3206,14 +3206,15 @@ public:
         }
 
         Creature* bot = ubot->ToCreature();
-        if (!bot || !bot->IsNPCBot() || bot->GetBotAI()->IsWanderer() || bot->IsSummon())
+        bot_ai* botAI = bot && bot->IsNPCBot() ? bot->GetBotAI() : nullptr;
+        if (!botAI || botAI->IsWanderer() || bot->IsSummon())
         {
             handler->SendSysMessage("You must select a non-wandering npcbot");
             handler->SetSentErrorMessage(true);
             return false;
         }
 
-        if (bot->GetBotAI()->GetBotOwnerGuid())
+        if (botAI->GetBotOwnerGuid())
         {
             handler->SendSysMessage("This npcbot already has owner");
             handler->SetSentErrorMessage(true);
@@ -3415,13 +3416,18 @@ public:
 
     static bool HandeNpcBotCleanUpAndRemoval(ChatHandler* handler, Creature* bot, Player const* chr/* = nullptr*/)
     {
-        Player const* botowner = bot->GetBotOwner()->ToPlayer();
+        bot_ai* botAI = bot ? bot->GetBotAI() : nullptr;
+        if (!botAI)
+            return false;
 
-        if (bot->GetBotAI()->HasRealEquipment())
+        ObjectGuid ownerGuid = botAI->GetBotOwnerGuid() ? ObjectGuid(HighGuid::Player, 0, botAI->GetBotOwnerGuid()) : ObjectGuid::Empty;
+        Player const* botowner = ownerGuid ? ObjectAccessor::FindConnectedPlayer(ownerGuid) : nullptr;
+
+        if (botAI->HasRealEquipment())
         {
             ObjectGuid receiver =
                 botowner ? botowner->GetGUID() :
-                bot->GetBotAI()->GetBotOwnerGuid() != 0 ? ObjectGuid(HighGuid::Player, 0, bot->GetBotAI()->GetBotOwnerGuid()) :
+                ownerGuid ? ownerGuid :
                 chr ? chr->GetGUID() : ObjectGuid::Empty;
 
             if (!botowner && chr && receiver != chr->GetGUID() && !sCharacterCache->HasCharacterCacheEntry(receiver))
@@ -3432,7 +3438,7 @@ public:
                 handler->PSendSysMessage("Cannot delete bot {} from console: has gear but no player to give it back to! Can only delete this bot in-game.", bot->GetName());
                 return false;
             }
-            if (bot->GetBotAI()->UnEquipAll(receiver, false) != BotEquipResult::BOT_EQUIP_RESULT_OK)
+            if (botAI->UnEquipAll(receiver, false) != BotEquipResult::BOT_EQUIP_RESULT_OK)
             {
                 handler->PSendSysMessage("{} is unable to unequip some gear. Please remove equips manually first!", bot->GetName());
                 return false;
@@ -3458,15 +3464,16 @@ public:
         }
 
         Creature* bot = ubot->ToCreature();
-        if (!bot || !bot->IsNPCBot() || !bot->GetBotAI()->GetBotOwnerGuid() || bot->IsTempBot() || bot->IsSummon())
+        bot_ai* botAI = bot && bot->IsNPCBot() ? bot->GetBotAI() : nullptr;
+        if (!botAI || !botAI->GetBotOwnerGuid() || bot->IsTempBot() || bot->IsSummon())
         {
             handler->SendSysMessage("No owned npcbot selected");
             handler->SetSentErrorMessage(true);
             return false;
         }
 
-        uint32 owner_guid = bot->GetBotAI()->GetBotOwnerGuid();
-        Player const* botowner = bot->GetBotOwner()->ToPlayer();
+        uint32 owner_guid = botAI->GetBotOwnerGuid();
+        Player const* botowner = owner_guid ? ObjectAccessor::FindConnectedPlayer(ObjectGuid(HighGuid::Player, 0, owner_guid)) : nullptr;
         if (!HandeNpcBotCleanUpAndRemoval(handler, bot, chr))
         {
             handler->SetSentErrorMessage(true);
@@ -4537,12 +4544,16 @@ public:
 
         std::string msg;
         Unit* target = owner->GetSelectedUnit();
-        if (target && owner->GetBotMgr()->GetBot(target->GetGUID()))
+        if (Creature* bot = target ? owner->GetBotMgr()->GetBot(target->GetGUID()) : nullptr)
         {
-            target->ToCreature()->GetBotAI()->SetBotCommandState(BOT_COMMAND_STAY);
-            msg = target->GetName() + "'s command state set to 'STAY'";
+            if (bot_ai* ai = bot->GetBotAI())
+            {
+                ai->SetBotCommandState(BOT_COMMAND_STAY);
+                msg = bot->GetName() + "'s command state set to 'STAY'";
+            }
         }
-        else
+
+        if (msg.empty())
         {
             owner->GetBotMgr()->SendBotCommandState(BOT_COMMAND_STAY);
             msg = "Bots' command state set to 'STAY'";
@@ -4566,12 +4577,16 @@ public:
 
         std::string msg;
         Unit* target = owner->GetSelectedUnit();
-        if (target && owner->GetBotMgr()->GetBot(target->GetGUID()))
+        if (Creature* bot = target ? owner->GetBotMgr()->GetBot(target->GetGUID()) : nullptr)
         {
-            target->ToCreature()->GetBotAI()->SetBotCommandState(BOT_COMMAND_FULLSTOP);
-            msg = target->GetName() + "'s command state set to 'FULLSTOP'";
+            if (bot_ai* ai = bot->GetBotAI())
+            {
+                ai->SetBotCommandState(BOT_COMMAND_FULLSTOP);
+                msg = bot->GetName() + "'s command state set to 'FULLSTOP'";
+            }
         }
-        else
+
+        if (msg.empty())
         {
             owner->GetBotMgr()->SendBotCommandState(BOT_COMMAND_FULLSTOP);
             msg = "Bots' command state set to 'FULLSTOP'";
@@ -4679,12 +4694,16 @@ public:
 
         std::string msg;
         Unit* target = owner->GetSelectedUnit();
-        if (target && owner->GetBotMgr()->GetBot(target->GetGUID()))
+        if (Creature* bot = target ? owner->GetBotMgr()->GetBot(target->GetGUID()) : nullptr)
         {
-            target->ToCreature()->GetBotAI()->SetBotCommandState(BOT_COMMAND_FOLLOW);
-            msg = target->GetName() + "'s command state set to 'FOLLOW'";
+            if (bot_ai* ai = bot->GetBotAI())
+            {
+                ai->SetBotCommandState(BOT_COMMAND_FOLLOW);
+                msg = bot->GetName() + "'s command state set to 'FOLLOW'";
+            }
         }
-        else
+
+        if (msg.empty())
         {
             owner->GetBotMgr()->SendBotCommandState(BOT_COMMAND_FOLLOW);
             msg = "Bots' command state set to 'FOLLOW'";
@@ -4914,9 +4933,11 @@ public:
         }
 
         Creature* cre = u->ToCreature();
-        if (cre && cre->IsNPCBot() && !cre->IsFreeBot())
+        bot_ai* ai = cre && cre->IsNPCBot() ? cre->GetBotAI() : nullptr;
+        ObjectGuid ownerGuid = ai && ai->GetBotOwnerGuid() ? ObjectGuid(HighGuid::Player, 0, ai->GetBotOwnerGuid()) : ObjectGuid::Empty;
+        master = ownerGuid ? ObjectAccessor::FindConnectedPlayer(ownerGuid) : nullptr;
+        if (master && master->GetBotMgr() && master->GetBotMgr()->GetBot(cre->GetGUID()))
         {
-            master = cre->GetBotOwner();
             master->GetBotMgr()->RemoveBot(cre->GetGUID(), BOT_REMOVE_DISMISS);
             if (master->GetBotMgr()->GetBot(cre->GetGUID()) == nullptr)
             {
@@ -4998,7 +5019,8 @@ public:
         }
 
         Creature* bot = cre->ToCreature();
-        if (!bot || !bot->IsNPCBot() || bot->GetBotAI()->GetBotOwnerGuid() || bot->GetBotAI()->IsWanderer() || bot->IsSummon())
+        bot_ai* botAI = bot && bot->IsNPCBot() ? bot->GetBotAI() : nullptr;
+        if (!botAI || botAI->GetBotOwnerGuid() || botAI->IsWanderer() || bot->IsSummon())
         {
             handler->SendSysMessage("You must select uncontrolled non-wandering npcbot");
             handler->SetSentErrorMessage(true);

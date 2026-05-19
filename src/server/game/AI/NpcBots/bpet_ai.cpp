@@ -90,7 +90,15 @@ uint16 bot_pet_ai::Rand() const
 //0-178
 void bot_pet_ai::GenerateRand() const
 {
-    __rand = urand(0, IAmFree() ? 100 : 100 + (petOwner->GetBotOwner()->GetNpcBotsCount() - 1) * 2);
+    uint32 randMax = 100;
+    if (!IAmFree())
+    {
+        Player const* owner = petOwner ? petOwner->GetBotOwner() : nullptr;
+        if (owner)
+            randMax += (std::max<uint32>(owner->GetNpcBotsCount(), 1) - 1) * 2;
+    }
+
+    __rand = urand(0, randMax);
 }
 
 bool bot_pet_ai::_checkImmunities(Unit const* target, SpellInfo const* spellInfo) const
@@ -109,13 +117,20 @@ void bot_pet_ai::_calculatePos(Position& pos) const
             break;
     }
 
+    bot_ai* ownerAI = petOwner ? petOwner->GetBotAI() : nullptr;
+    if (!petOwner || !ownerAI)
+    {
+        pos.Relocate(me);
+        return;
+    }
+
     float x,y,z;
     //destination
     petOwner->GetPosition(x, y, z);
     //relative angle
     uint32 movFlags = petOwner->m_movementInfo.GetMovementFlags();
     float o = petOwner->GetOrientation() + PET_FOLLOW_ANGLE;
-    uint8 posNum = petOwner->GetBotAI()->GetPetPositionNumber(me);
+    uint8 posNum = ownerAI->GetPetPositionNumber(me);
     if (petOwner->GetBotClass() == BOT_CLASS_DEATH_KNIGHT)
         o += DKPetPositionAnglesByPosNumber[posNum];
     else if (petOwner->GetBotClass() == BOT_CLASS_DRUID)
@@ -164,8 +179,15 @@ void bot_pet_ai::SetBotCommandState(uint32 st, bool force, Position* newpos)
             break;
     }
 
+    if (!petOwner)
+        return;
+
+    bool const free = IAmFree();
+    Player const* owner = free || !petOwner ? nullptr : petOwner->GetBotOwner();
+    bool const ownerAlive = free || (owner && owner->IsAlive());
+
     if ((st & BOT_COMMAND_FOLLOW) && !IsChanneling() &&
-        ((!me->isMoving() && !IsCasting() && petOwner->GetBotOwner()->IsAlive()) || force))
+        ((!me->isMoving() && !IsCasting() && ownerAlive) || force))
     {
         if (CCed(me, true)) return;
         if (me->isMoving() && Rand() > 10) return;
@@ -190,7 +212,7 @@ void bot_pet_ai::SetBotCommandState(uint32 st, bool force, Position* newpos)
             }
 
             float speed = 0.0f;
-            if (!IAmFree() && !(petOwner->IsWalking() || HasBotCommandState(BOT_COMMAND_WALK)))
+            if (!free && !(petOwner->IsWalking() || HasBotCommandState(BOT_COMMAND_WALK)))
             {
                 const float baserunspeed = petOwner->GetSpeed(MOVE_RUN);
                 if (pdist > 50.0f)
@@ -267,15 +289,19 @@ void bot_pet_ai::CureGroup(uint32 cureSpell, uint32 diff)
     if (!me->GetMap()->IsRaid() && Rand() > 35)
         return;
 
+    Player* owner = petOwner ? petOwner->GetBotOwner() : nullptr;
+    if (!owner)
+        return;
+
     std::list<Unit*> targets;
-    Group const* pGroup = petOwner->GetBotOwner()->GetGroup();
+    Group const* pGroup = owner->GetGroup();
     Unit* u = nullptr;
     if (!pGroup)
     {
-        if (_canCureTarget(petOwner->GetBotOwner(), cureSpell))
-            targets.push_back(petOwner->GetBotOwner());
+        if (_canCureTarget(owner, cureSpell))
+            targets.push_back(owner);
 
-        for (auto const& [_, bot] : *petOwner->GetBotOwner()->GetBotMgr()->GetBotMap())
+        for (auto const& [_, bot] : *owner->GetBotMgr()->GetBotMap())
         {
             u = bot;
             if (!u || !u->IsInWorld() || me->GetMap() != u->FindMap() || !u->IsAlive()) continue;
@@ -283,7 +309,7 @@ void bot_pet_ai::CureGroup(uint32 cureSpell, uint32 diff)
                 targets.push_back(u);
         }
 
-        for (Unit* m : petOwner->GetBotOwner()->m_Controlled)
+        for (Unit* m : owner->m_Controlled)
         {
             u = m;
             if (!u || !u->IsPet() || !u->IsAlive() || me->GetDistance(u) > 30) continue;
@@ -1340,9 +1366,10 @@ void bot_pet_ai::OnOwnerDamagedBy(Unit* attacker)
             break;
     }
 
-    if (petOwner->GetBotAI()->HasBotCommandState(BOT_COMMAND_MASK_UNMOVING))
+    bot_ai* ownerAI = petOwner ? petOwner->GetBotAI() : nullptr;
+    if (!ownerAI || ownerAI->HasBotCommandState(BOT_COMMAND_MASK_UNMOVING))
         return;
-    if (!petOwner->GetBotAI()->CanBotAttack(attacker))
+    if (!ownerAI->CanBotAttack(attacker))
         return;
 
     SetBotCommandState(BOT_COMMAND_COMBATRESET);
@@ -1361,7 +1388,8 @@ bool bot_pet_ai::IsPetMelee() const
 
 uint8 bot_pet_ai::Spec() const
 {
-    return petOwner->GetBotAI()->GetSpec();
+    bot_ai* ownerAI = petOwner ? petOwner->GetBotAI() : nullptr;
+    return ownerAI ? ownerAI->GetSpec() : BOT_SPEC_DEFAULT;
 }
 
 //ISINBOTPARTY
@@ -1370,7 +1398,8 @@ uint8 bot_pet_ai::Spec() const
 bool bot_pet_ai::IsInBotParty(Unit const* unit) const
 {
     if (!unit) return false;
-    if (unit == petOwner->GetBotOwner() || unit == me || unit == petOwner) return true;
+    Player* owner = petOwner && !IAmFree() ? petOwner->GetBotOwner() : nullptr;
+    if ((owner && unit == owner) || unit == me || unit == petOwner) return true;
 
     if (IAmFree())
     {
@@ -1388,7 +1417,10 @@ bool bot_pet_ai::IsInBotParty(Unit const* unit) const
     }
 
     //cheap check
-    if (Group const* gr = petOwner->GetBotOwner()->GetGroup())
+    if (!owner)
+        return false;
+
+    if (Group const* gr = owner->GetGroup())
     {
         //group member case
         if (gr->IsMember(unit->GetGUID()))
@@ -1407,18 +1439,18 @@ bool bot_pet_ai::IsInBotParty(Unit const* unit) const
     {
         ObjectGuid ownerGuid = unit->GetOwnerGUID() ? unit->GetOwnerGUID() : unit->GetCreator() ? unit->GetCreator()->GetGUID() : ObjectGuid::Empty;
         //controlled by master
-        if (ownerGuid == petOwner->GetBotOwner()->GetGUID())
+        if (ownerGuid == owner->GetGUID())
             return true;
         //npcbot/npcbot's pet case
-        if (cre->GetBotOwner() == petOwner->GetBotOwner())
+        if (cre->GetBotOwner() == owner)
             return true;
-        if (ownerGuid && petOwner->GetBotOwner()->GetBotMgr()->GetBot(ownerGuid))
+        if (ownerGuid && owner->GetBotMgr()->GetBot(ownerGuid))
             return true;
         //controlled by group member
         //pets, minions, guardians etc.
         //bot pets too
         if (ownerGuid)
-            if (Group const* gr = petOwner->GetBotOwner()->GetGroup())
+            if (Group const* gr = owner->GetGroup())
                 if (gr->IsMember(ownerGuid))
                     return true;
     }
@@ -1464,9 +1496,17 @@ void bot_pet_ai::RefreshAura(uint32 spellId, int8 count, Unit* target) const
 //All code above 'x = _getTarget() call must not dereference opponent since it can be invalid
 Unit* bot_pet_ai::_getTarget(bool &reset) const
 {
-    if (petOwner->GetBotAI()->HasBotCommandState(BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION))
+    bot_ai* ownerAI = petOwner ? petOwner->GetBotAI() : nullptr;
+    if (!ownerAI)
         return nullptr;
-    if (petOwner->GetBotAI()->GetEngageTimer() > lastdiff)
+
+    bool const free = IAmFree();
+    Player* owner = free ? nullptr : petOwner->GetBotOwner();
+    BotMgr* ownerBotMgr = owner ? owner->GetBotMgr() : nullptr;
+
+    if (ownerAI->HasBotCommandState(BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION))
+        return nullptr;
+    if (ownerAI->GetEngageTimer() > lastdiff)
         return nullptr;
 
     Unit* mytar = me->GetVictim();
@@ -1482,18 +1522,18 @@ Unit* bot_pet_ai::_getTarget(bool &reset) const
         return u;
     }
 
-    uint8 followdist = IAmFree() ? BotMgr::GetBotFollowDistMax() : petOwner->GetBotOwner()->GetBotMgr()->GetBotFollowDist();
+    uint8 followdist = free ? BotMgr::GetBotFollowDistMax() : ownerBotMgr ? ownerBotMgr->GetBotFollowDist() : 0;
 
     if (followdist == 0)
         return nullptr;
 
     float foldist = _getAttackDistance(float(followdist));
-    if (!IAmFree() && !IsPetMelee())
+    if (!free && ownerBotMgr && !IsPetMelee())
     {
         float spelldist;
-        uint8 rangeMode = petOwner->GetBotOwner()->GetBotMgr()->GetBotAttackRangeMode();
+        uint8 rangeMode = ownerBotMgr->GetBotAttackRangeMode();
         if (rangeMode == BOT_ATTACK_RANGE_EXACT)
-            spelldist = petOwner->GetBotOwner()->GetBotMgr()->GetBotExactAttackRange();
+            spelldist = ownerBotMgr->GetBotExactAttackRange();
         else
             spelldist = GetSpellAttackRange(rangeMode == BOT_ATTACK_RANGE_LONG);
         foldist = std::max<float>(foldist, spelldist + 4.f);
@@ -1501,14 +1541,14 @@ Unit* bot_pet_ai::_getTarget(bool &reset) const
     bool dropTarget = false;
     if (mytar)
     {
-        dropTarget = IAmFree() ?
+        dropTarget = free ?
             petOwner->GetDistance(mytar) > foldist :
-            (petOwner->GetBotOwner()->GetDistance(mytar) > foldist || (petOwner->GetBotOwner()->GetDistance(mytar) > foldist * 0.75f && !mytar->IsWithinLOSInMap(petOwner, VMAP::ModelIgnoreFlags::M2, LINEOFSIGHT_ALL_CHECKS)));
+            (!owner || owner->GetDistance(mytar) > foldist || (owner->GetDistance(mytar) > foldist * 0.75f && !mytar->IsWithinLOSInMap(petOwner, VMAP::ModelIgnoreFlags::M2, LINEOFSIGHT_ALL_CHECKS)));
     }
     if (dropTarget)
         return nullptr;
 
-    if (mytar && (!IAmFree() || me->GetDistance(mytar) < float(BOT_MAX_CHASE_RANGE)) && me->IsValidAttackTarget(mytar) && !petOwner->GetBotAI()->IsPointedNoDPSTarget(mytar))
+    if (mytar && (!free || me->GetDistance(mytar) < float(BOT_MAX_CHASE_RANGE)) && me->IsValidAttackTarget(mytar) && !ownerAI->IsPointedNoDPSTarget(mytar))
     {
         if (me->GetDistance(mytar) > (!IsPetMelee() ? 20.f : 5.f) && _botCommandState != COMMAND_STAY && _botCommandState != COMMAND_FOLLOW)
             reset = true;
@@ -1534,7 +1574,8 @@ bool bot_pet_ai::CheckAttackTarget()
 
         return false;
     }
-    if (petOwner->GetBotAI()->IsActionNext(BotActionTypes::BOT_ACTION_PULL, 0, opponent->GetGUID()))
+    bot_ai* ownerAI = petOwner ? petOwner->GetBotAI() : nullptr;
+    if (ownerAI && ownerAI->IsActionNext(BotActionTypes::BOT_ACTION_PULL, 0, opponent->GetGUID()))
         return false;
 
     if (reset)
@@ -1549,9 +1590,14 @@ bool bot_pet_ai::CheckAttackTarget()
 //Ranged attack position
 void bot_pet_ai::CalculateAttackPos(Unit* target, Position& pos) const
 {
-    uint8 followdist = IAmFree() ? BotMgr::GetBotFollowDistMax() : petOwner->GetBotOwner()->GetBotMgr()->GetBotFollowDist();
-    uint8 rangeMode = IAmFree() ? uint8(BOT_ATTACK_RANGE_LONG) : petOwner->GetBotOwner()->GetBotMgr()->GetBotAttackRangeMode();
-    uint8 exactRange = rangeMode != BOT_ATTACK_RANGE_EXACT || IAmFree() ? 255 : petOwner->GetBotOwner()->GetBotMgr()->GetBotExactAttackRange();
+    bot_ai* ownerAI = petOwner ? petOwner->GetBotAI() : nullptr;
+    bool const free = IAmFree();
+    Player* owner = free ? nullptr : petOwner ? petOwner->GetBotOwner() : nullptr;
+    BotMgr* ownerBotMgr = owner ? owner->GetBotMgr() : nullptr;
+
+    uint8 followdist = free || !ownerBotMgr ? BotMgr::GetBotFollowDistMax() : ownerBotMgr->GetBotFollowDist();
+    uint8 rangeMode = free || !ownerBotMgr ? uint8(BOT_ATTACK_RANGE_LONG) : ownerBotMgr->GetBotAttackRangeMode();
+    uint8 exactRange = rangeMode != BOT_ATTACK_RANGE_EXACT || free || !ownerBotMgr ? 255 : ownerBotMgr->GetBotExactAttackRange();
     Position ppos;
     float //x(0),y(0),z(0),
         dist = (rangeMode == BOT_ATTACK_RANGE_EXACT) ? exactRange :
@@ -1560,7 +1606,7 @@ void bot_pet_ai::CalculateAttackPos(Unit* target, Position& pos) const
         angle = target->GetAbsoluteAngle(me);
     //most ranged classes have some sort of 20yd spell
     if (rangeMode != BOT_ATTACK_RANGE_EXACT)
-        dist = std::min<float>(dist, petOwner->GetBotAI()->HasRole(BOT_ROLE_DPS) ? GetSpellAttackRange(rangeMode == BOT_ATTACK_RANGE_LONG) - 4.f : 30.f);
+        dist = std::min<float>(dist, ownerAI && ownerAI->HasRole(BOT_ROLE_DPS) ? GetSpellAttackRange(rangeMode == BOT_ATTACK_RANGE_LONG) - 4.f : 30.f);
 
     float clockwise = (me->GetEntry() % 2) ? 1.f : -1.f;
     float angleDelta = frand(0.0f, float(M_PI)*0.10f) * clockwise;
@@ -1586,7 +1632,8 @@ void bot_pet_ai::CalculateAttackPos(Unit* target, Position& pos) const
 // Forces bot to chase opponent (if ranged then distance depends on follow distance)
 void bot_pet_ai::GetInPosition(bool force, Unit* newtarget, Position* mypos)
 {
-    if (petOwner->GetBotAI()->HasBotCommandState(BOT_COMMAND_MASK_UNMOVING))
+    bot_ai* ownerAI = petOwner ? petOwner->GetBotAI() : nullptr;
+    if (!ownerAI || ownerAI->HasBotCommandState(BOT_COMMAND_MASK_UNMOVING))
         return;
     if (CCed(me, true) || JumpingOrFalling())
         return;
@@ -1599,8 +1646,12 @@ void bot_pet_ai::GetInPosition(bool force, Unit* newtarget, Position* mypos)
     if (IsCasting())
         return;
 
-    if (!IAmFree() && petOwner->GetBotOwner()->GetBotMgr()->GetBotAttackRangeMode() == BOT_ATTACK_RANGE_EXACT &&
-        petOwner->GetBotOwner()->GetBotMgr()->GetBotExactAttackRange() == 0)
+    bool const free = IAmFree();
+    Player* owner = free ? nullptr : petOwner->GetBotOwner();
+    BotMgr* ownerBotMgr = owner ? owner->GetBotMgr() : nullptr;
+
+    if (!free && ownerBotMgr && ownerBotMgr->GetBotAttackRangeMode() == BOT_ATTACK_RANGE_EXACT &&
+        ownerBotMgr->GetBotExactAttackRange() == 0)
     {
         attackpos.m_positionX = newtarget->GetPositionX() - frand(0.5f, 1.5f) * std::cos(me->GetAbsoluteAngle(newtarget));
         attackpos.m_positionY = newtarget->GetPositionY() - frand(0.5f, 1.5f) * std::sin(me->GetAbsoluteAngle(newtarget));
@@ -1610,7 +1661,7 @@ void bot_pet_ai::GetInPosition(bool force, Unit* newtarget, Position* mypos)
         return;
     }
 
-    uint8 followdist = IAmFree() ? BotMgr::GetBotFollowDistMax() : petOwner->GetBotOwner()->GetBotMgr()->GetBotFollowDist();
+    uint8 followdist = free || !ownerBotMgr ? BotMgr::GetBotFollowDistMax() : ownerBotMgr->GetBotFollowDist();
     if (!IsPetMelee())
     {
         //do not allow constant runaway from player
@@ -2071,7 +2122,8 @@ void bot_pet_ai::OnSpellHit(Unit* caster, SpellInfo const* spell)
     if (!me->GetVictim() && (me->IsHostileTo(caster) || caster->IsHostileTo(me)))
     {
         if (me->CanSeeOrDetect(caster) && (caster->IsInCombat() || me->IsInCombat() || petOwner->IsInCombat()))
-            petOwner->GetBotAI()->OwnerAttackedBy(caster);
+            if (bot_ai* ownerAI = petOwner ? petOwner->GetBotAI() : nullptr)
+                ownerAI->OwnerAttackedBy(caster);
     }
 }
 //Update delay
@@ -2083,10 +2135,17 @@ bool bot_pet_ai::Wait()
 
     if (IAmFree())
         waitTimer = me->IsInCombat() ? 250 : ((__rand + 100) * 20);
-    else if (!me->GetMap()->IsRaid())
-        waitTimer = std::min<uint32>(uint32(50 * (petOwner->GetBotOwner()->GetNpcBotsCount() - 1) + __rand + __rand), 500);
     else
-        waitTimer = __rand;
+    {
+        Player const* owner = petOwner ? petOwner->GetBotOwner() : nullptr;
+        if (!owner)
+            return true;
+
+        if (!me->GetMap()->IsRaid())
+            waitTimer = std::min<uint32>(uint32(50 * (std::max<uint32>(owner->GetNpcBotsCount(), 1) - 1) + __rand + __rand), 500);
+        else
+            waitTimer = __rand;
+    }
 
     return false;
 }
@@ -2106,7 +2165,7 @@ float bot_pet_ai::CalcSpellMaxRange(uint32 spellId, bool enemy) const
 }
 bool bot_pet_ai::IAmFree() const
 {
-    return petOwner->IsFreeBot();
+    return !petOwner || petOwner->IsFreeBot();
 }
 
 bool bot_pet_ai::CCed(Unit const* target, bool root)
@@ -2176,7 +2235,8 @@ void bot_pet_ai::JustDied(Unit*)
 
 void bot_pet_ai::KilledUnit(Unit* u)
 {
-    GetPetsOwner()->GetBotAI()->KilledUnit(u);
+    if (bot_ai* ai = petOwner ? petOwner->GetBotAI() : nullptr)
+        ai->KilledUnit(u);
 }
 
 void bot_pet_ai::AttackStart(Unit* /*u*/)
@@ -2193,7 +2253,10 @@ void bot_pet_ai::DamageDealt(Unit* victim, uint32& damage, DamageEffectType /*da
         if (Creature* cre = victim->ToCreature())
         {
             if (!cre->hasLootRecipient())
-                cre->SetLootRecipient(petOwner->GetBotOwner());
+            {
+                if (Player* owner = petOwner && !IAmFree() ? petOwner->GetBotOwner() : nullptr)
+                    cre->SetLootRecipient(owner);
+            }
 
             //controlled case is handled in Unit::DealDamage
             if (IAmFree())
@@ -2207,8 +2270,12 @@ void bot_pet_ai::IsSummonedBy(WorldObject* summoner)
     //BOT_LOG_ERROR("entities.unit", "bot_pet_ai::IsSummonedBy for %s by %s", me->GetName().c_str(), summoner->GetName().c_str());
     //ASSERT(!petOwner);
     //ASSERT(summoner->IsCreature());
-    petOwner = summoner->ToCreature();
-    _botCommandState = petOwner->GetBotAI()->GetBotCommandState();
+    petOwner = summoner ? summoner->ToCreature() : nullptr;
+    bot_ai* ownerAI = petOwner ? petOwner->GetBotAI() : nullptr;
+    if (!ownerAI)
+        return;
+
+    _botCommandState = ownerAI->GetBotCommandState();
     myType = me->GetEntry();
     //myType = petOwner->GetBotAI()->GetAIMiscValue(BOTAI_MISC_PET_TYPE);
     //ASSERT(myType);
@@ -2226,7 +2293,7 @@ void bot_pet_ai::IsSummonedBy(WorldObject* summoner)
         me->AddUnitState(UNIT_STATE_IGNORE_PATHFINDING);
     }
     //Send group update if not a minion
-    if (petOwner->GetBotAI()->GetBotsPet() == me && petOwner->GetBotAI()->GetGroup())
+    if (ownerAI->GetBotsPet() == me && ownerAI->GetGroup())
         BotMgr::SetBotGroupUpdateFlag(petOwner, GROUP_UPDATE_PET);
 }
 //This function is called after Spell::SendSpellCooldown() and Spell::DoAllEffects...() call
@@ -2285,6 +2352,15 @@ bool bot_pet_ai::GlobalUpdate(uint32 diff)
     }
 
     if (!BotCfg::IsNpcBotModEnabled())
+        return false;
+
+    bot_ai* ownerAI = petOwner->GetBotAI();
+    if (!petOwner->IsInWorld() || !ownerAI)
+        return false;
+
+    bool const ownerFree = ownerAI->IAmFree();
+    Player* owner = ownerFree ? nullptr : ownerAI->GetBotOwner();
+    if (!ownerFree && (!owner || !owner->IsInWorld() || !owner->GetSession() || owner->GetSession()->PlayerLogout() || owner->GetSession()->isLogingOut()))
         return false;
 
     ReduceCD(diff);
@@ -2354,7 +2430,7 @@ bool bot_pet_ai::GlobalUpdate(uint32 diff)
         }
     }
 
-    if (_updateTimerEx1 <= diff && !IAmFree())
+    if (_updateTimerEx1 <= diff && !ownerFree)
     {
         _updateTimerEx1 = urand(2000, 2500);
 
@@ -2367,40 +2443,40 @@ bool bot_pet_ai::GlobalUpdate(uint32 diff)
         */
         //Faction
         //ensure master is not controlled
-        ChrRacesEntry const* rEntry = sChrRacesStore.LookupEntry(petOwner->GetBotOwner()->GetRace());
+        ChrRacesEntry const* rEntry = sChrRacesStore.LookupEntry(owner->GetRace());
         uint32 fac_orig = rEntry ? rEntry->FactionID : 0;
-        if (petOwner->GetBotOwner()->GetFaction() == fac_orig)
+        if (owner->GetFaction() == fac_orig)
         {
-            uint32 fac = (!IAmFree() && me->GetMap()->IsBattleArena()) ? uint32(FACTION_MONSTER) : fac_orig;
+            uint32 fac = (!ownerFree && me->GetMap()->IsBattleArena()) ? uint32(FACTION_MONSTER) : fac_orig;
             if (me->GetFaction() != fac)
                 me->SetFaction(fac);
         }
         //Visibility
-        if (!me->IsVisible() && petOwner->GetBotOwner()->IsVisible())
+        if (!me->IsVisible() && owner->IsVisible())
         {
             //BotWhisper("Something changed my visibility status! Making visible...");
             me->SetVisible(true);
         }
-        if (me->IsVisible() && !petOwner->GetBotOwner()->IsVisible())
+        if (me->IsVisible() && !owner->IsVisible())
         {
             //BotWhisper("Something changed my visibility status! Making invisible...");
             me->SetVisible(false);
         }
         //Phase
-        if (me->GetPhaseMask() != petOwner->GetBotOwner()->GetPhaseMask())
+        if (me->GetPhaseMask() != owner->GetPhaseMask())
         {
             //BotWhisper("Somehow we are not is same phase! Fixing that...");
-            me->SetPhaseMask(petOwner->GetBotOwner()->GetPhaseMask(), true);
+            me->SetPhaseMask(owner->GetPhaseMask(), true);
         }
-        if (me->GetTransport() != petOwner->GetBotOwner()->GetTransport())
+        if (me->GetTransport() != owner->GetTransport())
         {
-            if (petOwner->GetBotOwner()->GetTransport())
+            if (owner->GetTransport())
             {
-                if (me->GetDistance2d(petOwner->GetBotOwner()) < 20.f)
+                if (me->GetDistance2d(owner) < 20.f)
                 {
-                    petOwner->GetBotOwner()->GetTransport()->AddPassenger(me, true);
-                    me->m_movementInfo.transport.pos.Relocate(petOwner->GetBotOwner()->GetTransOffset());
-                    me->Relocate(bot_ai::GetAbsoluteTransportPosition(petOwner->GetBotOwner()));
+                    owner->GetTransport()->AddPassenger(me, true);
+                    me->m_movementInfo.transport.pos.Relocate(owner->GetTransOffset());
+                    me->Relocate(bot_ai::GetAbsoluteTransportPosition(owner));
                     me->AddUnitState(UNIT_STATE_IGNORE_PATHFINDING);
                 }
             }
@@ -2442,7 +2518,7 @@ bool bot_pet_ai::GlobalUpdate(uint32 diff)
     }
     if (closeToOwner || me->IsInCombat())
     {
-        uint8 st = (petOwner->GetBotAI()->GetBotCommandState() & BOT_COMMAND_MASK_UNMOVING);
+        uint8 st = (ownerAI->GetBotCommandState() & BOT_COMMAND_MASK_UNMOVING);
         if (st && GetBotCommandState() != st)
         {
             SetBotCommandState(st);
@@ -2463,13 +2539,13 @@ bool bot_pet_ai::GlobalUpdate(uint32 diff)
     if (checkAurasTimer <= lastdiff)
     {
         Unit* victim = me->GetVictim();
-        checkAurasTimer += uint32(__rand + __rand + (IAmFree() ? 1000 : 40 * (1 + petOwner->GetBotOwner()->GetNpcBotsCount())));
+        checkAurasTimer += uint32(__rand + __rand + (ownerFree ? 1000 : 40 * (1 + owner->GetNpcBotsCount())));
 
         if (!HasBotCommandState(BOT_COMMAND_MASK_UNCHASE) && victim && !CCed(me, true) &&
             !me->isMoving() && !IsCasting() && myType != BOT_PET_TORNADO && myType != BOT_PET_LOCUST_SWARM)
         {
-            if (!IAmFree() && petOwner->GetBotOwner()->GetBotMgr()->GetBotAttackRangeMode() == BOT_ATTACK_RANGE_EXACT &&
-                petOwner->GetBotOwner()->GetBotMgr()->GetBotExactAttackRange() == 0)
+            if (!ownerFree && owner->GetBotMgr()->GetBotAttackRangeMode() == BOT_ATTACK_RANGE_EXACT &&
+                owner->GetBotMgr()->GetBotExactAttackRange() == 0)
             {
                 GetInPosition(true, victim);
             }
@@ -2485,7 +2561,7 @@ bool bot_pet_ai::GlobalUpdate(uint32 diff)
                     GetInPosition(true, victim, &attackpos);
             }
         }
-        if (shouldUpdateStats && me->GetPhaseMask() == petOwner->GetBotOwner()->GetPhaseMask())
+        if (shouldUpdateStats && (ownerFree || me->GetPhaseMask() == owner->GetPhaseMask()))
             SetPetStats(false);
     }
 

@@ -805,6 +805,36 @@ public:
             return weaving ? weaving->GetBase()->GetStackAmount() : 0;
         }
 
+        bool ShouldApplyShadowWordPainNow(Unit const* target) const
+        {
+            // Shadow Word: Pain is worth applying with good Shadow Weaving stacks,
+            // but it must not be held hostage forever if Shadow Weaving is slow,
+            // resisted, bugged, or the target is already fully dotted.
+            if (!target || me->GetLevel() < 60 || GetSpec() != BOT_SPEC_PRIEST_SHADOW)
+                return true;
+
+            uint8 const weavingStacks = GetShadowWeavingStacks();
+            if (weavingStacks >= 4)
+                return true;
+
+            bool const hasVampiricTouch = GetOwnedShadowDotEffect(target, VAMPIRIC_TOUCH_1) != nullptr;
+            bool const hasDevouringPlague = GetOwnedShadowDotEffect(target, DEVOURING_PLAGUE_1) != nullptr;
+            bool const canVampiricTouch = GetSpell(VAMPIRIC_TOUCH_1) != 0;
+            bool const canDevouringPlague = GetSpell(DEVOURING_PLAGUE_1) != 0;
+
+            // If the core setup dots are already handled or unavailable at this level,
+            // apply SW:P so Pain and Suffering can begin maintaining it with Mind Flay.
+            if ((!canVampiricTouch || hasVampiricTouch) && (!canDevouringPlague || hasDevouringPlague))
+                return true;
+
+            // Do not demand a perfect five-stack opener. VT + a couple of stacks is
+            // enough; otherwise the bot can spend the entire pull waiting for prettier math.
+            if (weavingStacks >= 2 && (!canVampiricTouch || hasVampiricTouch))
+                return true;
+
+            return false;
+        }
+
         bool IsDurableShadowTarget(Unit const* target) const
         {
             if (!target || !target->IsAlive())
@@ -912,15 +942,16 @@ public:
                     return true;
             }
 
-            // Shadow Word: Pain should go up after Shadow Weaving is established when possible.
-            // Pain and Suffering refreshes it from Mind Flay later, so do not manually clip it.
+            // Shadow Word: Pain should prefer decent Shadow Weaving setup,
+            // but should not wait forever. Once VT/DP are handled or enough setup exists,
+            // apply it and let Pain and Suffering maintain it with Mind Flay.
             if (durableTarget && IsSpellReady(SW_PAIN_1, diff) &&
                 !GetOwnedShadowDotEffect(mytar, SW_PAIN_1) &&
-                mytar->GetHealth() > me->GetMaxHealth() / 2 * (1 + mytar->getAttackers().size()))
+                mytar->GetHealth() > me->GetMaxHealth() / 2 * (1 + mytar->getAttackers().size()) &&
+                ShouldApplyShadowWordPainNow(mytar))
             {
-                if (me->GetLevel() < 60 || GetShadowWeavingStacks() >= 4)
-                    if (doCast(mytar, GetSpell(SW_PAIN_1)))
-                        return true;
+                if (doCast(mytar, GetSpell(SW_PAIN_1)))
+                    return true;
             }
 
             // Controlled multi-dotting: on two or three durable targets, apply VT/SW:P
@@ -935,12 +966,12 @@ public:
                             return true;
                 }
 
-                if (IsSpellReady(SW_PAIN_1, diff) && GetOwnedShadowDotEffect(mytar, SW_PAIN_1) &&
-                    (me->GetLevel() < 60 || GetShadowWeavingStacks() >= 4))
+                if (IsSpellReady(SW_PAIN_1, diff) && GetOwnedShadowDotEffect(mytar, SW_PAIN_1))
                 {
                     if (Unit* dotTarget = FindShadowDotTarget(mytar, SW_PAIN_1, 0))
-                        if (doCast(dotTarget, GetSpell(SW_PAIN_1)))
-                            return true;
+                        if (ShouldApplyShadowWordPainNow(dotTarget))
+                            if (doCast(dotTarget, GetSpell(SW_PAIN_1)))
+                                return true;
                 }
             }
 
@@ -1764,6 +1795,11 @@ public:
             //Shadowform: 15% bonus damage for shadow spells (handled)
             //if (lvl >= 40 && (spellInfo->GetSchoolMask() & SPELL_SCHOOL_MASK_SHADOW) && me->GetShapeshiftForm() == FORM_SHADOW)
             //    pctbonus += 0.15f;
+            //Twisted Faith fallback: the normal player talent converts 20% of Spirit into spell power.
+            //NPCBots do not reliably benefit from that stat conversion here, so approximate it as
+            //a conservative flat 15% damage bonus to Shadow spells for Shadow-spec priests.
+            if ((GetSpec() == BOT_SPEC_PRIEST_SHADOW) && lvl >= 55 && (spellInfo->GetSchoolMask() & SPELL_SCHOOL_MASK_SHADOW))
+                pctbonus += 0.15f;
             //Misery part 3: 15% bonus damage (from spellpower) for Mind Blast, Mind Flay and Mind Sear
             if ((GetSpec() == BOT_SPEC_PRIEST_SHADOW) && lvl >= 45)
             {

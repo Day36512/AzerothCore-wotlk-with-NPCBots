@@ -65,6 +65,8 @@ void AddSC_generic_custom_spells();
 void AddSC_npcbot_performance_governor();
 void Addmod_item_stat_scalerScripts();
 void AddFakePlayerAmbienceScripts();
+void AddSC_shaman_custom_spell_scripts();
+void AddSC_priest_custom_spell_scripts();
 
 
 
@@ -114,5 +116,6 @@ void AddCustomScripts()
     AddSC_npcbot_performance_governor();
     Addmod_item_stat_scalerScripts();
     AddFakePlayerAmbienceScripts();
-
+    AddSC_shaman_custom_spell_scripts();
+    AddSC_priest_custom_spell_scripts();
 }

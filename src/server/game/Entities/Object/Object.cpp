@@ -2283,7 +2283,11 @@ TempSummon* Map::SummonCreature(uint32 entry, Position const& pos, SummonPropert
         case UNIT_MASK_TOTEM:
             //npcbot: totem emul step 1
             if (summoner && summoner->IsNPCBot())
-                summon = new Totem(properties, summoner->ToCreature()->GetBotOwner()->GetGUID());
+            {
+                Creature const* bot = summoner->ToCreature();
+                Player const* owner = bot ? bot->GetBotOwner() : nullptr;
+                summon = new Totem(properties, owner && owner->GetGUID().IsPlayer() ? owner->GetGUID() : summoner->GetGUID());
+            }
             else
             //end npcbot
             summon = new Totem(properties, summoner ? summoner->GetGUID() : ObjectGuid::Empty);
@@ -2305,16 +2309,18 @@ TempSummon* Map::SummonCreature(uint32 entry, Position const& pos, SummonPropert
     //npcbot: totem emul step 2
     if (summoner && summoner->IsNPCBot() && !summon->IsTempBot())
     {
+        Creature const* bot = summoner->ToCreature();
+        Player const* owner = bot ? bot->GetBotOwner() : nullptr;
         summon->SetCreatorGUID(summoner->GetGUID()); // see TempSummon::InitStats()
         if (mask == UNIT_MASK_TOTEM)
         {
-            summon->SetFaction(summoner->ToCreature()->GetFaction());
-            summon->SetPvP(summoner->ToCreature()->IsPvP());
+            summon->SetFaction(bot->GetFaction());
+            summon->SetPvP(bot->IsPvP());
             //set key flags if needed
-            if (!summoner->ToCreature()->IsFreeBot())
+            if (owner && owner->GetGUID().IsPlayer())
             {
                 summon->SetUnitFlag(UNIT_FLAG_PLAYER_CONTROLLED);
-                summon->SetOwnerGUID(summoner->ToCreature()->GetBotOwner()->GetGUID());
+                summon->SetOwnerGUID(owner->GetGUID());
                 summon->SetControlledByPlayer(true);
             }
         }

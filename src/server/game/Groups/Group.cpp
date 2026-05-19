@@ -2845,7 +2845,8 @@ void Group::DelinkBotMember(ObjectGuid guid)
     while (ref)
     {
         GroupBotReference* nextRef = ref->next();
-        if (ref->GetSource()->GetGUID() == guid)
+        Creature* source = ref->GetSource();
+        if (source && source->GetGUID() == guid)
         {
             ref->unlink();
             break;

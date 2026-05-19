@@ -381,8 +381,9 @@ if (MOD_ALE_FOUND)
   endif()
 
   if (WIN32)
-    if (MSVC)
-      set(MSVC_CONFIGURATION_NAME $(ConfigurationName)/)
+    set(MSVC_CONFIGURATION_NAME "")
+    if (CMAKE_CONFIGURATION_TYPES)
+      set(MSVC_CONFIGURATION_NAME "$<CONFIG>/")
     endif()
 
     add_custom_command(TARGET modules

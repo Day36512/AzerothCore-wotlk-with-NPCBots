@@ -23,6 +23,7 @@
 #include "Map.h"
 #include "MapMgr.h"
 #include "MotionMaster.h"
+#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "ScriptMgr.h"
@@ -663,13 +664,19 @@ void BotMgr::_reviveBot(Creature* bot, WorldLocation* dest)
     if (bot->IsAlive() || !bot->IsInWorld())
         return;
 
-    if (!bot->GetBotAI()->IAmFree())
+    bot_ai* botAI = bot->GetBotAI();
+    if (!botAI)
+        return;
+
+    Player* owner = botAI->IAmFree() ? nullptr : botAI->GetBotOwner();
+
+    if (owner)
     {
         if (!dest)
             bot->CastSpell(bot, COSMETIC_RESURRECTION, false);
 
         if (!dest)
-            dest = bot->GetBotOwner();
+            dest = owner;
 
         bot->NearTeleportTo(dest->GetPositionX(), dest->GetPositionY(), dest->GetPositionZ(), dest->GetOrientation());
         //some weird pos manipulation
@@ -682,14 +689,15 @@ void BotMgr::_reviveBot(Creature* bot, WorldLocation* dest)
     bot->ClearUnitState(uint32(UNIT_STATE_ALL_STATE & ~(UNIT_STATE_IGNORE_PATHFINDING | UNIT_STATE_NO_ENVIRONMENT_UPD)));
     bot->ReplaceAllUnitFlags(UnitFlags(0));
     bot->SetLootRecipient(nullptr);
-    bot->SetPvP(bot->GetBotOwner()->IsPvP());
+    if (owner)
+        bot->SetPvP(owner->IsPvP());
     bot->Motion_Initialize();
     bot->setDeathState(DeathState::Alive);
     //bot->GetBotAI()->Reset();
     bot->RefreshSwimmingFlag();
-    bot->GetBotAI()->SetShouldUpdateStats();
+    botAI->SetShouldUpdateStats();
 
-    uint8 restore_factor = (bot->IsWandererBot() || (!bot->GetBotAI()->IAmFree() && bot->GetBotOwner()->InBattleground())) ? 1 : 4;
+    uint8 restore_factor = (bot->IsWandererBot() || (owner && owner->InBattleground())) ? 1 : 4;
     bot->SetHealth(bot->GetMaxHealth() / restore_factor); //25% of max health
     if (bot->GetMaxPower(POWER_MANA) > 1)
         bot->SetPower(POWER_MANA, bot->GetMaxPower(POWER_MANA) / restore_factor); //25% of max mana
@@ -697,8 +705,8 @@ void BotMgr::_reviveBot(Creature* bot, WorldLocation* dest)
     if (IsWanderingWorldBot(bot))
         bot->ResetPlayerDamageReq();
 
-    if (!bot->GetBotAI()->IAmFree() && !bot->GetBotAI()->HasBotCommandState(BOT_COMMAND_MASK_UNMOVING))
-        bot->GetBotAI()->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+    if (owner && !botAI->HasBotCommandState(BOT_COMMAND_MASK_UNMOVING))
+        botAI->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
 }
 
 Creature* BotMgr::GetBot(ObjectGuid guid) const
@@ -805,6 +813,11 @@ void BotMgr::_teleportBot(Creature* bot, Map* newMap, float x, float y, float z,
 {
     bot_ai* botai = detached_ai ? detached_ai : bot->GetBotAI();
     ASSERT(botai);
+    bool const wasFree = botai->IAmFree();
+    ObjectGuid const botGuid = bot->GetGUID();
+    uint32 const botEntry = bot->GetEntry();
+    Player* currentOwner = wasFree ? nullptr : botai->GetBotOwner();
+    ObjectGuid const ownerGuid = currentOwner ? currentOwner->GetGUID() : ObjectGuid::Empty;
 
     if (newMap && newMap->IsBattlegroundOrArena())
     {
@@ -819,7 +832,28 @@ void BotMgr::_teleportBot(Creature* bot, Map* newMap, float x, float y, float z,
 
     BotLogger::Log(NPCBOT_LOG_TELEPORT_START, bot, bot->IsInGrid(), bot->IsWandererBot(), botai->CanAppearInWorld(), newMap->GetId(), bool(reset));
 
-    BotMgr::AddDelayedTeleportCallback([bot, botai, newMap, x, y, z, ori, quick, reset]() {
+    BotMgr::AddDelayedTeleportCallback([botGuid, botEntry, ownerGuid, wasFree, newMap, x, y, z, ori, quick, reset]() {
+        Creature* bot = const_cast<Creature*>(BotDataMgr::FindBot(botEntry));
+        if (!bot || bot->GetGUID() != botGuid)
+            return;
+
+        bot_ai* botai = bot->GetBotAI();
+        if (!botai || !botai->IsDuringTeleport())
+            return;
+
+        Player* owner = nullptr;
+        if (!wasFree)
+        {
+            owner = ObjectAccessor::FindConnectedPlayer(ownerGuid);
+            if (!owner || botai->GetBotOwner() != owner || !owner->GetSession() || owner->GetSession()->PlayerLogout() || owner->GetSession()->isLogingOut())
+            {
+                botai->AbortTeleport();
+                botai->SetIsDuringTeleport(false);
+                botai->canUpdate = true;
+                return;
+            }
+        }
+
         if (bot->GetVehicle())
             bot->ExitVehicle();
 
@@ -847,15 +881,15 @@ void BotMgr::_teleportBot(Creature* bot, Map* newMap, float x, float y, float z,
 
             if (bot->IsInWorld())
             {
-                botai->UnsummonAll(!botai->IAmFree() || botai->IsWanderer());
+                botai->UnsummonAll(!wasFree || botai->IsWanderer());
 
                 if (Battleground* bg = bot->GetBotBG())
                     bg->EventBotDroppedFlag(bot);
 
                 bot->CastSpell(bot, COSMETIC_TELEPORT_EFFECT, true);
 
-                if (!bot->IsFreeBot())
-                    if (InstanceScript* iscr = bot->GetBotOwner()->GetInstanceScript())
+                if (owner)
+                    if (InstanceScript* iscr = owner->GetInstanceScript())
                         iscr->OnNPCBotLeave(bot);
 
                 bot->RemoveFromWorld();
@@ -871,7 +905,7 @@ void BotMgr::_teleportBot(Creature* bot, Map* newMap, float x, float y, float z,
                 mymap->RemoveFromMap(bot, false);
         }
 
-        if (botai->IAmFree())
+        if (wasFree)
         {
             bot->Relocate(x, y, z, ori);
             if (bot->FindMap())
@@ -957,7 +991,7 @@ void BotMgr::_teleportBot(Creature* bot, Map* newMap, float x, float y, float z,
         }
 
         //update group member online state
-        if (Group* gr = bot->GetBotOwner()->GetGroup())
+        if (Group* gr = owner->GetGroup())
             if (gr->IsMember(bot->GetGUID()))
                 gr->SendUpdate();
 
@@ -1160,7 +1194,9 @@ BotAddResult BotMgr::AddBot(Creature* bot)
     if (!bot->GetBotAI()->IAmFree())
     {
         ChatHandler ch(_owner->GetSession());
-        ch.PSendSysMessage(bot_ai::LocalizedNpcText(GetOwner(), BOT_TEXT_BOTADDFAIL_OWNED).c_str(), bot->GetName(), bot->GetBotOwner()->GetName());
+        Player const* owner = bot->GetBotOwner();
+        std::string const ownerName = owner ? owner->GetName() : "unknown";
+        ch.PSendSysMessage(bot_ai::LocalizedNpcText(GetOwner(), BOT_TEXT_BOTADDFAIL_OWNED).c_str(), bot->GetName(), ownerName);
         return BOT_ADD_NOT_AVAILABLE;
     }
     if (!owned && owned_count >= BotCfg::GetMaxNpcBots(_owner->GetLevel()))
@@ -2150,7 +2186,8 @@ int32 BotMgr::GetHPSTaken(Unit const* unit) const
 
 void BotMgr::OnBotWandererKilled(Creature const* bot, Player* looter)
 {
-    bot->GetBotAI()->SpawnKillReward(looter);
+    if (bot_ai* ai = bot ? bot->GetBotAI() : nullptr)
+        ai->SpawnKillReward(looter);
 }
 
 void BotMgr::OnBotWandererKilled(GameObject* go)
@@ -2159,17 +2196,22 @@ void BotMgr::OnBotWandererKilled(GameObject* go)
     {
         uint32 bot_id = go->GetSpellId() - GO_BOT_MONEY_BAG;
         if (Creature const* bot = BotDataMgr::FindBot(bot_id))
-            bot->GetBotAI()->FillKillReward(go);
+            if (bot_ai* ai = bot->GetBotAI())
+                ai->FillKillReward(go);
     }
 }
 
 void BotMgr::OnBotKilled(Creature const* bot, Unit* attacker/* = nullptr*/)
 {
-    bot->GetBotAI()->OnDeath(attacker);
+    if (bot_ai* ai = bot ? bot->GetBotAI() : nullptr)
+        ai->OnDeath(attacker);
 }
 
 void BotMgr::OnBotSpellInterrupt(Unit const* caster, CurrentSpellTypes spellType)
 {
+    if (!caster)
+        return;
+
     if (spellType == CURRENT_AUTOREPEAT_SPELL)
     {
         WorldPacket data(SMSG_CANCEL_AUTO_REPEAT, caster->GetPackGUID().size());
@@ -2180,20 +2222,29 @@ void BotMgr::OnBotSpellInterrupt(Unit const* caster, CurrentSpellTypes spellType
 
 void BotMgr::OnBotSpellGo(Unit const* caster, Spell const* spell, bool ok)
 {
-    if (caster->ToCreature()->GetBotAI())
-        caster->ToCreature()->GetBotAI()->OnBotSpellGo(spell, ok);
-    else if (caster->ToCreature()->GetBotPetAI())
-        caster->ToCreature()->GetBotPetAI()->OnBotPetSpellGo(spell, ok);
+    Creature const* creature = caster ? caster->ToCreature() : nullptr;
+    if (!creature)
+        return;
+
+    if (bot_ai* ai = creature->GetBotAI())
+        ai->OnBotSpellGo(spell, ok);
+    else if (bot_pet_ai* petAI = creature->GetBotPetAI())
+        petAI->OnBotPetSpellGo(spell, ok);
 }
 
 void BotMgr::OnBotOwnerSpellGo(Unit const* caster, Spell const* spell, bool ok)
 {
-    for (auto const& [_, bot] : *caster->ToPlayer()->GetBotMgr()->GetBotMap())
+    Player const* player = caster ? caster->ToPlayer() : nullptr;
+    if (!player || !player->HaveBot())
+        return;
+
+    for (auto const& [_, bot] : *player->GetBotMgr()->GetBotMap())
     {
         if (!bot || !bot->IsInWorld() || !bot->IsAlive())
             continue;
 
-        bot->GetBotAI()->OnBotOwnerSpellGo(spell, ok);
+        if (bot_ai* ai = bot->GetBotAI())
+            ai->OnBotOwnerSpellGo(spell, ok);
         //if (Creature const* botpet = bot->GetBotsPet())
         //    botpet->GetBotAI()->OnBotPetOwnerSpellGo(spell, ok);
     }
@@ -2201,78 +2252,95 @@ void BotMgr::OnBotOwnerSpellGo(Unit const* caster, Spell const* spell, bool ok)
 
 void BotMgr::OnBotChannelFinish(Unit const* caster, Spell const* spell)
 {
-    if (caster->ToCreature()->GetBotAI())
-        caster->ToCreature()->GetBotAI()->OnBotChannelFinish(spell);
+    Creature const* bot = caster ? caster->ToCreature() : nullptr;
+    if (bot_ai* ai = bot ? bot->GetBotAI() : nullptr)
+        ai->OnBotChannelFinish(spell);
     //else if (caster->ToCreature()->GetBotPetAI())
     //    caster->ToCreature()->GetBotPetAI()->OnBotPetChannelFinish(spell);
 }
 
 void BotMgr::OnVehicleSpellGo(Unit const* caster, Spell const* spell, bool ok)
 {
+    if (!caster)
+        return;
+
     if (caster->GetCharmerGUID().IsPlayer())
     {
         Unit const* owner = caster->GetCharmer();
-        if (owner && owner->ToPlayer()->HaveBot())
+        Player const* player = owner ? owner->ToPlayer() : nullptr;
+        if (player && player->HaveBot())
         {
-            for (auto const& [_, bot] : *owner->ToPlayer()->GetBotMgr()->GetBotMap())
+            for (auto const& [_, bot] : *player->GetBotMgr()->GetBotMap())
             {
-                if (bot)
-                {
-                    bot->GetBotAI()->OnBotOwnerSpellGo(spell, ok);
-                    //if (Creature const* botpet = bot->GetBotsPet())
-                    //    botpet->GetBotAI()->OnBotPetOwnerSpellGo(spell, ok);
-                }
+                if (bot_ai* ai = bot ? bot->GetBotAI() : nullptr)
+                    ai->OnBotOwnerSpellGo(spell, ok);
+                //if (Creature const* botpet = bot->GetBotsPet())
+                //    botpet->GetBotAI()->OnBotPetOwnerSpellGo(spell, ok);
             }
         }
     }
     else if (caster->GetCharmerGUID().IsCreature())
     {
         Unit const* bot = caster->GetCharmer();
-        if (bot->ToCreature()->GetBotAI())
-            bot->ToCreature()->GetBotAI()->OnBotSpellGo(spell, ok);
+        Creature const* creature = bot ? bot->ToCreature() : nullptr;
+        if (bot_ai* ai = creature ? creature->GetBotAI() : nullptr)
+            ai->OnBotSpellGo(spell, ok);
     }
 }
 
 void BotMgr::OnVehicleAttackedBy(Unit* attacker, Unit const* victim)
 {
+    if (!victim)
+        return;
+
     Unit const* owner = victim->GetCharmer();
     if (victim->GetCharmerGUID().IsPlayer())
         owner = victim->GetCharmer();
     else if (victim->GetCharmerGUID().IsCreature())
         if (Unit const* bot = victim->GetCharmer())
-            owner = bot->ToCreature()->GetBotOwner();
+            if (Creature const* creature = bot->ToCreature())
+                owner = creature->GetBotOwner();
 
-    if (owner && owner->IsPlayer() && owner->ToPlayer()->HaveBot())
+    Player const* player = owner ? owner->ToPlayer() : nullptr;
+    if (player && player->HaveBot())
     {
-        for (auto const& [_, bot] : *owner->ToPlayer()->GetBotMgr()->GetBotMap())
-            if (bot)
-                bot->GetBotAI()->OnOwnerVehicleDamagedBy(attacker);
+        for (auto const& [_, bot] : *player->GetBotMgr()->GetBotMap())
+            if (bot_ai* ai = bot ? bot->GetBotAI() : nullptr)
+                ai->OnOwnerVehicleDamagedBy(attacker);
     }
 }
 
 void BotMgr::OnBotDamageTaken(Unit* attacker, Unit* victim, uint32 damage, CleanDamage const* cleanDamage, DamageEffectType damagetype, SpellInfo const* spellInfo)
 {
-    victim->ToCreature()->GetBotAI()->OnBotDamageTaken(attacker, damage, cleanDamage , damagetype, spellInfo);
+    Creature* bot = victim ? victim->ToCreature() : nullptr;
+    if (bot_ai* ai = bot ? bot->GetBotAI() : nullptr)
+        ai->OnBotDamageTaken(attacker, damage, cleanDamage , damagetype, spellInfo);
 }
 
 void BotMgr::OnBotDamageDealt(Unit* attacker, Unit* victim, uint32 damage, CleanDamage const* cleanDamage, DamageEffectType damagetype, SpellInfo const* spellInfo)
 {
-    attacker->ToCreature()->GetBotAI()->OnBotDamageDealt(victim, damage, cleanDamage, damagetype, spellInfo);
+    Creature* bot = attacker ? attacker->ToCreature() : nullptr;
+    if (bot_ai* ai = bot ? bot->GetBotAI() : nullptr)
+        ai->OnBotDamageDealt(victim, damage, cleanDamage, damagetype, spellInfo);
 }
 
 void BotMgr::OnBotDispelDealt(Unit* dispeller, Unit* dispelled, uint8 num)
 {
-    dispeller->ToCreature()->GetBotAI()->OnBotDispelDealt(dispelled, num);
+    Creature* bot = dispeller ? dispeller->ToCreature() : nullptr;
+    if (bot_ai* ai = bot ? bot->GetBotAI() : nullptr)
+        ai->OnBotDispelDealt(dispelled, num);
 }
 
 void BotMgr::OnBotEnterVehicle(Creature const* passenger, Vehicle const* vehicle)
 {
-    passenger->GetBotAI()->OnBotEnterVehicle(vehicle);
+    if (bot_ai* ai = passenger ? passenger->GetBotAI() : nullptr)
+        ai->OnBotEnterVehicle(vehicle);
 }
 
 void BotMgr::OnBotExitVehicle(Creature const* passenger, Vehicle const* vehicle)
 {
-    passenger->GetBotAI()->OnBotExitVehicle(vehicle);
+    if (bot_ai* ai = passenger ? passenger->GetBotAI() : nullptr)
+        ai->OnBotExitVehicle(vehicle);
 }
 
 void BotMgr::OnBotOwnerEnterVehicle(Player const* passenger, Vehicle const* vehicle)
@@ -2317,35 +2385,56 @@ void BotMgr::OnBotPartyEngage(Player const* owner)
 
 void BotMgr::OnBotAttackStop(Creature const* bot, Unit const* target)
 {
+    if (!bot)
+        return;
+
     if (bot->IsNPCBot())
-        bot->GetBotAI()->OnAttackStop(target);
+    {
+        if (bot_ai* ai = bot->GetBotAI())
+            ai->OnAttackStop(target);
+    }
     else if (bot->IsNPCBotPet())
-        bot->GetBotPetAI()->OnAttackStop(target);
+    {
+        if (bot_pet_ai* ai = bot->GetBotPetAI())
+            ai->OnAttackStop(target);
+    }
 }
 
 void BotMgr::ApplyBotEffectMods(Unit const* caster, SpellInfo const* spellInfo, uint8 effIndex, float& value)
 {
-    caster->ToCreature()->GetBotAI()->ApplyBotEffectMods(spellInfo, effIndex, value);
+    Creature const* bot = caster ? caster->ToCreature() : nullptr;
+    if (bot_ai* ai = bot ? bot->GetBotAI() : nullptr)
+        ai->ApplyBotEffectMods(spellInfo, effIndex, value);
 }
 
 void BotMgr::ApplyBotThreatMods(Unit const* attacker, SpellInfo const* spellInfo, float& threat)
 {
-    attacker->ToCreature()->GetBotAI()->ApplyBotThreatMods(spellInfo, threat);
+    Creature const* bot = attacker ? attacker->ToCreature() : nullptr;
+    if (bot_ai* ai = bot ? bot->GetBotAI() : nullptr)
+        ai->ApplyBotThreatMods(spellInfo, threat);
 }
 
 void BotMgr::ApplyBotEffectValueMultiplierMods(Unit const* caster, SpellInfo const* spellInfo, SpellEffIndex effIndex, float& multiplier)
 {
-    caster->ToCreature()->GetBotAI()->ApplyBotEffectValueMultiplierMods(spellInfo, effIndex, multiplier);
+    Creature const* bot = caster ? caster->ToCreature() : nullptr;
+    if (bot_ai* ai = bot ? bot->GetBotAI() : nullptr)
+        ai->ApplyBotEffectValueMultiplierMods(spellInfo, effIndex, multiplier);
 }
 
 float BotMgr::GetBotDamageTakenMod(Creature const* bot, bool magic)
 {
-    return bot->GetBotAI()->GetBotDamageTakenMod(magic);
+    if (bot_ai* ai = bot ? bot->GetBotAI() : nullptr)
+        return ai->GetBotDamageTakenMod(magic);
+
+    return 1.0f;
 }
 
 int32 BotMgr::GetBotStat(Creature const* bot, BotStatMods stat)
 {
-    return bot->GetBotAI()->GetTotalBotStat(stat);
+    if (bot_ai* ai = bot ? bot->GetBotAI() : nullptr)
+        return ai->GetTotalBotStat(stat);
+
+    return 0;
 }
 
 int32 BotMgr::GetBotStat(Creature const* bot, Stats stat)
@@ -2355,10 +2444,22 @@ int32 BotMgr::GetBotStat(Creature const* bot, Stats stat)
 
 float BotMgr::GetBotResilience(Creature const* botOrPet)
 {
-    if (botOrPet->IsNPCBot())
-        return botOrPet->GetBotAI()->GetBotResilience();
+    if (!botOrPet)
+        return 0.0f;
 
-    return botOrPet->GetBotPetAI()->GetPetsOwner()->GetBotAI()->GetBotResilience();
+    if (botOrPet->IsNPCBot())
+    {
+        if (bot_ai* ai = botOrPet->GetBotAI())
+            return ai->GetBotResilience();
+
+        return 0.0f;
+    }
+
+    bot_pet_ai* petAI = botOrPet->GetBotPetAI();
+    Creature* owner = petAI ? petAI->GetPetsOwner() : nullptr;
+    bot_ai* ownerAI = owner ? owner->GetBotAI() : nullptr;
+
+    return ownerAI ? ownerAI->GetBotResilience() : 0.0f;
 }
 
 std::vector<Unit*> BotMgr::GetAllGroupMembers(Group const* group)
@@ -2383,8 +2484,19 @@ std::vector<Unit*> BotMgr::GetAllGroupMembers(Group const* group)
 }
 std::vector<Unit*> BotMgr::GetAllGroupMembers(Unit const* source)
 {
-    Group const* group = (source->IsNPCBot() && source->ToCreature()->GetBotAI()) ? source->ToCreature()->GetBotAI()->GetGroup() :
-        source->IsPlayer() ? source->ToPlayer()->GetGroup() : nullptr;
+    if (!source)
+        return {};
+
+    Group const* group = nullptr;
+    if (source->IsNPCBot())
+    {
+        Creature const* bot = source->ToCreature();
+        if (bot_ai* ai = bot ? bot->GetBotAI() : nullptr)
+            group = ai->GetGroup();
+    }
+    else if (Player const* player = source->ToPlayer())
+        group = player->GetGroup();
+
     return GetAllGroupMembers(group);
 }
 

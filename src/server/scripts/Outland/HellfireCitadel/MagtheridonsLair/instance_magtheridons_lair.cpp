@@ -129,6 +129,17 @@ public:
             }
         }
 
+        ObjectGuid GetGuidData(uint32 type) const override
+        {
+            switch (type)
+            {
+                case DATA_MAGTHERIDON:
+                    return _magtheridonGUID;
+            }
+
+            return ObjectGuid::Empty;
+        }
+
         bool SetBossState(uint32 id, EncounterState state) override
         {
             if (!InstanceScript::SetBossState(id, state))

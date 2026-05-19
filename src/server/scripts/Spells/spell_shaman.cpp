@@ -1416,6 +1416,8 @@ class spell_sha_lightning_overload : public AuraScript
 {
     PrepareAuraScript(spell_sha_lightning_overload);
 
+    static constexpr int32 LIGHTNING_OVERLOAD_DAMAGE_PCT = 70;
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_SHAMAN_LIGHTNING_OVERLOAD_LB, SPELL_SHAMAN_LIGHTNING_OVERLOAD_CL });
@@ -1441,23 +1443,33 @@ class spell_sha_lightning_overload : public AuraScript
     void HandleProc(AuraEffect const* aurEff, ProcEventInfo& eventInfo)
     {
         PreventDefaultAction();
+
         SpellInfo const* procSpell = eventInfo.GetSpellInfo();
         Unit* target = eventInfo.GetActionTarget();
+
         if (!procSpell || !target)
             return;
 
-        uint32 spell = (procSpell->SpellFamilyFlags[0] & 0x2) ? SPELL_SHAMAN_LIGHTNING_OVERLOAD_CL : SPELL_SHAMAN_LIGHTNING_OVERLOAD_LB;
+        uint32 spell = (procSpell->SpellFamilyFlags[0] & 0x2)
+            ? SPELL_SHAMAN_LIGHTNING_OVERLOAD_CL
+            : SPELL_SHAMAN_LIGHTNING_OVERLOAD_LB;
 
         DamageInfo* damageInfo = eventInfo.GetDamageInfo();
         if (!damageInfo)
             return;
 
         int32 damage = damageInfo->GetDamage();
-        // Half damage for critical hits
+
+        // If the triggering spell crit, normalize back toward the non-crit base first.
+        // This keeps Lightning Overload from double-dipping off the original crit.
         if (eventInfo.GetHitMask() & PROC_EX_CRITICAL_HIT)
             damage /= 2;
-        // Half damage overall
-        damage /= 2;
+
+        // Lightning Overload now deals 70% of the normalized triggering spell damage.
+        damage = damage * LIGHTNING_OVERLOAD_DAMAGE_PCT / 100;
+
+        if (damage <= 0)
+            return;
 
         GetTarget()->CastCustomSpell(spell, SPELLVALUE_BASE_POINT0, damage, target, true, nullptr, aurEff);
     }

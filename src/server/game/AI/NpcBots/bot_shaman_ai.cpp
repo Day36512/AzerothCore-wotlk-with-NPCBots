@@ -1888,6 +1888,17 @@ public:
             //Call of Flame (part 2): 6% bonus damage for Lava burst
             if (lvl >= 15 && spellId == GetSpell(LAVA_BURST_1))
                 pctbonus += 0.06f;
+            //Glyph of Lightning Bolt: 4% bonus damage for Lightning Bolt
+            //Glyph of Lava: 10% bonus damage for Lava Burst
+            //NpcBots do not equip glyphs, so bake the standard Elemental damage glyphs
+            //into the same passive multiplier path as their talent-style bonuses.
+            if (GetSpec() == BOT_SPEC_SHAMAN_ELEMENTAL)
+            {
+                if (spellId == GetSpell(LIGHTNING_BOLT_1))
+                    pctbonus += 0.04f;
+                else if (spellId == GetSpell(LAVA_BURST_1))
+                    pctbonus += 0.10f;
+            }
             //Storm, Earth and fire (part 3): 60% bonus damage for Flame Shock (periodic damage in fact but who cares?)
             if ((GetSpec() == BOT_SPEC_SHAMAN_ELEMENTAL) && lvl >= 40 && spellId == GetSpell(FLAME_SHOCK_1))
                 pctbonus += 0.6f;

@@ -4237,7 +4237,16 @@ uint8 Creature::GetBotClass() const
 
 Player* Creature::GetBotOwner() const
 {
-    return bot_AI ? bot_AI->GetBotOwner() : bot_pet_AI ? bot_pet_AI->GetPetsOwner()->GetBotOwner() : nullptr;
+    if (bot_AI)
+        return bot_AI->GetBotOwner();
+
+    if (bot_pet_AI)
+    {
+        Creature* petOwner = bot_pet_AI->GetPetsOwner();
+        return petOwner ? petOwner->GetBotOwner() : nullptr;
+    }
+
+    return nullptr;
 }
 Unit* Creature::GetBotsPet() const
 {
