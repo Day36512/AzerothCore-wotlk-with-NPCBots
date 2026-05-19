@@ -3,6 +3,7 @@
 #include "BattlegroundAV.h"
 #include "BattlegroundEY.h"
 #include "BattlegroundWS.h"
+#include "AreaDefines.h"
 #include "bot_ai.h"
 #include "bot_Events.h"
 #include "bot_InstanceEvents.h"
@@ -55,6 +56,7 @@
 #include "OutdoorPvP.h"
 #include "SharedDefines.h"
 #include <algorithm>
+#include <limits>
 #include <mutex>
 #include <unordered_map>
 
@@ -4869,6 +4871,110 @@ std::pair<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool& res
                 return { bestChanneler, nullptr };
         }
 
+        // Gruul's Lair. DPS bots burn the Maulgar council in the
+        // bot-friendly kill order while assigned add handlers keep their targets.
+        if (me->GetMapId() == MAP_GRUULS_LAIR && me->IsInCombat() && HasRole(BOT_ROLE_DPS) && !IsTank() &&
+            !(HasRole(BOT_ROLE_HEAL) && IsCasting()))
+        {
+            static constexpr uint32 NPC_MAULGAR = 18831;
+            static constexpr uint32 NPC_KROSH_FIREHAND = 18832;
+            static constexpr uint32 NPC_OLM_THE_SUMMONER = 18834;
+            static constexpr uint32 NPC_KIGGLER_THE_CRAZED = 18835;
+            static constexpr uint32 NPC_BLINDEYE_THE_SEER = 18836;
+
+            static constexpr std::array<uint32, 5> MaulgarPriority =
+            {
+                NPC_BLINDEYE_THE_SEER,
+                NPC_OLM_THE_SUMMONER,
+                NPC_KIGGLER_THE_CRAZED,
+                NPC_KROSH_FIREHAND,
+                NPC_MAULGAR
+            };
+
+            auto isMaulgarCouncilUnit = [](uint32 entry) -> bool
+                {
+                    return entry == NPC_MAULGAR ||
+                        entry == NPC_KROSH_FIREHAND ||
+                        entry == NPC_OLM_THE_SUMMONER ||
+                        entry == NPC_KIGGLER_THE_CRAZED ||
+                        entry == NPC_BLINDEYE_THE_SEER;
+                };
+
+            auto isAttackableMaulgarUnit = [this, byspell](Creature* c) -> bool
+                {
+                    if (!c || !c->IsAlive())
+                        return false;
+
+                    if (c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
+                        return false;
+
+                    if (!c->IsVisible() || !c->isTargetableForAttack(false))
+                        return false;
+
+                    if (!(CanSeeEveryone() || (me->CanSeeOrDetect(c) && c->InSamePhase(me))))
+                        return false;
+
+                    if (!me->IsWithinLOSInMap(c))
+                        return false;
+
+                    if (!me->IsValidAttackTarget(c))
+                        return false;
+
+                    return CanBotAttack(c, byspell);
+                };
+
+            Creature* current = mytar ? mytar->ToCreature() : nullptr;
+
+            if (current && isMaulgarCouncilUnit(current->GetEntry()) && isAttackableMaulgarUnit(current))
+            {
+                // If this bot is actively tanking/handling a council member, do not let the
+                // global DPS kill order yank it away. This is especially important for a mage
+                // assigned to Krosh for Spellsteal.
+                if (current->GetVictim() == me)
+                    return { current, nullptr };
+
+                // Extra Krosh safety: mage bots should stay on Krosh when already targeting him,
+                // even if Blindeye or another add is still alive, so Spellsteal can actually happen.
+                if (current->GetEntry() == NPC_KROSH_FIREHAND && GetBotClass() == BOT_CLASS_MAGE)
+                    return { current, nullptr };
+            }
+
+            for (uint32 entry : MaulgarPriority)
+            {
+                std::list<Creature*> councilUnits;
+                me->GetCreatureListWithEntryInGrid(councilUnits, entry, 160.0f);
+
+                Creature* best = nullptr;
+                float bestHealthPct = 101.0f;
+                float bestDistance = std::numeric_limits<float>::max();
+
+                for (Creature* councilUnit : councilUnits)
+                {
+                    if (!isAttackableMaulgarUnit(councilUnit))
+                        continue;
+
+                    // If we are already on the highest-priority available target, stay there.
+                    if (current == councilUnit)
+                        return { current, nullptr };
+
+                    float healthPct = councilUnit->GetHealthPct();
+                    float distance = me->GetDistance(councilUnit);
+
+                    if (!best ||
+                        healthPct < bestHealthPct ||
+                        (healthPct == bestHealthPct && distance < bestDistance))
+                    {
+                        best = councilUnit;
+                        bestHealthPct = healthPct;
+                        bestDistance = distance;
+                    }
+                }
+
+                if (best)
+                    return { best, nullptr };
+            }
+        }
+
         // Blackwing Lair
         if (me->GetMapId() == 469 && GetBotClass() == BOT_CLASS_ROGUE && !HasRole(BOT_ROLE_DPS) && me->HasStealthAura() && isInWMOArea(WMOAreaGroupLashlayer)) // BWL - Bloodlord Lashlayer
             return { nullptr, nullptr };
@@ -7104,6 +7210,108 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
                 continue;
 
             spots.emplace_back(*trigger, 13.0f + DEFAULT_COMBAT_REACH * 1.5f);
+        }
+    }
+    // Gruul's Lair - Maulgar council creature-centered danger zones
+    else if (unit->GetMapId() == MAP_GRUULS_LAIR)
+    {
+        static constexpr uint32 NPC_MAULGAR = 18831;
+        static constexpr uint32 NPC_KROSH_FIREHAND = 18832;
+        static constexpr uint32 NPC_KIGGLER_THE_CRAZED = 18835;
+
+        static constexpr uint32 SPELL_MAULGAR_WHIRLWIND = 33238;
+        static constexpr uint32 SPELL_KROSH_BLAST_WAVE = 33061;
+        static constexpr uint32 SPELL_KIGGLER_ARCANE_EXPLOSION = 33237;
+
+        bot_ai* thatBotAI = nullptr;
+        if (unit->IsNPCBot())
+        {
+            if (Creature const* botCreature = unit->ToCreature())
+                thatBotAI = const_cast<Creature*>(botCreature)->GetBotAI();
+        }
+
+        auto isCastingSpell = [](Creature* creature, uint32 spellId) -> bool
+            {
+                if (!creature)
+                    return false;
+
+                for (uint8 i = CURRENT_FIRST_NON_MELEE_SPELL; i < CURRENT_MAX_SPELL; ++i)
+                {
+                    if (Spell* spell = creature->GetCurrentSpell(CurrentSpellTypes(i)))
+                    {
+                        if (SpellInfo const* spellInfo = spell->GetSpellInfo())
+                        {
+                            if (spellInfo->Id == spellId)
+                                return true;
+                        }
+                    }
+                }
+
+                return false;
+            };
+
+        auto isActuallyTankingThisUnit = [unit](Creature* councilUnit) -> bool
+            {
+                return councilUnit && councilUnit->GetVictim() == unit;
+            };
+
+        std::list<Creature*> councilUnits;
+        auto councilCheck = [](Creature const* c) -> bool
+            {
+                if (!c || !c->IsAlive())
+                    return false;
+
+                uint32 entry = c->GetEntry();
+                return entry == NPC_MAULGAR ||
+                    entry == NPC_KROSH_FIREHAND ||
+                    entry == NPC_KIGGLER_THE_CRAZED;
+            };
+
+        Bcore::CreatureListSearcher councilSearcher(unit, councilUnits, councilCheck);
+        Cell::VisitObjects(unit, councilSearcher, 70.0f);
+
+        for (Creature* councilUnit : councilUnits)
+        {
+            if (!councilUnit)
+                continue;
+
+            bool const tankingThisUnit = isActuallyTankingThisUnit(councilUnit);
+
+            switch (councilUnit->GetEntry())
+            {
+            case NPC_MAULGAR:
+            {
+                // Only the unit currently tanking Maulgar may stay in during Whirlwind.
+                // Everyone else, including unrelated tank-role bots, should back out.
+                if (!tankingThisUnit && councilUnit->HasAura(SPELL_MAULGAR_WHIRLWIND))
+                    spots.emplace_back(*councilUnit, 18.0f + councilUnit->GetCombatReach() + DEFAULT_COMBAT_REACH);
+                break;
+            }
+
+            case NPC_KROSH_FIREHAND:
+            {
+                // Only Krosh's actual current tank may ignore Krosh's danger zone.
+                // Other tanks should not stroll into Blast Wave just because their job title says "plate idiot."
+                bool const kroshDanger =
+                    isCastingSpell(councilUnit, SPELL_KROSH_BLAST_WAVE) ||
+                    (!tankingThisUnit && unit->IsWithinDist(councilUnit, 18.0f));
+
+                if (!tankingThisUnit && kroshDanger)
+                    spots.emplace_back(*councilUnit, 18.0f + councilUnit->GetCombatReach() + DEFAULT_COMBAT_REACH);
+                break;
+            }
+
+            case NPC_KIGGLER_THE_CRAZED:
+            {
+                // Only Kiggler's actual current tank may ignore Arcane Explosion.
+                if (!tankingThisUnit && isCastingSpell(councilUnit, SPELL_KIGGLER_ARCANE_EXPLOSION))
+                    spots.emplace_back(*councilUnit, 15.0f + councilUnit->GetCombatReach() + DEFAULT_COMBAT_REACH);
+                break;
+            }
+
+            default:
+                break;
+            }
         }
     }
     // Dinkle Zul'Gurub

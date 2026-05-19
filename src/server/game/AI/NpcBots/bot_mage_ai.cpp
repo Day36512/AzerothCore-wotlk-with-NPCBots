@@ -245,12 +245,89 @@ public:
 
         void CheckSpellSteal(uint32 diff)
         {
-            if (!IsSpellReady(SPELLSTEAL_1, diff) || IsCasting() || Rand() > 15)
+            if (!me->IsAlive() || HasBotCommandState(BOT_COMMAND_NO_CAST | BOT_COMMAND_INACTION) ||
+                !IsSpellReady(SPELLSTEAL_1, diff) || IsCasting())
+                return;
+
+            if (Unit* currentTarget = me->GetVictim())
+            {
+                bool const kroshShield = currentTarget->GetEntry() == 18832 && currentTarget->HasAura(33054);
+                if ((kroshShield || HasStealableMagicAura(currentTarget)) && CanSpellStealTarget(currentTarget))
+                {
+                    if (doCast(currentTarget, GetSpell(SPELLSTEAL_1)))
+                        return;
+
+                    SetSpellCooldown(SPELLSTEAL_1, 750);
+                    return;
+                }
+            }
+
+            if (Rand() > 15)
                 return;
 
             Unit* target = FindHostileDispelTarget(CalcSpellMaxRange(SPELLSTEAL_1), true);
             if (target && doCast(target, GetSpell(SPELLSTEAL_1)))
                 return;
+        }
+
+        bool CanSpellStealTarget(Unit const* target) const
+        {
+            if (!target || !target->IsAlive())
+                return false;
+
+            if (!target->IsInWorld() || target->GetMap() != me->GetMap())
+                return false;
+
+            if (!target->isTargetableForAttack(false) || !me->IsValidAttackTarget(target))
+                return false;
+
+            if (!(CanSeeEveryone() || (me->CanSeeOrDetect(target) && target->InSamePhase(me))))
+                return false;
+
+            if (!me->IsWithinLOSInMap(target))
+                return false;
+
+            if (me->GetDistance(target) > CalcSpellMaxRange(SPELLSTEAL_1))
+                return false;
+
+            uint32 const spellsteal = GetSpell(SPELLSTEAL_1);
+            if (!spellsteal || target->IsImmunedToSpell(sSpellMgr->GetSpellInfo(spellsteal)))
+                return false;
+
+            return CheckBotCast(target, spellsteal) == SPELL_CAST_OK;
+        }
+
+        bool HasStealableMagicAura(Unit const* target) const
+        {
+            if (!target)
+                return false;
+
+            for (auto const& [_, auraApp] : target->GetAppliedAuras())
+            {
+                SpellInfo const* info = auraApp->GetBase()->GetSpellInfo();
+                if (!info)
+                    continue;
+
+                if (!auraApp->IsPositive() || info->Dispel != DISPEL_MAGIC)
+                    continue;
+
+                if (info->Attributes & (SPELL_ATTR0_PASSIVE | SPELL_ATTR0_DO_NOT_DISPLAY))
+                    continue;
+
+                if (info->AttributesEx4 & SPELL_ATTR4_CANNOT_BE_STOLEN)
+                    continue;
+
+                uint32 id = info->Id;
+                if (id == 20050 || id == 20052 || id == 20053 ||
+                    id == 50447 || id == 50448 || id == 50449)
+                    continue;
+
+                Aura const* aura = auraApp->GetBase();
+                if (((info->AttributesEx7 & SPELL_ATTR7_DISPEL_REMOVES_CHARGES) ? aura->GetCharges() : aura->GetStackAmount()) > 0)
+                    return true;
+            }
+
+            return false;
         }
 
         void DoNonCombatActions(uint32 diff)
