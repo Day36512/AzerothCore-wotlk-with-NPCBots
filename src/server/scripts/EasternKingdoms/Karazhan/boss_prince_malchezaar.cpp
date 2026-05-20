@@ -16,11 +16,20 @@
  */
 
 #include "CreatureScript.h"
+#include "Map.h"
+#include "MotionMaster.h"
+#include "ObjectAccessor.h"
 #include "ScriptedCreature.h"
 #include "SpellInfo.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
+#include "bot_ai.h"
+#include "botmgr.h"
 #include "karazhan.h"
+
+#include <cmath>
+#include <map>
+#include <vector>
 
 enum PrinceSay
 {
@@ -72,9 +81,42 @@ enum Phases
     PHASE_THREE = 3
 };
 
+static bool IsNPCBotUnit(Unit* unit)
+{
+    Creature* creature = unit ? unit->ToCreature() : nullptr;
+    return creature && creature->IsNPCBot() && creature->GetBotAI();
+}
+
+static void SafeBotMoveTo(Creature* bot, Position const& dest)
+{
+    if (!bot || !bot->IsAlive() || !bot->IsNPCBot())
+        return;
+
+    float x = dest.GetPositionX();
+    float y = dest.GetPositionY();
+    float z = dest.GetPositionZ();
+
+    if (!bot->CanFly())
+        bot->UpdateAllowedPositionZ(x, y, z);
+
+    Position p;
+    p.Relocate(x, y, z, dest.GetOrientation());
+
+    if (bot_ai* ai = bot->GetBotAI())
+        ai->MoveToSendPosition(p);
+}
+
 struct boss_malchezaar : public BossAI
 {
     boss_malchezaar(Creature* creature) : BossAI(creature, DATA_MALCHEZAAR) { }
+
+    struct EnfeebledBotState
+    {
+        uint32 originalCommandState = 0;
+        bool noCastSet = false;
+        bool inactionSet = false;
+        bool staySet = false;
+    };
 
     std::list<Creature*> relays;
     std::list<Creature*> infernalTargets;
@@ -85,6 +127,8 @@ struct boss_malchezaar : public BossAI
         clearweapons();
         relays.clear();
         infernalTargets.clear();
+        _enfeebleTargets.clear();
+        _enfeebledBots.clear();
     }
 
     void clearweapons()
@@ -95,6 +139,8 @@ struct boss_malchezaar : public BossAI
 
     void Reset() override
     {
+        ReleaseAllEnfeebledBots();
+        EnfeebleResetHealth();
         Initialize();
         _Reset();
 
@@ -136,6 +182,7 @@ struct boss_malchezaar : public BossAI
                 context.Repeat();
             });
 
+            ReleaseAllEnfeebledBots();
             scheduler.CancelGroup(GROUP_ENFEEBLE);
         });
     }
@@ -147,8 +194,17 @@ struct boss_malchezaar : public BossAI
 
     void JustDied(Unit* /*killer*/) override
     {
+        ReleaseAllEnfeebledBots();
+        EnfeebleResetHealth();
         _JustDied();
         Talk(SAY_DEATH);
+    }
+
+    void EnterEvadeMode(EvadeReason why) override
+    {
+        ReleaseAllEnfeebledBots();
+        EnfeebleResetHealth();
+        _EnterEvadeMode(why);
     }
 
     void SpawnInfernal(Creature* relay, Creature* target)
@@ -248,26 +304,184 @@ struct boss_malchezaar : public BossAI
         {
             _enfeebleTargets[target->GetGUID()] = target->GetHealth();
             target->SetHealth(1);
+
+            if (Creature* bot = target->ToCreature())
+                if (IsNPCBotUnit(bot))
+                    HandleEnfeebledBot(bot);
         }
     }
 
     void EnfeebleResetHealth()
     {
-        for (auto& targets : _enfeebleTargets)
+        for (std::map<ObjectGuid, uint32>::iterator itr = _enfeebleTargets.begin(); itr != _enfeebleTargets.end();)
         {
-            if (Unit* target = ObjectAccessor::GetUnit(*me, targets.first))
+            if (Unit* target = ObjectAccessor::GetUnit(*me, itr->first))
             {
                 if (target->IsAlive())
-                {
-                    target->SetHealth(targets.second);
-                }
+                    target->SetHealth(itr->second);
+            }
+
+            itr = _enfeebleTargets.erase(itr);
+        }
+    }
+
+    void ReleaseEnfeebledBot(ObjectGuid const& guid)
+    {
+        std::map<ObjectGuid, EnfeebledBotState>::iterator stateItr = _enfeebledBots.find(guid);
+        if (stateItr == _enfeebledBots.end())
+            return;
+
+        Creature* bot = ObjectAccessor::GetCreature(*me, guid);
+        if (!bot)
+            return;
+
+        if (bot_ai* ai = bot->GetBotAI())
+        {
+            EnfeebledBotState const& state = stateItr->second;
+
+            if (state.inactionSet)
+                ai->RemoveBotCommandState(BOT_COMMAND_INACTION);
+
+            if (state.noCastSet)
+                ai->RemoveBotCommandState(BOT_COMMAND_MASK_NOCAST_ANY);
+
+            if (state.staySet)
+                ai->RemoveBotCommandState(BOT_COMMAND_STAY);
+
+            if (bot->IsAlive() && me->IsAlive() && me->IsEngaged() && me->GetVictim())
+            {
+                ai->SetBotCommandState(BOT_COMMAND_ATTACK);
+                ai->AttackStart(me);
+            }
+            else if (bot->IsAlive() && !ai->IAmFree())
+            {
+                ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
             }
         }
+    }
+
+    void ReleaseAllEnfeebledBots()
+    {
+        std::vector<ObjectGuid> botGuids;
+        botGuids.reserve(_enfeebledBots.size());
+
+        for (std::map<ObjectGuid, EnfeebledBotState>::value_type const& pair : _enfeebledBots)
+            botGuids.push_back(pair.first);
+
+        for (ObjectGuid const& guid : botGuids)
+            ReleaseEnfeebledBot(guid);
+
+        _enfeebledBots.clear();
+    }
+
+    bool IsUnitSafelyAwayFromShadowNova(Unit* unit) const
+    {
+        return unit && unit->GetExactDist2d(me) >= 35.0f;
+    }
+
+    Position GetEnfeebleRetreatPosition(Creature* bot) const
+    {
+        if (!bot || IsUnitSafelyAwayFromShadowNova(bot))
+        {
+            Position current;
+            if (bot)
+                current.Relocate(bot);
+
+            return current;
+        }
+
+        static constexpr float Pi = 3.14159265f;
+        static constexpr float DesiredDistance = 40.0f;
+
+        float dx = bot->GetPositionX() - me->GetPositionX();
+        float dy = bot->GetPositionY() - me->GetPositionY();
+        float length = std::sqrt(dx * dx + dy * dy);
+
+        if (length <= 0.1f)
+        {
+            float angle = Position::NormalizeOrientation(me->GetOrientation() + Pi);
+            dx = std::cos(angle);
+            dy = std::sin(angle);
+            length = 1.0f;
+        }
+
+        dx /= length;
+        dy /= length;
+
+        float x = me->GetPositionX() + dx * DesiredDistance;
+        float y = me->GetPositionY() + dy * DesiredDistance;
+        float z = bot->GetPositionZ();
+        float orientation = Position::NormalizeOrientation(std::atan2(dy, dx));
+
+        Position retreat;
+        retreat.Relocate(x, y, z, orientation);
+        return retreat;
+    }
+
+    void HandleEnfeebledBot(Creature* bot)
+    {
+        if (!bot || !bot->IsAlive() || !bot->IsNPCBot())
+            return;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai)
+            return;
+
+        // Enfeeble should already exclude the current victim, but keep the tank out
+        // of scripted movement if custom target filtering ever changes.
+        if (me->GetVictim() == bot)
+            return;
+
+        ObjectGuid botGuid = bot->GetGUID();
+        std::map<ObjectGuid, EnfeebledBotState>::iterator stateItr = _enfeebledBots.find(botGuid);
+        if (stateItr == _enfeebledBots.end())
+        {
+            EnfeebledBotState state;
+            state.originalCommandState = ai->GetBotCommandState();
+            state.inactionSet = !(state.originalCommandState & BOT_COMMAND_INACTION);
+            state.noCastSet = !(state.originalCommandState & BOT_COMMAND_MASK_NOCAST_ANY);
+            state.staySet = !(state.originalCommandState & BOT_COMMAND_STAY);
+            stateItr = _enfeebledBots.emplace(botGuid, state).first;
+        }
+
+        EnfeebledBotState const& state = stateItr->second;
+
+        bot->InterruptNonMeleeSpells(false);
+        bot->AttackStop();
+        bot->BotStopMovement();
+
+        if (state.inactionSet)
+            ai->SetBotCommandState(BOT_COMMAND_INACTION);
+
+        if (uint32 originalNoCast = state.originalCommandState & BOT_COMMAND_MASK_NOCAST_ANY)
+            ai->SetBotCommandState(originalNoCast);
+        else
+            ai->SetBotCommandState(BOT_COMMAND_NO_CAST);
+
+        Position retreat = GetEnfeebleRetreatPosition(bot);
+        SafeBotMoveTo(bot, retreat);
+
+        scheduler.Schedule(2500ms, [this, botGuid](TaskContext)
+        {
+            Creature* bot = ObjectAccessor::GetCreature(*me, botGuid);
+            if (!bot || !bot->IsAlive() || !bot->IsNPCBot())
+                return;
+
+            if (!IsUnitSafelyAwayFromShadowNova(bot))
+                SafeBotMoveTo(bot, GetEnfeebleRetreatPosition(bot));
+        });
+
+        scheduler.Schedule(9500ms, [this, botGuid](TaskContext)
+        {
+            ReleaseEnfeebledBot(botGuid);
+            _enfeebledBots.erase(botGuid);
+        });
     }
 
     private:
         uint32 _phase;
         std::map<ObjectGuid, uint32> _enfeebleTargets;
+        std::map<ObjectGuid, EnfeebledBotState> _enfeebledBots;
 };
 
 struct npc_netherspite_infernal : public ScriptedAI

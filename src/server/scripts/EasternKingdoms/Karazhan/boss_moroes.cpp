@@ -16,10 +16,19 @@
  */
 
 #include "CreatureScript.h"
+#include "Group.h"
+#include "Map.h"
+#include "ObjectAccessor.h"
+#include "Player.h"
 #include "ScriptedCreature.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
+#include "bot_ai.h"
+#include "botmgr.h"
 #include "karazhan.h"
+
+#include <algorithm>
+#include <vector>
 
 enum Yells
 {
@@ -69,6 +78,105 @@ const uint32 GuestEntries[6] =
     17007, 19872, 19873,
     19874, 19875, 19876
 };
+
+namespace
+{
+    bool IsNPCBotUnit(Unit* unit)
+    {
+        Creature* creature = unit ? unit->ToCreature() : nullptr;
+        return creature && creature->IsNPCBot() && creature->GetBotAI();
+    }
+
+    bool IsMoroesEncounterUnit(Unit* unit, Creature const* source, float range)
+    {
+        if (!unit || !source || !source->GetMap())
+            return false;
+
+        if (!unit->IsInWorld() || !unit->IsAlive() || unit->GetMap() != source->GetMap())
+            return false;
+
+        if (unit->HasUnitState(UNIT_STATE_ISOLATED) || !unit->IsWithinDist(source, range))
+            return false;
+
+        if (unit->IsPlayer())
+            return true;
+
+        if (Creature* creature = unit->ToCreature())
+            return creature->IsNPCBot() && creature->GetBotAI();
+
+        return false;
+    }
+
+    bool ContainsGuid(std::vector<Unit*> const& units, ObjectGuid const& guid)
+    {
+        return std::any_of(units.begin(), units.end(), [guid](Unit const* unit)
+        {
+            return unit && unit->GetGUID() == guid;
+        });
+    }
+
+    void TryAddMoroesEncounterUnit(std::vector<Unit*>& units, Unit* unit, Creature* source, float range, bool requireAttackTarget = true)
+    {
+        if (!IsMoroesEncounterUnit(unit, source, range))
+            return;
+
+        if (ContainsGuid(units, unit->GetGUID()))
+            return;
+
+        if (requireAttackTarget && !source->IsValidAttackTarget(unit))
+            return;
+
+        units.push_back(unit);
+    }
+
+    std::vector<Unit*> GatherMoroesEncounterUnits(Creature* source, float range = 120.0f, bool requireAttackTarget = true)
+    {
+        std::vector<Unit*> units;
+
+        if (!source || !source->GetMap())
+            return units;
+
+        Map::PlayerList const& players = source->GetMap()->GetPlayers();
+        for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+        {
+            Player* player = itr->GetSource();
+            if (!player)
+                continue;
+
+            TryAddMoroesEncounterUnit(units, player, source, range, requireAttackTarget);
+
+            if (Group* group = player->GetGroup())
+            {
+                for (Unit* member : BotMgr::GetAllGroupMembers(group))
+                    TryAddMoroesEncounterUnit(units, member, source, range, requireAttackTarget);
+            }
+
+            if (BotMgr* botMgr = player->GetBotMgr())
+            {
+                for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+                    TryAddMoroesEncounterUnit(units, pair.second, source, range, requireAttackTarget);
+            }
+        }
+
+        return units;
+    }
+
+    Unit* SelectRandomMoroesEncounterUnit(Creature* source, float range = 100.0f)
+    {
+        std::vector<Unit*> targets = GatherMoroesEncounterUnits(source, range);
+
+        if (targets.empty())
+            return nullptr;
+
+        return targets[urand(0, targets.size() - 1)];
+    }
+
+    void RemoveGarroteFromMoroesEncounterUnits(Creature* source)
+    {
+        for (Unit* unit : GatherMoroesEncounterUnits(source, 200.0f, false))
+            unit->RemoveAurasDueToSpell(SPELL_GARROTE);
+    }
+}
 
 struct boss_moroes : public BossAI
 {
@@ -148,7 +256,8 @@ struct boss_moroes : public BossAI
             scheduler.DelayAll(9s);
             _vanished = true;
             Talk(SAY_SPECIAL);
-            DoCastSelf(SPELL_VANISH);
+            me->AddAura(SPELL_VANISH, me);
+            PerformVanishGarrote();
             me->SetImmuneToAll(true, true);
             scheduler.Schedule(5s, 7s, [this](TaskContext)
             {
@@ -160,7 +269,11 @@ struct boss_moroes : public BossAI
             context.Repeat(30s);
         }).Schedule(20s, [this](TaskContext context)
         {
-            DoCastMaxThreat(SPELL_BLIND, 1, 10.0f, true);
+            if (Unit* target = SelectMaxThreatMoroesEncounterUnit(1, 10.0f))
+            {
+                DoCast(target, SPELL_BLIND);
+            }
+
             context.Repeat(25s, 40s);
         }).Schedule(13s, [this](TaskContext context)
         {
@@ -172,9 +285,43 @@ struct boss_moroes : public BossAI
         });
     }
 
+    Unit* SelectMaxThreatMoroesEncounterUnit(uint8 threatIndex, float range)
+    {
+        std::vector<Unit*> targets = GatherMoroesEncounterUnits(me, range);
+
+        if (targets.empty())
+            return nullptr;
+
+        std::sort(targets.begin(), targets.end(), [this](Unit* left, Unit* right)
+        {
+            return DoGetThreat(left) > DoGetThreat(right);
+        });
+
+        if (threatIndex >= targets.size())
+            return nullptr;
+
+        return targets[threatIndex];
+    }
+
+    void PerformVanishGarrote()
+    {
+        Unit* target = SelectRandomMoroesEncounterUnit(me, 100.0f);
+        if (!target)
+        {
+            me->RemoveAurasDueToSpell(SPELL_VANISH);
+            return;
+        }
+
+        Position pos = target->GetFirstCollisionPosition(5.0f, M_PI);
+
+        me->CastSpell(target, SPELL_GARROTE_DUMMY, true);
+        me->RemoveAurasDueToSpell(SPELL_VANISH);
+        me->NearTeleportTo(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), target->GetOrientation());
+    }
+
     void KilledUnit(Unit* victim) override
     {
-        if (!_recentlySpoken && victim->IsPlayer())
+        if (!_recentlySpoken && (victim->IsPlayer() || IsNPCBotUnit(victim)))
         {
             Talk(SAY_KILL);
             _recentlySpoken = true;
@@ -190,6 +337,7 @@ struct boss_moroes : public BossAI
         BossAI::JustDied(killer);
         Talk(SAY_DEATH);
         instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_GARROTE);
+        RemoveGarroteFromMoroesEncounterUnits(me);
     }
 
     Creature* GetRandomGuest()

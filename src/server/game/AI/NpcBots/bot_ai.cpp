@@ -7891,18 +7891,29 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
             }
         }
         // Malchezaar's Infernals
+        static constexpr uint32 NPC_MALCHEZAAR_INFERNAL = 17646;
+        static constexpr uint32 SPELL_MALCHEZAAR_HELLFIRE = 30859;
+        static constexpr float MALCHEZAAR_INFERNAL_AVOID_RADIUS = 20.0f;
+
         std::list<Creature*> malInfernals;
-        Acore::AllCreaturesOfEntryInRange checkMalInfernal(unit, 17646, 60.f);
+        Acore::AllCreaturesOfEntryInRange checkMalInfernal(unit, NPC_MALCHEZAAR_INFERNAL, 60.f);
         Acore::CreatureListSearcher<Acore::AllCreaturesOfEntryInRange> searcherMalInfernal(unit, malInfernals, checkMalInfernal);
         Cell::VisitObjects(unit, searcherMalInfernal, 60.f);
 
         for (Creature* infernal : malInfernals)
         {
-            if (infernal)
-            {
-                float infernalRadius = DEFAULT_COMBAT_REACH + 22.0f;
-                spots.emplace_back(*infernal, infernalRadius);
-            }
+            if (!infernal || !infernal->IsAlive())
+                continue;
+
+            // Prince's infernals are intentionally not selectable after landing.
+            // Avoid once they are visible or once Hellfire is active.
+            if (infernal->GetDisplayId() != infernal->GetNativeDisplayId() && !infernal->HasAura(SPELL_MALCHEZAAR_HELLFIRE))
+                continue;
+
+            float infernalRadius = MALCHEZAAR_INFERNAL_AVOID_RADIUS
+                + infernal->GetCombatReach()
+                + (unit->GetVehicle() ? unit->GetVehicleBase()->GetCombatReach() : DEFAULT_COMBAT_REACH);
+            spots.emplace_back(*infernal, infernalRadius);
         }
     }
     // The Arcatraz — Dalliah the Doomsayer: Whirlwind avoidance
