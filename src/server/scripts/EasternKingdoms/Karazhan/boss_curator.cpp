@@ -6,18 +6,117 @@
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "CreatureScript.h"
+#include "Group.h"
+#include "Map.h"
+#include "ObjectAccessor.h"
+#include "Player.h"
 #include "ScriptedCreature.h"
+#include "bot_ai.h"
+#include "botmgr.h"
 #include "karazhan.h"
+
+#include <algorithm>
+#include <vector>
+
+namespace
+{
+    bool IsNPCBotUnit(Unit* unit)
+    {
+        Creature* creature = unit ? unit->ToCreature() : nullptr;
+        return creature && creature->IsNPCBot() && creature->GetBotAI();
+    }
+
+    bool IsCuratorEncounterUnit(Unit* unit, Creature const* source, float range)
+    {
+        if (!unit || !source || !source->GetMap())
+            return false;
+
+        if (!unit->IsInWorld() || !unit->IsAlive() || unit->GetMap() != source->GetMap())
+            return false;
+
+        if (unit->HasUnitState(UNIT_STATE_ISOLATED) || !unit->IsWithinDist(source, range))
+            return false;
+
+        if (unit->IsPlayer())
+            return true;
+
+        return IsNPCBotUnit(unit);
+    }
+
+    bool ContainsGuid(std::vector<Unit*> const& units, ObjectGuid const& guid)
+    {
+        return std::any_of(units.begin(), units.end(), [guid](Unit const* unit)
+        {
+            return unit && unit->GetGUID() == guid;
+        });
+    }
+
+    void TryAddCuratorEncounterUnit(std::vector<Unit*>& units, Unit* unit, Creature* source, float range, bool requireAttackTarget = true)
+    {
+        if (!IsCuratorEncounterUnit(unit, source, range))
+            return;
+
+        if (ContainsGuid(units, unit->GetGUID()))
+            return;
+
+        if (requireAttackTarget && !source->IsValidAttackTarget(unit))
+            return;
+
+        units.push_back(unit);
+    }
+
+    std::vector<Unit*> GatherCuratorEncounterUnits(Creature* source, float range = 120.0f, bool requireAttackTarget = true)
+    {
+        std::vector<Unit*> units;
+
+        if (!source || !source->GetMap())
+            return units;
+
+        Map::PlayerList const& players = source->GetMap()->GetPlayers();
+        for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+        {
+            Player* player = itr->GetSource();
+            if (!player)
+                continue;
+
+            TryAddCuratorEncounterUnit(units, player, source, range, requireAttackTarget);
+
+            if (Group* group = player->GetGroup())
+            {
+                for (Unit* member : BotMgr::GetAllGroupMembers(group))
+                    TryAddCuratorEncounterUnit(units, member, source, range, requireAttackTarget);
+            }
+
+            if (BotMgr* botMgr = player->GetBotMgr())
+            {
+                for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+                    TryAddCuratorEncounterUnit(units, pair.second, source, range, requireAttackTarget);
+            }
+        }
+
+        return units;
+    }
+
+    Unit* SelectRandomCuratorEncounterUnit(Creature* source, float range = 40.0f)
+    {
+        std::vector<Unit*> targets = GatherCuratorEncounterUnits(source, range);
+
+        if (targets.empty())
+            return nullptr;
+
+        return targets[urand(0, targets.size() - 1)];
+    }
+}
 
 enum Text
 {
@@ -64,7 +163,7 @@ struct boss_curator : public BossAI
 
     void KilledUnit(Unit* victim) override
     {
-        if (victim->IsPlayer())
+        if (victim && (victim->IsPlayer() || IsNPCBotUnit(victim)))
         {
             Talk(SAY_KILL);
         }
@@ -74,6 +173,25 @@ struct boss_curator : public BossAI
     {
         BossAI::JustDied(killer);
         Talk(SAY_DEATH);
+    }
+
+    Unit* SelectHatefulBoltTarget()
+    {
+        std::vector<Unit*> targets = GatherCuratorEncounterUnits(me, 45.0f);
+
+        if (targets.empty())
+            return me->GetVictim();
+
+        std::sort(targets.begin(), targets.end(), [this](Unit* left, Unit* right)
+        {
+            return DoGetThreat(left) > DoGetThreat(right);
+        });
+
+        // Hateful Bolt should prefer the second-highest threat target, matching the original MaxThreat index 1 intent.
+        if (targets.size() > 1)
+            return targets[1];
+
+        return me->GetVictim() ? me->GetVictim() : targets[0];
     }
 
     void JustEngagedWith(Unit* who) override
@@ -88,7 +206,7 @@ struct boss_curator : public BossAI
             DoCastSelf(SPELL_ASTRAL_DECONSTRUCTION, true);
         }).Schedule(10s, [this](TaskContext context)
         {
-            if (Unit* target = SelectTarget(SelectTargetMethod::MaxThreat, 1, 45.0f, true, false))
+            if (Unit* target = SelectHatefulBoltTarget())
             {
                 DoCast(target, SPELL_HATEFUL_BOLT);
             }
@@ -105,7 +223,14 @@ struct boss_curator : public BossAI
                 {
                     Talk(SAY_SUMMON);
                 }
-                DoCastSelf(RAND(SPELL_SUMMON_ASTRAL_FLARE1, SPELL_SUMMON_ASTRAL_FLARE2, SPELL_SUMMON_ASTRAL_FLARE3, SPELL_SUMMON_ASTRAL_FLARE4));
+
+                uint32 const flareSpell = RAND(SPELL_SUMMON_ASTRAL_FLARE1, SPELL_SUMMON_ASTRAL_FLARE2, SPELL_SUMMON_ASTRAL_FLARE3, SPELL_SUMMON_ASTRAL_FLARE4);
+
+                // Spawn two of the same Astral Flare at the same summon beat.
+                // Mana burn remains unchanged: one 10% mana loss per summon cycle, not one per flare.
+                DoCastSelf(flareSpell);
+                DoCastSelf(flareSpell, true);
+
                 int32 mana = CalculatePct(me->GetMaxPower(POWER_MANA), 10);
                 me->ModifyPower(POWER_MANA, -mana);
                 if (me->GetPowerPct(POWER_MANA) < 10.0f)
@@ -126,11 +251,17 @@ struct boss_curator : public BossAI
     void JustSummoned(Creature* summon) override
     {
         summons.Summon(summon);
-        if (Unit* target = summon->SelectNearbyTarget(nullptr, 40.0f))
+
+        Unit* target = SelectRandomCuratorEncounterUnit(summon, 40.0f);
+        if (!target && me->GetVictim())
+            target = me->GetVictim();
+
+        if (target)
         {
             summon->AI()->AttackStart(target);
             summon->AddThreat(target, 1000.0f);
         }
+
         summon->SetInCombatWithZone();
     }
 };

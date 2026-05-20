@@ -1,9 +1,9 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -97,24 +97,26 @@ struct boss_netherspite : public BossAI
         ClearBeamAssignments();
     }
 
-    bool IsBetween(WorldObject const* u1, WorldObject const* target, WorldObject const* u2) const // the in-line checker
+    bool IsBetween(WorldObject const* u1, WorldObject const* target, WorldObject const* u2) const
     {
         if (!u1 || !u2 || !target)
             return false;
 
-        float xn, yn, xp, yp, xh, yh;
-        xn = u1->GetPositionX();
-        yn = u1->GetPositionY();
-        xp = u2->GetPositionX();
-        yp = u2->GetPositionY();
-        xh = target->GetPositionX();
-        yh = target->GetPositionY();
+        float xn = u1->GetPositionX();
+        float yn = u1->GetPositionY();
+        float xp = u2->GetPositionX();
+        float yp = u2->GetPositionY();
+        float xh = target->GetPositionX();
+        float yh = target->GetPositionY();
 
-        // check if target is between (not checking distance from the beam yet)
-        if (dist(xn, yn, xh, yh) >= dist(xn, yn, xp, yp) || dist(xp, yp, xh, yh) >= dist(xn, yn, xp, yp))
+        float beamLength = dist(xn, yn, xp, yp);
+        if (beamLength <= 0.0f)
             return false;
-        // check  distance from the beam
-        return (std::abs((xn - xp) * yh + (yp - yn) * xh - xn * yp + xp * yn) / dist(xn, yn, xp, yp) < 1.5f);
+
+        if (dist(xn, yn, xh, yh) >= beamLength || dist(xp, yp, xh, yh) >= beamLength)
+            return false;
+
+        return (std::abs((xn - xp) * yh + (yp - yn) * xh - xn * yp + xp * yn) / beamLength < 1.5f);
     }
 
     bool IsBetween(WorldObject const* u1, Position const& target, WorldObject const* u2) const
@@ -139,7 +141,7 @@ struct boss_netherspite : public BossAI
         return (std::abs((xn - xp) * yh + (yp - yn) * xh - xn * yp + xp * yn) / beamLength < 1.5f);
     }
 
-    float dist(float xa, float ya, float xb, float yb) const // auxiliary method for distance
+    float dist(float xa, float ya, float xb, float yb) const
     {
         return std::sqrt((xa - xb) * (xa - xb) + (ya - yb) * (ya - yb));
     }
@@ -202,6 +204,9 @@ struct boss_netherspite : public BossAI
             units.push_back(unit);
         };
 
+        if (!me->GetMap())
+            return units;
+
         Map::PlayerList const& players = me->GetMap()->GetPlayers();
         for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
         {
@@ -225,6 +230,33 @@ struct boss_netherspite : public BossAI
         }
 
         return units;
+    }
+
+    Unit* SelectRandomEncounterTarget(float range, bool includeVictim = true) const
+    {
+        std::vector<Unit*> candidates;
+
+        for (Unit* unit : GatherEncounterUnits())
+        {
+            if (!unit || !unit->IsAlive())
+                continue;
+
+            if (!me->IsWithinDistInMap(unit, range))
+                continue;
+
+            if (!includeVictim && unit == me->GetVictim())
+                continue;
+
+            candidates.push_back(unit);
+        }
+
+        if (candidates.empty() && includeVictim && me->GetVictim() && me->IsWithinDistInMap(me->GetVictim(), range))
+            return me->GetVictim();
+
+        if (candidates.empty())
+            return nullptr;
+
+        return candidates[urand(0, candidates.size() - 1)];
     }
 
     bool IsNpcBotTank(Creature* bot) const
@@ -611,7 +643,6 @@ struct boss_netherspite : public BossAI
 
         if (_greenRequireManaUser && !candidates.empty())
         {
-            // No mana user exists in the eligible bot pool, so take the least-bad fallback rather than feeding Netherspite the beam.
             for (Creature* bot : candidates)
             {
                 float score = BotCommonScore(bot, GREEN_PORTAL);
@@ -1121,7 +1152,8 @@ struct boss_netherspite : public BossAI
         uint8 pos[3];
         pos[RED_PORTAL] = ((r % 2) ? (r > 1 ? 2 : 1) : 0);
         pos[GREEN_PORTAL] = ((r % 2) ? 0 : (r > 1 ? 2 : 1));
-        pos[BLUE_PORTAL] = (r > 1 ? 1 : 2); // Blue Portal not on the left side (0)
+        pos[BLUE_PORTAL] = (r > 1 ? 1 : 2);
+
         for (int i = 0; i < 3; ++i)
         {
             if (Creature* portal = me->SummonCreature(PortalID[i], PortalCoord[pos[i]][0], PortalCoord[pos[i]][1], PortalCoord[pos[i]][2], 0, TEMPSUMMON_TIMED_DESPAWN, 60000))
@@ -1132,17 +1164,15 @@ struct boss_netherspite : public BossAI
         }
     }
 
-    void UpdatePortals() // Here we handle the beams' behavior
+    void UpdatePortals()
     {
         std::vector<Unit*> encounterUnits = GatherEncounterUnits();
 
-        for (int j = 0; j < 3; ++j) // j = color
+        for (int j = 0; j < 3; ++j)
         {
             if (Creature* portal = ObjectAccessor::GetCreature(*me, PortalGUID[j]))
             {
-                // the one who's been cast upon before
                 Unit* current = ObjectAccessor::GetUnit(*portal, BeamTarget[j]);
-                // temporary store for the best suitable beam reciever
                 Unit* target = me;
                 float bestDistance = std::numeric_limits<float>::max();
                 bool currentEligible = IsEligibleBeamTarget(current, j, portal);
@@ -1175,7 +1205,6 @@ struct boss_netherspite : public BossAI
                     bestDistance = current->GetDistance2d(portal);
                 }
 
-                // get the best suitable target
                 if (!playerTargetFound)
                 {
                     for (Unit* unit : encounterUnits)
@@ -1192,35 +1221,29 @@ struct boss_netherspite : public BossAI
                     }
                 }
 
-                // buff the target
                 if (target->IsPlayer() || IsNPCBotUnit(target))
-                {
                     target->AddAura(PlayerBuff[j], target);
-                }
                 else
-                {
                     target->AddAura(NetherBuff[j], target);
-                }
-                // cast visual beam on the chosen target if switched
-                // simple target switching isn't working -> using BeamerGUID to cast (workaround)
+
                 if (!current || target != current)
                 {
                     BeamTarget[j] = target->GetGUID();
-                    // remove currently beaming portal
+
                     if (Creature* beamer = ObjectAccessor::GetCreature(*portal, BeamerGUID[j]))
                     {
                         beamer->CastSpell(target, PortalBeam[j], false);
                         beamer->DisappearAndDie();
                         BeamerGUID[j].Clear();
                     }
-                    // create new one and start beaming on the target
+
                     if (Creature* beamer = portal->SummonCreature(PortalID[j], portal->GetPositionX(), portal->GetPositionY(), portal->GetPositionZ(), portal->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN, 60000))
                     {
                         beamer->CastSpell(target, PortalBeam[j], false);
                         BeamerGUID[j] = beamer->GetGUID();
                     }
                 }
-                // aggro target if Red Beam
+
                 if (j == RED_PORTAL && me->GetVictim() != target && (target->IsPlayer() || IsNPCBotUnit(target)))
                 {
                     float threat = 100000.0f;
@@ -1248,6 +1271,7 @@ struct boss_netherspite : public BossAI
         me->RemoveAurasDueToSpell(SPELL_BANISH_VISUAL);
         SummonPortals();
         ScheduleBotDirector();
+
         scheduler.Schedule(60s, [this](TaskContext /*context*/)
         {
             if (!me->IsNonMeleeSpellCast(false))
@@ -1266,11 +1290,12 @@ struct boss_netherspite : public BossAI
             context.Repeat(90s);
         }).Schedule(15s, PORTAL_PHASE, [this](TaskContext context)
         {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 45.0f, true))
+            if (Unit* target = SelectRandomEncounterTarget(45.0f, true))
             {
                 TrackVoidZone(target->GetPosition(), 25 * IN_MILLISECONDS);
                 DoCast(target, SPELL_VOIDZONE);
             }
+
             context.Repeat(15s);
         });
     }
@@ -1280,13 +1305,10 @@ struct boss_netherspite : public BossAI
         for (int i = 0; i < 3; ++i)
         {
             if (Creature* portal = ObjectAccessor::GetCreature(*me, PortalGUID[i]))
-            {
                 portal->DisappearAndDie();
-            }
+
             if (Creature* portal = ObjectAccessor::GetCreature(*me, BeamerGUID[i]))
-            {
                 portal->DisappearAndDie();
-            }
 
             PortalGUID[i].Clear();
             BeamerGUID[i].Clear();
@@ -1314,22 +1336,22 @@ struct boss_netherspite : public BossAI
             return;
         }).Schedule(10s, BANISH_PHASE, [this](TaskContext context)
         {
-            DoCastRandomTarget(SPELL_NETHERBREATH, 0, 40.0f, true);
+            if (Unit* target = SelectRandomEncounterTarget(40.0f, true))
+            {
+                DoCast(target, SPELL_NETHERBREATH);
+            }
+
             context.Repeat(5s, 7s);
         });
 
         for (uint8 i = 0; i < 3; ++i)
-        {
             me->RemoveAurasDueToSpell(NetherBuff[i]);
-        }
     }
 
     void HandleDoors(bool open)
     {
         if (GameObject* door = ObjectAccessor::GetGameObject(*me, instance->GetGuidData(DATA_GO_MASSIVE_DOOR)))
-        {
             door->SetGoState(open ? GO_STATE_ACTIVE : GO_STATE_READY);
-        }
     }
 
     void JustEngagedWith(Unit* who) override
@@ -1338,6 +1360,7 @@ struct boss_netherspite : public BossAI
         HandleDoors(false);
         SwitchToPortalPhase(true);
         DoZoneInCombat();
+
         scheduler.Schedule(9min, [this](TaskContext /*context*/)
         {
             if (!berserk)
@@ -1369,6 +1392,7 @@ struct boss_netherspite : public BossAI
             return;
 
         scheduler.Update(diff);
+
         if (me->HasUnitState(UNIT_STATE_CASTING))
             return;
 
@@ -1377,9 +1401,9 @@ struct boss_netherspite : public BossAI
 
 private:
     bool berserk;
-    ObjectGuid PortalGUID[3]; // guid's of portals
-    ObjectGuid BeamerGUID[3]; // guid's of auxiliary beaming portals
-    ObjectGuid BeamTarget[3]; // guid's of portals' current targets
+    ObjectGuid PortalGUID[3];
+    ObjectGuid BeamerGUID[3];
+    ObjectGuid BeamTarget[3];
     ObjectGuid _beamAssignments[3];
     std::map<ObjectGuid, uint32> _scriptedBotCommandStates;
     std::vector<TimedPosition> _voidZones;

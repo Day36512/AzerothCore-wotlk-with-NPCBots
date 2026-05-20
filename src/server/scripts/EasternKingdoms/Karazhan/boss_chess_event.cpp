@@ -202,32 +202,97 @@ struct npc_echo_of_medivh : public ScriptedAI
         _instance = creature->GetInstanceScript();
     }
 
-    void Reset() override
+    void ResetBoardCells()
     {
         for (uint8 row = 0; row < MAX_ROW; ++row)
-        {
             for (uint8 col = 0; col < MAX_COL; ++col)
-            {
                 _boards[row][col].Reset();
-            }
-        }
+    }
 
-        _summons.DespawnAll();
-
-        _cheatTimer = urand(45 * IN_MILLISECONDS, 100 * IN_MILLISECONDS);
-        _assistMode = CHESS_ASSIST_GROUP;
+    void ResetCheatTimer()
+    {
+        _cheatTimer = IsSoloAssistMode() ? urand(60 * IN_MILLISECONDS, 110 * IN_MILLISECONDS) : urand(45 * IN_MILLISECONDS, 100 * IN_MILLISECONDS);
     }
 
     bool IsSoloAssistMode() const { return _assistMode == CHESS_ASSIST_SOLO; }
 
+    bool IsPlayerSidePiece(Creature const* piece) const
+    {
+        if (!piece)
+            return false;
+
+        switch (_instance->GetData(CHESS_EVENT_TEAM))
+        {
+            case TEAM_ALLIANCE:
+                return piece->GetFaction() == CHESS_FACTION_ALLIANCE;
+            case TEAM_HORDE:
+                return piece->GetFaction() == CHESS_FACTION_HORDE;
+            default:
+                return false;
+        }
+    }
+
+    bool IsSoloPlayerSidePiece(Creature const* piece) const
+    {
+        return IsSoloAssistMode() && IsPlayerSidePiece(piece);
+    }
+
+    bool IsSoloPlayer(ObjectGuid const& playerGuid) const
+    {
+        return IsSoloAssistMode() && _soloPlayerGUID && _soloPlayerGUID == playerGuid;
+    }
+
+    bool FailSoloGameIfPlayerReleasedPiece(ObjectGuid const& playerGuid)
+    {
+        if (!IsSoloPlayer(playerGuid))
+            return false;
+
+        uint32 chessPhase = _instance->GetData(DATA_CHESS_GAME_PHASE);
+        if (chessPhase != CHESS_PHASE_PVE_WARMUP && chessPhase != CHESS_PHASE_INPROGRESS_PVE)
+            return false;
+
+        me->Say("You abandon the board? Then the game is forfeit!", LANG_UNIVERSAL);
+
+        _assistMode = CHESS_ASSIST_GROUP;
+        _soloPlayerGUID.Clear();
+        _deadCount.fill(0);
+
+        _instance->SetData(DATA_CHESS_GAME_PHASE, CHESS_PHASE_FAILED);
+        _instance->SetData(DATA_CHESS_REINIT_PIECES, 0);
+        _instance->SetData(DATA_CHESS_EVENT, NOT_STARTED);
+        _instance->SetData(DATA_CHESS_GAME_PHASE, CHESS_PHASE_NOT_STARTED);
+        _instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_GAME_IN_SESSION);
+
+        _summons.DespawnAll();
+        ResetBoardCells();
+        ResetCheatTimer();
+
+        return true;
+    }
+
     void StartPveGame(Player* player, ChessAssistMode mode)
     {
         _assistMode = mode;
+        if (mode == CHESS_ASSIST_SOLO)
+            _soloPlayerGUID = player->GetGUID();
+        else
+            _soloPlayerGUID.Clear();
+
         _instance->SetData(CHESS_EVENT_TEAM, player->GetTeamId());
         _instance->SetData(DATA_CHESS_GAME_PHASE, CHESS_PHASE_PVE_WARMUP);
         SetupBoard();
         _instance->SetData(DATA_CHESS_EVENT, IN_PROGRESS);
+        ResetCheatTimer();
         Talk(TALK_EVENT_BEGIN);
+    }
+
+    void Reset() override
+    {
+        ResetBoardCells();
+        _summons.DespawnAll();
+        _assistMode = CHESS_ASSIST_GROUP;
+        _soloPlayerGUID.Clear();
+        ResetCheatTimer();
     }
 
     void JustSummoned(Creature* summon) override
@@ -1015,9 +1080,6 @@ struct npc_echo_of_medivh : public ScriptedAI
             }
         }
 
-        if (!found)
-            return false;
-
         //! Change orientation at edges
         if (orientation == ORI_SE && pieceRow == 0)
         {
@@ -1238,9 +1300,10 @@ struct npc_echo_of_medivh : public ScriptedAI
                     }
                 }
 
-                if (targetList.size() > 3)
+                uint8 maxFireTargets = IsSoloAssistMode() ? 2 : 3;
+                if (targetList.size() > maxFireTargets)
                 {
-                    Acore::Containers::RandomResize(targetList, 3);
+                    Acore::Containers::RandomResize(targetList, maxFireTargets);
                 }
 
                 for (Creature* target : targetList)
@@ -1360,7 +1423,7 @@ struct npc_echo_of_medivh : public ScriptedAI
             if (_cheatTimer <= diff)
             {
                 HandleCheat();
-                _cheatTimer = urand(45000, 100000);
+                ResetCheatTimer();
             }
             else
             {
@@ -1405,6 +1468,7 @@ struct npc_echo_of_medivh : public ScriptedAI
                 break;
             case MEDIVH_GOSSIP_RESTART:
                 _assistMode = CHESS_ASSIST_GROUP;
+                _soloPlayerGUID.Clear();
                 _instance->SetData(DATA_CHESS_GAME_PHASE, CHESS_PHASE_FAILED);
                 _instance->SetData(DATA_CHESS_REINIT_PIECES, 0);
                 _deadCount.fill(0);
@@ -1422,6 +1486,7 @@ struct npc_echo_of_medivh : public ScriptedAI
                 break;
             case MEDIVH_GOSSIP_START_PVP:
                 _assistMode = CHESS_ASSIST_GROUP;
+                _soloPlayerGUID.Clear();
                 _instance->SetData(CHESS_EVENT_TEAM, TEAM_NEUTRAL);
                 _instance->SetData(DATA_CHESS_GAME_PHASE, CHESS_PHASE_PVP_WARMUP);
                 SetupBoard();
@@ -1437,6 +1502,7 @@ private:
     InstanceScript* _instance;
     SummonList _summons;
     ChessAssistMode _assistMode;
+    ObjectGuid _soloPlayerGUID;
     std::array<std::array<BoardCell, MAX_COL>, MAX_ROW> _boards;
     std::array<uint32, 2> _deadCount;
     uint32 _cheatTimer;
@@ -1575,11 +1641,22 @@ struct npc_chesspiece : public ScriptedAI
         {
             me->SetNpcFlag(UNIT_NPC_FLAG_GOSSIP);
 
-            if (Unit* charmer = ObjectAccessor::GetUnit(*me, _charmerGUID))
+            ObjectGuid formerCharmerGUID = _charmerGUID;
+            bool soloForfeit = false;
+
+            if (Creature* medivh = ObjectAccessor::GetCreature(*me, _instance->GetGuidData(DATA_ECHO_OF_MEDIVH)))
+                soloForfeit = CAST_AI(npc_echo_of_medivh, medivh->AI())->FailSoloGameIfPlayerReleasedPiece(formerCharmerGUID);
+
+            if (Unit* charmer = ObjectAccessor::GetUnit(*me, formerCharmerGUID))
             {
                 charmer->RemoveAurasDueToSpell(SPELL_CONTROL_PIECE);
-                charmer->CastSpell(charmer, SPELL_GAME_IN_SESSION, true);
-                charmer->CastSpell(charmer, SPELL_RECENTLY_INGAME, true);
+
+                if (!soloForfeit)
+                {
+                    charmer->CastSpell(charmer, SPELL_GAME_IN_SESSION, true);
+                    charmer->CastSpell(charmer, SPELL_RECENTLY_INGAME, true);
+                }
+
                 charmer->NearTeleportTo(-11106.92f, -1843.32f, 229.626f, 4.2331f);
             }
 
@@ -1709,9 +1786,7 @@ struct npc_chesspiece : public ScriptedAI
 
             bool soloAssist = false;
             if (Creature* medivh = ObjectAccessor::GetCreature(*me, _instance->GetGuidData(DATA_ECHO_OF_MEDIVH)))
-            {
                 soloAssist = CAST_AI(npc_echo_of_medivh, medivh->AI())->IsSoloAssistMode();
-            }
 
             bool const shouldAutoMove = !raidSidePiece || soloAssist;
             bool const usePlayerSideSpellDelay = raidSidePiece && !soloAssist;
@@ -1745,7 +1820,7 @@ struct npc_chesspiece : public ScriptedAI
             {
                 if (_combatSpellTimer <= diff)
                 {
-                    _combatSpellTimer = _combatSpellTimerBase + (usePlayerSideSpellDelay ? urand(6 * IN_MILLISECONDS, 12 * IN_MILLISECONDS) : urand(3 * IN_MILLISECONDS, 6 * IN_MILLISECONDS));
+                    _combatSpellTimer = GetSoloHandicapTimer(_combatSpellTimerBase + (usePlayerSideSpellDelay ? urand(6 * IN_MILLISECONDS, 12 * IN_MILLISECONDS) : urand(3 * IN_MILLISECONDS, 6 * IN_MILLISECONDS)));
 
                     switch (me->GetEntry())
                     {
@@ -1805,7 +1880,7 @@ struct npc_chesspiece : public ScriptedAI
             {
                 if (_combatSpellTimer2 <= diff)
                 {
-                    _combatSpellTimer2 = _combatSpellTimerBase2 + (usePlayerSideSpellDelay ? urand(6 * IN_MILLISECONDS, 12 * IN_MILLISECONDS) : urand(3 * IN_MILLISECONDS, 6 * IN_MILLISECONDS));
+                    _combatSpellTimer2 = GetSoloHandicapTimer(_combatSpellTimerBase2 + (usePlayerSideSpellDelay ? urand(6 * IN_MILLISECONDS, 12 * IN_MILLISECONDS) : urand(3 * IN_MILLISECONDS, 6 * IN_MILLISECONDS)));
 
                     switch (me->GetEntry())
                     {
@@ -1867,6 +1942,30 @@ struct npc_chesspiece : public ScriptedAI
                 }
             }
         }
+    }
+
+    bool HasSoloPlayerSideHandicap() const
+    {
+        if (Creature* medivh = ObjectAccessor::GetCreature(*me, _instance->GetGuidData(DATA_ECHO_OF_MEDIVH)))
+            return CAST_AI(npc_echo_of_medivh, medivh->AI())->IsSoloPlayerSidePiece(me);
+
+        return false;
+    }
+
+    uint32 GetSoloHandicapTimer(uint32 timer) const
+    {
+        if (!HasSoloPlayerSideHandicap())
+            return timer;
+
+        uint32 reduced = CalculatePct(timer, 90);
+        return reduced ? reduced : 1;
+    }
+
+
+    void DamageTaken(Unit* /*attacker*/, uint32& damage, DamageEffectType /*damageType*/, SpellSchoolMask /*damageSchoolMask*/) override
+    {
+        if (HasSoloPlayerSideHandicap())
+            damage = CalculatePct(damage, 91);
     }
 
     void InitializeCombatSpellsByEntry()

@@ -67,6 +67,7 @@ void Addmod_item_stat_scalerScripts();
 void AddFakePlayerAmbienceScripts();
 void AddSC_shaman_custom_spell_scripts();
 void AddSC_priest_custom_spell_scripts();
+void AddSC_custom_karazhan();
 
 
 
@@ -118,4 +119,5 @@ void AddCustomScripts()
     AddFakePlayerAmbienceScripts();
     AddSC_shaman_custom_spell_scripts();
     AddSC_priest_custom_spell_scripts();
+    AddSC_custom_karazhan();
 }
