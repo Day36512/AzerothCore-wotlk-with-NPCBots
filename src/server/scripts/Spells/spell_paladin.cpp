@@ -58,6 +58,10 @@ enum PaladinSpells
     SPELL_PALADIN_AVENGING_WRATH_MARKER          = 61987,
     SPELL_PALADIN_IMMUNE_SHIELD_MARKER           = 61988,
 
+    // Custom - Hammer of Wrath usable during Avenging Wrath when this aura is active.
+    SPELL_PALADIN_HAMMER_OF_WRATH_WINGS_BONUS = 600439,
+    SPELL_PALADIN_HAMMER_OF_WRATH_WINGS_ENABLE = 600440,
+
     SPELL_PALADIN_HAND_OF_SACRIFICE              = 6940,
     SPELL_PALADIN_DIVINE_SACRIFICE               = 64205,
 
@@ -512,12 +516,13 @@ class spell_pal_avenging_wrath : public AuraScript
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo(
-        {
-            SPELL_PALADIN_SANCTIFIED_WRATH,
-            SPELL_PALADIN_SANCTIFIED_WRATH_TALENT_R1,
-            SPELL_PALADIN_AVENGING_WRATH_MARKER,
-            SPELL_PALADIN_IMMUNE_SHIELD_MARKER
-        });
+            {
+                SPELL_PALADIN_SANCTIFIED_WRATH,
+                SPELL_PALADIN_SANCTIFIED_WRATH_TALENT_R1,
+                SPELL_PALADIN_AVENGING_WRATH_MARKER,
+                SPELL_PALADIN_IMMUNE_SHIELD_MARKER,
+                SPELL_PALADIN_HAMMER_OF_WRATH_WINGS_ENABLE
+            });
     }
 
     void HandleApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
@@ -529,11 +534,17 @@ class spell_pal_avenging_wrath : public AuraScript
             int32 basepoints = sanctifiedWrathAurEff->GetAmount();
             target->CastCustomSpell(target, SPELL_PALADIN_SANCTIFIED_WRATH, &basepoints, &basepoints, nullptr, true, nullptr, sanctifiedWrathAurEff);
         }
+
+        if (target->HasAura(SPELL_PALADIN_HAMMER_OF_WRATH_WINGS_BONUS))
+            target->CastSpell(target, SPELL_PALADIN_HAMMER_OF_WRATH_WINGS_ENABLE, true);
     }
 
     void HandleRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
-        GetTarget()->RemoveAurasDueToSpell(SPELL_PALADIN_SANCTIFIED_WRATH);
+        Unit* target = GetTarget();
+
+        target->RemoveAurasDueToSpell(SPELL_PALADIN_SANCTIFIED_WRATH);
+        target->RemoveAurasDueToSpell(SPELL_PALADIN_HAMMER_OF_WRATH_WINGS_ENABLE);
     }
 
     void Register() override

@@ -277,12 +277,24 @@ public:
             //stacks
             if (Group const* gr = !IAmFree() ? master->GetGroup() : GetGroup())
             {
+                std::vector<Unit*> members = BotMgr::GetAllGroupMembers(gr);
+
+                // Safety: FindAffectedTarget() can miss custom/triggered aura layouts.
+                // If this paladin already has Beacon anywhere sensible in the group,
+                // do not randomly move it to another tank.
+                for (Unit const* member : members)
+                {
+                    if (member && member->IsInWorld() && me->GetMap() == member->FindMap() && member->IsAlive() &&
+                        HasMyBeaconOfLightAura(member))
+                        return;
+                }
+
                 std::set<Unit*> tanks;
-                for (Unit* member : BotMgr::GetAllGroupMembers(gr))
+                for (Unit* member : members)
                 {
                     if (me->GetMap() == member->FindMap() && member->IsAlive() && member->IsInCombat() && IsTank(member) &&
                         (!member->getAttackers().empty() || GetHealthPCT(member) < 90) &&
-                        !member->GetAuraEffect(SPELL_AURA_PERIODIC_TRIGGER_SPELL, SPELLFAMILY_PALADIN, 0x0, 0x1000000, 0x0, me->GetGUID()))
+                        !HasMyBeaconOfLightAura(member))
                         tanks.insert(member);
                 }
 
@@ -376,6 +388,11 @@ public:
             if (checkShieldTimer > diff || !IsSpellReady(SACRED_SHIELD_1, diff) || me->IsMounted() || Feasting() || IsCasting() || Rand() > 50)
                 return;
 
+            // Grouped Holy healers use MaintainHolyTankSupport() for Sacred Shield so the
+            // generic shield picker does not fight the tank-maintenance routine.
+            if (!IAmFree() && GetSpec() == BOT_SPEC_PALADIN_HOLY && HasRole(BOT_ROLE_HEAL))
+                return;
+
             checkShieldTimer = 3000;
 
             if (IsTank())
@@ -386,7 +403,7 @@ public:
             else if (!HasRole(BOT_ROLE_HEAL) && Rand() > 35)
                 return;
 
-            if (IAmFree() && (me->IsInCombat() || !me->getAttackers().empty()) && me->GetAuraEffect(SPELL_AURA_DUMMY, SPELLFAMILY_PALADIN, 0x0, 0x80000, 0x0, me->GetGUID()))
+            if (IAmFree() && (me->IsInCombat() || !me->getAttackers().empty()) && HasMySacredShieldLikeAura(me))
                 return;
 
             if (Unit const* shielded = FindAffectedTarget(GetSpell(SACRED_SHIELD_1), me->GetGUID(), 80, 3))
@@ -399,15 +416,15 @@ public:
             {
                 Unit* u = master;
                 if (u->IsAlive() && u->IsInCombat() && (IAmFree() || IsTank(u)) && me->GetDistance(u) < 40 &&
-                    !u->GetAuraEffect(SPELL_AURA_DUMMY, SPELLFAMILY_PALADIN, 0x0, 0x80000, 0x0))
+                    !HasSacredShieldLikeAura(u))
                     target = u;
 
                 if (!target && IsWanderer())
                 {
                     std::list<Unit*> targets;
                     GetNearbyFriendlyTargetsList(targets, 40.0f);
-                    std::erase_if(targets, [](Unit const* unit) {
-                        return (!unit->IsInCombat() && unit->getAttackers().empty()) || unit->GetAuraEffect(SPELL_AURA_DUMMY, SPELLFAMILY_PALADIN, 0x0, 0x80000, 0x0);
+                    std::erase_if(targets, [this](Unit const* unit) {
+                        return (!unit->IsInCombat() && unit->getAttackers().empty()) || HasSacredShieldLikeAura(unit);
                         });
                     if (!targets.empty())
                         target = targets.size() == 1 ? targets.front() : Bcore::Containers::SelectRandomContainerElement(targets);
@@ -415,7 +432,7 @@ public:
 
                 if (!target && !IAmFree())
                 {
-                    if (IsTank() && me->IsInCombat() && !me->getAttackers().empty() && !me->GetAuraEffect(SPELL_AURA_DUMMY, SPELLFAMILY_PALADIN, 0x0, 0x80000, 0x0))
+                    if (IsTank() && me->IsInCombat() && !me->getAttackers().empty() && !HasSacredShieldLikeAura(me))
                         target = me;
                     else
                     {
@@ -424,7 +441,7 @@ public:
                             u = bot;
                             if (!u || !u->IsInWorld() || me->GetMap() != u->FindMap() || !u->IsAlive() || !u->IsInCombat() ||
                                 u->getAttackers().empty() || u->ToCreature()->IsTempBot() || me->GetDistance(u) > 40 ||
-                                u->GetAuraEffect(SPELL_AURA_DUMMY, SPELLFAMILY_PALADIN, 0x0, 0x80000, 0x0))
+                                HasSacredShieldLikeAura(u))
                                 continue;
 
                             target = u;
@@ -444,7 +461,7 @@ public:
                 {
                     if (!member->IsInWorld() || me->GetMap() != member->FindMap() || !member->IsAlive() || !member->IsInCombat() ||
                         member->getAttackers().empty() || (member->IsNPCBot() && member->ToCreature()->IsTempBot()) || me->GetDistance(member) > 40 ||
-                        member->GetAuraEffect(SPELL_AURA_DUMMY, SPELLFAMILY_PALADIN, 0x0, 0x80000, 0x0))
+                        HasSacredShieldLikeAura(member))
                         continue;
 
                     if (IsTank(member))
@@ -501,7 +518,7 @@ public:
                 }
 
                 if (!target && master->IsInCombat() && !master->getAttackers().empty() && me->GetDistance(master) < 40 &&
-                    !master->GetAuraEffect(SPELL_AURA_DUMMY, SPELLFAMILY_PALADIN, 0x0, 0x80000, 0x0))
+                    !HasSacredShieldLikeAura(master))
                     target = master;
             }
 
@@ -537,7 +554,7 @@ public:
                         if (!(i == 0 ? member->IsPlayer() : member->IsNPCBot()) || me->GetMap() != member->FindMap() ||
                             !member->IsAlive() || !member->IsInCombat() || me->GetDistance(member) > 30 || IsTank(member) ||
                             (member->IsNPCBot() && member->ToCreature()->IsTempBot()) ||
-                            member->GetAuraEffect(SPELL_AURA_DUMMY, SPELLFAMILY_PALADIN, 0x0, 0x80000, 0x0))
+                            HasSacredShieldLikeAura(member))
                             continue;
                         if (HOPTarget(member))
                             return;
@@ -1447,9 +1464,54 @@ public:
             return false;
         }
 
+        bool HasMyBeaconOfLightAura(Unit const* target) const
+        {
+            if (!target)
+                return false;
+
+            ObjectGuid const casterGuid = me->GetGUID();
+
+            if (uint32 beacon = GetSpell(BEACON_OF_LIGHT_1))
+                if (target->GetAura(beacon, casterGuid))
+                    return true;
+
+            return target->GetAuraEffect(SPELL_AURA_PERIODIC_TRIGGER_SPELL, SPELLFAMILY_PALADIN, 0x0, 0x1000000, 0x0, casterGuid);
+        }
+
+        bool HasMySacredShieldLikeAura(Unit const* target) const
+        {
+            if (!target)
+                return false;
+
+            auto const casterGuid = me->GetGUID();
+
+            if (uint32 sacredShield = GetSpell(SACRED_SHIELD_1))
+                if (target->GetAura(sacredShield, casterGuid))
+                    return true;
+
+            if (target->GetAura(SACRED_SHIELD_AURA_R1, casterGuid) ||
+                target->GetAura(SACRED_SHIELD_AURA_R2, casterGuid) ||
+                target->GetAura(SACRED_SHIELD_AURA_R3, casterGuid))
+                return true;
+
+            return target->GetAuraEffect(SPELL_AURA_DUMMY, SPELLFAMILY_PALADIN, 0x0, 0x80000, 0x0, casterGuid);
+        }
+
         bool HasSacredShieldLikeAura(Unit const* target) const
         {
-            return target && target->GetAuraEffect(SPELL_AURA_DUMMY, SPELLFAMILY_PALADIN, 0x0, 0x80000, 0x0);
+            if (!target)
+                return false;
+
+            if (uint32 sacredShield = GetSpell(SACRED_SHIELD_1))
+                if (target->HasAura(sacredShield))
+                    return true;
+
+            if (target->HasAura(SACRED_SHIELD_AURA_R1) ||
+                target->HasAura(SACRED_SHIELD_AURA_R2) ||
+                target->HasAura(SACRED_SHIELD_AURA_R3))
+                return true;
+
+            return target->GetAuraEffect(SPELL_AURA_DUMMY, SPELLFAMILY_PALADIN, 0x0, 0x80000, 0x0);
         }
 
         bool TargetNeedsJudgementsOfTheJust(Unit const* target) const
@@ -1693,6 +1755,9 @@ public:
                     return isPrePullHostile(nearby);
                 };
 
+            bool keepExistingBeacon = GetSpell(BEACON_OF_LIGHT_1) &&
+                FindAffectedTarget(GetSpell(BEACON_OF_LIGHT_1), me->GetGUID(), 80, 3);
+
             auto trySupportTank = [&](Unit* member) -> bool
                 {
                     if (!member || member == me || !member->IsAlive() || me->GetMap() != member->FindMap())
@@ -1714,13 +1779,20 @@ public:
                         return false;
 
                     // Beacon first. Holy paladins should not discover the tank exists only after the pull.
+                    // But Beacon is exclusive per paladin: if one valid support tank already has *my* Beacon,
+                    // do not bounce it to another tank every support tick.
                     if (uint32 BEACON_OF_LIGHT = GetSpell(BEACON_OF_LIGHT_1))
                     {
-                        if (IsSpellReady(BEACON_OF_LIGHT_1, diff) &&
-                            !member->GetAuraEffect(SPELL_AURA_PERIODIC_TRIGGER_SPELL, SPELLFAMILY_PALADIN, 0x0, 0x1000000, 0x0, me->GetGUID()))
+                        if (!keepExistingBeacon && IsSpellReady(BEACON_OF_LIGHT_1, diff) &&
+                            !HasMyBeaconOfLightAura(member))
                         {
                             if (doCast(member, BEACON_OF_LIGHT))
+                            {
+                                keepExistingBeacon = true;
+                                checkBeaconTimer = 5000;
+                                holySupportTimer = 3000;
                                 return true;
+                            }
                         }
                     }
 
@@ -1728,10 +1800,16 @@ public:
                     if (uint32 SACRED_SHIELD = GetSpell(SACRED_SHIELD_1))
                     {
                         if (IsSpellReady(SACRED_SHIELD_1, diff) &&
-                            !member->GetAuraEffect(SPELL_AURA_DUMMY, SPELLFAMILY_PALADIN, 0x0, 0x80000, 0x0))
+                            !HasSacredShieldLikeAura(member))
                         {
                             if (doCast(member, SACRED_SHIELD))
+                            {
+                                // Safety throttle: if a custom rank fails to leave the expected aura
+                                // immediately, do not machine-gun Sacred Shield every support tick.
+                                holySupportTimer = 6000;
+                                checkShieldTimer = 6000;
                                 return true;
+                            }
                         }
                     }
 
@@ -1741,12 +1819,40 @@ public:
             if (Group const* gr = master->GetGroup())
             {
                 std::vector<Unit*> members = BotMgr::GetAllGroupMembers(gr);
+
+                for (Unit const* member : members)
+                {
+                    if (member && member != me && member->IsInWorld() && member->IsAlive() &&
+                        me->GetMap() == member->FindMap() && me->GetDistance(member) <= HOLY_SUPPORT_RANGE &&
+                        isSupportTank(member) && HasMyBeaconOfLightAura(member))
+                    {
+                        keepExistingBeacon = true;
+                        break;
+                    }
+                }
+
                 for (Unit* member : members)
                     if (trySupportTank(member))
                         return true;
             }
             else
             {
+                for (auto const& [_, bot] : *master->GetBotMgr()->GetBotMap())
+                {
+                    if (bot && bot != me && bot->IsInWorld() && bot->IsAlive() &&
+                        me->GetMap() == bot->FindMap() && me->GetDistance(bot) <= HOLY_SUPPORT_RANGE &&
+                        isSupportTank(bot) && HasMyBeaconOfLightAura(bot))
+                    {
+                        keepExistingBeacon = true;
+                        break;
+                    }
+                }
+
+                if (!keepExistingBeacon && master && master->IsInWorld() && master->IsAlive() &&
+                    me->GetMap() == master->FindMap() && me->GetDistance(master) <= HOLY_SUPPORT_RANGE &&
+                    isSupportTank(master) && HasMyBeaconOfLightAura(master))
+                    keepExistingBeacon = true;
+
                 for (auto const& [_, bot] : *master->GetBotMgr()->GetBotMap())
                     if (trySupportTank(bot))
                         return true;

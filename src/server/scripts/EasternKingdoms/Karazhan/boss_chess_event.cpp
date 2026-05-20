@@ -32,9 +32,16 @@
 
 enum EchoOfMedivhGossipOptions
 {
-    MEDIVH_GOSSIP_START_PVE = 1,
+    MEDIVH_GOSSIP_START_PVE_SOLO = 1,
+    MEDIVH_GOSSIP_START_PVE_GROUP,
     MEDIVH_GOSSIP_RESTART,
     MEDIVH_GOSSIP_START_PVP
+};
+
+enum ChessAssistMode
+{
+    CHESS_ASSIST_GROUP = 0,
+    CHESS_ASSIST_SOLO  = 1
 };
 
 enum KarazhanChessSpells
@@ -190,7 +197,7 @@ enum ChessPieceSearchType
 
 struct npc_echo_of_medivh : public ScriptedAI
 {
-    npc_echo_of_medivh(Creature* creature) : ScriptedAI(creature), _summons(me)
+    npc_echo_of_medivh(Creature* creature) : ScriptedAI(creature), _summons(me), _assistMode(CHESS_ASSIST_GROUP)
     {
         _instance = creature->GetInstanceScript();
     }
@@ -208,6 +215,19 @@ struct npc_echo_of_medivh : public ScriptedAI
         _summons.DespawnAll();
 
         _cheatTimer = urand(45 * IN_MILLISECONDS, 100 * IN_MILLISECONDS);
+        _assistMode = CHESS_ASSIST_GROUP;
+    }
+
+    bool IsSoloAssistMode() const { return _assistMode == CHESS_ASSIST_SOLO; }
+
+    void StartPveGame(Player* player, ChessAssistMode mode)
+    {
+        _assistMode = mode;
+        _instance->SetData(CHESS_EVENT_TEAM, player->GetTeamId());
+        _instance->SetData(DATA_CHESS_GAME_PHASE, CHESS_PHASE_PVE_WARMUP);
+        SetupBoard();
+        _instance->SetData(DATA_CHESS_EVENT, IN_PROGRESS);
+        Talk(TALK_EVENT_BEGIN);
     }
 
     void JustSummoned(Creature* summon) override
@@ -995,6 +1015,9 @@ struct npc_echo_of_medivh : public ScriptedAI
             }
         }
 
+        if (!found)
+            return false;
+
         //! Change orientation at edges
         if (orientation == ORI_SE && pieceRow == 0)
         {
@@ -1036,7 +1059,7 @@ struct npc_echo_of_medivh : public ScriptedAI
         {
             if (Creature* target = GetHostileTargetForChangeFacing(piece, orientation))
             {
-                CastChangeFacing(me, target);
+                CastChangeFacing(piece, target);
                 return true;
             }
         }
@@ -1065,7 +1088,7 @@ struct npc_echo_of_medivh : public ScriptedAI
                 switch (urand(0, 2))
                 {
                     case 0:
-                        if ((me->GetEntry() == NPC_QUEEN_A || me->GetEntry() == NPC_QUEEN_H))
+                        if ((piece->GetEntry() == NPC_QUEEN_A || piece->GetEntry() == NPC_QUEEN_H))
                         {
                             randomCol -= irand(1, 2);
                         }
@@ -1075,7 +1098,7 @@ struct npc_echo_of_medivh : public ScriptedAI
                         }
                         break;
                     case 1:
-                        if ((me->GetEntry() == NPC_QUEEN_A || me->GetEntry() == NPC_QUEEN_H))
+                        if ((piece->GetEntry() == NPC_QUEEN_A || piece->GetEntry() == NPC_QUEEN_H))
                         {
                             randomCol += irand(1, 2);
                         }
@@ -1085,11 +1108,11 @@ struct npc_echo_of_medivh : public ScriptedAI
                         }
                         break;
                     case 2:
-                        if ((me->GetEntry() == NPC_QUEEN_A || me->GetEntry() == NPC_QUEEN_H))
+                        if ((piece->GetEntry() == NPC_QUEEN_A || piece->GetEntry() == NPC_QUEEN_H))
                         {
                             randomRow += (orientation == ORI_SE) ? irand(-2, 0) : irand(0, 2);
                         }
-                        else if ((me->GetEntry() == NPC_KNIGHT_A || me->GetEntry() == NPC_KNIGHT_H) && urand(0, 1))
+                        else if ((piece->GetEntry() == NPC_KNIGHT_A || piece->GetEntry() == NPC_KNIGHT_H) && urand(0, 1))
                         {
                             randomRow += (orientation == ORI_SE) ? -1 : 1;
                         }
@@ -1118,7 +1141,7 @@ struct npc_echo_of_medivh : public ScriptedAI
                 switch (urand(0, 2))
                 {
                     case 0:
-                        if ((me->GetEntry() == NPC_QUEEN_A || me->GetEntry() == NPC_QUEEN_H))
+                        if ((piece->GetEntry() == NPC_QUEEN_A || piece->GetEntry() == NPC_QUEEN_H))
                         {
                             randomRow -= irand(1, 2);
                         }
@@ -1128,7 +1151,7 @@ struct npc_echo_of_medivh : public ScriptedAI
                         }
                         break;
                     case 1:
-                        if ((me->GetEntry() == NPC_QUEEN_A || me->GetEntry() == NPC_QUEEN_H))
+                        if ((piece->GetEntry() == NPC_QUEEN_A || piece->GetEntry() == NPC_QUEEN_H))
                         {
                             randomRow += irand(1, 2);
                         }
@@ -1138,11 +1161,11 @@ struct npc_echo_of_medivh : public ScriptedAI
                         }
                         break;
                     case 2:
-                        if ((me->GetEntry() == NPC_QUEEN_A || me->GetEntry() == NPC_QUEEN_H))
+                        if ((piece->GetEntry() == NPC_QUEEN_A || piece->GetEntry() == NPC_QUEEN_H))
                         {
                             randomCol += (orientation == ORI_SW) ? irand(-2, 0) : irand(0, 2);
                         }
-                        else if ((me->GetEntry() == NPC_KNIGHT_A || me->GetEntry() == NPC_KNIGHT_H) && urand(0, 1))
+                        else if ((piece->GetEntry() == NPC_KNIGHT_A || piece->GetEntry() == NPC_KNIGHT_H) && urand(0, 1))
                         {
                             randomCol += (orientation == ORI_SW) ? -1 : 1;
                         }
@@ -1352,7 +1375,8 @@ struct npc_echo_of_medivh : public ScriptedAI
         switch (chessPhase)
         {
             case CHESS_PHASE_NOT_STARTED:
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "We want to play a game against you!", GOSSIP_SENDER_MAIN, MEDIVH_GOSSIP_START_PVE);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Play against Medivh. (Solo mode: allied pieces assist me.)", GOSSIP_SENDER_MAIN, MEDIVH_GOSSIP_START_PVE_SOLO);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Play against Medivh. (Group mode: players control allied pieces.)", GOSSIP_SENDER_MAIN, MEDIVH_GOSSIP_START_PVE_GROUP);
                 break;
             case CHESS_PHASE_INPROGRESS_PVE:
             case CHESS_PHASE_INPROGRESS_PVP:
@@ -1368,21 +1392,19 @@ struct npc_echo_of_medivh : public ScriptedAI
 
     void sGossipSelect(Player* player, uint32 /*sender*/, uint32 gossipListId) override
     {
-        uint32 chessPhase = _instance->GetData(DATA_CHESS_GAME_PHASE);
-        _instance->SetData(CHESS_EVENT_TEAM, chessPhase < CHESS_PHASE_PVE_FINISHED ? player->GetTeamId() : TEAM_NEUTRAL);
-
         CloseGossipMenuFor(player);
 
         uint32 const action = player->PlayerTalkClass->GetGossipOptionAction(gossipListId);
         switch (action)
         {
-            case MEDIVH_GOSSIP_START_PVE:
-                _instance->SetData(DATA_CHESS_GAME_PHASE, CHESS_PHASE_PVE_WARMUP);
-                SetupBoard();
-                _instance->SetData(DATA_CHESS_EVENT, IN_PROGRESS);
-                Talk(TALK_EVENT_BEGIN);
+            case MEDIVH_GOSSIP_START_PVE_SOLO:
+                StartPveGame(player, CHESS_ASSIST_SOLO);
+                break;
+            case MEDIVH_GOSSIP_START_PVE_GROUP:
+                StartPveGame(player, CHESS_ASSIST_GROUP);
                 break;
             case MEDIVH_GOSSIP_RESTART:
+                _assistMode = CHESS_ASSIST_GROUP;
                 _instance->SetData(DATA_CHESS_GAME_PHASE, CHESS_PHASE_FAILED);
                 _instance->SetData(DATA_CHESS_REINIT_PIECES, 0);
                 _deadCount.fill(0);
@@ -1399,6 +1421,8 @@ struct npc_echo_of_medivh : public ScriptedAI
                 _instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_GAME_IN_SESSION);
                 break;
             case MEDIVH_GOSSIP_START_PVP:
+                _assistMode = CHESS_ASSIST_GROUP;
+                _instance->SetData(CHESS_EVENT_TEAM, TEAM_NEUTRAL);
                 _instance->SetData(DATA_CHESS_GAME_PHASE, CHESS_PHASE_PVP_WARMUP);
                 SetupBoard();
                 _instance->SetData(DATA_CHESS_EVENT, SPECIAL);
@@ -1412,6 +1436,7 @@ struct npc_echo_of_medivh : public ScriptedAI
 private:
     InstanceScript* _instance;
     SummonList _summons;
+    ChessAssistMode _assistMode;
     std::array<std::array<BoardCell, MAX_COL>, MAX_ROW> _boards;
     std::array<uint32, 2> _deadCount;
     uint32 _cheatTimer;
@@ -1430,18 +1455,6 @@ struct npc_chesspiece : public ScriptedAI
 
         InitializeCombatSpellsByEntry();
 
-        switch (_instance->GetData(CHESS_EVENT_TEAM))
-        {
-            case TEAM_ALLIANCE:
-                _teamControlledByRaid = me->GetFaction() == CHESS_FACTION_ALLIANCE;
-                break;
-            case TEAM_HORDE:
-                _teamControlledByRaid = me->GetFaction() == CHESS_FACTION_HORDE;
-                break;
-            case TEAM_NEUTRAL:
-                _teamControlledByRaid = true;
-                break;
-        }
     }
 
     void Reset() override
@@ -1680,20 +1693,30 @@ struct npc_chesspiece : public ScriptedAI
 
         if (!me->IsCharmed())
         {
+            bool raidSidePiece = false;
             switch (_instance->GetData(CHESS_EVENT_TEAM))
             {
                 case TEAM_ALLIANCE:
-                    _teamControlledByRaid = me->GetFaction() == CHESS_FACTION_ALLIANCE;
+                    raidSidePiece = me->GetFaction() == CHESS_FACTION_ALLIANCE;
                     break;
                 case TEAM_HORDE:
-                    _teamControlledByRaid = me->GetFaction() == CHESS_FACTION_HORDE;
+                    raidSidePiece = me->GetFaction() == CHESS_FACTION_HORDE;
                     break;
                 case TEAM_NEUTRAL:
-                    _teamControlledByRaid = false;
+                    raidSidePiece = false;
                     break;
             }
 
-            if (!_teamControlledByRaid)
+            bool soloAssist = false;
+            if (Creature* medivh = ObjectAccessor::GetCreature(*me, _instance->GetGuidData(DATA_ECHO_OF_MEDIVH)))
+            {
+                soloAssist = CAST_AI(npc_echo_of_medivh, medivh->AI())->IsSoloAssistMode();
+            }
+
+            bool const shouldAutoMove = !raidSidePiece || soloAssist;
+            bool const usePlayerSideSpellDelay = raidSidePiece && !soloAssist;
+
+            if (shouldAutoMove)
             {
                 if (_nextMoveTimer)
                 {
@@ -1722,7 +1745,7 @@ struct npc_chesspiece : public ScriptedAI
             {
                 if (_combatSpellTimer <= diff)
                 {
-                    _combatSpellTimer = _combatSpellTimerBase + (_teamControlledByRaid ? urand(6 * IN_MILLISECONDS, 12 * IN_MILLISECONDS) : urand(3 * IN_MILLISECONDS, 6 * IN_MILLISECONDS));
+                    _combatSpellTimer = _combatSpellTimerBase + (usePlayerSideSpellDelay ? urand(6 * IN_MILLISECONDS, 12 * IN_MILLISECONDS) : urand(3 * IN_MILLISECONDS, 6 * IN_MILLISECONDS));
 
                     switch (me->GetEntry())
                     {
@@ -1782,7 +1805,7 @@ struct npc_chesspiece : public ScriptedAI
             {
                 if (_combatSpellTimer2 <= diff)
                 {
-                    _combatSpellTimer2 = _combatSpellTimerBase2 + (_teamControlledByRaid ? urand(6 * IN_MILLISECONDS, 12 * IN_MILLISECONDS) : urand(3 * IN_MILLISECONDS, 6 * IN_MILLISECONDS));
+                    _combatSpellTimer2 = _combatSpellTimerBase2 + (usePlayerSideSpellDelay ? urand(6 * IN_MILLISECONDS, 12 * IN_MILLISECONDS) : urand(3 * IN_MILLISECONDS, 6 * IN_MILLISECONDS));
 
                     switch (me->GetEntry())
                     {
@@ -2046,7 +2069,6 @@ private:
 
     KarazhanChessOrientationType _currentOrientation;
 
-    bool _teamControlledByRaid;
     Position _homePosition;
 };
 

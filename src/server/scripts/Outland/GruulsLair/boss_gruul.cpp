@@ -16,12 +16,23 @@
  */
 
 #include "CreatureScript.h"
+#include "Cell.h"
+#include "CellImpl.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
+#include "ObjectAccessor.h"
 #include "PassiveAI.h"
 #include "ScriptedCreature.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "gruuls_lair.h"
 #include "SpellAuraEffects.h"
+#include "bot_ai.h"
+
+#include <algorithm>
+#include <cmath>
+#include <list>
+#include <vector>
 
 enum Yells
 {
@@ -58,7 +69,352 @@ enum Spells
 
     SPELL_SHATTER_EFFECT                = 33671,
     SPELL_STONED                        = 33652,
+
+    // Bot support
+    SPELL_SWIFTNESS_POTION              = 2379,
 };
+
+namespace GruulBotDirector
+{
+    // Gruul's Ground Slam applies a heavy slow, so bots cannot wait until the slam lands.
+    // They need to begin spreading before the cast and they need more padding than the
+    // bare minimum Shatter radius, especially when many bots are present.
+    constexpr float SHATTER_MIN_DIST = 18.0f;
+    constexpr float RANGED_SPREAD_RADIUS = 42.0f;
+    constexpr float MELEE_SPREAD_RADIUS = 31.0f;
+    constexpr float TANK_SPREAD_RADIUS = 23.0f;
+    constexpr float ARRIVED_DISTANCE_2D = 2.25f;
+    constexpr float MAX_DIRECTED_MOVE_DISTANCE = 95.0f;
+    constexpr uint32 SPREAD_TICK_INTERVAL_MS = 500;
+    constexpr uint32 PRE_SLAM_SPREAD_LEAD_MS = 8000;
+    constexpr uint32 GROUND_SLAM_TO_SHATTER_MS = 9700;
+    constexpr float TWO_PI = 6.28318530717958647692f;
+
+    struct BotSpreadRecord
+    {
+        ObjectGuid Guid;
+        Position Destination;
+        uint32 OriginalCommandState = 0;
+        bool IsHealer = false;
+        bool NoCastApplied = false;
+    };
+
+    struct BotRoleGroups
+    {
+        std::vector<Creature*> MainTanks;
+        std::vector<Creature*> OffTanks;
+        std::vector<Creature*> Melee;
+        std::vector<Creature*> Ranged;
+        std::vector<Creature*> Healers;
+    };
+
+    bool IsEncounterNPCBot(Creature* boss, Unit* unit)
+    {
+        if (!boss || !unit || !unit->IsAlive() || !unit->IsInWorld() || unit->GetMap() != boss->GetMap())
+            return false;
+
+        if (!unit->IsNPCBot())
+            return false;
+
+        Creature* bot = unit->ToCreature();
+        if (!bot || !bot->GetBotAI())
+            return false;
+
+        return boss->IsWithinDistInMap(bot, 120.0f);
+    }
+
+    void SortByGuid(std::vector<Creature*>& bots)
+    {
+        std::sort(bots.begin(), bots.end(), [](Creature const* left, Creature const* right)
+        {
+            return left->GetGUID() < right->GetGUID();
+        });
+    }
+
+    void SafeBotMoveTo(Creature* bot, Position const& dest)
+    {
+        if (!bot || !bot->IsAlive() || !bot->IsNPCBot())
+            return;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai)
+            return;
+
+        float x = dest.GetPositionX();
+        float y = dest.GetPositionY();
+        float z = dest.GetPositionZ();
+
+        if (!bot->CanFly())
+            bot->UpdateAllowedPositionZ(x, y, z);
+
+        if (bot->GetExactDist(x, y, z) > MAX_DIRECTED_MOVE_DISTANCE)
+            return;
+
+        if (!bot->IsWithinLOS(x, y, z))
+            return;
+
+        Position finalPos;
+        finalPos.Relocate(x, y, z, dest.GetOrientation());
+        ai->MoveToSendPosition(finalPos);
+    }
+
+    void CastBotSwiftnessPotion(Creature* bot)
+    {
+        if (!bot || !bot->IsAlive() || !bot->IsNPCBot())
+            return;
+
+        // Forced encounter helper. This does not require inventory consumption and is only
+        // used during Gruul's pre-slam spread window so bots can beat the Ground Slam slow.
+        bot->CastSpell(bot, SPELL_SWIFTNESS_POTION, true);
+    }
+
+    float GetRingRadius(float baseRadius, float maxRadius, size_t count)
+    {
+        if (count <= 1)
+            return baseRadius;
+
+        float const neededRadius = SHATTER_MIN_DIST / (2.0f * std::sin((TWO_PI * 0.5f) / float(count)));
+        return std::min(maxRadius, std::max(baseRadius, neededRadius));
+    }
+
+    void BuildCircleNodes(Position const& center, float radius, size_t count, std::vector<Position>& out, float startAngle)
+    {
+        out.clear();
+        if (!count)
+            return;
+
+        float angle = Position::NormalizeOrientation(startAngle);
+        float const step = TWO_PI / float(count);
+
+        for (size_t i = 0; i < count; ++i)
+        {
+            float const x = center.GetPositionX() + radius * std::cos(angle);
+            float const y = center.GetPositionY() + radius * std::sin(angle);
+            float const orientation = Position::NormalizeOrientation(std::atan2(center.GetPositionY() - y, center.GetPositionX() - x));
+
+            Position node;
+            node.Relocate(x, y, center.GetPositionZ(), orientation);
+            out.push_back(node);
+
+            angle = Position::NormalizeOrientation(angle + step);
+        }
+    }
+
+    BotRoleGroups CollectNearbyNPCBots(Creature* boss)
+    {
+        BotRoleGroups groups;
+        if (!boss)
+            return groups;
+
+        std::list<Unit*> nearby;
+        Acore::AnyUnitInObjectRangeCheck check(boss, 120.0f);
+        Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(boss, nearby, check);
+        Cell::VisitObjects(boss, searcher, 120.0f);
+
+        for (Unit* unit : nearby)
+        {
+            if (!IsEncounterNPCBot(boss, unit))
+                continue;
+
+            Creature* bot = unit->ToCreature();
+            bot_ai* ai = bot ? bot->GetBotAI() : nullptr;
+            if (!ai)
+                continue;
+
+            bool const isOffTank = ai->IsOffTank() || ai->HasRole(BOT_ROLE_TANK_OFF);
+            bool const isTank = isOffTank || ai->IsTank() || ai->HasRole(BOT_ROLE_TANK);
+
+            if (isTank)
+            {
+                if (isOffTank)
+                    groups.OffTanks.push_back(bot);
+                else
+                    groups.MainTanks.push_back(bot);
+            }
+            else if (ai->HasRole(BOT_ROLE_HEAL))
+                groups.Healers.push_back(bot);
+            else if (ai->HasRole(BOT_ROLE_RANGED))
+                groups.Ranged.push_back(bot);
+            else
+                groups.Melee.push_back(bot);
+        }
+
+        SortByGuid(groups.MainTanks);
+        SortByGuid(groups.OffTanks);
+        SortByGuid(groups.Melee);
+        SortByGuid(groups.Ranged);
+        SortByGuid(groups.Healers);
+
+        return groups;
+    }
+
+    class ShatterSpreadDirector
+    {
+    public:
+        void Start(Creature* boss, Position const& center)
+        {
+            StopAndRestore(boss);
+
+            _center = center;
+            _active = true;
+            _tickTimer = 0;
+            BuildAssignments(boss);
+            SpreadTick(boss);
+        }
+
+        void Update(Creature* boss, uint32 diff)
+        {
+            if (!_active)
+                return;
+
+            if (!boss || !boss->IsAlive() || !boss->IsInCombat())
+            {
+                StopAndRestore(boss);
+                return;
+            }
+
+            if (_tickTimer > diff)
+            {
+                _tickTimer -= diff;
+                return;
+            }
+
+            _tickTimer = SPREAD_TICK_INTERVAL_MS;
+            SpreadTick(boss);
+        }
+
+        void StopAndRestore(Creature* boss)
+        {
+            if (!_active && _assignments.empty())
+                return;
+
+            for (BotSpreadRecord const& record : _assignments)
+            {
+                Creature* bot = boss ? ObjectAccessor::GetCreature(*boss, record.Guid) : nullptr;
+                if (!bot || !bot->IsNPCBot())
+                    continue;
+
+                bot_ai* ai = bot->GetBotAI();
+                if (!ai)
+                    continue;
+
+                if (!(record.OriginalCommandState & BOT_COMMAND_STAY))
+                    ai->RemoveBotCommandState(BOT_COMMAND_STAY);
+
+                if (!(record.OriginalCommandState & BOT_COMMAND_INACTION))
+                    ai->RemoveBotCommandState(BOT_COMMAND_INACTION);
+
+                if (record.NoCastApplied && !(record.OriginalCommandState & BOT_COMMAND_MASK_NOCAST_ANY))
+                    ai->RemoveBotCommandState(BOT_COMMAND_MASK_NOCAST_ANY);
+
+                if (!bot->IsAlive())
+                    continue;
+
+                if (boss && boss->IsAlive() && boss->IsEngaged() && boss->GetVictim() && bot->IsInMap(boss))
+                {
+                    ai->SetBotCommandState(BOT_COMMAND_ATTACK);
+                    ai->AttackStart(boss);
+                }
+                else if (!ai->IAmFree())
+                    ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+            }
+
+            _assignments.clear();
+            _active = false;
+            _tickTimer = 0;
+        }
+
+    private:
+        void AddAssignments(std::vector<Creature*> const& bots, float radius, float startAngle)
+        {
+            if (bots.empty())
+                return;
+
+            std::vector<Position> nodes;
+            BuildCircleNodes(_center, radius, bots.size(), nodes, startAngle);
+
+            for (size_t i = 0; i < bots.size(); ++i)
+            {
+                Creature* bot = bots[i];
+                bot_ai* ai = bot ? bot->GetBotAI() : nullptr;
+                if (!ai)
+                    continue;
+
+                BotSpreadRecord record;
+                record.Guid = bot->GetGUID();
+                record.Destination = nodes[i];
+                record.OriginalCommandState = ai->GetBotCommandState();
+                record.IsHealer = ai->HasRole(BOT_ROLE_HEAL);
+
+                CastBotSwiftnessPotion(bot);
+
+                // Healers must keep casting during the pre-slam spread window. Movement
+                // commands may still interrupt them if they are badly out of position,
+                // but do not blanket no-cast lock them. Non-healer bots can be briefly
+                // restrained from starting greedy hard casts while Gruul is about to
+                // apply the Ground Slam slow.
+                if (!record.IsHealer)
+                {
+                    ai->SetBotCommandState(BOT_COMMAND_NO_CAST);
+                    record.NoCastApplied = true;
+                }
+
+                _assignments.push_back(record);
+            }
+        }
+
+        void BuildAssignments(Creature* boss)
+        {
+            _assignments.clear();
+
+            BotRoleGroups groups = CollectNearbyNPCBots(boss);
+
+            std::vector<Creature*> backline;
+            backline.reserve(groups.Healers.size() + groups.Ranged.size());
+            backline.insert(backline.end(), groups.Healers.begin(), groups.Healers.end());
+            backline.insert(backline.end(), groups.Ranged.begin(), groups.Ranged.end());
+
+            std::vector<Creature*> tanks;
+            tanks.reserve(groups.MainTanks.size() + groups.OffTanks.size());
+            tanks.insert(tanks.end(), groups.MainTanks.begin(), groups.MainTanks.end());
+            tanks.insert(tanks.end(), groups.OffTanks.begin(), groups.OffTanks.end());
+
+            float const facing = _center.GetOrientation();
+            AddAssignments(backline, GetRingRadius(RANGED_SPREAD_RADIUS, 60.0f, backline.size()),
+                Position::NormalizeOrientation(facing + TWO_PI * 0.5f));
+            AddAssignments(groups.Melee, GetRingRadius(MELEE_SPREAD_RADIUS, 46.0f, groups.Melee.size()),
+                Position::NormalizeOrientation(facing + TWO_PI * 0.25f));
+            AddAssignments(tanks, GetRingRadius(TANK_SPREAD_RADIUS, 32.0f, tanks.size()),
+                facing);
+        }
+
+        void SpreadTick(Creature* boss)
+        {
+            if (!boss)
+                return;
+
+            for (BotSpreadRecord const& record : _assignments)
+            {
+                Creature* bot = ObjectAccessor::GetCreature(*boss, record.Guid);
+                if (!bot || !bot->IsAlive() || !bot->IsInWorld())
+                    continue;
+
+                if (bot->GetExactDist2d(record.Destination.GetPositionX(), record.Destination.GetPositionY()) <= ARRIVED_DISTANCE_2D)
+                    continue;
+
+                // Do not let long casts waste the pre-slam lead time. Movement will
+                // break most casts anyway; this makes the choice explicit and reliable.
+                bot->InterruptNonMeleeSpells(false);
+                SafeBotMoveTo(bot, record.Destination);
+            }
+        }
+
+        Position _center;
+        std::vector<BotSpreadRecord> _assignments;
+        bool _active = false;
+        uint32 _tickTimer = 0;
+    };
+}
 
 struct boss_gruul : public BossAI
 {
@@ -67,6 +423,7 @@ struct boss_gruul : public BossAI
     void Reset() override
     {
         _Reset();
+        _shatterSpreadDirector.StopAndRestore(me);
         _recentlySpoken = false;
         _caveInTimer = 29s;
     }
@@ -95,7 +452,7 @@ struct boss_gruul : public BossAI
             context.Repeat(39900ms, 55700ms);
         }).Schedule(5600ms, [this](TaskContext context)
         {
-            if (Unit* target = SelectTarget(SelectTargetMethod::MaxThreat, 0, 5.0f, false, false))
+            if (Unit* target = SelectHurtfulStrikeTarget())
             {
                 DoCast(target, SPELL_HURTFUL_STRIKE);
             }
@@ -104,17 +461,27 @@ struct boss_gruul : public BossAI
                 DoCastVictim(SPELL_HURTFUL_STRIKE);
             }
             context.Repeat(8400ms);
-        }).Schedule(35s, [this](TaskContext context)
+        }).Schedule(35s - Milliseconds(GruulBotDirector::PRE_SLAM_SPREAD_LEAD_MS), [this](TaskContext context)
         {
-            Talk(SAY_SLAM);
-            DoCastSelf(SPELL_GROUND_SLAM);
-            scheduler.DelayAll(9701ms);
-            scheduler.Schedule(9700ms, [this](TaskContext)
+            // Start spreading before Ground Slam. Once the slam slow lands, bots are too
+            // late if they are still stacked in melee or finishing casts.
+            _shatterSpreadDirector.Start(me, me->GetPosition());
+
+            scheduler.Schedule(Milliseconds(GruulBotDirector::PRE_SLAM_SPREAD_LEAD_MS), [this](TaskContext)
             {
-                Talk(SAY_SHATTER);
-                me->RemoveAurasDueToSpell(SPELL_LOOK_AROUND);
-                DoCastSelf(SPELL_SHATTER);
+                Talk(SAY_SLAM);
+                DoCastSelf(SPELL_GROUND_SLAM);
+
+                scheduler.DelayAll(Milliseconds(GruulBotDirector::GROUND_SLAM_TO_SHATTER_MS + 1));
+                scheduler.Schedule(Milliseconds(GruulBotDirector::GROUND_SLAM_TO_SHATTER_MS), [this](TaskContext)
+                {
+                    Talk(SAY_SHATTER);
+                    me->RemoveAurasDueToSpell(SPELL_LOOK_AROUND);
+                    DoCastSelf(SPELL_SHATTER);
+                    _shatterSpreadDirector.StopAndRestore(me);
+                });
             });
+
             context.Repeat(60s);
         });
     }
@@ -135,6 +502,7 @@ struct boss_gruul : public BossAI
 
     void JustDied(Unit* /*killer*/) override
     {
+        _shatterSpreadDirector.StopAndRestore(me);
         _JustDied();
         Talk(SAY_DEATH);
     }
@@ -145,6 +513,7 @@ struct boss_gruul : public BossAI
             return;
 
         scheduler.Update(diff);
+        _shatterSpreadDirector.Update(me, diff);
 
         if (!me->HasUnitState(UNIT_STATE_ROOT))
         {
@@ -153,6 +522,29 @@ struct boss_gruul : public BossAI
     }
 
 private:
+    Unit* SelectHurtfulStrikeTarget()
+    {
+        Unit* currentVictim = me->GetVictim();
+
+        for (ThreatReference const* ref : me->GetThreatMgr().GetSortedThreatList())
+        {
+            if (!ref || ref->IsOffline())
+                continue;
+
+            Unit* target = ref->GetVictim();
+            if (!target || !target->IsAlive() || target == currentVictim)
+                continue;
+
+            if (!me->IsWithinDistInMap(target, 5.0f))
+                continue;
+
+            return target;
+        }
+
+        return currentVictim;
+    }
+
+    GruulBotDirector::ShatterSpreadDirector _shatterSpreadDirector;
     std::chrono::milliseconds _caveInTimer;
     bool _recentlySpoken;
 };
@@ -261,9 +653,9 @@ class spell_gruul_shatter : public SpellScript
         {
             target->RemoveAurasDueToSpell(SPELL_STONED);
 
-            if (target->IsPlayer())
+            if (target->IsPlayer() || target->IsNPCBot())
             {
-                target->CastSpell((Unit*)nullptr, SPELL_SHATTER_EFFECT, true);
+                target->CastSpell(static_cast<Unit*>(nullptr), SPELL_SHATTER_EFFECT, true);
             }
         }
     }
@@ -280,22 +672,29 @@ class spell_gruul_shatter_effect : public SpellScript
 
     void CalculateDamage()
     {
-        if (!GetHitUnit())
-        {
+        Unit* hitUnit = GetHitUnit();
+        if (!hitUnit)
             return;
-        }
 
         float radius = GetSpellInfo()->Effects[EFFECT_0].CalcRadius(GetCaster());
         if (!radius)
-        {
             return;
-        }
 
-        float distance = GetCaster()->GetDistance2d(GetHitUnit());
+        int32 damage = GetHitDamage();
+
+        float distance = GetCaster()->GetDistance2d(hitUnit);
         if (distance > 1.0f)
         {
-            SetHitDamage(int32(GetHitDamage() * ((radius - distance) / radius)));
+            float const distancePct = std::max(0.0f, (radius - distance) / radius);
+            damage = int32(float(damage) * distancePct);
         }
+
+        // NPCBots get a small handicap on Shatter. They still produce Shatter and still
+        // punish bad spacing, but take 30% less damage from every Shatter explosion.
+        if (hitUnit->IsNPCBot())
+            damage = int32(float(damage) * 0.7f);
+
+        SetHitDamage(damage);
     }
 
     void Register() override

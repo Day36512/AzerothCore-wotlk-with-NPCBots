@@ -553,7 +553,8 @@ public:
             if (MaintainTankHots(diff))
                 return;
 
-            DoPrePullTankHealing(diff);
+            if (DoPrePullTankHealing(diff))
+                return;
 
             if (ProcessImmediateNonAttackTarget())
                 return;
@@ -1354,6 +1355,50 @@ public:
             }
         }
 
+        bool ShouldHoldDruidTravelFormForOwnerMovement() const
+        {
+            if (IAmFree() || !master)
+                return false;
+
+            if (!HasBotCommandState(BOT_COMMAND_FOLLOW))
+                return false;
+
+            if (me->IsInCombat() || master->IsInCombat())
+                return false;
+
+            // While the owner is mounted, flying, swimming, or riding a vehicle, do not let
+            // idle / pre-pull support logic break travel, aquatic, or flight movement.
+            // Otherwise resto druids can ping-pong: drop form to pre-HoT, then immediately
+            // re-enter travel/flight to keep following.
+            if (master->IsMounted() || master->GetVehicle() || me->IsMounted() || me->GetVehicle())
+                return true;
+
+            if (master->HasUnitMovementFlag(MOVEMENTFLAG_FLYING | MOVEMENTFLAG_SWIMMING) ||
+                me->HasUnitMovementFlag(MOVEMENTFLAG_FLYING | MOVEMENTFLAG_SWIMMING))
+                return true;
+
+            return _form == DRUID_FLIGHT_FORM || _form == DRUID_AQUATIC_FORM;
+        }
+
+        bool PrepareForDruidHealingCast()
+        {
+            // Healing from bear/cat/moonkin/travel forms is unreliable and ugly.
+            // Tree form and caster form are fine. Only break form once we know
+            // there is an actual heal to cast, not during target scanning.
+            switch (_form)
+            {
+            case DRUID_BEAR_FORM:
+            case DRUID_CAT_FORM:
+            case DRUID_MOONKIN_FORM:
+            case DRUID_TRAVEL_FORM:
+            case DRUID_AQUATIC_FORM:
+            case DRUID_FLIGHT_FORM:
+                return removeShapeshiftForm();
+            default:
+                return true;
+            }
+        }
+
         bool DoPrePullTankHealing(uint32 diff)
         {
             if (!HasRole(BOT_ROLE_HEAL) || HasRole(BOT_ROLE_TANK) || IAmFree())
@@ -1363,6 +1408,9 @@ public:
             if (me->IsInCombat() || master->IsInCombat() || master->GetBotMgr()->IsPartyInCombat(false))
                 return false;
             if (prePullHealTimer > diff || GC_Timer > diff || me->IsMounted() || me->GetVehicle() || IsCasting())
+                return false;
+
+            if (ShouldHoldDruidTravelFormForOwnerMovement())
                 return false;
 
             prePullHealTimer = 1500;
@@ -1447,23 +1495,6 @@ public:
                     return hasPrePullHostileNearUnit(tank) || hasPrePullHostileNearUnit(master) || hasPrePullHostileNearUnit(me);
                 };
 
-            // Healing from bear/cat/moonkin/travel forms is unreliable and ugly. Tree form
-            // and caster form are fine.
-            switch (_form)
-            {
-            case DRUID_BEAR_FORM:
-            case DRUID_CAT_FORM:
-            case DRUID_MOONKIN_FORM:
-            case DRUID_TRAVEL_FORM:
-            case DRUID_AQUATIC_FORM:
-            case DRUID_FLIGHT_FORM:
-                if (!removeShapeshiftForm())
-                    return false;
-                break;
-            default:
-                break;
-            }
-
             auto tryHealTank = [&](Unit* member) -> bool
                 {
                     if (!member || member == me || !member->IsAlive() || !member->IsInMap(me))
@@ -1488,7 +1519,7 @@ public:
                         if (IsSpellReady(REJUVENATION_1, diff) &&
                             !member->GetAuraEffect(SPELL_AURA_PERIODIC_HEAL, SPELLFAMILY_DRUID, 0x10, 0x0, 0x0, me->GetGUID()))
                         {
-                            if (doCast(member, REJUVENATION))
+                            if (PrepareForDruidHealingCast() && doCast(member, REJUVENATION))
                                 return true;
                         }
                     }
@@ -1498,7 +1529,7 @@ public:
                         if (IsSpellReady(REGROWTH_1, diff) &&
                             !member->GetAuraEffect(SPELL_AURA_PERIODIC_HEAL, SPELLFAMILY_DRUID, 0x40, 0x0, 0x0, me->GetGUID()))
                         {
-                            if (doCast(member, REGROWTH))
+                            if (PrepareForDruidHealingCast() && doCast(member, REGROWTH))
                                 return true;
                         }
                     }
@@ -1510,7 +1541,7 @@ public:
                             AuraEffect const* bloom = member->GetAuraEffect(SPELL_AURA_PERIODIC_HEAL, SPELLFAMILY_DRUID, 0x0, 0x10, 0x0, me->GetGUID());
                             if (!bloom || bloom->GetBase()->GetStackAmount() < 3 || bloom->GetBase()->GetDuration() < 3500)
                             {
-                                if (doCast(member, LIFEBLOOM))
+                                if (PrepareForDruidHealingCast() && doCast(member, LIFEBLOOM))
                                     return true;
                             }
                         }
