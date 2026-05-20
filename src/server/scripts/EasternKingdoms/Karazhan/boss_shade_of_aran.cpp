@@ -16,17 +16,34 @@
  */
 
 #include "AreaTriggerScript.h"
+#include "Containers.h"
 #include "CreatureScript.h"
 #include "GameObject.h"
+#include "Group.h"
+#include "InstanceScript.h"
+#include "Map.h"
+#include "MotionMaster.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
+#include "Spell.h"
 #include "SpellAuras.h"
 #include "SpellInfo.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "TaskScheduler.h"
+#include "bot_ai.h"
+#include "botmgr.h"
 #include "karazhan.h"
 #include "SpellMgr.h"
+
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <list>
+#include <map>
+#include <set>
+#include <vector>
 
 enum Texts
 {
@@ -83,6 +100,8 @@ enum Spells
 
 enum Creatures
 {
+    NPC_ARAN_BLIZZARD            = 17161,
+    NPC_ARAN_WATER_ELEMENTAL     = 17167,
     NPC_SHADOW_OF_ARAN           = 18254
 };
 
@@ -95,7 +114,11 @@ enum SuperSpell
 
 enum Groups
 {
-    GROUP_DRINKING               = 0
+    GROUP_DRINKING               = 0,
+    GROUP_BOT_DIRECTOR           = 1,
+    GROUP_ARCANE_EXPLOSION_BOT_ESCAPE = 2,
+    GROUP_FLAME_WREATH_BOT_LOCK  = 3,
+    GROUP_BLIZZARD_BOT_AVOID     = 4
 };
 
 enum Misc
@@ -107,12 +130,100 @@ Position const roomCenter = {-11158.f, -1920.f};
 
 std::vector<uint32> immuneSpells = { SPELL_CURSE_OF_TONGUE_RANK1, SPELL_CURSE_OF_TONGUE_RANK2, SPELL_MIND_NUMBING_POISON };
 
+static bool IsNPCBotUnit(Unit* unit)
+{
+    Creature* creature = unit ? unit->ToCreature() : nullptr;
+    return creature && creature->IsNPCBot() && creature->GetBotAI();
+}
+
+static void SafeBotMoveTo(Creature* bot, Position const& dest)
+{
+    if (!bot || !bot->IsAlive() || !bot->IsNPCBot())
+        return;
+
+    float x = dest.GetPositionX();
+    float y = dest.GetPositionY();
+    float z = dest.GetPositionZ();
+
+    if (!bot->CanFly())
+        bot->UpdateAllowedPositionZ(x, y, z);
+
+    Position p;
+    p.Relocate(x, y, z, dest.GetOrientation());
+
+    if (bot_ai* ai = bot->GetBotAI())
+        ai->MoveToSendPosition(p);
+}
+
+static void LockFlameWreathedBot(Creature* bot, uint32& originalCommandState, bool& fullStopSet)
+{
+    bot_ai* ai = bot ? bot->GetBotAI() : nullptr;
+    if (!bot || !bot->IsAlive() || !ai)
+        return;
+
+    originalCommandState = ai->GetBotCommandState();
+    fullStopSet = !(originalCommandState & BOT_COMMAND_FULLSTOP);
+
+    bot->AttackStop();
+    bot->InterruptNonMeleeSpells(false);
+    bot->BotStopMovement();
+    bot->GetMotionMaster()->Clear();
+
+    if (fullStopSet)
+        ai->SetBotCommandState(BOT_COMMAND_FULLSTOP);
+}
+
+static void ReleaseFlameWreathedBot(Creature* bot, uint32 originalCommandState, bool fullStopSet)
+{
+    bot_ai* ai = bot ? bot->GetBotAI() : nullptr;
+    if (!bot || !ai)
+        return;
+
+    if (fullStopSet && !(originalCommandState & BOT_COMMAND_FULLSTOP))
+        ai->RemoveBotCommandState(BOT_COMMAND_FULLSTOP);
+
+    if (!bot->IsAlive())
+        return;
+
+    if (InstanceScript* instance = bot->GetInstanceScript())
+    {
+        if (Creature* aran = instance->GetCreature(DATA_ARAN))
+        {
+            if (aran->IsAlive() && aran->IsEngaged())
+            {
+                ai->SetBotCommandState(BOT_COMMAND_ATTACK);
+                ai->AttackStart(aran);
+                return;
+            }
+        }
+    }
+
+    if (!ai->IAmFree())
+        ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+}
+
 struct boss_shade_of_aran : public BossAI
 {
     boss_shade_of_aran(Creature* creature) : BossAI(creature, DATA_ARAN), _atieshReaction(false) { }
 
+    enum BotStateReason : uint8
+    {
+        BOT_STATE_POSITION = 0x01,
+        BOT_STATE_ARCANE   = 0x02,
+        BOT_STATE_DRINK    = 0x04
+    };
+
+    struct ScriptedBotState
+    {
+        uint32 originalCommandState = 0;
+        uint8 reasons = 0;
+        bool staySet = false;
+        bool inactionSet = false;
+    };
+
     void Reset() override
     {
+        ReleaseAllBotStates();
         BossAI::Reset();
         // Reset the mana of the boss fully before resetting drinking
         // If this was omitted, the boss would start drinking on reset if the mana was low on a wipe
@@ -124,6 +235,8 @@ struct boss_shade_of_aran : public BossAI
 
         _drinking = false;
         _hasDrunk = false;
+        _arcaneExplosionActive = false;
+        _blizzardActive = false;
 
         for (auto spell : immuneSpells)
             me->ApplySpellImmune(0, IMMUNITY_ID, spell, true);
@@ -143,6 +256,11 @@ struct boss_shade_of_aran : public BossAI
             {
                 DoCastAOE(spell, true);
             }
+
+            scheduler.Schedule(2s, GROUP_BOT_DIRECTOR, [this](TaskContext)
+            {
+                FocusWaterElementals();
+            });
         });
     }
 
@@ -184,6 +302,7 @@ struct boss_shade_of_aran : public BossAI
 
     void JustDied(Unit* /*killer*/) override
     {
+        ReleaseAllBotStates();
         Talk(SAY_DEATH);
         _JustDied();
 
@@ -192,6 +311,12 @@ struct boss_shade_of_aran : public BossAI
             libraryDoor->SetGoState(GO_STATE_ACTIVE);
             libraryDoor->RemoveGameObjectFlag(GO_FLAG_NOT_SELECTABLE);
         }
+    }
+
+    void EnterEvadeMode(EvadeReason why) override
+    {
+        ReleaseAllBotStates();
+        BossAI::EnterEvadeMode(why);
     }
 
     void DamageTaken(Unit* doneBy, uint32& damage, DamageEffectType damagetype, SpellSchoolMask damageSchoolMask) override
@@ -209,6 +334,7 @@ struct boss_shade_of_aran : public BossAI
             {
                 DoCastSelf(SPELL_AOE_PYROBLAST, false);
                 _drinking = false;
+                ReleaseBotsAfterDrink();
             });
         }
     }
@@ -230,6 +356,7 @@ struct boss_shade_of_aran : public BossAI
                 DoCastAOE(SPELL_MASS_POLY);
                 // If we set drinking earlier it will break when someone attacks aran while casting poly
                 _drinking = true;
+                StopBotsDuringDrink();
             }).Schedule(3s, GROUP_DRINKING, [this](TaskContext)
             {
                 DoCastSelf(SPELL_CONJURE);
@@ -245,6 +372,7 @@ struct boss_shade_of_aran : public BossAI
                 DoCastSelf(SPELL_AOE_PYROBLAST);
                 _drinkScheduler.CancelGroup(GROUP_DRINKING);
                 _drinking = false;
+                ReleaseBotsAfterDrink();
             });
         }
     }
@@ -279,7 +407,9 @@ struct boss_shade_of_aran : public BossAI
                     // If we are able to cast spells, cast them.
                     _currentNormalSpell = Acore::Containers::SelectRandomContainerElement(normalSpells);
 
-                    DoCastRandomTarget(_currentNormalSpell, 0, 100.0f);
+                    if (Unit* target = SelectRandomEncounterTarget(100.0f, true))
+                        DoCast(target, _currentNormalSpell);
+
                     if (me->GetVictim())
                     {
                         me->GetMotionMaster()->MoveChase(me->GetVictim(), 45.0f);
@@ -305,7 +435,10 @@ struct boss_shade_of_aran : public BossAI
         {
             if (!_drinking)
             {
-                urand(0, 1) ? DoCastSelf(SPELL_AOE_CS) : DoCastRandomTarget(SPELL_CHAINSOFICE);
+                if (urand(0, 1))
+                    DoCastSelf(SPELL_AOE_CS);
+                else if (Unit* target = SelectRandomEncounterTarget(100.0f, true))
+                    DoCast(target, SPELL_CHAINSOFICE);
             }
             context.Repeat(5s, 20s);
         }).Schedule(6s, [this](TaskContext context)
@@ -338,18 +471,29 @@ struct boss_shade_of_aran : public BossAI
                         Talk(EMOTE_ARCANE_EXPLOSION);
                         DoCastSelf(SPELL_PLAYERPULL, true);
                         DoCastSelf(SPELL_MASSSLOW, true);
+                        ScheduleArcaneExplosionBotEscape();
                         break;
                     case SPELL_FLAME_WREATH:
                         Talk(SAY_FLAMEWREATH);
                         break;
                     case SPELL_SUMMON_BLIZZARD:
                         Talk(SAY_BLIZZARD);
+                        ScheduleBlizzardBotAvoidance();
                         break;
                 }
 
                 DoCastAOE(_lastSuperSpell);
             }
             context.Repeat(35s, 40s);
+        }).Schedule(3s, GROUP_BOT_DIRECTOR, [this](TaskContext context)
+        {
+            if (!_drinking)
+            {
+                PositionBotsForAran();
+                FocusWaterElementals();
+            }
+
+            context.Repeat(3s);
         }).Schedule(12min, [this](TaskContext context)
         {
             for (uint32 i = 0; i < 5; ++i)
@@ -377,7 +521,7 @@ struct boss_shade_of_aran : public BossAI
 
         if (!CheckAranInRoom())
         {
-            EnterEvadeMode();
+            EnterEvadeMode(EVADE_REASON_OTHER);
             return;
         }
 
@@ -385,8 +529,641 @@ struct boss_shade_of_aran : public BossAI
             DoMeleeAttackIfReady();
     }
 
+    bool IsEncounterParticipant(Unit* unit) const
+    {
+        if (!unit || !unit->IsInWorld() || !unit->IsAlive() || unit->GetMap() != me->GetMap())
+            return false;
+
+        if (unit->HasUnitState(UNIT_STATE_ISOLATED) || !unit->IsWithinDist(me, 120.0f))
+            return false;
+
+        if (unit->IsPlayer())
+            return true;
+
+        if (Creature* creature = unit->ToCreature())
+            return creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI();
+
+        return false;
+    }
+
+    std::vector<Unit*> GatherEncounterUnits() const
+    {
+        std::vector<Unit*> units;
+        GuidSet seen;
+
+        auto addUnit = [&](Unit* unit)
+        {
+            if (!IsEncounterParticipant(unit) || seen.count(unit->GetGUID()))
+                return;
+
+            seen.insert(unit->GetGUID());
+            units.push_back(unit);
+        };
+
+        Map::PlayerList const& players = me->GetMap()->GetPlayers();
+        for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+        {
+            Player* player = itr->GetSource();
+            if (!player)
+                continue;
+
+            addUnit(player);
+
+            if (Group* group = player->GetGroup())
+            {
+                for (Unit* member : BotMgr::GetAllGroupMembers(group))
+                    addUnit(member);
+            }
+
+            if (BotMgr* botMgr = player->GetBotMgr())
+            {
+                for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+                    addUnit(pair.second);
+            }
+        }
+
+        return units;
+    }
+
+    std::vector<Creature*> GatherEncounterBots() const
+    {
+        std::vector<Creature*> bots;
+        for (Unit* unit : GatherEncounterUnits())
+        {
+            if (Creature* bot = ToNPCBot(unit))
+                bots.push_back(bot);
+        }
+
+        return bots;
+    }
+
+    Unit* SelectRandomEncounterTarget(float range, bool includeVictim)
+    {
+        std::vector<Unit*> candidates;
+        Unit* victim = me->GetVictim();
+
+        for (Unit* unit : GatherEncounterUnits())
+        {
+            if (!unit || !unit->IsAlive() || !me->IsWithinDistInMap(unit, range))
+                continue;
+
+            if (!includeVictim && unit == victim)
+                continue;
+
+            candidates.push_back(unit);
+        }
+
+        if (!candidates.empty())
+            return Acore::Containers::SelectRandomContainerElement(candidates);
+
+        if (includeVictim && victim && victim->IsAlive() && me->IsWithinDistInMap(victim, range))
+            return victim;
+
+        return nullptr;
+    }
+
+    Creature* ToNPCBot(Unit* unit) const
+    {
+        Creature* creature = unit ? unit->ToCreature() : nullptr;
+        if (!creature || !creature->IsNPCBot() || creature->IsTempBot() || creature->IsFreeBot() || !creature->GetBotAI())
+            return nullptr;
+
+        return creature;
+    }
+
+    bool IsManaUser(Unit* unit) const
+    {
+        return unit && unit->getPowerType() == POWER_MANA && unit->GetMaxPower(POWER_MANA) > 0;
+    }
+
+    bool IsNpcBotTank(Creature* bot) const
+    {
+        bot_ai* ai = bot ? bot->GetBotAI() : nullptr;
+        return ai && (ai->IsTank() || ai->IsOffTank() || ai->HasRole(BOT_ROLE_TANK));
+    }
+
+    bool IsNpcBotHealer(Creature* bot) const
+    {
+        bot_ai* ai = bot ? bot->GetBotAI() : nullptr;
+        return ai && ai->HasRole(BOT_ROLE_HEAL);
+    }
+
+    bool IsNpcBotRangedOrCaster(Creature* bot) const
+    {
+        bot_ai* ai = bot ? bot->GetBotAI() : nullptr;
+        return ai && (ai->HasRole(BOT_ROLE_RANGED) || IsManaUser(bot));
+    }
+
+    bool IsBotCastingUninterruptible(Creature* bot) const
+    {
+        if (Spell* spell = bot ? bot->GetCurrentSpell(CURRENT_GENERIC_SPELL) : nullptr)
+            if (SpellInfo const* spellInfo = spell->GetSpellInfo())
+                if (!(spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_INTERRUPT))
+                    return true;
+
+        if (Spell* spell = bot ? bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL) : nullptr)
+            if (SpellInfo const* spellInfo = spell->GetSpellInfo())
+                if (!(spellInfo->ChannelInterruptFlags & CHANNEL_INTERRUPT_FLAG_INTERRUPT))
+                    return true;
+
+        return false;
+    }
+
+    bool IsScriptControlledBot(Creature* bot) const
+    {
+        return bot && _botStates.count(bot->GetGUID());
+    }
+
+    bool CanMoveBot(Creature* bot, bool emergencyMovement) const
+    {
+        if (!bot || !IsEncounterParticipant(bot) || bot->HasAura(SPELL_FLAME_WREATH_RING))
+            return false;
+
+        if (bot->HasUnitState(UNIT_STATE_LOST_CONTROL | UNIT_STATE_ROOT | UNIT_STATE_ISOLATED))
+            return false;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai || ai->IAmFree())
+            return false;
+
+        if (!IsScriptControlledBot(bot) && ai->HasBotCommandState(BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION | BOT_COMMAND_MASK_NOCAST_ANY))
+            return false;
+
+        if (!emergencyMovement && IsBotCastingUninterruptible(bot))
+            return false;
+
+        return true;
+    }
+
+    void TrackBotState(Creature* bot, uint8 reason, bool setInaction)
+    {
+        bot_ai* ai = bot ? bot->GetBotAI() : nullptr;
+        if (!ai)
+            return;
+
+        ScriptedBotState& state = _botStates[bot->GetGUID()];
+        if (!state.reasons)
+        {
+            state.originalCommandState = ai->GetBotCommandState();
+            state.staySet = !(state.originalCommandState & BOT_COMMAND_STAY);
+            state.inactionSet = false;
+        }
+
+        state.reasons |= reason;
+
+        if (setInaction && !(state.originalCommandState & BOT_COMMAND_INACTION))
+        {
+            ai->SetBotCommandState(BOT_COMMAND_INACTION);
+            state.inactionSet = true;
+        }
+    }
+
+    void ReleaseBotState(ObjectGuid const& guid, uint8 reason, bool resumeCombat)
+    {
+        std::map<ObjectGuid, ScriptedBotState>::iterator itr = _botStates.find(guid);
+        if (itr == _botStates.end())
+            return;
+
+        itr->second.reasons &= ~reason;
+        if (itr->second.reasons)
+            return;
+
+        Creature* bot = ObjectAccessor::GetCreature(*me, guid);
+        if (bot)
+        {
+            if (bot_ai* ai = bot->GetBotAI())
+            {
+                if (itr->second.staySet)
+                    ai->RemoveBotCommandState(BOT_COMMAND_STAY);
+
+                if (itr->second.inactionSet && !(itr->second.originalCommandState & BOT_COMMAND_INACTION))
+                    ai->RemoveBotCommandState(BOT_COMMAND_INACTION);
+
+                if (resumeCombat && bot->IsAlive())
+                {
+                    if (!_drinking && me->IsAlive() && me->IsEngaged() && me->GetVictim() && bot->IsInMap(me))
+                    {
+                        ai->SetBotCommandState(BOT_COMMAND_ATTACK);
+                        ai->AttackStart(me);
+                    }
+                    else if (!ai->IAmFree())
+                    {
+                        ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+                    }
+                }
+            }
+        }
+
+        _botStates.erase(itr);
+    }
+
+    void ReleaseBotStatesByReason(uint8 reason, bool resumeCombat)
+    {
+        std::vector<ObjectGuid> guids;
+        guids.reserve(_botStates.size());
+
+        for (std::map<ObjectGuid, ScriptedBotState>::value_type const& pair : _botStates)
+            if (pair.second.reasons & reason)
+                guids.push_back(pair.first);
+
+        for (ObjectGuid const& guid : guids)
+            ReleaseBotState(guid, reason, resumeCombat);
+    }
+
+    void ReleaseAllBotStates()
+    {
+        std::vector<ObjectGuid> guids;
+        guids.reserve(_botStates.size());
+
+        for (std::map<ObjectGuid, ScriptedBotState>::value_type const& pair : _botStates)
+            guids.push_back(pair.first);
+
+        for (ObjectGuid const& guid : guids)
+        {
+            std::map<ObjectGuid, ScriptedBotState>::iterator itr = _botStates.find(guid);
+            if (itr == _botStates.end())
+                continue;
+
+            Creature* bot = ObjectAccessor::GetCreature(*me, guid);
+            if (bot)
+            {
+                if (bot_ai* ai = bot->GetBotAI())
+                {
+                    if (itr->second.staySet)
+                        ai->RemoveBotCommandState(BOT_COMMAND_STAY);
+
+                    if (itr->second.inactionSet && !(itr->second.originalCommandState & BOT_COMMAND_INACTION))
+                        ai->RemoveBotCommandState(BOT_COMMAND_INACTION);
+
+                    if (bot->IsAlive())
+                    {
+                        if (me->IsAlive() && me->IsEngaged() && me->GetVictim() && bot->IsInMap(me))
+                        {
+                            ai->SetBotCommandState(BOT_COMMAND_ATTACK);
+                            ai->AttackStart(me);
+                        }
+                        else if (!ai->IAmFree())
+                        {
+                            ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+                        }
+                    }
+                }
+            }
+        }
+
+        _botStates.clear();
+        _arcaneExplosionActive = false;
+        _blizzardActive = false;
+    }
+
+    void ReleaseBotsAfterDrink()
+    {
+        ReleaseBotStatesByReason(BOT_STATE_DRINK, true);
+    }
+
+    Position BuildRoomRingPosition(float radius, size_t index, size_t count, float angleOffset) const
+    {
+        static constexpr float TwoPi = 6.28318530f;
+        float angle = angleOffset + (count ? TwoPi * float(index) / float(count) : 0.0f);
+        float x = roomCenter.GetPositionX() + std::cos(angle) * radius;
+        float y = roomCenter.GetPositionY() + std::sin(angle) * radius;
+        float z = me->GetPositionZ();
+        float orientation = Position::NormalizeOrientation(std::atan2(me->GetPositionY() - y, me->GetPositionX() - x));
+
+        Position position;
+        position.Relocate(x, y, z, orientation);
+        return position;
+    }
+
+    bool MoveBotIfNeeded(Creature* bot, Position const& position, float arrivedDistance, uint8 reason, bool emergencyMovement, bool releaseSoon)
+    {
+        if (!CanMoveBot(bot, emergencyMovement))
+            return false;
+
+        if (bot->GetExactDist2d(position.GetPositionX(), position.GetPositionY()) <= arrivedDistance)
+            return true;
+
+        TrackBotState(bot, reason, false);
+        SafeBotMoveTo(bot, position);
+
+        if (releaseSoon)
+        {
+            ObjectGuid guid = bot->GetGUID();
+            scheduler.Schedule(2500ms, GROUP_BOT_DIRECTOR, [this, guid, reason](TaskContext)
+            {
+                ReleaseBotState(guid, reason, true);
+            });
+        }
+
+        return true;
+    }
+
+    void PositionBotsForAran()
+    {
+        if (_drinking || _arcaneExplosionActive)
+            return;
+
+        std::vector<Creature*> rangedBots;
+
+        for (Creature* bot : GatherEncounterBots())
+        {
+            if (!bot || bot == me->GetVictim() || IsNpcBotTank(bot))
+                continue;
+
+            if (!IsNpcBotHealer(bot) && !IsNpcBotRangedOrCaster(bot))
+                continue;
+
+            if (!CanMoveBot(bot, false))
+                continue;
+
+            if (bot->GetDistance(me) >= 12.0f && bot->GetExactDist2d(roomCenter.GetPositionX(), roomCenter.GetPositionY()) <= 34.0f)
+                continue;
+
+            rangedBots.push_back(bot);
+        }
+
+        std::sort(rangedBots.begin(), rangedBots.end(), [](Creature* left, Creature* right)
+        {
+            return left->GetGUID() < right->GetGUID();
+        });
+
+        for (size_t i = 0; i < rangedBots.size(); ++i)
+        {
+            Position position = BuildRoomRingPosition(28.0f, i, rangedBots.size(), me->GetOrientation() + 0.85f);
+            MoveBotIfNeeded(rangedBots[i], position, 2.5f, BOT_STATE_POSITION, false, true);
+        }
+    }
+
+    Position GetArcaneExplosionEscapePosition(Creature* bot) const
+    {
+        float dx = bot->GetPositionX() - roomCenter.GetPositionX();
+        float dy = bot->GetPositionY() - roomCenter.GetPositionY();
+        float length = std::sqrt(dx * dx + dy * dy);
+
+        if (length < 0.1f)
+        {
+            float angle = std::atan2(bot->GetPositionY() - me->GetPositionY(), bot->GetPositionX() - me->GetPositionX());
+            if (!std::isfinite(angle))
+                angle = me->GetOrientation();
+
+            dx = std::cos(angle);
+            dy = std::sin(angle);
+            length = 1.0f;
+        }
+
+        dx /= length;
+        dy /= length;
+
+        float desiredDistance = 36.0f;
+        float x = roomCenter.GetPositionX() + dx * desiredDistance;
+        float y = roomCenter.GetPositionY() + dy * desiredDistance;
+        float z = bot->GetPositionZ();
+        float orientation = Position::NormalizeOrientation(std::atan2(me->GetPositionY() - y, me->GetPositionX() - x));
+
+        Position position;
+        position.Relocate(x, y, z, orientation);
+        return position;
+    }
+
+    void PrioritizeChainsDispel(Creature* /*bot*/)
+    {
+        // NPCBot dispel AI can react to the aura naturally; the boss script only avoids moving rooted bots.
+    }
+
+    void MoveBotsOutForArcaneExplosion()
+    {
+        for (Creature* bot : GatherEncounterBots())
+        {
+            if (!bot || !bot->IsAlive() || bot->HasAura(SPELL_FLAME_WREATH_RING))
+                continue;
+
+            if (bot->HasAura(SPELL_CHAINSOFICE))
+            {
+                PrioritizeChainsDispel(bot);
+                continue;
+            }
+
+            if (bot->GetExactDist2d(roomCenter.GetPositionX(), roomCenter.GetPositionY()) >= 25.0f)
+                continue;
+
+            if (!CanMoveBot(bot, true))
+                continue;
+
+            bot->InterruptNonMeleeSpells(false);
+            bot->AttackStop();
+            MoveBotIfNeeded(bot, GetArcaneExplosionEscapePosition(bot), 2.5f, BOT_STATE_ARCANE, true, false);
+        }
+    }
+
+    void ScheduleArcaneExplosionBotEscape()
+    {
+        _arcaneExplosionActive = true;
+        scheduler.CancelGroup(GROUP_ARCANE_EXPLOSION_BOT_ESCAPE);
+
+        scheduler.Schedule(500ms, GROUP_ARCANE_EXPLOSION_BOT_ESCAPE, [this](TaskContext context)
+        {
+            MoveBotsOutForArcaneExplosion();
+            context.Repeat(1s);
+        });
+
+        scheduler.Schedule(9s, GROUP_ARCANE_EXPLOSION_BOT_ESCAPE, [this](TaskContext)
+        {
+            _arcaneExplosionActive = false;
+            ReleaseBotStatesByReason(BOT_STATE_ARCANE, true);
+            scheduler.CancelGroup(GROUP_ARCANE_EXPLOSION_BOT_ESCAPE);
+        });
+    }
+
+    std::vector<Creature*> GetActiveBlizzardSources() const
+    {
+        std::list<Creature*> blizzardList;
+        me->GetCreatureListWithEntryInGrid(blizzardList, NPC_ARAN_BLIZZARD, 70.0f);
+
+        std::vector<Creature*> blizzards;
+        blizzards.reserve(blizzardList.size());
+
+        for (Creature* blizzard : blizzardList)
+        {
+            if (!blizzard || !blizzard->IsAlive() || blizzard->GetMap() != me->GetMap())
+                continue;
+
+            if (blizzard->GetExactDist2d(roomCenter.GetPositionX(), roomCenter.GetPositionY()) > 50.0f)
+                continue;
+
+            blizzards.push_back(blizzard);
+        }
+
+        return blizzards;
+    }
+
+    Position GetBlizzardEscapePosition(Creature* bot, Creature* blizzard) const
+    {
+        float dx = bot->GetPositionX() - blizzard->GetPositionX();
+        float dy = bot->GetPositionY() - blizzard->GetPositionY();
+        float length = std::sqrt(dx * dx + dy * dy);
+
+        if (length < 0.1f)
+        {
+            dx = roomCenter.GetPositionX() - blizzard->GetPositionX();
+            dy = roomCenter.GetPositionY() - blizzard->GetPositionY();
+            length = std::sqrt(dx * dx + dy * dy);
+        }
+
+        if (length < 0.1f)
+        {
+            dx = std::cos(me->GetOrientation());
+            dy = std::sin(me->GetOrientation());
+            length = 1.0f;
+        }
+
+        dx /= length;
+        dy /= length;
+
+        float x = bot->GetPositionX() + dx * 10.0f;
+        float y = bot->GetPositionY() + dy * 10.0f;
+        float centerDist = std::sqrt(std::pow(x - roomCenter.GetPositionX(), 2.0f) + std::pow(y - roomCenter.GetPositionY(), 2.0f));
+
+        if (centerDist > 39.0f)
+        {
+            float toCenterX = roomCenter.GetPositionX() - bot->GetPositionX();
+            float toCenterY = roomCenter.GetPositionY() - bot->GetPositionY();
+            float toCenterLength = std::max(0.1f, std::sqrt(toCenterX * toCenterX + toCenterY * toCenterY));
+            x = bot->GetPositionX() + toCenterX / toCenterLength * 10.0f;
+            y = bot->GetPositionY() + toCenterY / toCenterLength * 10.0f;
+        }
+
+        float z = bot->GetPositionZ();
+        float orientation = Position::NormalizeOrientation(std::atan2(me->GetPositionY() - y, me->GetPositionX() - x));
+
+        Position position;
+        position.Relocate(x, y, z, orientation);
+        return position;
+    }
+
+    void AvoidActiveBlizzard()
+    {
+        std::vector<Creature*> blizzards = GetActiveBlizzardSources();
+        if (blizzards.empty())
+            return;
+
+        for (Creature* bot : GatherEncounterBots())
+        {
+            if (!bot || !CanMoveBot(bot, true))
+                continue;
+
+            Creature* nearestBlizzard = nullptr;
+            float nearestDistance = std::numeric_limits<float>::max();
+
+            for (Creature* blizzard : blizzards)
+            {
+                float distance = bot->GetDistance(blizzard);
+                if (distance < nearestDistance)
+                {
+                    nearestDistance = distance;
+                    nearestBlizzard = blizzard;
+                }
+            }
+
+            if (!nearestBlizzard || nearestDistance > 13.0f)
+                continue;
+
+            MoveBotIfNeeded(bot, GetBlizzardEscapePosition(bot, nearestBlizzard), 2.5f, BOT_STATE_POSITION, true, true);
+        }
+    }
+
+    void ScheduleBlizzardBotAvoidance()
+    {
+        _blizzardActive = true;
+        scheduler.CancelGroup(GROUP_BLIZZARD_BOT_AVOID);
+
+        scheduler.Schedule(1s, GROUP_BLIZZARD_BOT_AVOID, [this](TaskContext context)
+        {
+            AvoidActiveBlizzard();
+            context.Repeat(1s);
+        });
+
+        scheduler.Schedule(20s, GROUP_BLIZZARD_BOT_AVOID, [this](TaskContext)
+        {
+            _blizzardActive = false;
+            scheduler.CancelGroup(GROUP_BLIZZARD_BOT_AVOID);
+        });
+    }
+
+    Creature* FindWaterElementalTarget() const
+    {
+        std::list<Creature*> elementalList;
+        me->GetCreatureListWithEntryInGrid(elementalList, NPC_ARAN_WATER_ELEMENTAL, 90.0f);
+
+        Creature* best = nullptr;
+        float bestDistance = std::numeric_limits<float>::max();
+
+        for (Creature* elemental : elementalList)
+        {
+            if (!elemental || !elemental->IsAlive() || elemental->GetMap() != me->GetMap())
+                continue;
+
+            float distance = elemental->GetDistance(me);
+            if (distance < bestDistance)
+            {
+                best = elemental;
+                bestDistance = distance;
+            }
+        }
+
+        return best;
+    }
+
+    void FocusWaterElementals()
+    {
+        if (_drinking || _arcaneExplosionActive)
+            return;
+
+        Creature* elemental = FindWaterElementalTarget();
+        if (!elemental)
+            return;
+
+        for (Creature* bot : GatherEncounterBots())
+        {
+            if (!bot || bot->HasAura(SPELL_FLAME_WREATH_RING) || IsNpcBotHealer(bot))
+                continue;
+
+            if (!CanMoveBot(bot, false))
+                continue;
+
+            bot_ai* ai = bot->GetBotAI();
+            if (!ai)
+                continue;
+
+            ai->SetBotCommandState(BOT_COMMAND_ATTACK);
+            ai->AttackStart(elemental);
+        }
+    }
+
+    void StopBotsDuringDrink()
+    {
+        for (Creature* bot : GatherEncounterBots())
+        {
+            if (!bot || bot->HasAura(SPELL_FLAME_WREATH_RING))
+                continue;
+
+            if (IsNpcBotTank(bot) || IsNpcBotHealer(bot))
+                continue;
+
+            bot_ai* ai = bot->GetBotAI();
+            if (!ai || ai->IAmFree())
+                continue;
+
+            TrackBotState(bot, BOT_STATE_DRINK, true);
+            bot->AttackStop();
+            bot->InterruptNonMeleeSpells(false);
+            bot->BotStopMovement();
+        }
+    }
+
 private:
     TaskScheduler _drinkScheduler;
+
+    std::map<ObjectGuid, ScriptedBotState> _botStates;
 
     uint32 _currentNormalSpell;
     uint32 _lastSuperSpell;
@@ -394,6 +1171,8 @@ private:
     bool _drinking;
     bool _hasDrunk;
     bool _atieshReaction;
+    bool _arcaneExplosionActive = false;
+    bool _blizzardActive = false;
 };
 
 // 30004 - Flame Wreath
@@ -444,18 +1223,33 @@ class spell_flamewreath_aura : public AuraScript
 {
     PrepareAuraScript(spell_flamewreath_aura);
 
+public:
+    spell_flamewreath_aura() : _botOriginalCommandState(0), _botFullStopSet(false) { }
+
     bool Validate(SpellInfo const* /*spell*/) override
     {
         return ValidateSpellInfo({ SPELL_FLAME_WREATH_RAN_THRU, SPELL_FLAME_WREATH_EXPLOSION });
     }
 
+    void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (Creature* bot = GetTarget()->ToCreature())
+            if (IsNPCBotUnit(bot))
+                LockFlameWreathedBot(bot, _botOriginalCommandState, _botFullStopSet);
+    }
+
     void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
+        Unit* target = GetTarget();
+        if (Creature* bot = target ? target->ToCreature() : nullptr)
+            if (IsNPCBotUnit(bot))
+                ReleaseFlameWreathedBot(bot, _botOriginalCommandState, _botFullStopSet);
+
         if (GetTargetApplication()->GetRemoveMode() == AURA_REMOVE_BY_DEFAULT && GetDuration())
         {
-            if (Unit* target = GetTarget())
+            if (target)
             {
-                if (target->IsPlayer())
+                if (target->IsPlayer() || IsNPCBotUnit(target))
                 {
                     target->CastSpell(target, SPELL_FLAME_WREATH_RAN_THRU, true);
 
@@ -468,8 +1262,13 @@ class spell_flamewreath_aura : public AuraScript
         }
     }
 
+private:
+    uint32 _botOriginalCommandState;
+    bool _botFullStopSet;
+
     void Register() override
     {
+        OnEffectApply += AuraEffectApplyFn(spell_flamewreath_aura::OnApply, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
         OnEffectRemove += AuraEffectRemoveFn(spell_flamewreath_aura::OnRemove, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
     }
 };

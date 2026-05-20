@@ -16,9 +16,18 @@
  */
 
 #include "CreatureScript.h"
+#include "Group.h"
+#include "Map.h"
+#include "ObjectAccessor.h"
+#include "ObjectGuid.h"
+#include "Player.h"
 #include "ScriptedCreature.h"
 #include "SpellInfo.h"
+#include "bot_ai.h"
+#include "botmgr.h"
 #include "karazhan.h"
+
+#include <vector>
 
 enum Text
 {
@@ -53,6 +62,33 @@ enum Creatures
     NPC_DEMONCHAINS             = 17248,
     NPC_PORTAL                  = 17265
 };
+
+namespace
+{
+    bool IsNPCBotUnit(Unit* unit)
+    {
+        Creature* creature = unit ? unit->ToCreature() : nullptr;
+        return creature && creature->IsNPCBot() && creature->GetBotAI();
+    }
+
+    bool IsValidIllhoofEncounterUnit(Unit* unit, Creature const* source, float range)
+    {
+        if (!unit || !source)
+            return false;
+
+        if (!unit->IsInWorld() || !unit->IsAlive() || unit->GetMap() != source->GetMap())
+            return false;
+
+        if (unit->HasUnitState(UNIT_STATE_ISOLATED) || !source->IsWithinDistInMap(unit, range))
+            return false;
+
+        if (unit->IsPlayer())
+            return true;
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI();
+    }
+}
 
 struct npc_kilrek : public ScriptedAI
 {
@@ -151,6 +187,7 @@ struct boss_terestian_illhoof : public BossAI
 
     void Reset() override
     {
+        RemoveSacrificeFromEncounterUnits();
         _Reset();
         SummonKilrek();
     }
@@ -171,13 +208,88 @@ struct boss_terestian_illhoof : public BossAI
         }
     }
 
+    std::vector<Unit*> GatherIllhoofEncounterUnits(float range = 120.0f) const
+    {
+        std::vector<Unit*> units;
+        GuidSet seen;
+
+        auto addUnit = [&](Unit* unit)
+        {
+            if (!IsValidIllhoofEncounterUnit(unit, me, range))
+                return;
+
+            if (seen.count(unit->GetGUID()))
+                return;
+
+            seen.insert(unit->GetGUID());
+            units.push_back(unit);
+        };
+
+        if (!me->GetMap())
+            return units;
+
+        Map::PlayerList const& players = me->GetMap()->GetPlayers();
+        for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+        {
+            Player* player = itr->GetSource();
+            if (!player)
+                continue;
+
+            addUnit(player);
+
+            if (Group* group = player->GetGroup())
+            {
+                for (Unit* member : BotMgr::GetAllGroupMembers(group))
+                    addUnit(member);
+            }
+
+            if (BotMgr* botMgr = player->GetBotMgr())
+            {
+                for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+                    addUnit(pair.second);
+            }
+        }
+
+        return units;
+    }
+
+    Unit* SelectSacrificeTarget()
+    {
+        std::vector<Unit*> candidates;
+
+        for (Unit* unit : GatherIllhoofEncounterUnits(100.0f))
+        {
+            if (!unit || unit == me->GetVictim())
+                continue;
+
+            if (unit->HasAura(SPELL_SACRIFICE))
+                continue;
+
+            candidates.push_back(unit);
+        }
+
+        if (candidates.empty())
+            return nullptr;
+
+        return candidates[urand(0, candidates.size() - 1)];
+    }
+
+    void RemoveSacrificeFromEncounterUnits()
+    {
+        for (Unit* unit : GatherIllhoofEncounterUnits(120.0f))
+        {
+            if (unit)
+                unit->RemoveAurasDueToSpell(SPELL_SACRIFICE);
+        }
+    }
+
     void JustEngagedWith(Unit* /*who*/) override
     {
         Talk(SAY_AGGRO);
         DoZoneInCombat();
         scheduler.Schedule(30s, [this](TaskContext context)
         {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true, false))
+            if (Unit* target = SelectSacrificeTarget())
             {
                 DoCast(target, SPELL_SACRIFICE, true);
                 target->m_Events.AddEventAtOffset([target] {
@@ -185,8 +297,9 @@ struct boss_terestian_illhoof : public BossAI
                 }, 1s);
 
                 Talk(SAY_SACRIFICE);
-                context.Repeat(30s);
             }
+
+            context.Repeat(30s);
         }).Schedule(5s, [this](TaskContext context)
         {
             DoCastVictim(SPELL_SHADOW_BOLT);
@@ -219,7 +332,7 @@ struct boss_terestian_illhoof : public BossAI
 
     void KilledUnit(Unit* victim) override
     {
-        if (victim->IsPlayer())
+        if (victim->IsPlayer() || IsNPCBotUnit(victim))
         {
             Talk(SAY_SLAY);
         }
@@ -227,6 +340,7 @@ struct boss_terestian_illhoof : public BossAI
 
     void JustDied(Unit* /*killer*/) override
     {
+        RemoveSacrificeFromEncounterUnits();
         _JustDied();
         Talk(SAY_DEATH);
     }
