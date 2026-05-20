@@ -4741,6 +4741,90 @@ Respawn.ForceCompatibilityMode = 0
 ###################################################################################################
 
 ###################################################################################################
+# KARAZHAN CHESS CONFIGURATION
+#
+#    Karazhan.Chess.Cheats.Enabled
+#        Description: Enable Echo of Medivh PvE cheat events.
+#        Default:     1
+
+Karazhan.Chess.Cheats.Enabled = 1
+
+#
+#    Karazhan.Chess.Cheats.TimerMinMs
+#    Karazhan.Chess.Cheats.TimerMaxMs
+#        Description: Group-mode cheat timer range.
+#        Default:     45000 / 100000
+
+Karazhan.Chess.Cheats.TimerMinMs = 45000
+Karazhan.Chess.Cheats.TimerMaxMs = 100000
+
+#
+#    Karazhan.Chess.Cheats.SoloTimerMinMs
+#    Karazhan.Chess.Cheats.SoloTimerMaxMs
+#        Description: Solo-mode cheat timer range.
+#        Default:     60000 / 110000
+
+Karazhan.Chess.Cheats.SoloTimerMinMs = 60000
+Karazhan.Chess.Cheats.SoloTimerMaxMs = 110000
+
+#
+#    Karazhan.Chess.Cheats.Heal.Weight
+#    Karazhan.Chess.Cheats.Fire.Weight
+#    Karazhan.Chess.Cheats.Buff.Weight
+#        Description: Weighted chance for each cheat type. Set a weight to 0 to disable that cheat.
+#                     If all weights are 0, no cheat fires.
+#        Default:     1 / 1 / 1
+
+Karazhan.Chess.Cheats.Heal.Weight = 1
+Karazhan.Chess.Cheats.Fire.Weight = 1
+Karazhan.Chess.Cheats.Buff.Weight = 1
+
+#
+#    Karazhan.Chess.Cheats.Heal.Percent
+#        Description: Group-mode king/chief heal amount as percent of max health.
+#                     100 means full heal.
+#        Default:     100
+
+Karazhan.Chess.Cheats.Heal.Percent = 100
+
+#
+#    Karazhan.Chess.Cheats.SoloHeal.Percent
+#        Description: Solo-mode king/chief heal amount as percent of max health.
+#        Default:     35
+
+Karazhan.Chess.Cheats.SoloHeal.Percent = 35
+
+#
+#    Karazhan.Chess.Cheats.Fire.MaxTargets
+#    Karazhan.Chess.Cheats.SoloFire.MaxTargets
+#        Description: Max player-side squares hit by Medivh fire cheat.
+#        Default:     3 / 2
+
+Karazhan.Chess.Cheats.Fire.MaxTargets = 3
+Karazhan.Chess.Cheats.SoloFire.MaxTargets = 2
+
+#
+#    Karazhan.Chess.Cheats.Buff.MinTargets
+#    Karazhan.Chess.Cheats.Buff.MaxTargets
+#        Description: Group-mode number of Medivh-side pieces buffed.
+#        Default:     1 / 4
+
+Karazhan.Chess.Cheats.Buff.MinTargets = 1
+Karazhan.Chess.Cheats.Buff.MaxTargets = 4
+
+#
+#    Karazhan.Chess.Cheats.SoloBuff.MinTargets
+#    Karazhan.Chess.Cheats.SoloBuff.MaxTargets
+#        Description: Solo-mode number of Medivh-side pieces buffed.
+#        Default:     1 / 4
+
+Karazhan.Chess.Cheats.SoloBuff.MinTargets = 1
+Karazhan.Chess.Cheats.SoloBuff.MaxTargets = 4
+
+#
+###################################################################################################
+
+###################################################################################################
 # NPCBOT CONFIGURATION
 #
 #    NpcBot.Enable

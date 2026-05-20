@@ -15,6 +15,7 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Config.h"
 #include "CreatureScript.h"
 #include "ObjectMgr.h"
 #include "Player.h"
@@ -26,7 +27,10 @@
 #include "Unit.h"
 #include "World.h"
 #include "karazhan.h"
+#include <algorithm>
 #include <array>
+#include <limits>
+#include <vector>
 
 #include "SpellMgr.h"
 
@@ -200,6 +204,7 @@ struct npc_echo_of_medivh : public ScriptedAI
     npc_echo_of_medivh(Creature* creature) : ScriptedAI(creature), _summons(me), _assistMode(CHESS_ASSIST_GROUP)
     {
         _instance = creature->GetInstanceScript();
+        LoadCheatConfig();
     }
 
     void ResetBoardCells()
@@ -211,7 +216,64 @@ struct npc_echo_of_medivh : public ScriptedAI
 
     void ResetCheatTimer()
     {
-        _cheatTimer = IsSoloAssistMode() ? urand(60 * IN_MILLISECONDS, 110 * IN_MILLISECONDS) : urand(45 * IN_MILLISECONDS, 100 * IN_MILLISECONDS);
+        _cheatTimer = IsSoloAssistMode() ? urand(_soloCheatTimerMinMs, _soloCheatTimerMaxMs) : urand(_cheatTimerMinMs, _cheatTimerMaxMs);
+    }
+
+    void LoadCheatConfig()
+    {
+        _cheatsEnabled = sConfigMgr->GetOption<bool>("Karazhan.Chess.Cheats.Enabled", true);
+
+        _cheatTimerMinMs = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("Karazhan.Chess.Cheats.TimerMinMs", 45000), 5000, 300000);
+        _cheatTimerMaxMs = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("Karazhan.Chess.Cheats.TimerMaxMs", 100000), 5000, 300000);
+
+        _soloCheatTimerMinMs = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("Karazhan.Chess.Cheats.SoloTimerMinMs", 60000), 5000, 300000);
+        _soloCheatTimerMaxMs = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("Karazhan.Chess.Cheats.SoloTimerMaxMs", 110000), 5000, 300000);
+
+        if (_cheatTimerMaxMs < _cheatTimerMinMs)
+            std::swap(_cheatTimerMinMs, _cheatTimerMaxMs);
+
+        if (_soloCheatTimerMaxMs < _soloCheatTimerMinMs)
+            std::swap(_soloCheatTimerMinMs, _soloCheatTimerMaxMs);
+
+        _cheatHealWeight = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("Karazhan.Chess.Cheats.Heal.Weight", 1), 0, 100);
+        _cheatFireWeight = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("Karazhan.Chess.Cheats.Fire.Weight", 1), 0, 100);
+        _cheatBuffWeight = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("Karazhan.Chess.Cheats.Buff.Weight", 1), 0, 100);
+
+        _healPct = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("Karazhan.Chess.Cheats.Heal.Percent", 100), 0, 100);
+        _soloHealPct = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("Karazhan.Chess.Cheats.SoloHeal.Percent", 35), 0, 100);
+
+        _fireMaxTargets = uint8(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("Karazhan.Chess.Cheats.Fire.MaxTargets", 3), 0, 16));
+        _soloFireMaxTargets = uint8(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("Karazhan.Chess.Cheats.SoloFire.MaxTargets", 2), 0, 16));
+
+        _buffMinTargets = uint8(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("Karazhan.Chess.Cheats.Buff.MinTargets", 1), 0, 16));
+        _buffMaxTargets = uint8(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("Karazhan.Chess.Cheats.Buff.MaxTargets", 4), 0, 16));
+
+        _soloBuffMinTargets = uint8(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("Karazhan.Chess.Cheats.SoloBuff.MinTargets", 1), 0, 16));
+        _soloBuffMaxTargets = uint8(std::clamp<uint32>(sConfigMgr->GetOption<uint32>("Karazhan.Chess.Cheats.SoloBuff.MaxTargets", 4), 0, 16));
+
+        if (_buffMaxTargets < _buffMinTargets)
+            std::swap(_buffMinTargets, _buffMaxTargets);
+
+        if (_soloBuffMaxTargets < _soloBuffMinTargets)
+            std::swap(_soloBuffMinTargets, _soloBuffMaxTargets);
+    }
+
+    uint8 SelectCheatType() const
+    {
+        uint32 totalWeight = _cheatHealWeight + _cheatFireWeight + _cheatBuffWeight;
+        if (!totalWeight)
+            return 255;
+
+        uint32 roll = urand(1, totalWeight);
+
+        if (roll <= _cheatHealWeight)
+            return 0;
+
+        roll -= _cheatHealWeight;
+        if (roll <= _cheatFireWeight)
+            return 1;
+
+        return 2;
     }
 
     bool IsSoloAssistMode() const { return _assistMode == CHESS_ASSIST_SOLO; }
@@ -282,6 +344,7 @@ struct npc_echo_of_medivh : public ScriptedAI
         _instance->SetData(DATA_CHESS_GAME_PHASE, CHESS_PHASE_PVE_WARMUP);
         SetupBoard();
         _instance->SetData(DATA_CHESS_EVENT, IN_PROGRESS);
+        LoadCheatConfig();
         ResetCheatTimer();
         Talk(TALK_EVENT_BEGIN);
     }
@@ -292,6 +355,7 @@ struct npc_echo_of_medivh : public ScriptedAI
         _summons.DespawnAll();
         _assistMode = CHESS_ASSIST_GROUP;
         _soloPlayerGUID.Clear();
+        LoadCheatConfig();
         ResetCheatTimer();
     }
 
@@ -1055,6 +1119,258 @@ struct npc_echo_of_medivh : public ScriptedAI
         piece->CastSpell(trigger, SPELL_CHANGE_FACING, true);
     }
 
+    void HealPiecePercent(Creature* piece, uint32 pct)
+    {
+        if (!piece || !piece->IsAlive())
+            return;
+
+        uint32 heal = CalculatePct(piece->GetMaxHealth(), pct);
+        piece->SetHealth(std::min<uint32>(piece->GetHealth() + heal, piece->GetMaxHealth()));
+    }
+
+    void ApplyConfiguredKingHeal(Creature* king)
+    {
+        if (!king || !king->IsAlive())
+            return;
+
+        uint32 pct = IsSoloAssistMode() ? _soloHealPct : _healPct;
+
+        if (!pct)
+            return;
+
+        if (pct >= 100)
+            king->SetHealth(king->GetMaxHealth());
+        else
+            HealPiecePercent(king, pct);
+    }
+
+    bool GetBoardPositionForPiece(Creature* piece, uint8& row, uint8& col) const
+    {
+        if (!piece)
+            return false;
+
+        ObjectGuid pieceGUID = piece->GetGUID();
+        for (uint8 r = 0; r < MAX_ROW; ++r)
+        {
+            for (uint8 c = 0; c < MAX_COL; ++c)
+            {
+                if (_boards[r][c].pieceGUID == pieceGUID)
+                {
+                    row = r;
+                    col = c;
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    bool IsCellEmpty(uint8 row, uint8 col) const
+    {
+        return row < MAX_ROW && col < MAX_COL && !_boards[row][col].pieceGUID;
+    }
+
+    Creature* GetTriggerAt(uint8 row, uint8 col) const
+    {
+        if (row >= MAX_ROW || col >= MAX_COL)
+            return nullptr;
+
+        return ObjectAccessor::GetCreature(*me, _boards[row][col].triggerGUID);
+    }
+
+    Creature* GetNearestEnemyPiece(Creature* piece, uint8& enemyRow, uint8& enemyCol) const
+    {
+        if (!piece)
+            return nullptr;
+
+        uint8 pieceRow = 0;
+        uint8 pieceCol = 0;
+        if (!GetBoardPositionForPiece(piece, pieceRow, pieceCol))
+            return nullptr;
+
+        Creature* nearest = nullptr;
+        uint32 bestDistance = std::numeric_limits<uint32>::max();
+
+        for (uint8 row = 0; row < MAX_ROW; ++row)
+        {
+            for (uint8 col = 0; col < MAX_COL; ++col)
+            {
+                Creature* target = ObjectAccessor::GetCreature(*me, _boards[row][col].pieceGUID);
+                if (!target || !target->IsAlive() || IsFriendly(piece, target))
+                    continue;
+
+                uint32 distance = std::abs(int32(row) - int32(pieceRow)) + std::abs(int32(col) - int32(pieceCol));
+                if (distance < bestDistance || (distance == bestDistance && (!nearest || target->GetGUID() < nearest->GetGUID())))
+                {
+                    nearest = target;
+                    bestDistance = distance;
+                    enemyRow = row;
+                    enemyCol = col;
+                }
+            }
+        }
+
+        return nearest;
+    }
+
+    uint8 GetMaxAIMoveDistance(uint32 entry) const
+    {
+        switch (entry)
+        {
+            case NPC_QUEEN_A:
+            case NPC_QUEEN_H:
+                return 3;
+            case NPC_KNIGHT_A:
+            case NPC_KNIGHT_H:
+                return 2;
+            case NPC_PAWN_A:
+            case NPC_PAWN_H:
+            case NPC_BISHOP_A:
+            case NPC_BISHOP_H:
+            case NPC_ROOK_A:
+            case NPC_ROOK_H:
+            case NPC_KING_A:
+            case NPC_KING_H:
+            default:
+                return 1;
+        }
+    }
+
+    int8 GetOrientationForDelta(int32 deltaRow, int32 deltaCol) const
+    {
+        if (deltaRow < 0)
+        {
+            if (deltaCol < 0)
+                return ORI_S;
+            if (deltaCol > 0)
+                return ORI_E;
+            return ORI_SE;
+        }
+
+        if (deltaRow > 0)
+        {
+            if (deltaCol < 0)
+                return ORI_W;
+            if (deltaCol > 0)
+                return ORI_N;
+            return ORI_NW;
+        }
+
+        if (deltaCol < 0)
+            return ORI_SW;
+        if (deltaCol > 0)
+            return ORI_NE;
+
+        return -1;
+    }
+
+    bool OrientationFacesCell(KarazhanChessOrientationType orientation, uint8 fromRow, uint8 fromCol, uint8 targetRow, uint8 targetCol) const
+    {
+        int8 targetOrientation = GetOrientationForDelta(int32(targetRow) - int32(fromRow), int32(targetCol) - int32(fromCol));
+        if (targetOrientation == -1)
+            return false;
+
+        int8 diff = std::abs(int8(orientation) - targetOrientation);
+        diff = std::min<int8>(diff, MAX_ORI - diff);
+        return diff <= 1;
+    }
+
+    bool TryMovePieceTowardEnemy(Creature* piece)
+    {
+        if (!piece || !piece->IsAlive() || piece->IsCharmed())
+            return false;
+
+        uint8 pieceRow = 0;
+        uint8 pieceCol = 0;
+        if (!GetBoardPositionForPiece(piece, pieceRow, pieceCol))
+            return false;
+
+        uint8 enemyRow = 0;
+        uint8 enemyCol = 0;
+        if (!GetNearestEnemyPiece(piece, enemyRow, enemyCol))
+            return false;
+
+        uint32 currentDistance = std::abs(int32(enemyRow) - int32(pieceRow)) + std::abs(int32(enemyCol) - int32(pieceCol));
+        uint8 maxMove = GetMaxAIMoveDistance(piece->GetEntry());
+
+        struct Candidate
+        {
+            uint8 row;
+            uint8 col;
+            int32 score;
+        };
+
+        std::vector<Candidate> candidates;
+        for (uint8 row = 0; row < MAX_ROW; ++row)
+        {
+            for (uint8 col = 0; col < MAX_COL; ++col)
+            {
+                if (row == pieceRow && col == pieceCol)
+                    continue;
+
+                uint8 deltaRow = std::abs(int32(row) - int32(pieceRow));
+                uint8 deltaCol = std::abs(int32(col) - int32(pieceCol));
+                if (deltaRow > maxMove || deltaCol > maxMove)
+                    continue;
+
+                if (!IsCellEmpty(row, col) || !GetTriggerAt(row, col))
+                    continue;
+
+                uint32 newDistance = std::abs(int32(enemyRow) - int32(row)) + std::abs(int32(enemyCol) - int32(col));
+                if (newDistance >= currentDistance)
+                    continue;
+
+                int8 moveOrientation = GetOrientationForDelta(int32(row) - int32(pieceRow), int32(col) - int32(pieceCol));
+                int32 score = int32(currentDistance - newDistance) * 100;
+                score -= int32(deltaRow + deltaCol) * 5;
+
+                if (moveOrientation != -1 && OrientationFacesCell(KarazhanChessOrientationType(moveOrientation), row, col, enemyRow, enemyCol))
+                    score += 25;
+
+                candidates.push_back({ row, col, score });
+            }
+        }
+
+        if (candidates.empty())
+            return false;
+
+        auto best = std::max_element(candidates.begin(), candidates.end(), [](Candidate const& left, Candidate const& right)
+        {
+            if (left.score != right.score)
+                return left.score < right.score;
+
+            if (left.row != right.row)
+                return left.row > right.row;
+
+            return left.col > right.col;
+        });
+
+        if (Creature* trigger = GetTriggerAt(best->row, best->col))
+        {
+            piece->CastSpell(trigger, SPELL_MOVE_GENERIC, false);
+            return true;
+        }
+
+        return false;
+    }
+
+    bool FacePieceTowardNearestEnemy(Creature* piece)
+    {
+        if (!piece || !piece->IsAlive() || piece->IsCharmed())
+            return false;
+
+        uint8 enemyRow = 0;
+        uint8 enemyCol = 0;
+        if (Creature* enemy = GetNearestEnemyPiece(piece, enemyRow, enemyCol))
+        {
+            CastChangeFacing(piece, enemy);
+            return true;
+        }
+
+        return false;
+    }
+
     bool HandlePieceMoveByAI(Creature* piece, KarazhanChessOrientationType orientation)
     {
         uint8 pieceRow = 0;
@@ -1079,6 +1395,9 @@ struct npc_echo_of_medivh : public ScriptedAI
                 break;
             }
         }
+
+        if (!found)
+            return false;
 
         //! Change orientation at edges
         if (orientation == ORI_SE && pieceRow == 0)
@@ -1125,6 +1444,9 @@ struct npc_echo_of_medivh : public ScriptedAI
                 return true;
             }
         }
+
+        if (TryMovePieceTowardEnemy(piece))
+            return true;
 
         switch (orientation)
         {
@@ -1257,25 +1579,25 @@ struct npc_echo_of_medivh : public ScriptedAI
 
     void HandleCheat()
     {
+        uint8 cheatType = SelectCheatType();
+        if (cheatType == 255)
+            return;
+
         Talk(TALK_MEDIHV_CHEAT);
 
-        switch (urand(0, 2))
+        switch (cheatType)
         {
             case 0: // Heal king
             {
                 if (_instance->GetData(CHESS_EVENT_TEAM) == TEAM_ALLIANCE)
                 {
                     if (Creature* king = me->FindNearestCreature(NPC_KING_H, 80.0f, true))
-                    {
-                        king->SetHealth(king->GetMaxHealth());
-                    }
+                        ApplyConfiguredKingHeal(king);
                 }
                 else if (_instance->GetData(CHESS_EVENT_TEAM) == TEAM_HORDE)
                 {
                     if (Creature* king = me->FindNearestCreature(NPC_KING_A, 80.0f, true))
-                    {
-                        king->SetHealth(king->GetMaxHealth());
-                    }
+                        ApplyConfiguredKingHeal(king);
                 }
 
                 break;
@@ -1300,7 +1622,10 @@ struct npc_echo_of_medivh : public ScriptedAI
                     }
                 }
 
-                uint8 maxFireTargets = IsSoloAssistMode() ? 2 : 3;
+                uint8 maxFireTargets = IsSoloAssistMode() ? _soloFireMaxTargets : _fireMaxTargets;
+                if (!maxFireTargets)
+                    break;
+
                 if (targetList.size() > maxFireTargets)
                 {
                     Acore::Containers::RandomResize(targetList, maxFireTargets);
@@ -1333,7 +1658,15 @@ struct npc_echo_of_medivh : public ScriptedAI
                     }
                 }
 
-                uint8 resizeMax = urand(1, 4);
+                uint8 minTargets = IsSoloAssistMode() ? _soloBuffMinTargets : _buffMinTargets;
+                uint8 maxTargets = IsSoloAssistMode() ? _soloBuffMaxTargets : _buffMaxTargets;
+                if (!maxTargets)
+                    break;
+
+                uint8 resizeMax = urand(minTargets, maxTargets);
+                if (!resizeMax)
+                    break;
+
                 if (targetList.size() > resizeMax)
                 {
                     Acore::Containers::RandomResize(targetList, resizeMax);
@@ -1420,6 +1753,9 @@ struct npc_echo_of_medivh : public ScriptedAI
 
         if (chessPhase == CHESS_PHASE_INPROGRESS_PVE)
         {
+            if (!_cheatsEnabled)
+                return;
+
             if (_cheatTimer <= diff)
             {
                 HandleCheat();
@@ -1469,6 +1805,8 @@ struct npc_echo_of_medivh : public ScriptedAI
             case MEDIVH_GOSSIP_RESTART:
                 _assistMode = CHESS_ASSIST_GROUP;
                 _soloPlayerGUID.Clear();
+                LoadCheatConfig();
+                ResetCheatTimer();
                 _instance->SetData(DATA_CHESS_GAME_PHASE, CHESS_PHASE_FAILED);
                 _instance->SetData(DATA_CHESS_REINIT_PIECES, 0);
                 _deadCount.fill(0);
@@ -1487,6 +1825,8 @@ struct npc_echo_of_medivh : public ScriptedAI
             case MEDIVH_GOSSIP_START_PVP:
                 _assistMode = CHESS_ASSIST_GROUP;
                 _soloPlayerGUID.Clear();
+                LoadCheatConfig();
+                ResetCheatTimer();
                 _instance->SetData(CHESS_EVENT_TEAM, TEAM_NEUTRAL);
                 _instance->SetData(DATA_CHESS_GAME_PHASE, CHESS_PHASE_PVP_WARMUP);
                 SetupBoard();
@@ -1506,6 +1846,22 @@ private:
     std::array<std::array<BoardCell, MAX_COL>, MAX_ROW> _boards;
     std::array<uint32, 2> _deadCount;
     uint32 _cheatTimer;
+    bool _cheatsEnabled;
+    uint32 _cheatTimerMinMs;
+    uint32 _cheatTimerMaxMs;
+    uint32 _soloCheatTimerMinMs;
+    uint32 _soloCheatTimerMaxMs;
+    uint32 _cheatHealWeight;
+    uint32 _cheatFireWeight;
+    uint32 _cheatBuffWeight;
+    uint32 _healPct;
+    uint32 _soloHealPct;
+    uint8 _fireMaxTargets;
+    uint8 _soloFireMaxTargets;
+    uint8 _buffMinTargets;
+    uint8 _buffMaxTargets;
+    uint8 _soloBuffMinTargets;
+    uint8 _soloBuffMaxTargets;
 };
 
 struct npc_chesspiece : public ScriptedAI
@@ -1517,7 +1873,7 @@ struct npc_chesspiece : public ScriptedAI
         _currentOrientation = GetDefaultOrientationForTeam();
         _homePosition = creature->GetPosition();
 
-        _nextMoveTimer = urand(8 * IN_MILLISECONDS, 20 * IN_MILLISECONDS);
+        InitializeMovementState();
 
         InitializeCombatSpellsByEntry();
 
@@ -1532,6 +1888,8 @@ struct npc_chesspiece : public ScriptedAI
         me->SetWalk(true);
 
         DoCastSelf(SPELL_MELEE_ATTACK_TIMER, true);
+
+        InitializeMovementState();
 
         for (uint8 i = SPELL_SCHOOL_NORMAL; i < MAX_SPELL_SCHOOL; ++i)
         {
@@ -1555,6 +1913,8 @@ struct npc_chesspiece : public ScriptedAI
         if (!me->IsCharmed())
         {
             me->SetNpcFlag(UNIT_NPC_FLAG_GOSSIP);
+            _movementFailsafeTimer = 0;
+            _failedMoveAttempts = 0;
 
             if (!_nextMoveTimer)
             {
@@ -1563,6 +1923,14 @@ struct npc_chesspiece : public ScriptedAI
 
             if (Creature* medivh = ObjectAccessor::GetCreature(*me, _instance->GetGuidData(DATA_ECHO_OF_MEDIVH)))
             {
+                if (CAST_AI(npc_echo_of_medivh, medivh->AI())->GetBoardPositionForPiece(me, _lastKnownRow, _lastKnownCol))
+                {
+                    _hasKnownCell = true;
+                    _idleMovementRetryTimer = 20 * IN_MILLISECONDS;
+                }
+                else
+                    _hasKnownCell = false;
+
                 if (Creature* target = CAST_AI(npc_echo_of_medivh, medivh->AI())->GetHostileTargetForChangeFacing(me, _currentOrientation))
                 {
                     CastChangeFacing(me, target);
@@ -1718,7 +2086,7 @@ struct npc_chesspiece : public ScriptedAI
         {
             case ACTION_CHESS_PIECE_RESET_ORIENTATION:
                 _currentOrientation = GetDefaultOrientationForTeam();
-                _nextMoveTimer = urand(8 * IN_MILLISECONDS, 20 * IN_MILLISECONDS);
+                InitializeMovementState();
                 break;
             default:
                 break;
@@ -1753,6 +2121,97 @@ struct npc_chesspiece : public ScriptedAI
         }
 
         return nullptr;
+    }
+
+    void InitializeMovementState()
+    {
+        _nextMoveTimer = urand(8 * IN_MILLISECONDS, 20 * IN_MILLISECONDS);
+        _movementFailsafeTimer = 0;
+        _idleMovementRetryTimer = urand(8 * IN_MILLISECONDS, 14 * IN_MILLISECONDS);
+        _failedMoveAttempts = 0;
+        _lastKnownRow = 0;
+        _lastKnownCol = 0;
+        _hasKnownCell = false;
+    }
+
+    bool IsAntiIdlePiece() const
+    {
+        switch (me->GetEntry())
+        {
+            case NPC_KING_A:
+            case NPC_KING_H:
+            case NPC_ROOK_A:
+            case NPC_ROOK_H:
+            case NPC_BISHOP_A:
+            case NPC_BISHOP_H:
+            case NPC_QUEEN_A:
+            case NPC_QUEEN_H:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    void UpdateMovementFailsafe(uint32 diff)
+    {
+        if (!_movementFailsafeTimer)
+            return;
+
+        if (_movementFailsafeTimer <= diff)
+        {
+            _movementFailsafeTimer = 0;
+            if (!_nextMoveTimer && !me->isMoving())
+                _nextMoveTimer = urand(3 * IN_MILLISECONDS, 6 * IN_MILLISECONDS);
+        }
+        else
+            _movementFailsafeTimer -= diff;
+    }
+
+    void UpdateIdleMovementRetry(uint32 diff, npc_echo_of_medivh* medivhAI)
+    {
+        if (!medivhAI)
+            return;
+
+        uint8 row = 0;
+        uint8 col = 0;
+        if (!medivhAI->GetBoardPositionForPiece(me, row, col))
+        {
+            _hasKnownCell = false;
+            return;
+        }
+
+        if (!_hasKnownCell || row != _lastKnownRow || col != _lastKnownCol)
+        {
+            _lastKnownRow = row;
+            _lastKnownCol = col;
+            _hasKnownCell = true;
+            _idleMovementRetryTimer = 20 * IN_MILLISECONDS;
+            _failedMoveAttempts = 0;
+            return;
+        }
+
+        if (!IsAntiIdlePiece() || _movementFailsafeTimer || me->isMoving())
+            return;
+
+        if (_idleMovementRetryTimer <= diff)
+        {
+            _idleMovementRetryTimer = 20 * IN_MILLISECONDS;
+
+            if (medivhAI->TryMovePieceTowardEnemy(me))
+            {
+                _nextMoveTimer = 0;
+                _movementFailsafeTimer = 5 * IN_MILLISECONDS;
+                _failedMoveAttempts = 0;
+            }
+            else
+            {
+                medivhAI->FacePieceTowardNearestEnemy(me);
+                if (!_nextMoveTimer)
+                    _nextMoveTimer = urand(3 * IN_MILLISECONDS, 6 * IN_MILLISECONDS);
+            }
+        }
+        else
+            _idleMovementRetryTimer -= diff;
     }
 
     void UpdateAI(uint32 diff) override
@@ -1793,19 +2252,48 @@ struct npc_chesspiece : public ScriptedAI
 
             if (shouldAutoMove)
             {
+                UpdateMovementFailsafe(diff);
+
+                npc_echo_of_medivh* medivhAI = nullptr;
+                if (Creature* medivh = ObjectAccessor::GetCreature(*me, _instance->GetGuidData(DATA_ECHO_OF_MEDIVH)))
+                    medivhAI = CAST_AI(npc_echo_of_medivh, medivh->AI());
+
+                if (medivhAI)
+                    UpdateIdleMovementRetry(diff, medivhAI);
+
                 if (_nextMoveTimer)
                 {
                     if (_nextMoveTimer <= diff)
                     {
-                        if (Creature* medivh = ObjectAccessor::GetCreature(*me, _instance->GetGuidData(DATA_ECHO_OF_MEDIVH)))
+                        if (medivhAI)
                         {
-                            if (CAST_AI(npc_echo_of_medivh, medivh->AI())->HandlePieceMoveByAI(me, _currentOrientation))
+                            if (medivhAI->HandlePieceMoveByAI(me, _currentOrientation))
                             {
+                                _failedMoveAttempts = 0;
                                 _nextMoveTimer = 0;
+                                _movementFailsafeTimer = 5 * IN_MILLISECONDS;
                             }
                             else
                             {
-                                _nextMoveTimer = 1 * IN_MILLISECONDS; //! Re-check after a second
+                                ++_failedMoveAttempts;
+                                if (_failedMoveAttempts >= 3)
+                                {
+                                    if (medivhAI->TryMovePieceTowardEnemy(me))
+                                    {
+                                        _nextMoveTimer = 0;
+                                        _movementFailsafeTimer = 5 * IN_MILLISECONDS;
+                                    }
+                                    else
+                                    {
+                                        medivhAI->FacePieceTowardNearestEnemy(me);
+                                        _nextMoveTimer = urand(3 * IN_MILLISECONDS, 6 * IN_MILLISECONDS);
+                                        _failedMoveAttempts = 0;
+                                    }
+                                }
+                                else
+                                {
+                                    _nextMoveTimer = urand(1 * IN_MILLISECONDS, 2 * IN_MILLISECONDS);
+                                }
                             }
                         }
                     }
@@ -2161,10 +2649,16 @@ private:
     ObjectGuid _charmerGUID;
 
     uint32 _nextMoveTimer;
+    uint32 _movementFailsafeTimer;
+    uint32 _idleMovementRetryTimer;
     uint32 _combatSpellTimer;
     uint32 _combatSpellTimerBase;
     uint32 _combatSpellTimer2;
     uint32 _combatSpellTimerBase2;
+    uint8 _failedMoveAttempts;
+    uint8 _lastKnownRow;
+    uint8 _lastKnownCol;
+    bool _hasKnownCell;
 
     KarazhanChessOrientationType _currentOrientation;
 
