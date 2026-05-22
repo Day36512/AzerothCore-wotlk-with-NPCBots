@@ -757,8 +757,7 @@ BotEquipResult bot_ai::PaperdollEquip(Player* player, uint8 slot, Item* item)
 
     _updateEquips(slot, item);
 
-    if (!einfo || slot > BOT_SLOT_RANGED || einfo->ItemEntry[slot] != newItemId)
-        ApplyItemBonuses(slot);
+    ApplyItemBonuses(slot);
 
     ApplyItemSetBonuses(item, true);
 
@@ -2854,7 +2853,22 @@ void bot_ai::_listAuras(Player const* player, Unit const* unit) const
     botstring << "\n" << LocalizedNpcText(player, BOT_TEXT_MELEE_AP) << ": " << int32(unit->GetTotalAttackPowerValue(BASE_ATTACK));
     botstring << "\n" << LocalizedNpcText(player, BOT_TEXT_RANGED_AP) << ": " << int32(unit->GetTotalAttackPowerValue(RANGED_ATTACK));
     botstring << "\n" << LocalizedNpcText(player, BOT_TEXT_ARMOR) << ": " << uint32(unit->GetArmor());
-    botstring << "\n" << LocalizedNpcText(player, BOT_TEXT_CRIT) << ": " << float(unit->GetUnitCriticalChance(BASE_ATTACK, me));
+    float displayCrit = unit->GetUnitCriticalChance(BASE_ATTACK, me);
+    if (unit == me)
+    {
+        float meleeCrit = crit;
+        meleeCrit += me->GetTotalAuraModifier(SPELL_AURA_MOD_WEAPON_CRIT_PERCENT);
+        meleeCrit += me->GetTotalAuraModifier(SPELL_AURA_MOD_CRIT_PCT);
+
+        float spellCrit = float(me->m_baseSpellCritChance) + crit;
+        float schoolCrit = 0.0f;
+        for (uint8 school = SPELL_SCHOOL_HOLY; school < MAX_SPELL_SCHOOL; ++school)
+            schoolCrit = std::max<float>(schoolCrit, me->GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_SPELL_CRIT_CHANCE_SCHOOL, 1u << school));
+
+        spellCrit += schoolCrit;
+        displayCrit = std::max({ 0.0f, meleeCrit, spellCrit });
+    }
+    botstring << "\n" << LocalizedNpcText(player, BOT_TEXT_CRIT) << ": " << displayCrit;
     botstring << "\n" << LocalizedNpcText(player, BOT_TEXT_DEFENSE) << ": " << uint32(unit->GetDefenseSkillValue());
     botstring << "\n" << LocalizedNpcText(player, BOT_TEXT_MISS) << ": " << float(unit->GetUnitMissChance(BASE_ATTACK));
     botstring << "\n" << LocalizedNpcText(player, BOT_TEXT_DODGE) << ": " << float(unit->GetUnitDodgeChance());
@@ -2905,7 +2919,9 @@ void bot_ai::_listAuras(Player const* player, Unit const* unit) const
 
     if (unit == me)
     {
-        botstring << "\n" << LocalizedNpcText(player, BOT_TEXT_SPELLPOWER) << ": " << int32(me->SpellBaseDamageBonusDone(SPELL_SCHOOL_MASK_MAGIC));
+        int32 damageSpellPower = me->SpellBaseDamageBonusDone(SPELL_SCHOOL_MASK_MAGIC);
+        int32 healingSpellPower = me->SpellBaseHealingBonusDone(SPELL_SCHOOL_MASK_MAGIC);
+        botstring << "\n" << LocalizedNpcText(player, BOT_TEXT_SPELLPOWER) << ": " << std::max({ 0, damageSpellPower, healingSpellPower });
         botstring << "\n" << LocalizedNpcText(player, BOT_TEXT_REGEN_HP) << ": " << int32(_getTotalBotStat(BOT_STAT_MOD_HEALTH_REGEN));
         if (me->GetMaxPower(POWER_MANA) > 1)
         {
@@ -4001,6 +4017,11 @@ void bot_ai::SetStats(bool force)
     //MANA
     _OnManaUpdate();
 
+    spellpen = 0;
+    spellpower = 0;
+    spelldamage = 0;
+    spellhealing = 0;
+
     if (BotDataMgr::IsCastingClass(_botclass))
     {
         //SPELL PENETRATION
@@ -4123,11 +4144,9 @@ void bot_ai::SetStats(bool force)
         }
 
         spellpower = uint32(value);
+        spelldamage = uint32(std::max<float>(_getTotalBotStat(BOT_STAT_MOD_SPELL_DAMAGE_DONE), 0.f));
+        spellhealing = uint32(std::max<float>(_getTotalBotStat(BOT_STAT_MOD_SPELL_HEALING_DONE), 0.f));
     }
-    //else
-    //{
-    //    spellpower = 0;
-    //}
 
     //if init or levelup
     if (force)
@@ -4151,6 +4170,8 @@ void bot_ai::ReceiveEmote(Player* player, uint32 emote)
     switch (emote)
     {
     case TEXT_EMOTE_BONK:
+        if (shouldUpdateStats)
+            SetStats(false);
         _listAuras(player, me);
         break;
     case TEXT_EMOTE_SALUTE:
@@ -16387,9 +16408,7 @@ BotEquipResult bot_ai::_equip(uint8 slot, Item* newItem, ObjectGuid receiver, bo
 
     _updateEquips(slot, newItem);
 
-    //only for non-standard items
-    if (slot > BOT_SLOT_RANGED || einfo->ItemEntry[slot] != newItemId)
-        ApplyItemBonuses(slot);
+    ApplyItemBonuses(slot);
     ApplyItemSetBonuses(newItem, true);
 
     if (slot == BOT_SLOT_OFFHAND)
@@ -16553,8 +16572,12 @@ void bot_ai::ApplyItemBonuses(uint8 slot)
     _stats[slot][BOT_STAT_MOD_ARMOR] += proto->Armor;
     _stats[slot][BOT_STAT_MOD_BLOCK_VALUE] += proto->Block;
 
+    if (ssv)
+        if (int32 spellbonus = ssv->getSpellBonus(proto->ScalingStatValue))
+            _stats[slot][BOT_STAT_MOD_SPELL_POWER] += spellbonus;
+
     EquipmentInfo const* einfo = BotDataMgr::GetBotEquipmentInfo(me->GetEntry());
-    if (slot > BOT_SLOT_RANGED || item->GetEntry() != einfo->ItemEntry[slot])
+    if (!einfo || slot > BOT_SLOT_RANGED || item->GetEntry() != einfo->ItemEntry[slot])
     {
         if (ssv)
         {
@@ -17498,6 +17521,10 @@ float bot_ai::_getItemGearStatScore(ItemTemplate const* iproto, uint8 forslot, I
     istats[BOT_STAT_MOD_ARMOR] += proto->Armor;
     istats[BOT_STAT_MOD_BLOCK_VALUE] += proto->Block;
 
+    if (ssv)
+        if (int32 spellbonus = ssv->getSpellBonus(proto->ScalingStatValue))
+            istats[BOT_STAT_MOD_SPELL_POWER] += spellbonus;
+
     EquipmentInfo const* einfo = BotDataMgr::GetBotEquipmentInfo(me->GetEntry());
     if (forslot > BOT_SLOT_RANGED || proto->ItemId != einfo->ItemEntry[forslot])
     {
@@ -17631,6 +17658,8 @@ float bot_ai::_getItemGearStatScore(ItemTemplate const* iproto, uint8 forslot, I
                     case ITEM_MOD_HEALTH_REGEN:
                     case ITEM_MOD_SPELL_PENETRATION:
                     case ITEM_MOD_BLOCK_VALUE:
+                    case ITEM_MOD_SPELL_HEALING_DONE:   // deprecated
+                    case ITEM_MOD_SPELL_DAMAGE_DONE:    // deprecated
                         istats[enchant_spell_id] += enchant_amount;
                         break;
                     default:
@@ -17683,7 +17712,7 @@ void bot_ai::_saveStats()
         .parryPct = me->GetUnitParryChance(),
         .critPct = crit + me->GetTotalAuraModifier(SPELL_AURA_MOD_WEAPON_CRIT_PERCENT) + me->GetTotalAuraModifier(SPELL_AURA_MOD_CRIT_PCT),
         .attackPower = static_cast<uint32>(0.5f + me->GetTotalAttackPowerValue(BASE_ATTACK)),
-        .spellPower = static_cast<uint32>(std::max<int32>(0, me->SpellBaseDamageBonusDone(SPELL_SCHOOL_MASK_MAGIC))),
+        .spellPower = GetBotSpellPower(),
         .spellPen = spellpen,
         .hastePct = std::max<float>(haste, 0.f),
         .hitBonusPct = std::max<float>(hit, 0.f),
@@ -18389,14 +18418,11 @@ void bot_ai::InitEquips()
     if (Item const* MH = _equips[BOT_SLOT_MAINHAND])
     {
         uint32 itemId = MH->GetEntry();
-        if (einfo->ItemEntry[0] != itemId)
+        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId))
         {
-            if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId))
-            {
-                if (RespectEquipsAttackTime())
-                    me->SetAttackTime(BASE_ATTACK, proto->Delay);
-                ApplyItemBonuses(BOT_SLOT_MAINHAND);
-            }
+            if (einfo->ItemEntry[0] != itemId && RespectEquipsAttackTime())
+                me->SetAttackTime(BASE_ATTACK, proto->Delay);
+            ApplyItemBonuses(BOT_SLOT_MAINHAND);
         }
     }
     if (Item const* OH = _equips[BOT_SLOT_OFFHAND])
@@ -18404,8 +18430,7 @@ void bot_ai::InitEquips()
         uint32 itemId = OH->GetEntry();
         if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId))
         {
-            if (einfo->ItemEntry[1] != itemId)
-                ApplyItemBonuses(BOT_SLOT_OFFHAND);
+            ApplyItemBonuses(BOT_SLOT_OFFHAND);
 
             if (proto->Class == ITEM_CLASS_WEAPON)
             {
@@ -18423,16 +18448,12 @@ void bot_ai::InitEquips()
     if (Item const* RH = _equips[BOT_SLOT_RANGED])
     {
         uint32 itemId = RH->GetEntry();
-        if (einfo->ItemEntry[2] != itemId)
+        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId))
         {
-            if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId))
-            {
-                if (proto->Class == ITEM_CLASS_WEAPON)
-                    if (RespectEquipsAttackTime())
-                        me->SetAttackTime(RANGED_ATTACK, proto->Delay);
+            if (einfo->ItemEntry[2] != itemId && proto->Class == ITEM_CLASS_WEAPON && RespectEquipsAttackTime())
+                me->SetAttackTime(RANGED_ATTACK, proto->Delay);
 
-                ApplyItemBonuses(BOT_SLOT_RANGED);
-            }
+            ApplyItemBonuses(BOT_SLOT_RANGED);
         }
     }
 

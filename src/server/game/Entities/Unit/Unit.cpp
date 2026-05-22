@@ -9474,7 +9474,10 @@ int32 Unit::SpellBaseDamageBonusDone(SpellSchoolMask schoolMask)
 
     //npcbot: apply bot spellpower
     if ((schoolMask & SPELL_SCHOOL_MASK_MAGIC) && IsNPCBot())
+    {
         DoneAdvertisedBenefit += ToCreature()->GetCreatureSpellPower();
+        DoneAdvertisedBenefit += ToCreature()->GetCreatureSpellDamageBonus();
+    }
     //end npcbot
 
     if (IsPlayer())
@@ -10248,7 +10251,10 @@ int32 Unit::SpellBaseHealingBonusDone(SpellSchoolMask schoolMask)
 
     //npcbot: apply bot spellpower to healing
     if (IsNPCBot())
+    {
         AdvertisedBenefit += ToCreature()->GetCreatureSpellPower();
+        AdvertisedBenefit += ToCreature()->GetCreatureSpellHealingBonus();
+    }
     //end npcbot
 
     // Healing bonus of spirit, intellect and strength

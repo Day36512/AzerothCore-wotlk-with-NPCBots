@@ -2269,6 +2269,7 @@ void BotDataMgr::CreateGeneratedBotsSortedGear()
         const uint8 reqLstep = (((proto.RequiredLevel == 1) ? 0 : proto.RequiredLevel) + ITEM_SORTING_LEVEL_STEP - 1) / ITEM_SORTING_LEVEL_STEP;
         const bool is_caster_item = proto.StatsCount > 0 && std::ranges::any_of(proto.ItemStat, [](_ItemStat const& stat) {
             return (stat.ItemStatType == ITEM_MOD_INTELLECT || stat.ItemStatType == ITEM_MOD_SPELL_POWER ||
+                stat.ItemStatType == ITEM_MOD_SPELL_HEALING_DONE || stat.ItemStatType == ITEM_MOD_SPELL_DAMAGE_DONE ||
                 stat.ItemStatType == ITEM_MOD_SPELL_PENETRATION || stat.ItemStatType == ITEM_MOD_MANA_REGENERATION) &&
                 stat.ItemStatValue > 0;
         });

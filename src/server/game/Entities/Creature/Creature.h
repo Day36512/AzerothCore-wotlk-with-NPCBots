@@ -526,6 +526,8 @@ public:
     uint32 GetCreatureExpertise() const;
     uint32 GetCreatureSpellPenetration() const;
     uint32 GetCreatureSpellPower() const;
+    uint32 GetCreatureSpellDamageBonus() const;
+    uint32 GetCreatureSpellHealingBonus() const;
     uint32 GetCreatureDefense() const;
     int32 GetCreatureResistanceBonus(SpellSchoolMask mask) const;
     uint8 GetCreatureComboPoints() const;

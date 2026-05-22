@@ -4489,6 +4489,14 @@ uint32 Creature::GetCreatureSpellPower() const
 {
     return bot_AI ? bot_AI->GetBotSpellPower() : 0;
 }
+uint32 Creature::GetCreatureSpellDamageBonus() const
+{
+    return bot_AI ? bot_AI->GetBotSpellDamageBonus() : 0;
+}
+uint32 Creature::GetCreatureSpellHealingBonus() const
+{
+    return bot_AI ? bot_AI->GetBotSpellHealingBonus() : 0;
+}
 uint32 Creature::GetCreatureDefense() const
 {
     return bot_AI ? bot_AI->GetBotDefense() : GetMaxSkillValueForLevel();

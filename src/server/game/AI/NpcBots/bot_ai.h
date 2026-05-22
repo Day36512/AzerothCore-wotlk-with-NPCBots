@@ -254,6 +254,8 @@ public:
     uint32 GetBotExpertise() const { return expertise; }
     uint32 GetBotSpellPenetration() const { return spellpen; }
     uint32 GetBotSpellPower() const { return spellpower; }
+    uint32 GetBotSpellDamageBonus() const { return spelldamage; }
+    uint32 GetBotSpellHealingBonus() const { return spellhealing; }
     uint32 GetBotDefense() const { return defense; }
     uint32 GetShieldBlockValue() const { return blockvalue; }
     int32 GetBotResistanceBonus(SpellSchoolMask mask) const;
@@ -709,7 +711,7 @@ private:
     //stats
     float hit{}, parry{}, dodge{}, block{}, crit{}, armor_pen{}, resilience{};
     float dmg_taken_phy{ 1.f }, dmg_taken_mag{ 1.f };
-    uint32 expertise{}, spellpower{}, spellpen{}, defense{};
+    uint32 expertise{}, spellpower{}, spelldamage{}, spellhealing{}, spellpen{}, defense{};
     uint32 blockvalue{ 1 };
     int32 haste{};
     int32 resistbonus[MAX_SPELL_SCHOOL - 1]{};
