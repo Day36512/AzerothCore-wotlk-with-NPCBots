@@ -19,8 +19,19 @@
 #include "CreatureScript.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
+#include "Group.h"
+#include "Map.h"
+#include "MotionMaster.h"
+#include "ObjectAccessor.h"
+#include "Player.h"
 #include "ScriptedCreature.h"
+#include "bot_ai.h"
+#include "botmgr.h"
 #include "zulaman.h"
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <vector>
 
 enum Spells
 {
@@ -76,8 +87,192 @@ enum NalorakkGroups
     GROUP_MOVE                  = 3,
     GROUP_BERSERK               = 4,
     GROUP_HUMAN                 = 5,
-    GROUP_BEAR                  = 6
+    GROUP_BEAR                  = 6,
+    GROUP_BOT_TANK_SUPPORT      = 10
 };
+
+static bool IsNPCBotUnit(Unit* unit)
+{
+    Creature* creature = unit ? unit->ToCreature() : nullptr;
+    return creature && creature->IsNPCBot() && creature->GetBotAI();
+}
+
+static bool IsValidEncounterNPCBot(Creature* creature)
+{
+    return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI();
+}
+
+static bool IsEncounterParticipantFor(Creature const* source, Unit* unit, float range)
+{
+    if (!source || !unit || !unit->IsInWorld() || !unit->IsAlive() || unit->GetMap() != source->GetMap())
+        return false;
+
+    if (unit->HasUnitState(UNIT_STATE_ISOLATED) || !unit->IsWithinDist(source, range))
+        return false;
+
+    if (unit->IsPlayer())
+        return true;
+
+    return IsValidEncounterNPCBot(unit->ToCreature());
+}
+
+static std::vector<Unit*> GatherEncounterUnitsForCreature(Creature const* source, float range = 150.0f)
+{
+    std::vector<Unit*> units;
+    GuidSet seen;
+
+    auto addUnit = [&](Unit* unit)
+    {
+        if (!unit || seen.count(unit->GetGUID()) || !IsEncounterParticipantFor(source, unit, range))
+            return;
+
+        seen.insert(unit->GetGUID());
+        units.push_back(unit);
+    };
+
+    if (!source || !source->GetMap())
+        return units;
+
+    Map::PlayerList const& players = source->GetMap()->GetPlayers();
+    for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+    {
+        Player* player = itr->GetSource();
+        if (!player)
+            continue;
+
+        addUnit(player);
+
+        if (Group* group = player->GetGroup())
+            for (Unit* member : BotMgr::GetAllGroupMembers(group))
+                addUnit(member);
+
+        if (BotMgr* botMgr = player->GetBotMgr())
+            if (BotMap const* botMap = botMgr->GetBotMap())
+                for (BotMap::value_type const& pair : *botMap)
+                    addUnit(pair.second);
+    }
+
+    return units;
+}
+
+static std::vector<Creature*> GatherEncounterBotsForCreature(Creature const* source, float range = 150.0f)
+{
+    std::vector<Creature*> bots;
+
+    for (Unit* unit : GatherEncounterUnitsForCreature(source, range))
+        if (Creature* creature = unit->ToCreature())
+            if (IsValidEncounterNPCBot(creature))
+                bots.push_back(creature);
+
+    return bots;
+}
+
+static bool IsPlayerMarkedTank(Player* player)
+{
+    if (!player)
+        return false;
+
+    Group* group = player->GetGroup();
+    if (!group)
+        return false;
+
+    Group::MemberSlotList const& slots = group->GetMemberSlots();
+    for (Group::member_citerator itr = slots.begin(); itr != slots.end(); ++itr)
+        if (itr->guid == player->GetGUID())
+            return itr->flags & (MEMBER_FLAG_MAINTANK | MEMBER_FLAG_MAINASSIST);
+
+    return false;
+}
+
+static bool IsEncounterTank(Unit* unit)
+{
+    if (!unit)
+        return false;
+
+    if (Player* player = unit->ToPlayer())
+        return IsPlayerMarkedTank(player);
+
+    Creature* bot = unit->ToCreature();
+    bot_ai* ai = IsValidEncounterNPCBot(bot) ? bot->GetBotAI() : nullptr;
+    return ai && (ai->IsTank() || ai->IsOffTank() || ai->HasRole(BOT_ROLE_TANK));
+}
+
+static std::vector<Unit*> GatherEncounterTanksForCreature(Creature const* source, float range = 150.0f)
+{
+    std::vector<Unit*> tanks;
+
+    for (Unit* unit : GatherEncounterUnitsForCreature(source, range))
+        if (IsEncounterTank(unit))
+            tanks.push_back(unit);
+
+    std::stable_sort(tanks.begin(), tanks.end(), [](Unit* left, Unit* right)
+    {
+        Creature* leftCreature = left ? left->ToCreature() : nullptr;
+        Creature* rightCreature = right ? right->ToCreature() : nullptr;
+        bot_ai* leftAI = IsValidEncounterNPCBot(leftCreature) ? leftCreature->GetBotAI() : nullptr;
+        bot_ai* rightAI = IsValidEncounterNPCBot(rightCreature) ? rightCreature->GetBotAI() : nullptr;
+
+        bool leftOffTank = leftAI && leftAI->IsOffTank();
+        bool rightOffTank = rightAI && rightAI->IsOffTank();
+        if (leftOffTank != rightOffTank)
+            return leftOffTank;
+
+        bool leftBotTank = leftAI && (leftAI->IsTank() || leftAI->IsOffTank() || leftAI->HasRole(BOT_ROLE_TANK));
+        bool rightBotTank = rightAI && (rightAI->IsTank() || rightAI->IsOffTank() || rightAI->HasRole(BOT_ROLE_TANK));
+        if (leftBotTank != rightBotTank)
+            return leftBotTank;
+
+        return left->GetGUID() < right->GetGUID();
+    });
+
+    return tanks;
+}
+
+static Unit* SelectFarthestEncounterTargetForCreature(Creature* source, float range, bool includeVictim = false)
+{
+    Unit* best = nullptr;
+    float bestDistance = -1.0f;
+
+    for (Unit* unit : GatherEncounterUnitsForCreature(source, range))
+    {
+        if (!includeVictim && unit == source->GetVictim())
+            continue;
+
+        float distance = source->GetDistance(unit);
+        if (!best || distance > bestDistance)
+        {
+            best = unit;
+            bestDistance = distance;
+        }
+    }
+
+    if (!best && includeVictim && source->GetVictim() && source->IsWithinDistInMap(source->GetVictim(), range))
+        return source->GetVictim();
+
+    return best;
+}
+
+static void SafeBotMoveTo(Creature* bot, Position const& destination)
+{
+    if (!bot || !bot->IsAlive() || !bot->IsNPCBot())
+        return;
+
+    bot_ai* ai = bot->GetBotAI();
+    if (!ai)
+        return;
+
+    float x = destination.GetPositionX();
+    float y = destination.GetPositionY();
+    float z = destination.GetPositionZ();
+
+    if (!bot->CanFly())
+        bot->UpdateAllowedPositionZ(x, y, z);
+
+    Position finalPosition;
+    finalPosition.Relocate(x, y, z, destination.GetOrientation());
+
+    ai->MoveToSendPosition(finalPosition);
+}
 
 struct boss_nalorakk : public BossAI
 {
@@ -93,6 +288,7 @@ struct boss_nalorakk : public BossAI
     void Reset() override
     {
         BossAI::Reset();
+        scheduler.CancelGroup(GROUP_BOT_TANK_SUPPORT);
         _waveList.clear();
         _introScheduler.CancelAll();
         if (_bearForm)
@@ -118,7 +314,7 @@ struct boss_nalorakk : public BossAI
                 case PHASE_SEND_GUARDS_1:
                     me->GetCreaturesWithEntryInRange(_waveList, 10.0f, NPC_AMANISHI_AXE_THROWER);
                     me->GetCreaturesWithEntryInRange(_waveList, 10.0f, NPC_AMANISHI_TRIBESMAN);
-                    GroupedAttack(_waveList);
+                    GroupedAttack(_waveList, who);
                     Talk(SAY_WAVE1);
                     _introScheduler.Schedule(5s, GROUP_CHECK_DEAD, [this](TaskContext context)
                     {
@@ -143,7 +339,7 @@ struct boss_nalorakk : public BossAI
                     me->GetCreaturesWithEntryInRange(_waveList, 10.0f, NPC_AMANISHI_AXE_THROWER);
                     me->GetCreaturesWithEntryInRange(_waveList, 10.0f, NPC_AMANISHI_TRIBESMAN);
                     me->GetCreaturesWithEntryInRange(_waveList, 10.0f, NPC_AMANISHI_MEDICINE_MAN);
-                    GroupedAttack(_waveList);
+                    GroupedAttack(_waveList, who);
                     Talk(SAY_WAVE2);
                     _introScheduler.Schedule(5s, GROUP_CHECK_DEAD, [this](TaskContext context)
                     {
@@ -166,7 +362,7 @@ struct boss_nalorakk : public BossAI
                     break;
                 case PHASE_SEND_GUARDS_3:
                     me->GetCreaturesWithEntryInRange(_waveList, 10.0f, NPC_AMANISHI_WARBRINGER);
-                    GroupedAttack(_waveList);
+                    GroupedAttack(_waveList, who);
                     Talk(SAY_WAVE3);
                     _introScheduler.Schedule(5s, GROUP_CHECK_DEAD, [this](TaskContext context)
                     {
@@ -190,7 +386,7 @@ struct boss_nalorakk : public BossAI
                 case PHASE_SEND_GUARDS_4:
                     me->GetCreaturesWithEntryInRange(_waveList, 25.0f, NPC_AMANISHI_WARBRINGER);
                     me->GetCreaturesWithEntryInRange(_waveList, 25.0f, NPC_AMANISHI_MEDICINE_MAN);
-                    GroupedAttack(_waveList);
+                    GroupedAttack(_waveList, who);
                     Talk(SAY_WAVE4);
                     _waveList.clear();
                     _phase = PHASE_START_COMBAT;
@@ -227,10 +423,16 @@ struct boss_nalorakk : public BossAI
     {
         BossAI::JustEngagedWith(who);
         Talk(SAY_AGGRO);
+        scheduler.Schedule(2s, GROUP_BOT_TANK_SUPPORT, [this](TaskContext context)
+        {
+            BrutalSwipeTankSupportTick();
+            context.Repeat(2s);
+        });
+
         scheduler.Schedule(15s, 20s, GROUP_HUMAN, [this](TaskContext context)
         {
             Talk(SAY_SURGE);
-            DoCastRandomTarget(SPELL_SURGE, 0, 45.0f, false, false, false);
+            CastSurge();
             context.Repeat();
         }).Schedule(15s, 25s, GROUP_HUMAN, [this](TaskContext context)
         {
@@ -268,7 +470,7 @@ struct boss_nalorakk : public BossAI
             scheduler.Schedule(15s, 20s, GROUP_HUMAN, [this](TaskContext context)
             {
                 Talk(SAY_SURGE);
-                DoCastRandomTarget(SPELL_SURGE, 0, 45.0f, false, false, false);
+                CastSurge();
                 context.Repeat();
             }).Schedule(15s, 25s, GROUP_HUMAN, [this](TaskContext context)
             {
@@ -316,11 +518,23 @@ struct boss_nalorakk : public BossAI
         }
     }
 
-    void GroupedAttack(std::list<Creature* > attackerList)
+    void GroupedAttack(std::list<Creature* > attackerList, Unit* trigger)
     {
+        std::vector<Unit*> tanks = GatherEncounterTanksForCreature(me, 120.0f);
+        uint8 index = 0;
+
         for (Creature* attacker : attackerList)
         {
             attacker->SetInCombatWithZone();
+            Unit* tank = !tanks.empty() ? tanks[index++ % tanks.size()] : trigger;
+            if (!tank || !tank->IsAlive())
+                tank = me->GetVictim();
+
+            if (!tank || !tank->IsAlive())
+                continue;
+
+            attacker->AddThreat(tank, 8000.0f);
+            attacker->AI()->AttackStart(tank);
         }
     }
 
@@ -352,8 +566,85 @@ struct boss_nalorakk : public BossAI
 
     void JustDied(Unit* killer) override
     {
+        scheduler.CancelGroup(GROUP_BOT_TANK_SUPPORT);
         BossAI::JustDied(killer);
         Talk(SAY_DEATH);
+    }
+
+    void KilledUnit(Unit* victim) override
+    {
+        BossAI::KilledUnit(victim);
+        if (victim->IsPlayer() || IsNPCBotUnit(victim))
+            Talk(urand(0, 1) ? SAY_KILL_ONE : SAY_KILL_TWO);
+    }
+
+    void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override
+    {
+        scheduler.CancelGroup(GROUP_BOT_TANK_SUPPORT);
+        BossAI::EnterEvadeMode(why);
+    }
+
+    Unit* SelectFarthestEncounterTarget(float range, bool includeVictim = false) const
+    {
+        return SelectFarthestEncounterTargetForCreature(me, range, includeVictim);
+    }
+
+    void CastSurge()
+    {
+        Unit* target = SelectFarthestEncounterTarget(45.0f, false);
+        if (!target)
+            target = SelectFarthestEncounterTarget(45.0f, true);
+
+        if (target)
+            DoCast(target, SPELL_SURGE);
+    }
+
+    Creature* FindOffTankBotForBrutalSwipe() const
+    {
+        Unit* victim = me->GetVictim();
+        Creature* best = nullptr;
+        float bestScore = std::numeric_limits<float>::max();
+
+        for (Creature* bot : GatherEncounterBotsForCreature(me, 80.0f))
+        {
+            if (!bot || bot == victim || bot->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_LOST_CONTROL | UNIT_STATE_ISOLATED))
+                continue;
+
+            bot_ai* ai = bot->GetBotAI();
+            if (!ai || !(ai->IsTank() || ai->IsOffTank() || ai->HasRole(BOT_ROLE_TANK)))
+                continue;
+
+            float score = bot->GetDistance(me);
+            if (ai->IsOffTank())
+                score -= 20.0f;
+
+            if (!best || score < bestScore)
+            {
+                best = bot;
+                bestScore = score;
+            }
+        }
+
+        return best;
+    }
+
+    void BrutalSwipeTankSupportTick()
+    {
+        Unit* victim = me->GetVictim();
+        if (!victim)
+            return;
+
+        Creature* offTank = FindOffTankBotForBrutalSwipe();
+        if (!offTank)
+            return;
+
+        if (offTank->IsWithinDist2d(victim, 4.5f) && me->HasInArc(float(M_PI) / 2.0f, offTank))
+            return;
+
+        float angle = me->GetAngle(victim) + 0.35f;
+        Position destination;
+        destination.Relocate(victim->GetPositionX() + std::cos(angle) * 2.5f, victim->GetPositionY() + std::sin(angle) * 2.5f, victim->GetPositionZ(), offTank->GetOrientation());
+        SafeBotMoveTo(offTank, destination);
     }
 
 private:

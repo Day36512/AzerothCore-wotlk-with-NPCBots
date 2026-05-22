@@ -16,12 +16,23 @@
  */
 
 #include "CreatureScript.h"
-#include "ScriptedCreature.h"
-#include "SpellAuraEffects.h"
-#include "SpellScript.h"
+#include "Config.h"
+#include "Group.h"
+#include "Map.h"
+#include "MotionMaster.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
+#include "ScriptedCreature.h"
+#include "Spell.h"
+#include "SpellAuraEffects.h"
+#include "SpellMgr.h"
+#include "SpellScript.h"
 #include "SpellScriptLoader.h"
+#include "bot_ai.h"
+#include "botmgr.h"
 #include "zulaman.h"
+#include <algorithm>
+#include <vector>
 
 enum Says
 {
@@ -133,11 +144,181 @@ static uint32 AddEntrySets[4][2] =
 enum Misc
 {
     MAX_ADD_COUNT               = 4,
-    ADDITIONAL_CLASS_SPRIEST    = 11,
+    ADDITIONAL_CLASS_SPRIEST    = 12,
     AURA_SHADOW_FORM            = 15473,
     GROUP_CLASS_ABILITY         = 1,
     GROUP_DRAIN_POWER           = 2
 };
+
+static bool IsNPCBotUnit(Unit* unit)
+{
+    Creature* creature = unit ? unit->ToCreature() : nullptr;
+    return creature && creature->IsNPCBot() && creature->GetBotAI();
+}
+
+static bool IsValidEncounterNPCBot(Creature* creature)
+{
+    return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI();
+}
+
+static bool IsEncounterParticipantFor(Creature const* source, Unit* unit, float range)
+{
+    if (!source || !unit || !unit->IsInWorld() || !unit->IsAlive() || unit->GetMap() != source->GetMap())
+        return false;
+
+    if (unit->HasUnitState(UNIT_STATE_ISOLATED) || !unit->IsWithinDist(source, range))
+        return false;
+
+    if (unit->IsPlayer())
+        return true;
+
+    return IsValidEncounterNPCBot(unit->ToCreature());
+}
+
+static std::vector<Unit*> GatherEncounterUnitsForCreature(Creature const* source, float range = 150.0f)
+{
+    std::vector<Unit*> units;
+    GuidSet seen;
+
+    auto addUnit = [&](Unit* unit)
+    {
+        if (!unit || seen.count(unit->GetGUID()) || !IsEncounterParticipantFor(source, unit, range))
+            return;
+
+        seen.insert(unit->GetGUID());
+        units.push_back(unit);
+    };
+
+    if (!source || !source->GetMap())
+        return units;
+
+    Map::PlayerList const& players = source->GetMap()->GetPlayers();
+    for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+    {
+        Player* player = itr->GetSource();
+        if (!player)
+            continue;
+
+        addUnit(player);
+
+        if (Group* group = player->GetGroup())
+            for (Unit* member : BotMgr::GetAllGroupMembers(group))
+                addUnit(member);
+
+        if (BotMgr* botMgr = player->GetBotMgr())
+            if (BotMap const* botMap = botMgr->GetBotMap())
+                for (BotMap::value_type const& pair : *botMap)
+                    addUnit(pair.second);
+    }
+
+    return units;
+}
+
+static Unit* SelectRandomEncounterTargetForCreature(Creature* source, float range, bool includeVictim = true)
+{
+    std::vector<Unit*> candidates;
+
+    for (Unit* unit : GatherEncounterUnitsForCreature(source, range))
+    {
+        if (!includeVictim && unit == source->GetVictim())
+            continue;
+
+        candidates.push_back(unit);
+    }
+
+    if (candidates.empty() && includeVictim && source->GetVictim() && source->IsWithinDistInMap(source->GetVictim(), range))
+        return source->GetVictim();
+
+    if (candidates.empty())
+        return nullptr;
+
+    return Acore::Containers::SelectRandomContainerElement(candidates);
+}
+
+static Unit* SelectRandomEncounterPlayerTargetForCreature(Creature* source, float range, bool includeVictim = true)
+{
+    std::vector<Unit*> candidates;
+
+    for (Unit* unit : GatherEncounterUnitsForCreature(source, range))
+    {
+        if (!unit->IsPlayer())
+            continue;
+
+        if (!includeVictim && unit == source->GetVictim())
+            continue;
+
+        candidates.push_back(unit);
+    }
+
+    if (candidates.empty() && includeVictim && source->GetVictim() && source->GetVictim()->IsPlayer() && source->IsWithinDistInMap(source->GetVictim(), range))
+        return source->GetVictim();
+
+    if (candidates.empty())
+        return nullptr;
+
+    return Acore::Containers::SelectRandomContainerElement(candidates);
+}
+
+static bool IsPlayerMarkedTank(Player* player)
+{
+    if (!player)
+        return false;
+
+    Group* group = player->GetGroup();
+    if (!group)
+        return false;
+
+    Group::MemberSlotList const& slots = group->GetMemberSlots();
+    for (Group::member_citerator itr = slots.begin(); itr != slots.end(); ++itr)
+        if (itr->guid == player->GetGUID())
+            return itr->flags & (MEMBER_FLAG_MAINTANK | MEMBER_FLAG_MAINASSIST);
+
+    return false;
+}
+
+static bool IsEncounterTank(Unit* unit)
+{
+    if (!unit)
+        return false;
+
+    if (Player* player = unit->ToPlayer())
+        return IsPlayerMarkedTank(player);
+
+    Creature* bot = unit->ToCreature();
+    bot_ai* ai = IsValidEncounterNPCBot(bot) ? bot->GetBotAI() : nullptr;
+    return ai && (ai->IsTank() || ai->IsOffTank() || ai->HasRole(BOT_ROLE_TANK));
+}
+
+static std::vector<Unit*> GatherEncounterTanksForCreature(Creature const* source, float range = 150.0f)
+{
+    std::vector<Unit*> tanks;
+
+    for (Unit* unit : GatherEncounterUnitsForCreature(source, range))
+        if (IsEncounterTank(unit))
+            tanks.push_back(unit);
+
+    std::stable_sort(tanks.begin(), tanks.end(), [](Unit* left, Unit* right)
+    {
+        Creature* leftCreature = left ? left->ToCreature() : nullptr;
+        Creature* rightCreature = right ? right->ToCreature() : nullptr;
+        bot_ai* leftAI = IsValidEncounterNPCBot(leftCreature) ? leftCreature->GetBotAI() : nullptr;
+        bot_ai* rightAI = IsValidEncounterNPCBot(rightCreature) ? rightCreature->GetBotAI() : nullptr;
+
+        bool leftOffTank = leftAI && leftAI->IsOffTank();
+        bool rightOffTank = rightAI && rightAI->IsOffTank();
+        if (leftOffTank != rightOffTank)
+            return leftOffTank;
+
+        bool leftBotTank = leftAI && (leftAI->IsTank() || leftAI->IsOffTank() || leftAI->HasRole(BOT_ROLE_TANK));
+        bool rightBotTank = rightAI && (rightAI->IsTank() || rightAI->IsOffTank() || rightAI->HasRole(BOT_ROLE_TANK));
+        if (leftBotTank != rightBotTank)
+            return leftBotTank;
+
+        return left->GetGUID() < right->GetGUID();
+    });
+
+    return tanks;
+}
 
 enum AbilityTarget
 {
@@ -230,6 +411,55 @@ static PlayerAbilityStruct PlayerAbility[13][3] =
     }
 };
 
+static AbilityTarget GetConfiguredMindControlReplacementTargetMode()
+{
+    switch (sConfigMgr->GetOption<uint32>("HexLord.MindControlReplacement.TargetMode", 0))
+    {
+        case 0:
+            return ABILITY_TARGET_SELF;
+        case 1:
+            return ABILITY_TARGET_VICTIM;
+        case 2:
+            return ABILITY_TARGET_ENEMY;
+        default:
+            return ABILITY_TARGET_SELF;
+    }
+}
+
+static PlayerAbilityStruct GetMindControlReplacementAbility()
+{
+    if (!sConfigMgr->GetOption<bool>("HexLord.MindControlReplacement.Enabled", true))
+        return { SPELL_PR_MIND_CONTROL, ABILITY_TARGET_ENEMY, 15s };
+
+    uint32 spellId = sConfigMgr->GetOption<uint32>("HexLord.MindControlReplacement.SpellId", SPELL_PR_PSYCHIC_SCREAM);
+    if (!spellId || !sSpellMgr->GetSpellInfo(spellId))
+        spellId = SPELL_PR_PSYCHIC_SCREAM;
+
+    uint32 cooldownMs = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("HexLord.MindControlReplacement.CooldownMs", 15000), 1000, 120000);
+    return { spellId, GetConfiguredMindControlReplacementTargetMode(), std::chrono::milliseconds(cooldownMs) };
+}
+
+static bool IsHexLordAdd(Creature* creature)
+{
+    if (!creature)
+        return false;
+
+    switch (creature->GetEntry())
+    {
+        case NPC_ALYSON_ANTILLE:
+        case NPC_THURG:
+        case NPC_GAZAKROTH:
+        case NPC_LORD_RADAAN:
+        case NPC_DARKHEART:
+        case NPC_SLITHER:
+        case NPC_FENSTALKER:
+        case NPC_KORAGG:
+            return true;
+        default:
+            return false;
+    }
+}
+
 struct boss_hexlord_malacrass : public BossAI
 {
     boss_hexlord_malacrass(Creature* creature) : BossAI(creature, DATA_HEXLORD)
@@ -279,6 +509,7 @@ struct boss_hexlord_malacrass : public BossAI
             if (Creature* add = summon->ToCreature())
                 add->SetInCombatWithZone();
         });
+        AssignAddsToEncounterTanks();
 
         ScheduleTimedEvent(30s, [&]{
             scheduler.CancelGroup(GROUP_CLASS_ABILITY);
@@ -295,14 +526,13 @@ struct boss_hexlord_malacrass : public BossAI
             {
                 if (Creature* siphonTrigger = me->SummonCreature(NPC_TEMP_TRIGGER, me->GetPosition(), TEMPSUMMON_TIMED_DESPAWN, 30000))
                 {
-                    if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 70, true))
+                    if (Unit* target = SelectRandomEncounterTarget(70.0f, true))
                     {
                         siphonTrigger->SetDisplayId(11686);
                         siphonTrigger->SetUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                         siphonTrigger->AI()->DoCast(target, SPELL_SIPHON_SOUL, true);
                         siphonTrigger->GetMotionMaster()->MoveFollow(me, 0.0f, 0.0f);
-                        if (Player* player = target->ToPlayer())
-                            _currentClass = player->HasAura(AURA_SHADOW_FORM) ? uint8(ADDITIONAL_CLASS_SPRIEST) : player->getClass();
+                        _currentClass = GetClassForSiphonTarget(target);
 
                         ScheduleClassAbility();
                     }
@@ -314,8 +544,12 @@ struct boss_hexlord_malacrass : public BossAI
     void UseAbility()
     {
         uint8 random = urand(0, 2);
+        PlayerAbilityStruct ability = PlayerAbility[_currentClass][random];
+        if (ability.spell == SPELL_PR_MIND_CONTROL)
+            ability = GetMindControlReplacementAbility();
+
         Unit* target = nullptr;
-        switch (PlayerAbility[_currentClass][random].target)
+        switch (ability.target)
         {
             case ABILITY_TARGET_SELF:
                 target = me;
@@ -324,23 +558,24 @@ struct boss_hexlord_malacrass : public BossAI
                 target = me->GetVictim();
                 break;
             case ABILITY_TARGET_ENEMY:
+            case ABILITY_TARGET_SPECIAL:
             default:
-                target = SelectTarget(SelectTargetMethod::Random, 0, 100, true);
+                target = ability.spell == SPELL_PR_MIND_CONTROL ? SelectRandomEncounterPlayerTargetForCreature(me, 100.0f, true) : SelectRandomEncounterTarget(100.0f, true);
                 break;
             case ABILITY_TARGET_HEAL:
                 target = DoSelectLowestHpFriendly(50, 0);
                 break;
             case ABILITY_TARGET_BUFF:
                 {
-                    std::list<Creature*> templist = DoFindFriendlyMissingBuff(50, PlayerAbility[_currentClass][random].spell);
+                    std::list<Creature*> templist = DoFindFriendlyMissingBuff(50, ability.spell);
                     if (!templist.empty())
                         target = *(templist.begin());
                 }
                 break;
         }
         if (target)
-            DoCast(target, PlayerAbility[_currentClass][random].spell, false);
-        _classAbilityTimer = PlayerAbility[_currentClass][random].cooldown;
+            DoCast(target, ability.spell, false);
+        _classAbilityTimer = ability.cooldown;
     }
 
     void ScheduleClassAbility()
@@ -360,6 +595,72 @@ struct boss_hexlord_malacrass : public BossAI
         else
             Talk(SAY_KILL_TWO);
     }
+
+    void JustDied(Unit* killer) override
+    {
+        BossAI::JustDied(killer);
+        Talk(SAY_DEATH);
+    }
+
+    void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override
+    {
+        BossAI::EnterEvadeMode(why);
+    }
+
+    Unit* SelectRandomEncounterTarget(float range, bool includeVictim = true) const
+    {
+        return SelectRandomEncounterTargetForCreature(me, range, includeVictim);
+    }
+
+    uint8 GetClassForSiphonTarget(Unit* target) const
+    {
+        if (!target)
+            return CLASS_WARRIOR;
+
+        if (Player* player = target->ToPlayer())
+            return player->HasAura(AURA_SHADOW_FORM) ? uint8(ADDITIONAL_CLASS_SPRIEST) : player->getClass();
+
+        Creature* bot = target->ToCreature();
+        bot_ai* ai = bot ? bot->GetBotAI() : nullptr;
+        if (!ai)
+            return CLASS_WARRIOR;
+
+        if (target->HasAura(AURA_SHADOW_FORM))
+            return uint8(ADDITIONAL_CLASS_SPRIEST);
+
+        uint8 playerClass = ai->GetPlayerClass();
+        if (playerClass && playerClass < 13)
+            return playerClass;
+
+        if (ai->HasRole(BOT_ROLE_HEAL))
+            return CLASS_PRIEST;
+
+        if (target->getPowerType() == POWER_MANA)
+            return ai->HasRole(BOT_ROLE_RANGED) ? CLASS_MAGE : CLASS_PALADIN;
+
+        return CLASS_WARRIOR;
+    }
+
+    void AssignAddsToEncounterTanks()
+    {
+        std::vector<Unit*> tanks = GatherEncounterTanksForCreature(me, 120.0f);
+        uint8 index = 0;
+
+        summons.DoForAllSummons([&](WorldObject* summon)
+        {
+            Creature* add = summon ? summon->ToCreature() : nullptr;
+            if (!IsHexLordAdd(add) || !add->IsAlive())
+                return;
+
+            Unit* tank = !tanks.empty() ? tanks[index++ % tanks.size()] : me->GetVictim();
+            if (!tank || !tank->IsAlive())
+                return;
+
+            add->AddThreat(tank, 10000.0f);
+            add->AI()->AttackStart(tank);
+        });
+    }
+
 private:
     uint8 _currentClass;
     std::chrono::milliseconds _classAbilityTimer;
@@ -397,16 +698,13 @@ struct boss_alyson_antille : public ScriptedAI
             }
             if (!friendlyCast)
             {
-                if (Map* map = me->GetMap())
+                for (Unit* unit : GatherEncounterUnitsForCreature(me, 40.0f))
                 {
-                    map->DoForAllPlayers([&](Player* player)
-                    {
-                        if (player->IsWithinDist2d(me, 40.0f))
-                        {
-                            DoCast(player, SPELL_DISPEL_MAGIC);
-                            return;
-                        }
-                    });
+                    if (!unit || !unit->IsAlive() || !unit->IsWithinDist2d(me, 40.0f))
+                        continue;
+
+                    DoCast(unit, SPELL_DISPEL_MAGIC);
+                    break;
                 }
             }
         }, 10s);

@@ -17,12 +17,22 @@
 
 #include "CreatureGroups.h"
 #include "CreatureScript.h"
+#include "Group.h"
+#include "Map.h"
+#include "MotionMaster.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
+#include "Spell.h"
 #include "SpellInfo.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
+#include "bot_ai.h"
+#include "botmgr.h"
 #include "zulaman.h"
+#include <cmath>
+#include <limits>
+#include <vector>
 
 enum Says
 {
@@ -91,6 +101,9 @@ enum Misc
 {
     GUID_CHARGE_TARGET            = 0,
     GROUP_LYNX                    = 1,
+    GROUP_BOT_EAGLE_DIRECTOR      = 10,
+    GROUP_BOT_DRAGONHAWK_DIRECTOR = 11,
+    GROUP_BOT_ZULJIN_PRIORITY     = 12,
     POINT_CENTER                  = 0
 };
 
@@ -103,6 +116,143 @@ enum CreatureEntries
 };
 
 const Position CenterPosition = { 120.148811f, 703.713684f, 45.111477f };
+
+static bool IsNPCBotUnit(Unit* unit)
+{
+    Creature* creature = unit ? unit->ToCreature() : nullptr;
+    return creature && creature->IsNPCBot() && creature->GetBotAI();
+}
+
+static bool IsValidEncounterNPCBot(Creature* creature)
+{
+    return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI();
+}
+
+static bool IsEncounterParticipantFor(Creature const* source, Unit* unit, float range)
+{
+    if (!source || !unit || !unit->IsInWorld() || !unit->IsAlive() || unit->GetMap() != source->GetMap())
+        return false;
+
+    if (unit->HasUnitState(UNIT_STATE_ISOLATED) || !unit->IsWithinDist(source, range))
+        return false;
+
+    if (unit->IsPlayer())
+        return true;
+
+    return IsValidEncounterNPCBot(unit->ToCreature());
+}
+
+static std::vector<Unit*> GatherEncounterUnitsForCreature(Creature const* source, float range = 150.0f)
+{
+    std::vector<Unit*> units;
+    GuidSet seen;
+
+    auto addUnit = [&](Unit* unit)
+    {
+        if (!unit || seen.count(unit->GetGUID()) || !IsEncounterParticipantFor(source, unit, range))
+            return;
+
+        seen.insert(unit->GetGUID());
+        units.push_back(unit);
+    };
+
+    if (!source || !source->GetMap())
+        return units;
+
+    Map::PlayerList const& players = source->GetMap()->GetPlayers();
+    for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+    {
+        Player* player = itr->GetSource();
+        if (!player)
+            continue;
+
+        addUnit(player);
+
+        if (Group* group = player->GetGroup())
+            for (Unit* member : BotMgr::GetAllGroupMembers(group))
+                addUnit(member);
+
+        if (BotMgr* botMgr = player->GetBotMgr())
+            if (BotMap const* botMap = botMgr->GetBotMap())
+                for (BotMap::value_type const& pair : *botMap)
+                    addUnit(pair.second);
+    }
+
+    return units;
+}
+
+static std::vector<Creature*> GatherEncounterBotsForCreature(Creature const* source, float range = 150.0f)
+{
+    std::vector<Creature*> bots;
+
+    for (Unit* unit : GatherEncounterUnitsForCreature(source, range))
+        if (Creature* creature = unit->ToCreature())
+            if (IsValidEncounterNPCBot(creature))
+                bots.push_back(creature);
+
+    return bots;
+}
+
+static Unit* SelectRandomEncounterTargetForCreature(Creature* source, float range, bool includeVictim = true)
+{
+    std::vector<Unit*> candidates;
+
+    for (Unit* unit : GatherEncounterUnitsForCreature(source, range))
+    {
+        if (!includeVictim && unit == source->GetVictim())
+            continue;
+
+        candidates.push_back(unit);
+    }
+
+    if (candidates.empty() && includeVictim && source->GetVictim() && source->IsWithinDistInMap(source->GetVictim(), range))
+        return source->GetVictim();
+
+    if (candidates.empty())
+        return nullptr;
+
+    return Acore::Containers::SelectRandomContainerElement(candidates);
+}
+
+static bool IsBotCastingUninterruptible(Creature* bot)
+{
+    if (!bot)
+        return false;
+
+    if (Spell* spell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+        if (SpellInfo const* spellInfo = spell->GetSpellInfo())
+            if (!(spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_INTERRUPT))
+                return true;
+
+    if (Spell* spell = bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
+        if (SpellInfo const* spellInfo = spell->GetSpellInfo())
+            if (!(spellInfo->ChannelInterruptFlags & CHANNEL_INTERRUPT_FLAG_INTERRUPT))
+                return true;
+
+    return false;
+}
+
+static void SafeBotMoveTo(Creature* bot, Position const& destination)
+{
+    if (!bot || !bot->IsAlive() || !bot->IsNPCBot())
+        return;
+
+    bot_ai* ai = bot->GetBotAI();
+    if (!ai)
+        return;
+
+    float x = destination.GetPositionX();
+    float y = destination.GetPositionY();
+    float z = destination.GetPositionZ();
+
+    if (!bot->CanFly())
+        bot->UpdateAllowedPositionZ(x, y, z);
+
+    Position finalPosition;
+    finalPosition.Relocate(x, y, z, destination.GetOrientation());
+
+    ai->MoveToSendPosition(finalPosition);
+}
 
 struct SpiritInfoStruct
 {
@@ -140,6 +290,7 @@ struct boss_zuljin : public BossAI
 
     void Reset() override
     {
+        StopBotDirectors();
         _Reset();
         me->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID, 33975);
         me->SetCombatMovement(true);
@@ -166,7 +317,8 @@ struct boss_zuljin : public BossAI
         }, 12s, 29s);
 
         ScheduleTimedEvent(7s, 23s, [&] {
-            DoCastRandomTarget(SPELL_GRIEVOUS_THROW, 0, 100.0f);
+            if (Unit* target = SelectRandomEncounterTarget(100.0f, true))
+                DoCast(target, SPELL_GRIEVOUS_THROW);
         }, 7s, 23s);
 
         me->m_Events.AddEventAtOffset([&]() {
@@ -205,7 +357,8 @@ struct boss_zuljin : public BossAI
                 if (me->HasAura(SPELL_LYNX_RUSH_HASTE))
                     return;
 
-                DoCastRandomTarget(SPELL_CLAW_RAGE_CHARGE, 0, 0.0f, true, false, true);
+                if (Unit* target = SelectRandomEncounterTarget(100.0f, true))
+                    DoCast(target, SPELL_CLAW_RAGE_CHARGE);
             }, 15s, 20s);
 
             ScheduleTimedEvent(14s, [&] {
@@ -217,7 +370,8 @@ struct boss_zuljin : public BossAI
                 for (int8 count = 0; count <= 8; ++count)
                 {
                     me->m_Events.AddEventAtOffset([&] {
-                        DoCastRandomTarget(SPELL_LYNX_RUSH_DAMAGE);
+                        if (Unit* target = SelectRandomEncounterTarget(100.0f, true))
+                            DoCast(target, SPELL_LYNX_RUSH_DAMAGE, true);
                     }, Seconds(1 * count), Seconds(1 * count), GROUP_LYNX);
                 }
 
@@ -234,7 +388,8 @@ struct boss_zuljin : public BossAI
             }, 12s, 26s);
 
             ScheduleTimedEvent(11s, 42s, [&] {
-                DoCastRandomTarget(SPELL_SUMMON_PILLAR);
+                if (Unit* target = SelectRandomEncounterTarget(100.0f, true))
+                    DoCast(target, SPELL_SUMMON_PILLAR);
             }, 5s, 25s);
 
             ScheduleTimedEvent(16s, 26s, [&] {
@@ -245,6 +400,7 @@ struct boss_zuljin : public BossAI
 
     void EnterEvadeMode(EvadeReason /*why*/) override
     {
+        StopBotDirectors();
         if (CreatureGroup* formation = me->GetFormation())
         {
             for (auto const& itr : formation->GetMembers())
@@ -282,6 +438,7 @@ struct boss_zuljin : public BossAI
 
     void JustDied(Unit* /*killer*/) override
     {
+        StopBotDirectors();
         instance->SetBossState(DATA_ZULJIN, DONE);
         Talk(SAY_DEATH);
         summons.DespawnEntry(CREATURE_COLUMN_OF_FIRE);
@@ -330,12 +487,15 @@ struct boss_zuljin : public BossAI
                     DoCastSelf(SPELL_ENERGY_STORM, true); // enemy aura
                     DoCastAOE(SPELL_SUMMON_CYCLONE, true);
                     me->SetFacingTo(me->GetHomePosition().GetOrientation());
+                    StartEagleBotDirector();
                 }
                 else
                 {
                     me->SetReactState(REACT_AGGRESSIVE);
                     me->SetCombatMovement(true);
                     me->ResumeChasingVictim();
+                    if (_nextPhase == PHASE_DRAGONHAWK)
+                        StartDragonhawkBotDirector();
                 }
             }, 2s);
         }
@@ -343,6 +503,7 @@ struct boss_zuljin : public BossAI
 
     void EnterPhase(uint32 NextPhase)
     {
+        StopBotDirectors();
         scheduler.CancelAll();
         me->SetReactState(REACT_PASSIVE);
         DoStopAttack();
@@ -356,6 +517,151 @@ struct boss_zuljin : public BossAI
         }, 1s);
 
         _nextPhase = NextPhase;
+    }
+
+    Unit* SelectRandomEncounterTarget(float range, bool includeVictim = true) const
+    {
+        return SelectRandomEncounterTargetForCreature(me, range, includeVictim);
+    }
+
+    void StopBotDirectors()
+    {
+        scheduler.CancelGroup(GROUP_BOT_EAGLE_DIRECTOR);
+        scheduler.CancelGroup(GROUP_BOT_DRAGONHAWK_DIRECTOR);
+        scheduler.CancelGroup(GROUP_BOT_ZULJIN_PRIORITY);
+    }
+
+    void StartEagleBotDirector()
+    {
+        scheduler.CancelGroup(GROUP_BOT_EAGLE_DIRECTOR);
+        scheduler.Schedule(750ms, GROUP_BOT_EAGLE_DIRECTOR, [this](TaskContext context)
+        {
+            MoveBotsAwayFromHazard(CREATURE_FEATHER_VORTEX, 8.0f, 10.0f, true);
+            context.Repeat(750ms);
+        });
+    }
+
+    void StartDragonhawkBotDirector()
+    {
+        scheduler.CancelGroup(GROUP_BOT_DRAGONHAWK_DIRECTOR);
+        scheduler.Schedule(750ms, GROUP_BOT_DRAGONHAWK_DIRECTOR, [this](TaskContext context)
+        {
+            MoveBotsAwayFromHazard(CREATURE_COLUMN_OF_FIRE, 8.0f, 10.0f, true);
+            MoveNonTanksOutOfFlameBreath();
+            context.Repeat(750ms);
+        });
+    }
+
+    void MoveBotsAwayFromHazard(uint32 entry, float dangerRadius, float moveDistance, bool interruptCasts)
+    {
+        std::list<Creature*> hazards;
+        me->GetCreatureListWithEntryInGrid(hazards, entry, 90.0f);
+        if (hazards.empty())
+            return;
+
+        for (Creature* bot : GatherEncounterBotsForCreature(me, 120.0f))
+        {
+            if (!bot || bot->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_LOST_CONTROL | UNIT_STATE_ISOLATED))
+                continue;
+
+            Creature* nearest = nullptr;
+            float nearestDistance = std::numeric_limits<float>::max();
+            float awayX = 0.0f;
+            float awayY = 0.0f;
+
+            for (Creature* hazard : hazards)
+            {
+                if (!hazard || !hazard->IsInWorld())
+                    continue;
+
+                float distance = bot->GetExactDist2d(hazard);
+                if (distance > dangerRadius)
+                    continue;
+
+                float dx = bot->GetPositionX() - hazard->GetPositionX();
+                float dy = bot->GetPositionY() - hazard->GetPositionY();
+                float length = std::sqrt(dx * dx + dy * dy);
+                if (length < 0.1f)
+                {
+                    dx = bot->GetPositionX() - CenterPosition.GetPositionX();
+                    dy = bot->GetPositionY() - CenterPosition.GetPositionY();
+                    length = std::sqrt(dx * dx + dy * dy);
+                }
+
+                if (length > 0.1f)
+                {
+                    awayX += dx / length;
+                    awayY += dy / length;
+                }
+
+                if (distance < nearestDistance)
+                {
+                    nearest = hazard;
+                    nearestDistance = distance;
+                }
+            }
+
+            if (!nearest)
+                continue;
+
+            float length = std::sqrt(awayX * awayX + awayY * awayY);
+            if (length < 0.1f)
+            {
+                awayX = bot->GetPositionX() - CenterPosition.GetPositionX();
+                awayY = bot->GetPositionY() - CenterPosition.GetPositionY();
+                length = std::sqrt(awayX * awayX + awayY * awayY);
+            }
+
+            if (length < 0.1f)
+            {
+                awayX = std::cos(me->GetOrientation());
+                awayY = std::sin(me->GetOrientation());
+                length = 1.0f;
+            }
+
+            float x = bot->GetPositionX() + awayX / length * moveDistance;
+            float y = bot->GetPositionY() + awayY / length * moveDistance;
+            float centerDist = std::sqrt((x - CenterPosition.GetPositionX()) * (x - CenterPosition.GetPositionX()) + (y - CenterPosition.GetPositionY()) * (y - CenterPosition.GetPositionY()));
+            if (centerDist > 42.0f)
+            {
+                float scale = 42.0f / centerDist;
+                x = CenterPosition.GetPositionX() + (x - CenterPosition.GetPositionX()) * scale;
+                y = CenterPosition.GetPositionY() + (y - CenterPosition.GetPositionY()) * scale;
+            }
+
+            Position destination;
+            destination.Relocate(x, y, bot->GetPositionZ(), bot->GetOrientation());
+
+            if (interruptCasts && !IsBotCastingUninterruptible(bot))
+                bot->InterruptNonMeleeSpells(false);
+
+            SafeBotMoveTo(bot, destination);
+        }
+    }
+
+    void MoveNonTanksOutOfFlameBreath()
+    {
+        if (!me->IsNonMeleeSpellCast(false))
+            return;
+
+        Spell* spell = me->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+        if (!spell || !spell->GetSpellInfo() || spell->GetSpellInfo()->Id != SPELL_FLAME_BREATH)
+            return;
+
+        for (Creature* bot : GatherEncounterBotsForCreature(me, 90.0f))
+        {
+            bot_ai* ai = bot ? bot->GetBotAI() : nullptr;
+            if (!ai || ai->IsTank() || ai->IsOffTank() || ai->HasRole(BOT_ROLE_TANK) || bot == me->GetVictim())
+                continue;
+
+            if (!me->HasInArc(float(M_PI) / 2.0f, bot) || bot->GetExactDist2d(me) > 25.0f)
+                continue;
+
+            float angle = me->GetAngle(bot) + float(M_PI) / 2.0f;
+            Position destination;
+            destination.Relocate(bot->GetPositionX() + std::cos(angle) * 8.0f, bot->GetPositionY() + std::sin(angle) * 8.0f, bot->GetPositionZ(), bot->GetOrientation());
+            SafeBotMoveTo(bot, destination);
+        }
     }
 
     private:
@@ -387,7 +693,7 @@ struct npc_zuljin_vortex : public ScriptedAI
         DoResetThreatList();
         if (WorldObject* summoner = GetSummoner())
             if (Creature* zuljin = summoner->ToCreature())
-                if (Unit* target = zuljin->AI()->SelectTarget(SelectTargetMethod::Random, 0, 80.0f, true))
+                if (Unit* target = SelectRandomEncounterTargetForCreature(zuljin, 80.0f, true))
                     me->AddThreat(target, 10000000.0f);
     }
 
@@ -415,7 +721,7 @@ class spell_claw_rage_aura : public AuraScript
     {
         if (Creature* caster = GetCaster()->ToCreature())
         {
-            if (Player* target = ObjectAccessor::GetPlayer(*caster, caster->AI()->GetGUID(GUID_CHARGE_TARGET)))
+            if (Unit* target = ObjectAccessor::GetUnit(*caster, caster->AI()->GetGUID(GUID_CHARGE_TARGET)))
             {
                 if (target->isTargetableForAttack(true, caster))
                     GetCaster()->CastSpell(target, SPELL_CLAW_RAGE_DAMAGE);

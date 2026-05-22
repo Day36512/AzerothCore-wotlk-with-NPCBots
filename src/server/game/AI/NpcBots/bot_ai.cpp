@@ -4996,6 +4996,286 @@ std::pair<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool& res
             }
         }
 
+        // Zul'Aman. Keep encounter add/object priorities in normal bot target
+        // selection so boss scripts can stay focused on mechanics and movement.
+        if (me->GetMapId() == MAP_ZUL_AMAN && me->IsInCombat())
+        {
+            static constexpr uint32 NPC_JANALAI = 23578;
+            static constexpr uint32 NPC_AMANI_HATCHER = 23818;
+            static constexpr uint32 NPC_AMANI_HATCHLING = 23598;
+
+            static constexpr uint32 NPC_AKILZON = 23574;
+            static constexpr uint32 NPC_SOARING_EAGLE = 24858;
+
+            static constexpr uint32 NPC_HEXLORD = 24239;
+            static constexpr uint32 NPC_ALYSON_ANTILLE = 24240;
+            static constexpr uint32 NPC_THURG = 24241;
+            static constexpr uint32 NPC_SLITHER = 24242;
+            static constexpr uint32 NPC_LORD_RADAAN = 24243;
+            static constexpr uint32 NPC_GAZAKROTH = 24244;
+            static constexpr uint32 NPC_FENSTALKER = 24245;
+            static constexpr uint32 NPC_DARKHEART = 24246;
+            static constexpr uint32 NPC_KORAGG = 24247;
+
+            static constexpr uint32 NPC_HALAZZI = 23577;
+            static constexpr uint32 NPC_HALAZZI_TROLL = 24144;
+            static constexpr uint32 NPC_SPIRIT_LYNX = 24143;
+            static constexpr uint32 NPC_HALAZZI_LIGHTNING_TOTEM = 24224;
+
+            static constexpr std::array<uint32, 5> ZulAmanBosses =
+            {
+                NPC_AKILZON,
+                NPC_JANALAI,
+                NPC_HEXLORD,
+                NPC_HALAZZI,
+                NPC_HALAZZI_TROLL
+            };
+
+            auto isAttackableZATarget = [this, byspell](Creature* c) -> bool
+                {
+                    if (!c || !c->IsAlive())
+                        return false;
+
+                    if (c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE))
+                        return false;
+
+                    if (!c->IsVisible() || !c->isTargetableForAttack(false))
+                        return false;
+
+                    if (!(CanSeeEveryone() || (me->CanSeeOrDetect(c) && c->InSamePhase(me))))
+                        return false;
+
+                    if (!me->IsWithinLOSInMap(c))
+                        return false;
+
+                    if (!me->IsValidAttackTarget(c))
+                        return false;
+
+                    return CanBotAttack(c, byspell);
+                };
+
+            auto entryMatches = [](uint32 entry, std::initializer_list<uint32> entries) -> bool
+                {
+                    for (uint32 expected : entries)
+                        if (entry == expected)
+                            return true;
+
+                    return false;
+                };
+
+            auto isNearbyEncounterActive = [this](std::initializer_list<uint32> entries) -> bool
+                {
+                    for (uint32 entry : entries)
+                    {
+                        std::list<Creature*> bosses;
+                        me->GetCreatureListWithEntryInGrid(bosses, entry, 180.0f);
+                        for (Creature* boss : bosses)
+                            if (boss && boss->IsAlive() && boss->IsInCombat())
+                                return true;
+                    }
+
+                    return false;
+                };
+
+            auto isActivelyTankingZABoss = [&]() -> bool
+                {
+                    for (uint32 entry : ZulAmanBosses)
+                    {
+                        std::list<Creature*> bosses;
+                        me->GetCreatureListWithEntryInGrid(bosses, entry, 180.0f);
+                        for (Creature* boss : bosses)
+                            if (boss && boss->IsAlive() && boss->IsInCombat() && boss->GetVictim() == me)
+                                return true;
+                    }
+
+                    return false;
+                };
+
+            auto current = mytar ? mytar->ToCreature() : nullptr;
+            auto selectPriorityTarget = [&](std::initializer_list<uint32> entries, float range) -> Creature*
+                {
+                    Creature* best = nullptr;
+                    float bestHealthPct = 101.0f;
+                    float bestDistance = std::numeric_limits<float>::max();
+
+                    for (uint32 entry : entries)
+                    {
+                        std::list<Creature*> creatures;
+                        me->GetCreatureListWithEntryInGrid(creatures, entry, range);
+
+                        for (Creature* creature : creatures)
+                        {
+                            if (!isAttackableZATarget(creature))
+                                continue;
+
+                            float healthPct = creature->GetHealthPct();
+                            float distance = me->GetDistance(creature);
+                            if (!best || healthPct < bestHealthPct || (healthPct == bestHealthPct && distance < bestDistance))
+                            {
+                                best = creature;
+                                bestHealthPct = healthPct;
+                                bestDistance = distance;
+                            }
+                        }
+
+                        if (best)
+                            return best;
+                    }
+
+                    return nullptr;
+                };
+
+            auto isTankPickupCandidate = [&](Creature* c, std::initializer_list<uint32> entries) -> bool
+                {
+                    if (!isAttackableZATarget(c) || !entryMatches(c->GetEntry(), entries))
+                        return false;
+
+                    Unit* victim = c->GetVictim();
+                    if (!victim || victim == me)
+                        return true;
+
+                    return !IsTank(victim);
+                };
+
+            auto selectTankPickupTarget = [&](std::initializer_list<uint32> entries, float range) -> Creature*
+                {
+                    Creature* best = nullptr;
+                    float bestScore = std::numeric_limits<float>::max();
+
+                    for (uint32 entry : entries)
+                    {
+                        std::list<Creature*> creatures;
+                        me->GetCreatureListWithEntryInGrid(creatures, entry, range);
+
+                        for (Creature* creature : creatures)
+                        {
+                            if (!isTankPickupCandidate(creature, entries))
+                                continue;
+
+                            Unit* victim = creature->GetVictim();
+                            float score = me->GetDistance(creature);
+                            if (victim == me)
+                                score -= 5000.0f;
+                            else if (victim && !IsTank(victim))
+                                score -= 2500.0f;
+                            else if (!victim)
+                                score -= 1000.0f;
+
+                            if (!best || score < bestScore)
+                            {
+                                best = creature;
+                                bestScore = score;
+                            }
+                        }
+
+                        if (best)
+                            return best;
+                    }
+
+                    return nullptr;
+                };
+
+            auto selectTankPickupTier = [&](std::initializer_list<uint32> entries, float range) -> std::pair<Unit*, Unit*>
+                {
+                    if (current && current->GetVictim() == me && isTankPickupCandidate(current, entries))
+                        return { current, nullptr };
+
+                    if (Creature* target = selectTankPickupTarget(entries, range))
+                        return { target, nullptr };
+
+                    return { nullptr, nullptr };
+                };
+
+            auto selectPriorityTier = [&](std::initializer_list<uint32> entries, float range) -> std::pair<Unit*, Unit*>
+                {
+                    if (current && entryMatches(current->GetEntry(), entries) && isAttackableZATarget(current))
+                        return { current, nullptr };
+
+                    if (Creature* target = selectPriorityTarget(entries, range))
+                        return { target, nullptr };
+
+                    return { nullptr, nullptr };
+                };
+
+            bool const isTankRole = IsTank() || IsOffTank();
+            bool const mayTankPickup = isTankRole && !isActivelyTankingZABoss() && !(HasRole(BOT_ROLE_HEAL) && IsCasting());
+            bool const isDpsPriorityRole = HasRole(BOT_ROLE_DPS) && !IsTank() && !HasRole(BOT_ROLE_HEAL);
+
+            if (mayTankPickup && isNearbyEncounterActive({ NPC_JANALAI }))
+            {
+                if (auto pickup = selectTankPickupTier({ NPC_AMANI_HATCHLING }, 120.0f); pickup.first)
+                    return pickup;
+            }
+
+            if (mayTankPickup && isNearbyEncounterActive({ NPC_HEXLORD }))
+            {
+                static constexpr std::array<uint32, 8> HexLordTankPickup =
+                {
+                    NPC_ALYSON_ANTILLE,
+                    NPC_GAZAKROTH,
+                    NPC_DARKHEART,
+                    NPC_LORD_RADAAN,
+                    NPC_FENSTALKER,
+                    NPC_SLITHER,
+                    NPC_KORAGG,
+                    NPC_THURG
+                };
+
+                for (uint32 entry : HexLordTankPickup)
+                    if (auto pickup = selectTankPickupTier({ entry }, 120.0f); pickup.first)
+                        return pickup;
+            }
+
+            if (mayTankPickup && isNearbyEncounterActive({ NPC_HALAZZI, NPC_HALAZZI_TROLL }))
+            {
+                if (auto pickup = selectTankPickupTier({ NPC_SPIRIT_LYNX }, 120.0f); pickup.first)
+                    return pickup;
+            }
+
+            if (isDpsPriorityRole && ranged && isNearbyEncounterActive({ NPC_AKILZON }))
+            {
+                if (auto priority = selectPriorityTier({ NPC_SOARING_EAGLE }, 150.0f); priority.first)
+                    return priority;
+            }
+
+            if (isDpsPriorityRole && isNearbyEncounterActive({ NPC_JANALAI }))
+            {
+                if (auto priority = selectPriorityTier({ NPC_AMANI_HATCHER }, ranged ? 150.0f : 40.0f); priority.first)
+                    return priority;
+
+                if (auto priority = selectPriorityTier({ NPC_AMANI_HATCHLING }, ranged ? 150.0f : 60.0f); priority.first)
+                    return priority;
+            }
+
+            if (isDpsPriorityRole && isNearbyEncounterActive({ NPC_HEXLORD }))
+            {
+                static constexpr std::array<uint32, 8> HexLordPriority =
+                {
+                    NPC_ALYSON_ANTILLE,
+                    NPC_GAZAKROTH,
+                    NPC_DARKHEART,
+                    NPC_LORD_RADAAN,
+                    NPC_FENSTALKER,
+                    NPC_SLITHER,
+                    NPC_KORAGG,
+                    NPC_THURG
+                };
+
+                for (uint32 entry : HexLordPriority)
+                    if (auto priority = selectPriorityTier({ entry }, 150.0f); priority.first)
+                        return priority;
+            }
+
+            if (isDpsPriorityRole && isNearbyEncounterActive({ NPC_HALAZZI, NPC_HALAZZI_TROLL }))
+            {
+                if (auto priority = selectPriorityTier({ NPC_HALAZZI_LIGHTNING_TOTEM }, ranged ? 120.0f : 35.0f); priority.first)
+                    return priority;
+
+                if (auto priority = selectPriorityTier({ NPC_SPIRIT_LYNX }, 120.0f); priority.first)
+                    return priority;
+            }
+        }
+
         // Blackwing Lair
         if (me->GetMapId() == 469 && GetBotClass() == BOT_CLASS_ROGUE && !HasRole(BOT_ROLE_DPS) && me->HasStealthAura() && isInWMOArea(WMOAreaGroupLashlayer)) // BWL - Bloodlord Lashlayer
             return { nullptr, nullptr };

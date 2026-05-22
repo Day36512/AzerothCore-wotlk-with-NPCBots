@@ -4825,6 +4825,72 @@ Karazhan.Chess.Cheats.SoloBuff.MaxTargets = 4
 ###################################################################################################
 
 ###################################################################################################
+# ZUL'AMAN - HEX LORD MALACRASS MIND CONTROL REPLACEMENT
+#
+# Hex Lord Malacrass can copy a shadow-priest-style kit through Siphon Soul.
+# That kit normally includes Mind Control.
+#
+# Mind Control can be unsafe with NPCBots if charm/ownership cleanup is not fully supported.
+# These settings replace Mind Control with a safer spell.
+#
+###################################################################################################
+
+#
+#    HexLord.MindControlReplacement.Enabled
+#
+#        Description: Replaces Hex Lord's copied Mind Control spell with another spell.
+#
+#        0 = Disabled. Use original Mind Control.
+#        1 = Enabled. Replace Mind Control.
+#
+#        Default:     1
+#
+
+HexLord.MindControlReplacement.Enabled = 1
+
+#
+#    HexLord.MindControlReplacement.SpellId
+#
+#        Description: Spell used instead of Mind Control.
+#
+#        Default:     43432 - Psychic Scream
+#
+
+HexLord.MindControlReplacement.SpellId = 43432
+
+#
+#    HexLord.MindControlReplacement.TargetMode
+#
+#        Description: Target mode for the replacement spell.
+#
+#        0 = Self
+#            Use this for Psychic Scream or any self-centered AoE spell.
+#
+#        1 = Current victim
+#            Use this for a direct single-target hostile spell.
+#
+#        2 = Random enemy
+#            Use this for a hostile spell that should hit a random raid member or NPCBot.
+#
+#        Default:     0
+#
+
+HexLord.MindControlReplacement.TargetMode = 0
+
+#
+#    HexLord.MindControlReplacement.CooldownMs
+#
+#        Description: Cooldown for the replacement spell, in milliseconds.
+#
+#        Default:     15000
+#
+
+HexLord.MindControlReplacement.CooldownMs = 15000
+
+#
+###################################################################################################
+
+###################################################################################################
 # NPCBOT CONFIGURATION
 #
 #    NpcBot.Enable

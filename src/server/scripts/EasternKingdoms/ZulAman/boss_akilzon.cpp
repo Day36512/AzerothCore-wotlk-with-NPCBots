@@ -19,13 +19,23 @@
 #include "CreatureScript.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
+#include "Group.h"
+#include "Map.h"
+#include "MotionMaster.h"
+#include "ObjectAccessor.h"
+#include "Player.h"
 #include "ScriptedCreature.h"
+#include "Spell.h"
 #include "SpellAuras.h"
 #include "SpellAuraEffects.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "Weather.h"
+#include "bot_ai.h"
+#include "botmgr.h"
 #include "zulaman.h"
+#include <cmath>
+#include <vector>
 
 enum Spells
 {
@@ -56,17 +66,157 @@ enum Misc
 {
     ACTION_STORM_EXPIRE         = 1,
     GROUP_ELECTRICAL_STORM      = 1,
-    GROUP_STATIC_DISRUPTION     = 2
+    GROUP_STATIC_DISRUPTION     = 2,
+    GROUP_BOT_STORM_DIRECTOR    = 10,
+    GROUP_BOT_SPREAD_DIRECTOR   = 11
 };
 
 constexpr auto NPC_SOARING_EAGLE = 24858;
 
+static bool IsNPCBotUnit(Unit* unit)
+{
+    Creature* creature = unit ? unit->ToCreature() : nullptr;
+    return creature && creature->IsNPCBot() && creature->GetBotAI();
+}
+
+static bool IsValidEncounterNPCBot(Creature* creature)
+{
+    return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI();
+}
+
+static bool IsEncounterParticipantFor(Creature const* source, Unit* unit, float range)
+{
+    if (!source || !unit || !unit->IsInWorld() || !unit->IsAlive() || unit->GetMap() != source->GetMap())
+        return false;
+
+    if (unit->HasUnitState(UNIT_STATE_ISOLATED) || !unit->IsWithinDist(source, range))
+        return false;
+
+    if (unit->IsPlayer())
+        return true;
+
+    return IsValidEncounterNPCBot(unit->ToCreature());
+}
+
+static std::vector<Unit*> GatherEncounterUnitsForCreature(Creature const* source, float range = 150.0f)
+{
+    std::vector<Unit*> units;
+    GuidSet seen;
+
+    auto addUnit = [&](Unit* unit)
+    {
+        if (!unit || seen.count(unit->GetGUID()) || !IsEncounterParticipantFor(source, unit, range))
+            return;
+
+        seen.insert(unit->GetGUID());
+        units.push_back(unit);
+    };
+
+    if (!source || !source->GetMap())
+        return units;
+
+    Map::PlayerList const& players = source->GetMap()->GetPlayers();
+    for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+    {
+        Player* player = itr->GetSource();
+        if (!player)
+            continue;
+
+        addUnit(player);
+
+        if (Group* group = player->GetGroup())
+            for (Unit* member : BotMgr::GetAllGroupMembers(group))
+                addUnit(member);
+
+        if (BotMgr* botMgr = player->GetBotMgr())
+            if (BotMap const* botMap = botMgr->GetBotMap())
+                for (BotMap::value_type const& pair : *botMap)
+                    addUnit(pair.second);
+    }
+
+    return units;
+}
+
+static std::vector<Creature*> GatherEncounterBotsForCreature(Creature const* source, float range = 150.0f)
+{
+    std::vector<Creature*> bots;
+
+    for (Unit* unit : GatherEncounterUnitsForCreature(source, range))
+        if (Creature* creature = unit->ToCreature())
+            if (IsValidEncounterNPCBot(creature))
+                bots.push_back(creature);
+
+    return bots;
+}
+
+static Unit* SelectRandomEncounterTargetForCreature(Creature* source, float range, bool includeVictim = true)
+{
+    std::vector<Unit*> candidates;
+
+    for (Unit* unit : GatherEncounterUnitsForCreature(source, range))
+    {
+        if (!includeVictim && unit == source->GetVictim())
+            continue;
+
+        candidates.push_back(unit);
+    }
+
+    if (candidates.empty() && includeVictim && source->GetVictim() && source->IsWithinDistInMap(source->GetVictim(), range))
+        return source->GetVictim();
+
+    if (candidates.empty())
+        return nullptr;
+
+    return Acore::Containers::SelectRandomContainerElement(candidates);
+}
+
+static bool IsBotCastingUninterruptible(Creature* bot)
+{
+    if (!bot)
+        return false;
+
+    if (Spell* spell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+        if (SpellInfo const* spellInfo = spell->GetSpellInfo())
+            if (!(spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_INTERRUPT))
+                return true;
+
+    if (Spell* spell = bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
+        if (SpellInfo const* spellInfo = spell->GetSpellInfo())
+            if (!(spellInfo->ChannelInterruptFlags & CHANNEL_INTERRUPT_FLAG_INTERRUPT))
+                return true;
+
+    return false;
+}
+
+static void SafeBotMoveTo(Creature* bot, Position const& destination)
+{
+    if (!bot || !bot->IsAlive() || !bot->IsNPCBot())
+        return;
+
+    bot_ai* ai = bot->GetBotAI();
+    if (!ai)
+        return;
+
+    float x = destination.GetPositionX();
+    float y = destination.GetPositionY();
+    float z = destination.GetPositionZ();
+
+    if (!bot->CanFly())
+        bot->UpdateAllowedPositionZ(x, y, z);
+
+    Position finalPosition;
+    finalPosition.Relocate(x, y, z, destination.GetOrientation());
+
+    ai->MoveToSendPosition(finalPosition);
+}
+
 struct boss_akilzon : public BossAI
 {
-    boss_akilzon(Creature* creature) : BossAI(creature, DATA_AKILZON), _isRaining(false) { }
+    boss_akilzon(Creature* creature) : BossAI(creature, DATA_AKILZON), _stormActive(false), _isRaining(false) { }
 
     void Reset() override
     {
+        StopStormBotCollapse(false);
         _Reset();
 
         _targetGUID.Clear();
@@ -84,7 +234,7 @@ struct boss_akilzon : public BossAI
 
         scheduler.Schedule(10s, 20s, GROUP_STATIC_DISRUPTION, [this](TaskContext context)
         {
-            Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 0.0f, false, false);
+            Unit* target = SelectRandomEncounterTarget(100.0f, false);
             if (!target)
                 target = me->GetVictim();
             if (target)
@@ -99,7 +249,8 @@ struct boss_akilzon : public BossAI
 
         ScheduleTimedEvent(20s, 30s, [&] {
             if (scheduler.GetNextGroupOccurrence(GROUP_ELECTRICAL_STORM) > 5s)
-                DoCastRandomTarget(SPELL_GUST_OF_WIND, 0, 0.0f, true, false, false);
+                if (Unit* target = SelectRandomEncounterTarget(100.0f, true))
+                    DoCast(target, SPELL_GUST_OF_WIND);
         }, 20s, 30s);
 
         ScheduleTimedEvent(10s, 20s, [&] {
@@ -108,7 +259,7 @@ struct boss_akilzon : public BossAI
 
         scheduler.Schedule(1min, GROUP_ELECTRICAL_STORM, [this](TaskContext context)
         {
-            Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 50, true);
+            Unit* target = SelectRandomEncounterTarget(50.0f, true);
             if (!target)
             {
                 EnterEvadeMode();
@@ -124,6 +275,7 @@ struct boss_akilzon : public BossAI
             float x, y, z;
             target->GetPosition(x, y, z);
             target->GetMotionMaster()->MoveJump(x, y, target->GetPositionZ() + 16.0f, 1.0f, 1.0f);
+            StartStormBotCollapse(target->GetGUID());
 
             me->m_Events.AddEventAtOffset([&] {
                 HandleStormSequence();
@@ -158,6 +310,7 @@ struct boss_akilzon : public BossAI
 
     void JustDied(Unit* /*killer*/) override
     {
+        StopStormBotCollapse(false);
         Talk(SAY_DEATH);
         _JustDied();
         me->m_Events.KillAllEvents(false);
@@ -165,8 +318,14 @@ struct boss_akilzon : public BossAI
 
     void KilledUnit(Unit* who) override
     {
-        if (who->IsPlayer())
+        if (who->IsPlayer() || IsNPCBotUnit(who))
             Talk(SAY_KILL);
+    }
+
+    void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override
+    {
+        StopStormBotCollapse(false);
+        BossAI::EnterEvadeMode(why);
     }
 
     void SetWeather(uint32 weather, float grade)
@@ -185,6 +344,7 @@ struct boss_akilzon : public BossAI
     {
         if (actionId == ACTION_STORM_EXPIRE)
         {
+            StopStormBotCollapse();
             scheduler.DelayGroup(GROUP_STATIC_DISRUPTION, 3s);
             me->m_Events.AddEventAtOffset([&] {
                 SummonEagles();
@@ -209,7 +369,8 @@ struct boss_akilzon : public BossAI
             Unit* bird = ObjectAccessor::GetUnit(*me, _birdGUIDs[i]);
             if (!bird) //they despawned on die
             {
-                if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0))
+                Unit* target = SelectRandomEncounterTarget(100.0f, true);
+                if (target)
                 {
                     x = target->GetPositionX() + irand(-10, 10);
                     y = target->GetPositionY() + irand(-10, 10);
@@ -220,11 +381,104 @@ struct boss_akilzon : public BossAI
                 ;
                 if (Creature* creature = me->SummonCreature(NPC_SOARING_EAGLE, x, y, z, 0, TEMPSUMMON_CORPSE_DESPAWN, 0))
                 {
-                    creature->AddThreat(me->GetVictim(), 1.0f);
-                    creature->AI()->AttackStart(me->GetVictim());
+                    Unit* attackTarget = target ? target : me->GetVictim();
+                    if (attackTarget)
+                    {
+                        creature->AddThreat(attackTarget, 1.0f);
+                        creature->AI()->AttackStart(attackTarget);
+                    }
                     _birdGUIDs[i] = creature->GetGUID();
                 }
             }
+        }
+    }
+
+    Unit* SelectRandomEncounterTarget(float range, bool includeVictim = true) const
+    {
+        return SelectRandomEncounterTargetForCreature(me, range, includeVictim);
+    }
+
+    void StartStormBotCollapse(ObjectGuid targetGuid)
+    {
+        _stormActive = true;
+        _stormTargetGUID = targetGuid;
+
+        scheduler.CancelGroup(GROUP_BOT_STORM_DIRECTOR);
+        scheduler.Schedule(250ms, GROUP_BOT_STORM_DIRECTOR, [this, targetGuid](TaskContext context)
+        {
+            MoveBotsUnderStormTarget(targetGuid);
+            context.Repeat(500ms);
+        });
+    }
+
+    void StopStormBotCollapse(bool resumeAttack = true)
+    {
+        _stormActive = false;
+        _stormTargetGUID.Clear();
+        scheduler.CancelGroup(GROUP_BOT_STORM_DIRECTOR);
+
+        if (resumeAttack)
+        {
+            for (ObjectGuid const& guid : _botStormLocks)
+            {
+                Creature* bot = ObjectAccessor::GetCreature(*me, guid);
+                if (!bot || !bot->IsAlive())
+                    continue;
+
+                if (bot_ai* ai = bot->GetBotAI())
+                    if (me->IsAlive() && me->IsEngaged())
+                        ai->AttackStart(me);
+            }
+        }
+
+        _botStormLocks.clear();
+    }
+
+    void MoveBotsUnderStormTarget(ObjectGuid targetGuid)
+    {
+        if (!_stormActive)
+            return;
+
+        Unit* target = ObjectAccessor::GetUnit(*me, targetGuid);
+        if (!target || !target->IsAlive() || !target->IsInWorld())
+            return;
+
+        std::vector<Creature*> bots = GatherEncounterBotsForCreature(me, 150.0f);
+        uint32 movableCount = 0;
+        for (Creature* bot : bots)
+            if (bot && bot->GetGUID() != targetGuid && !bot->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_LOST_CONTROL | UNIT_STATE_ISOLATED))
+                ++movableCount;
+
+        uint32 index = 0;
+        for (Creature* bot : bots)
+        {
+            if (!bot || bot->GetGUID() == targetGuid)
+                continue;
+
+            if (bot->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_LOST_CONTROL | UNIT_STATE_ISOLATED))
+                continue;
+
+            if (IsBotCastingUninterruptible(bot))
+                continue;
+
+            float angle = movableCount ? (2.0f * float(M_PI) * float(index)) / float(movableCount) : 0.0f;
+            float radius = 1.75f + float(index % 4) * 0.65f;
+            float x = target->GetPositionX() + std::cos(angle) * radius;
+            float y = target->GetPositionY() + std::sin(angle) * radius;
+            float z = target->GetPositionZ();
+
+            Position destination;
+            destination.Relocate(x, y, z, bot->GetOrientation());
+
+            if (bot->GetExactDist2d(x, y) > 2.5f)
+            {
+                bot->InterruptNonMeleeSpells(false);
+                bot->AttackStop();
+                SafeBotMoveTo(bot, destination);
+                _botStormLocks.insert(bot->GetGUID());
+            }
+
+            ++index;
         }
     }
 
@@ -232,6 +486,9 @@ private:
     ObjectGuid _birdGUIDs[8];
     ObjectGuid _targetGUID;
     ObjectGuid _cycloneGUID;
+    ObjectGuid _stormTargetGUID;
+    GuidSet _botStormLocks;
+    bool _stormActive;
     bool   _isRaining;
 };
 
@@ -280,7 +537,7 @@ struct npc_akilzon_eagle : public ScriptedAI
 
         if (arrived)
         {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0))
+            if (Unit* target = SelectRandomEncounterTargetForCreature(me, 100.0f, true))
             {
                 float x, y, z;
                 if (EagleSwoop_Timer)
