@@ -5197,9 +5197,9 @@ std::pair<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool& res
                     return { nullptr, nullptr };
                 };
 
-            bool const isTankRole = IsTank() || IsOffTank();
+            bool const isTankRole = IsTank() || IsOffTank() || HasRole(BOT_ROLE_TANK) || HasRole(BOT_ROLE_TANK_OFF);
             bool const mayTankPickup = isTankRole && !isActivelyTankingZABoss() && !(HasRole(BOT_ROLE_HEAL) && IsCasting());
-            bool const isDpsPriorityRole = HasRole(BOT_ROLE_DPS) && !IsTank() && !HasRole(BOT_ROLE_HEAL);
+            bool const isDpsPriorityRole = HasRole(BOT_ROLE_DPS) && !isTankRole && !HasRole(BOT_ROLE_HEAL);
 
             if (mayTankPickup && isNearbyEncounterActive({ NPC_JANALAI }))
             {
@@ -21299,6 +21299,12 @@ bool bot_ai::GlobalUpdate(uint32 diff)
             if (!info->CastTimeEntry)
                 continue;
 
+            // Once a resurrection cast has started, let it finish. Target selection already
+            // avoids starting duplicate resurrection casts, and interrupting mid-cast can
+            // cause bots to cancel their own successful rez attempt.
+            if (info->HasEffect(SPELL_EFFECT_RESURRECT) || info->HasEffect(SPELL_EFFECT_RESURRECT_NEW))
+                continue;
+
             if (info->Id == SHOOT_WAND && me->isMoving())
                 interrupt = true;
             else if (info->Id == 32783) //Arcane Channeling, not interrupted automatically
@@ -21387,9 +21393,6 @@ bool bot_ai::GlobalUpdate(uint32 diff)
                         interrupt = true;
                 }
             }
-            if (!interrupt && (info->HasEffect(SPELL_EFFECT_RESURRECT) || info->HasEffect(SPELL_EFFECT_RESURRECT_NEW)) &&
-                (target->IsAlive() || (target->IsPlayer() && target->ToPlayer()->isResurrectRequested())))
-                interrupt = true;
             if (!interrupt && checkAurasTimer <= diff && me->GetMap()->IsDungeon() && !CCed(me, true) && IsWithinAoERadius(*me))
                 interrupt = true;
 

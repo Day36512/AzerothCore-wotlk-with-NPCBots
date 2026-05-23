@@ -35,6 +35,7 @@
 #include "botmgr.h"
 #include "zulaman.h"
 #include <cmath>
+#include <map>
 #include <vector>
 
 enum Spells
@@ -49,7 +50,12 @@ enum Spells
     SPELL_ELECTRICAL_OVERLOAD   = 43658,
     SPELL_EAGLE_SWOOP           = 44732,
     SPELL_ZAP                   = 43137,
-    SPELL_SAND_STORM            = 25160
+    SPELL_SAND_STORM            = 25160,
+
+    // Bot defensive consumables used while collapsing for Electrical Storm.
+    SPELL_BOT_HEALTHSTONE       = 27235,
+    SPELL_BOT_HEALING_POTION    = 28495,
+    SPELL_BOT_NIGHTMARE_SEED    = 28726
 };
 
 enum Says
@@ -68,7 +74,11 @@ enum Misc
     GROUP_ELECTRICAL_STORM      = 1,
     GROUP_STATIC_DISRUPTION     = 2,
     GROUP_BOT_STORM_DIRECTOR    = 10,
-    GROUP_BOT_SPREAD_DIRECTOR   = 11
+    GROUP_BOT_SPREAD_DIRECTOR   = 11,
+    ELECTRICAL_STORM_PREP_MS     = 1500,
+    STORM_COLLAPSE_NUDGE_COUNT   = 16,
+    SAND_STORM_DURATION_MS       = 8850,
+    STORM_COLLAPSE_FALLBACK_MS   = ELECTRICAL_STORM_PREP_MS + SAND_STORM_DURATION_MS + 250
 };
 
 constexpr auto NPC_SOARING_EAGLE = 24858;
@@ -188,7 +198,7 @@ static bool IsBotCastingUninterruptible(Creature* bot)
     return false;
 }
 
-static void SafeBotMoveTo(Creature* bot, Position const& destination)
+static void SafeBotMoveToStormAnchor(Creature* bot, Position const& destination)
 {
     if (!bot || !bot->IsAlive() || !bot->IsNPCBot())
         return;
@@ -212,11 +222,16 @@ static void SafeBotMoveTo(Creature* bot, Position const& destination)
 
 struct boss_akilzon : public BossAI
 {
-    boss_akilzon(Creature* creature) : BossAI(creature, DATA_AKILZON), _stormActive(false), _isRaining(false) { }
+    boss_akilzon(Creature* creature) : BossAI(creature, DATA_AKILZON), _stormActive(false), _hasStormGroundAnchor(false), _isRaining(false)
+    {
+        _stormGroundAnchor.Relocate(0.0f, 0.0f, 0.0f, 0.0f);
+    }
 
     void Reset() override
     {
         StopStormBotCollapse(false);
+        _stormGroundAnchor.Relocate(0.0f, 0.0f, 0.0f, 0.0f);
+        _hasStormGroundAnchor = false;
         _Reset();
 
         _targetGUID.Clear();
@@ -257,39 +272,10 @@ struct boss_akilzon : public BossAI
             DoCastVictim(SPELL_CALL_LIGHTNING);
         }, 12s, 17s);
 
-        scheduler.Schedule(1min, GROUP_ELECTRICAL_STORM, [this](TaskContext context)
+        scheduler.Schedule(58500ms, GROUP_ELECTRICAL_STORM, [this](TaskContext context)
         {
-            Unit* target = SelectRandomEncounterTarget(50.0f, true);
-            if (!target)
-            {
-                EnterEvadeMode();
-                return;
-            }
-
-            DoCast(target, SPELL_ELECTRICAL_STORM); // storm cyclon + visual
-            target->CastSpell(target, SPELL_ELECTRICAL_STORM_AREA, true); // cloud visual
-
-            if (DynamicObject* dynObj = target->GetDynObject(SPELL_ELECTRICAL_STORM_AREA))
-                dynObj->SetDuration(8500);
-
-            float x, y, z;
-            target->GetPosition(x, y, z);
-            target->GetMotionMaster()->MoveJump(x, y, target->GetPositionZ() + 16.0f, 1.0f, 1.0f);
-            StartStormBotCollapse(target->GetGUID());
-
-            me->m_Events.AddEventAtOffset([&] {
-                HandleStormSequence();
-            }, 3s);
-
-            me->m_Events.AddEventAtOffset([&] {
-                if (!_isRaining)
-                {
-                    SetWeather(WEATHER_STATE_HEAVY_RAIN, 0.9999f);
-                    _isRaining = true;
-                }
-            }, Seconds(urand(47, 52)));
-
-            context.Repeat();
+            PrepareElectricalStorm();
+            context.Repeat(1min);
         });
 
         ScheduleTimedEvent(47s, 52s, [&] {
@@ -398,6 +384,111 @@ struct boss_akilzon : public BossAI
         return SelectRandomEncounterTargetForCreature(me, range, includeVictim);
     }
 
+    void PrepareElectricalStorm()
+    {
+        Unit* target = SelectRandomEncounterTarget(50.0f, true);
+        if (!target)
+        {
+            EnterEvadeMode();
+            return;
+        }
+
+        bool const targetIsBot = IsNPCBotUnit(target);
+        ObjectGuid targetGuid = target->GetGUID();
+        _stormGroundAnchor = GetElectricalStormGroundAnchor(target);
+        _hasStormGroundAnchor = true;
+
+        if (targetIsBot)
+        {
+            PrepareStormTargetBot(target);
+            TeleportStormTargetBotToGroundAnchor(target);
+        }
+
+        StartStormBotCollapse(targetGuid);
+
+        scheduler.Schedule(std::chrono::milliseconds(ELECTRICAL_STORM_PREP_MS), GROUP_ELECTRICAL_STORM, [this, targetGuid](TaskContext)
+        {
+            CastPreparedElectricalStorm(targetGuid);
+        });
+    }
+
+    void CastPreparedElectricalStorm(ObjectGuid targetGuid)
+    {
+        if (!_stormActive || _stormTargetGUID != targetGuid)
+            return;
+
+        Unit* target = ObjectAccessor::GetUnit(*me, targetGuid);
+        if (!target || !target->IsAlive() || !target->IsInWorld())
+        {
+            StopStormBotCollapse(false);
+            return;
+        }
+
+        bool const targetIsBot = IsNPCBotUnit(target);
+        if (targetIsBot)
+        {
+            PrepareStormTargetBot(target);
+            TeleportStormTargetBotToGroundAnchor(target);
+        }
+        else
+        {
+            _stormGroundAnchor.Relocate(target);
+            _hasStormGroundAnchor = true;
+            MoveBotsUnderStormTarget(targetGuid);
+        }
+
+        DoCast(target, SPELL_ELECTRICAL_STORM); // storm cyclon + visual
+        target->CastSpell(target, SPELL_ELECTRICAL_STORM_AREA, true); // cloud visual
+        SetStormEffectDurations(target);
+
+        if (targetIsBot)
+        {
+            TeleportStormTargetBotToAirAnchor(target);
+            scheduler.Schedule(250ms, GROUP_BOT_STORM_DIRECTOR, [this, targetGuid](TaskContext)
+            {
+                ReassertStormTargetBotAnchor(targetGuid);
+            });
+        }
+        else
+            target->GetMotionMaster()->MoveJump(_stormGroundAnchor.GetPositionX(), _stormGroundAnchor.GetPositionY(), _stormGroundAnchor.GetPositionZ() + 16.0f, 1.0f, 1.0f);
+
+        me->m_Events.AddEventAtOffset([&] {
+            HandleStormSequence();
+        }, 3s);
+
+        me->m_Events.AddEventAtOffset([&] {
+            if (!_isRaining)
+            {
+                SetWeather(WEATHER_STATE_HEAVY_RAIN, 0.9999f);
+                _isRaining = true;
+            }
+        }, Seconds(urand(47, 52)));
+    }
+
+    void SetStormEffectDurations(Unit* target)
+    {
+        if (!target)
+            return;
+
+        if (Aura* aura = target->GetAura(SPELL_ELECTRICAL_STORM))
+        {
+            aura->SetDuration(SAND_STORM_DURATION_MS);
+            aura->SetMaxDuration(SAND_STORM_DURATION_MS);
+        }
+
+        if (Aura* aura = target->GetAura(SPELL_SAND_STORM))
+        {
+            aura->SetDuration(SAND_STORM_DURATION_MS);
+            aura->SetMaxDuration(SAND_STORM_DURATION_MS);
+        }
+
+        if (DynamicObject* dynObj = target->GetDynObject(SPELL_ELECTRICAL_STORM_AREA))
+            dynObj->SetDuration(SAND_STORM_DURATION_MS);
+
+        if (DynamicObject* dynObj = target->GetDynObject(SPELL_SAND_STORM))
+            dynObj->SetDuration(SAND_STORM_DURATION_MS);
+    }
+
     void StartStormBotCollapse(ObjectGuid targetGuid)
     {
         _stormActive = true;
@@ -409,45 +500,250 @@ struct boss_akilzon : public BossAI
             MoveBotsUnderStormTarget(targetGuid);
             context.Repeat(500ms);
         });
+        ScheduleStormCollapseNudgeBurst(targetGuid);
+
+        scheduler.Schedule(std::chrono::milliseconds(STORM_COLLAPSE_FALLBACK_MS), GROUP_BOT_STORM_DIRECTOR, [this, targetGuid](TaskContext)
+        {
+            if (_stormActive && _stormTargetGUID == targetGuid)
+                StopStormBotCollapse();
+        });
+    }
+
+    void ScheduleStormCollapseNudgeBurst(ObjectGuid targetGuid)
+    {
+        uint32 const intervalMs = ELECTRICAL_STORM_PREP_MS / (STORM_COLLAPSE_NUDGE_COUNT - 1);
+
+        for (uint32 i = 0; i < STORM_COLLAPSE_NUDGE_COUNT; ++i)
+        {
+            uint32 const delayMs = i ? i * intervalMs : 1;
+            scheduler.Schedule(std::chrono::milliseconds(delayMs), GROUP_BOT_STORM_DIRECTOR, [this, targetGuid](TaskContext)
+            {
+                MoveBotsUnderStormTarget(targetGuid);
+            });
+        }
     }
 
     void StopStormBotCollapse(bool resumeAttack = true)
     {
+        Position stormGroundAnchor = _stormGroundAnchor;
+        bool hadStormGroundAnchor = _hasStormGroundAnchor;
+        ObjectGuid stormTargetGuid = _stormTargetGUID;
+
         _stormActive = false;
         _stormTargetGUID.Clear();
         scheduler.CancelGroup(GROUP_BOT_STORM_DIRECTOR);
 
-        if (resumeAttack)
+        for (ObjectGuid const& guid : _botStormLocks)
         {
-            for (ObjectGuid const& guid : _botStormLocks)
-            {
-                Creature* bot = ObjectAccessor::GetCreature(*me, guid);
-                if (!bot || !bot->IsAlive())
-                    continue;
+            Creature* bot = ObjectAccessor::GetCreature(*me, guid);
+            if (!bot || !bot->IsNPCBot())
+                continue;
 
-                if (bot_ai* ai = bot->GetBotAI())
-                    if (me->IsAlive() && me->IsEngaged())
-                        ai->AttackStart(me);
+            if (bot_ai* ai = bot->GetBotAI())
+            {
+                uint32 originalState = 0;
+                if (std::map<ObjectGuid, uint32>::const_iterator itr = _botStormOriginalStates.find(guid); itr != _botStormOriginalStates.end())
+                    originalState = itr->second;
+
+                if (guid == stormTargetGuid && hadStormGroundAnchor)
+                {
+                    if (bot->IsAlive() && bot->GetPositionZ() > stormGroundAnchor.GetPositionZ() + 3.0f)
+                        bot->NearTeleportTo(stormGroundAnchor.GetPositionX(), stormGroundAnchor.GetPositionY(), stormGroundAnchor.GetPositionZ(), bot->GetOrientation(), true);
+
+                    if (_stormTargetBotGravityDisabled && !_stormTargetBotWasLevitating)
+                        bot->SetDisableGravity(false);
+                }
+
+                if (!(originalState & BOT_COMMAND_INACTION))
+                    ai->RemoveBotCommandState(BOT_COMMAND_INACTION);
+
+                if (!(originalState & BOT_COMMAND_STAY))
+                    ai->RemoveBotCommandState(BOT_COMMAND_STAY);
+
+                if (bot->IsAlive() && resumeAttack && me->IsAlive() && me->IsEngaged())
+                {
+                    ai->SetBotCommandState(BOT_COMMAND_ATTACK);
+                    ai->AttackStart(me);
+                }
+                else if (bot->IsAlive() && !ai->IAmFree())
+                    ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
             }
         }
 
         _botStormLocks.clear();
+        _botStormOriginalStates.clear();
+        _botStormConsumablesUsed.clear();
+        _stormTargetBotGUID.Clear();
+        _stormTargetBotGravityDisabled = false;
+        _stormTargetBotWasLevitating = false;
+        _hasStormGroundAnchor = false;
+        _stormGroundAnchor.Relocate(0.0f, 0.0f, 0.0f, 0.0f);
+    }
+
+    Position GetElectricalStormGroundAnchor(Unit* target) const
+    {
+        if (IsNPCBotUnit(target))
+        {
+            Position anchor = me->GetHomePosition();
+            if (anchor.GetPositionX() != 0.0f || anchor.GetPositionY() != 0.0f || anchor.GetPositionZ() != 0.0f)
+                return anchor;
+
+            return me->GetPosition();
+        }
+
+        Position anchor;
+        anchor.Relocate(target);
+        return anchor;
+    }
+
+    void TrackStormBot(Creature* bot)
+    {
+        if (!bot || !bot->IsNPCBot())
+            return;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai)
+            return;
+
+        ObjectGuid guid = bot->GetGUID();
+        _botStormLocks.insert(guid);
+        if (!_botStormOriginalStates.count(guid))
+            _botStormOriginalStates[guid] = ai->GetBotCommandState();
+    }
+
+    void PrepareStormTargetBot(Unit* target)
+    {
+        Creature* bot = target ? target->ToCreature() : nullptr;
+        if (!bot || !bot->IsNPCBot() || !bot->GetBotAI())
+            return;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai)
+            return;
+
+        TrackStormBot(bot);
+        bot->InterruptNonMeleeSpells(false);
+        bot->AttackStop();
+        bot->BotStopMovement();
+        bot->GetMotionMaster()->Clear();
+
+        ai->SetBotCommandState(BOT_COMMAND_INACTION);
+        _stormTargetBotGUID = bot->GetGUID();
+        _stormTargetBotWasLevitating = bot->IsLevitating();
+        _stormTargetBotGravityDisabled = !_stormTargetBotWasLevitating;
+        if (_stormTargetBotGravityDisabled)
+            bot->SetDisableGravity(true);
+    }
+
+    void TeleportStormTargetBotToGroundAnchor(Unit* target)
+    {
+        if (!_hasStormGroundAnchor)
+            return;
+
+        Creature* bot = target ? target->ToCreature() : nullptr;
+        if (!bot || !bot->IsNPCBot() || !bot->IsAlive())
+            return;
+
+        bot->BotStopMovement();
+        bot->GetMotionMaster()->Clear();
+        bot->NearTeleportTo(
+            _stormGroundAnchor.GetPositionX(),
+            _stormGroundAnchor.GetPositionY(),
+            _stormGroundAnchor.GetPositionZ(),
+            bot->GetOrientation(),
+            true
+        );
+    }
+
+    void TeleportStormTargetBotToAirAnchor(Unit* target)
+    {
+        if (!_hasStormGroundAnchor)
+            return;
+
+        Creature* bot = target ? target->ToCreature() : nullptr;
+        if (!bot || !bot->IsNPCBot() || !bot->IsAlive())
+            return;
+
+        bot->BotStopMovement();
+        bot->GetMotionMaster()->Clear();
+        bot->NearTeleportTo(
+            _stormGroundAnchor.GetPositionX(),
+            _stormGroundAnchor.GetPositionY(),
+            _stormGroundAnchor.GetPositionZ() + 16.0f,
+            bot->GetOrientation(),
+            true
+        );
+    }
+
+    void ReassertStormTargetBotAnchor(ObjectGuid targetGuid)
+    {
+        if (!_stormActive || !_hasStormGroundAnchor)
+            return;
+
+        Unit* target = ObjectAccessor::GetUnit(*me, targetGuid);
+        Creature* bot = target ? target->ToCreature() : nullptr;
+        if (!bot || !bot->IsNPCBot() || !bot->IsAlive())
+            return;
+
+        if (bot->GetExactDist2d(_stormGroundAnchor.GetPositionX(), _stormGroundAnchor.GetPositionY()) > 1.0f ||
+            bot->GetPositionZ() < _stormGroundAnchor.GetPositionZ() + 12.0f)
+        {
+            PrepareStormTargetBot(bot);
+            TeleportStormTargetBotToAirAnchor(bot);
+        }
+    }
+
+    void CastRandomStormConsumable(Creature* bot)
+    {
+        if (!bot || !bot->IsAlive() || !bot->IsNPCBot())
+            return;
+
+        if (_botStormConsumablesUsed.contains(bot->GetGUID()))
+            return;
+
+        _botStormConsumablesUsed.insert(bot->GetGUID());
+
+        uint32 spellId = SPELL_BOT_HEALTHSTONE;
+        switch (urand(0, 2))
+        {
+            case 0:
+                spellId = SPELL_BOT_HEALTHSTONE;
+                break;
+            case 1:
+                spellId = SPELL_BOT_HEALING_POTION;
+                break;
+            default:
+                spellId = SPELL_BOT_NIGHTMARE_SEED;
+                break;
+        }
+
+        bot->CastSpell(bot, spellId, true);
     }
 
     void MoveBotsUnderStormTarget(ObjectGuid targetGuid)
     {
-        if (!_stormActive)
+        if (!_stormActive || !_hasStormGroundAnchor)
             return;
 
         Unit* target = ObjectAccessor::GetUnit(*me, targetGuid);
         if (!target || !target->IsAlive() || !target->IsInWorld())
             return;
 
+        float centerX = _stormGroundAnchor.GetPositionX();
+        float centerY = _stormGroundAnchor.GetPositionY();
+
         std::vector<Creature*> bots = GatherEncounterBotsForCreature(me, 150.0f);
         uint32 movableCount = 0;
         for (Creature* bot : bots)
-            if (bot && bot->GetGUID() != targetGuid && !bot->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_LOST_CONTROL | UNIT_STATE_ISOLATED))
-                ++movableCount;
+        {
+            if (!bot || bot->GetGUID() == targetGuid)
+                continue;
+
+            if (bot->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_LOST_CONTROL | UNIT_STATE_ISOLATED))
+                continue;
+
+            ++movableCount;
+        }
 
         uint32 index = 0;
         for (Creature* bot : bots)
@@ -462,21 +758,28 @@ struct boss_akilzon : public BossAI
                 continue;
 
             float angle = movableCount ? (2.0f * float(M_PI) * float(index)) / float(movableCount) : 0.0f;
-            float radius = 1.75f + float(index % 4) * 0.65f;
-            float x = target->GetPositionX() + std::cos(angle) * radius;
-            float y = target->GetPositionY() + std::sin(angle) * radius;
-            float z = target->GetPositionZ();
+            float radius = 1.25f + float(index % 4) * 0.55f;
+            float x = centerX + std::cos(angle) * radius;
+            float y = centerY + std::sin(angle) * radius;
+
+            TrackStormBot(bot);
+            bot->InterruptNonMeleeSpells(false);
+            bot->AttackStop();
+
+            if (bot_ai* ai = bot->GetBotAI())
+                ai->SetBotCommandState(BOT_COMMAND_INACTION);
 
             Position destination;
-            destination.Relocate(x, y, z, bot->GetOrientation());
+            destination.Relocate(x, y, _stormGroundAnchor.GetPositionZ(), bot->GetOrientation());
 
-            if (bot->GetExactDist2d(x, y) > 2.5f)
+            bool const needsMove = bot->GetExactDist2d(x, y) > 1.25f || std::fabs(bot->GetPositionZ() - _stormGroundAnchor.GetPositionZ()) > 3.0f;
+            if (needsMove)
             {
-                bot->InterruptNonMeleeSpells(false);
-                bot->AttackStop();
-                SafeBotMoveTo(bot, destination);
-                _botStormLocks.insert(bot->GetGUID());
+                CastRandomStormConsumable(bot);
+                SafeBotMoveToStormAnchor(bot, destination);
             }
+            else if (bot->isMoving())
+                bot->BotStopMovement();
 
             ++index;
         }
@@ -487,8 +790,15 @@ private:
     ObjectGuid _targetGUID;
     ObjectGuid _cycloneGUID;
     ObjectGuid _stormTargetGUID;
+    ObjectGuid _stormTargetBotGUID;
     GuidSet _botStormLocks;
+    GuidSet _botStormConsumablesUsed;
+    std::map<ObjectGuid, uint32> _botStormOriginalStates;
+    Position _stormGroundAnchor;
     bool _stormActive;
+    bool _hasStormGroundAnchor;
+    bool _stormTargetBotGravityDisabled = false;
+    bool _stormTargetBotWasLevitating = false;
     bool   _isRaining;
 };
 

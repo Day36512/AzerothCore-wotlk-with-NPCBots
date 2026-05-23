@@ -16,6 +16,7 @@
  */
 
 #include "CreatureScript.h"
+#include "Config.h"
 #include "PassiveAI.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
@@ -25,6 +26,7 @@
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "zulaman.h"
+#include <algorithm>
 
 /*######
 ## npc_forest_frog
@@ -375,6 +377,11 @@ enum Weapons
     WEAPON_SPEAR                        = 13631
 };
 
+static uint32 GetZulAmanSacrificeTimerMinutes()
+{
+    return std::clamp<uint32>(sConfigMgr->GetOption<uint32>("ZulAman.SacrificeTimerMinutes", 21), 1, 240);
+}
+
 struct npc_harrison_jones : public ScriptedAI
 {
     npc_harrison_jones(Creature* creature) : ScriptedAI(creature)
@@ -429,7 +436,7 @@ struct npc_harrison_jones : public ScriptedAI
                     creature->SetInCombatWithZone();
                 }
             });
-            _instance->StorePersistentData(DATA_TIMED_RUN, 21);
+            _instance->StorePersistentData(DATA_TIMED_RUN, GetZulAmanSacrificeTimerMinutes());
             _instance->DoAction(ACTION_START_TIMED_RUN);
             me->DespawnOrUnsummon(3min+30s, 0s);
         }
