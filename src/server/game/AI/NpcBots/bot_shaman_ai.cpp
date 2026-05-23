@@ -1511,14 +1511,11 @@ public:
             if (lvl >= 15 && spellId == GetSpell(LAVA_BURST_1))
                 pctbonus += 0.06f;
             //Glyph of Lightning Bolt: 4% bonus damage for Lightning Bolt
+            if ((GetSpec() == BOT_SPEC_SHAMAN_ELEMENTAL) && lvl >= 15 && spellId == GetSpell(LIGHTNING_BOLT_1))
+                pctbonus += 0.04f;
             //Glyph of Lava: 10% bonus damage for Lava Burst
-            if (GetSpec() == BOT_SPEC_SHAMAN_ELEMENTAL)
-            {
-                if (spellId == GetSpell(LIGHTNING_BOLT_1))
-                    pctbonus += 0.04f;
-                else if (spellId == GetSpell(LAVA_BURST_1))
-                    pctbonus += 0.10f;
-            }
+            if ((GetSpec() == BOT_SPEC_SHAMAN_ELEMENTAL) && lvl >= 66 && spellId == GetSpell(LAVA_BURST_1))
+                pctbonus += 0.10f;
             //Storm, Earth and fire (part 3): 60% bonus damage for Flame Shock (periodic damage in fact but who cares?)
             if ((GetSpec() == BOT_SPEC_SHAMAN_ELEMENTAL) && lvl >= 40 && spellId == GetSpell(FLAME_SHOCK_1))
                 pctbonus += 0.6f;
