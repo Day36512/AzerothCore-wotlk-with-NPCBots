@@ -156,6 +156,7 @@ public:
     void SetArenaTeamStats(ArenaTeamStats& stats) { Stats = stats; }
 
     [[nodiscard]] uint32 GetRating() const          { return Stats.Rating; }
+    [[nodiscard]] bool IsNpcBotProxy() const { return NpcBotProxy; }
     uint32 GetAverageMMR(Group* group) const;
 
     void SetCaptain(ObjectGuid guid);
@@ -212,6 +213,7 @@ public:
     uint32 GetPreviousOpponents() { return PreviousOpponents; }
 
     void CreateTempArenaTeam(std::vector<Player*> playerList, uint8 type, std::string const& teamName);
+    void CreateNpcBotProxyArenaTeam(uint8 type, std::string const& teamName, uint32 rating);
 
     // Containers
     static std::unordered_map<uint32, uint8> ArenaSlotByType; // Slot -> Type
@@ -233,5 +235,6 @@ protected:
     ArenaTeamStats Stats;
 
     uint32 PreviousOpponents = 0;
+    bool NpcBotProxy = false;
 };
 #endif

@@ -17,6 +17,7 @@
 
 #include "Arena.h"
 #include "ArenaTeamMgr.h"
+#include "Config.h"
 #include "GroupMgr.h"
 #include "Log.h"
 #include "ObjectAccessor.h"
@@ -142,11 +143,11 @@ void Arena::AddPlayer(Player* player)
 //npcbot
 void Arena::AddBot(Creature* bot)
 {
-    ASSERT(bot->IsNPCBot() && !bot->IsFreeBot());
+    ASSERT(bot->IsNPCBot() && bot->GetBotAI());
 
     bool const isInBattleground = IsPlayerInBattleground(bot->GetGUID());
     Battleground::AddBot(bot);
-    TeamId botteamid = bot->GetBotOwner()->GetBgTeamId();
+    TeamId botteamid = GetBotTeamId(bot->GetGUID());
 
     if (!isInBattleground)
         BotScores[bot->GetEntry()] = new ArenaScore(bot->GetGUID(), botteamid);
@@ -283,9 +284,20 @@ void Arena::CheckWinConditions()
     if (!sScriptMgr->OnBeforeArenaCheckWinConditions(this))
         return;
 
-    if (!GetAlivePlayersCountByTeam(TEAM_ALLIANCE) && GetPlayersCountByTeam(TEAM_HORDE))
+    uint32 const allianceAlive = GetAlivePlayersCountByTeam(TEAM_ALLIANCE);
+    uint32 const hordeAlive = GetAlivePlayersCountByTeam(TEAM_HORDE);
+    uint32 const alliancePlayers = GetPlayersCountByTeam(TEAM_ALLIANCE);
+    uint32 const hordePlayers = GetPlayersCountByTeam(TEAM_HORDE);
+
+    if (isRated() && (!allianceAlive || !hordeAlive) && sConfigMgr->GetOption<bool>("NpcBot.RatedArena.Debug", false))
+    {
+        LOG_INFO("bg.arena", "RatedArena NPCBot debug: CheckWinConditions bg {} allianceAlive {} hordeAlive {} allianceCount {} hordeCount {}",
+            GetInstanceID(), allianceAlive, hordeAlive, alliancePlayers, hordePlayers);
+    }
+
+    if (!allianceAlive && hordePlayers)
         EndBattleground(TEAM_HORDE);
-    else if (GetPlayersCountByTeam(TEAM_ALLIANCE) && !GetAlivePlayersCountByTeam(TEAM_HORDE))
+    else if (alliancePlayers && !hordeAlive)
         EndBattleground(TEAM_ALLIANCE);
 }
 
@@ -307,6 +319,14 @@ void Arena::EndBattleground(TeamId winnerTeamId)
 
         ArenaTeam* winnerArenaTeam = sArenaTeamMgr->GetArenaTeamById(GetArenaTeamIdForTeam(winnerTeamId == TEAM_NEUTRAL ? TEAM_HORDE : winnerTeamId));
         ArenaTeam* loserArenaTeam  = sArenaTeamMgr->GetArenaTeamById(GetArenaTeamIdForTeam(winnerTeamId == TEAM_NEUTRAL ? TEAM_ALLIANCE : GetOtherTeamId(winnerTeamId)));
+
+        if (!winnerArenaTeam || !loserArenaTeam || winnerArenaTeam == loserArenaTeam)
+        {
+            LOG_ERROR("bg.arena", "Arena::EndBattleground: rated arena missing valid teams. winnerTeamId {} allianceArenaTeamId {} hordeArenaTeamId {} winnerTeamExists {} loserTeamExists {} sameTeam {}",
+                uint32(winnerTeamId), GetArenaTeamIdForTeam(TEAM_ALLIANCE), GetArenaTeamIdForTeam(TEAM_HORDE), bool(winnerArenaTeam), bool(loserArenaTeam), winnerArenaTeam && winnerArenaTeam == loserArenaTeam);
+            Battleground::EndBattleground(winnerTeamId);
+            return;
+        }
 
         auto SaveArenaLogs = [&]()
         {
@@ -468,6 +488,20 @@ void Arena::EndBattleground(TeamId winnerTeamId)
 
         loserArenaTeam->SaveToDB();
         loserArenaTeam->NotifyStatsChanged();
+
+        if (winnerArenaTeam && winnerArenaTeam->IsNpcBotProxy())
+        {
+            uint32 proxyTeamId = winnerArenaTeam->GetId();
+            sArenaTeamMgr->RemoveArenaTeam(proxyTeamId);
+            delete winnerArenaTeam;
+        }
+
+        if (loserArenaTeam && loserArenaTeam->IsNpcBotProxy())
+        {
+            uint32 proxyTeamId = loserArenaTeam->GetId();
+            sArenaTeamMgr->RemoveArenaTeam(proxyTeamId);
+            delete loserArenaTeam;
+        }
     }
 
     // end battleground

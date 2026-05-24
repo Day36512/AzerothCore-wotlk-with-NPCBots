@@ -22,6 +22,7 @@
 #include "BattlegroundSpamProtect.h"
 #include "Channel.h"
 #include "Chat.h"
+#include "Config.h"
 #include "GameTime.h"
 #include "Group.h"
 #include "Language.h"
@@ -29,6 +30,7 @@
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "ScriptMgr.h"
+#include <algorithm>
 #include <unordered_map>
 
 #include "BattlegroundUtils.h"
@@ -44,6 +46,51 @@
 /*********************************************************/
 /***            BATTLEGROUND QUEUE SYSTEM              ***/
 /*********************************************************/
+
+namespace
+{
+bool NpcBotRatedArenaEnabled()
+{
+    return sConfigMgr->GetOption<bool>("NpcBot.RatedArena.Enabled", true);
+}
+
+bool NpcBotRatedArenaOwnedBotsEnabled()
+{
+    return NpcBotRatedArenaEnabled() && sConfigMgr->GetOption<bool>("NpcBot.RatedArena.OwnedBots.Enabled", true);
+}
+
+bool NpcBotRatedArenaOpponentBotsEnabled()
+{
+    return NpcBotRatedArenaEnabled() && sConfigMgr->GetOption<bool>("NpcBot.RatedArena.OpponentBots.Enabled", true);
+}
+
+bool NpcBotRatedArenaDebug()
+{
+    return NpcBotRatedArenaEnabled() && sConfigMgr->GetOption<bool>("NpcBot.RatedArena.Debug", false);
+}
+
+uint32 NpcBotRatedArenaOpponentFallbackMs()
+{
+    return std::clamp<uint32>(sConfigMgr->GetOption<uint32>("NpcBot.RatedArena.OpponentBots.FallbackMs", 30000), 1000, 600000);
+}
+
+Player* FindConnectedRealQueuedPlayer(GroupQueueInfo const* ginfo)
+{
+    if (!ginfo)
+        return nullptr;
+
+    for (ObjectGuid const& guid : ginfo->Players)
+    {
+        if (!guid.IsPlayer())
+            continue;
+
+        if (Player* player = ObjectAccessor::FindConnectedPlayer(guid))
+            return player;
+    }
+
+    return nullptr;
+}
+}
 
 BattlegroundQueue::BattlegroundQueue()
 {
@@ -160,6 +207,7 @@ GroupQueueInfo* BattlegroundQueue::AddGroup(Player* leader, Group* group, Battle
     ginfo->PreviousOpponentsTeamId      = opponentsArenaTeamId;
     ginfo->OpponentsTeamRating          = 0;
     ginfo->OpponentsMatchmakerRating    = 0;
+    ginfo->IsNpcBotRatedArenaProxy      = false;
 
     ginfo->Players.clear();
 
@@ -190,16 +238,24 @@ GroupQueueInfo* BattlegroundQueue::AddGroup(Player* leader, Group* group, Battle
             m_QueuedPlayers[member->GetGUID()] = ginfo;
             ginfo->Players.emplace(member->GetGUID());
         });
-        //npcbot: queue bots (bg only)
-        if (!arenaTeamId)
+        //npcbot: queue bots for normal BGs and, when enabled, rated arena owned-bot rosters
+        if (!arenaTeamId || (isRated && arenaType && NpcBotRatedArenaOwnedBotsEnabled()))
         {
+            uint32 queuedBots = 0;
             for (GroupBotReference* itr = group->GetFirstBotMember(); itr != nullptr; itr = itr->next())
             {
                 Creature const* bot = itr->GetSource();
-                if (!bot)
+                if (!bot || !bot->IsNPCBot() || bot->IsTempBot() || bot->IsFreeBot() || !bot->GetBotAI())
                     continue;
                 m_QueuedPlayers[bot->GetGUID()] = ginfo;
                 ginfo->Players.emplace(bot->GetGUID());
+                ++queuedBots;
+            }
+
+            if (queuedBots && isRated && arenaType && NpcBotRatedArenaDebug())
+            {
+                LOG_INFO("bg.battleground", "RatedArena NPCBot debug: queued {} owned bots with leader {} team {} arenaType {} arenaTeam {} participants {}",
+                    queuedBots, leader->GetGUID().ToString(), uint32(ginfo->teamId), uint32(arenaType), arenaTeamId, uint32(ginfo->Players.size()));
             }
         }
         //end npcbot
@@ -255,11 +311,13 @@ GroupQueueInfo* BattlegroundQueue::AddBotAsGroup(ObjectGuid guid, TeamId teamId,
     ginfo->JoinTime                  = GameTime::GetGameTimeMS().count();
     ginfo->RemoveInviteTime          = 0;
     ginfo->teamId                    = teamId;
+    ginfo->RealTeamID                = teamId;
     ginfo->ArenaTeamRating           = arenaRating;
     ginfo->ArenaMatchmakerRating     = matchmakerRating;
     ginfo->PreviousOpponentsTeamId   = opponentsArenaTeamId;
     ginfo->OpponentsTeamRating       = 0;
     ginfo->OpponentsMatchmakerRating = 0;
+    ginfo->IsNpcBotRatedArenaProxy   = false;
 
     ginfo->Players.clear();
 
@@ -299,6 +357,60 @@ GroupQueueInfo* BattlegroundQueue::AddBotAsGroup(ObjectGuid guid, TeamId teamId,
         uint32 qAlliance = GetPlayersCountInGroupsQueue(bracketId, BG_QUEUE_NORMAL_ALLIANCE);
         ChatHandler(nullptr).SendWorldTextOptional(LANG_BG_QUEUE_ANNOUNCE_WORLD, ANNOUNCER_FLAG_DISABLE_BG_QUEUE, bgName.c_str(), q_min_level, q_max_level, qAlliance + qHorde, MaxPlayers);
     }
+
+    return ginfo;
+}
+
+GroupQueueInfo* BattlegroundQueue::AddBotsAsGroup(std::vector<ObjectGuid> const& botGuids, TeamId teamId, BattlegroundTypeId bgTypeId, PvPDifficultyEntry const* bracketEntry, uint8 arenaType, bool isRated, uint32 arenaRating, uint32 matchmakerRating, uint32 arenaTeamId, uint32 opponentsArenaTeamId, bool npcBotRatedArenaProxy)
+{
+    ASSERT(!botGuids.empty());
+
+    BattlegroundBracketId bracketId = bracketEntry->GetBracketId();
+
+    GroupQueueInfo* ginfo            = new GroupQueueInfo;
+    ginfo->BgTypeId                  = bgTypeId;
+    ginfo->ArenaType                 = arenaType;
+    ginfo->ArenaTeamId               = arenaTeamId;
+    ginfo->IsRated                   = isRated;
+    ginfo->IsInvitedToBGInstanceGUID = 0;
+    ginfo->JoinTime                  = GameTime::GetGameTimeMS().count();
+    ginfo->RemoveInviteTime          = 0;
+    ginfo->teamId                    = teamId;
+    ginfo->RealTeamID                = teamId;
+    ginfo->ArenaTeamRating           = arenaRating;
+    ginfo->ArenaMatchmakerRating     = matchmakerRating;
+    ginfo->PreviousOpponentsTeamId   = opponentsArenaTeamId;
+    ginfo->OpponentsTeamRating       = 0;
+    ginfo->OpponentsMatchmakerRating = 0;
+    ginfo->IsNpcBotRatedArenaProxy   = npcBotRatedArenaProxy;
+    ginfo->Players.clear();
+
+    uint32 index = 0;
+    if (!isRated)
+        index += PVP_TEAMS_COUNT;
+
+    if (ginfo->teamId == TEAM_HORDE)
+        index++;
+
+    LOG_DEBUG("bg.battleground", "Adding NPCBot Group to BattlegroundQueue bgTypeId: {}, bracket_id: {}, index: {}, count: {}", bgTypeId, bracketId, index, botGuids.size());
+    if (isRated && arenaType && NpcBotRatedArenaDebug())
+    {
+        LOG_INFO("bg.battleground", "RatedArena NPCBot debug: queued generated bot group count {} team {} arenaType {} arenaTeam {} proxy {} rating {} mmr {}",
+            uint32(botGuids.size()), uint32(teamId), uint32(arenaType), arenaTeamId, npcBotRatedArenaProxy, arenaRating, matchmakerRating);
+    }
+
+    ginfo->BracketId = bracketId;
+    ginfo->GroupType = index;
+
+    for (ObjectGuid const& guid : botGuids)
+    {
+        ASSERT(guid.IsCreature());
+        ASSERT(m_QueuedPlayers.count(guid) == 0);
+        m_QueuedPlayers[guid] = ginfo;
+        ginfo->Players.emplace(guid);
+    }
+
+    m_QueuedGroups[bracketId][index].push_back(ginfo);
 
     return ginfo;
 }
@@ -461,6 +573,26 @@ void BattlegroundQueue::RemovePlayer(ObjectGuid guid, bool decreaseInvitedCount)
     // remove group queue info no players left
     if (groupInfo->Players.empty())
     {
+        if (groupInfo->IsNpcBotRatedArenaProxy && !groupInfo->IsInvitedToBGInstanceGUID)
+        {
+            if (ArenaTeam* proxyTeam = sArenaTeamMgr->GetArenaTeamById(groupInfo->ArenaTeamId))
+            {
+                if (NpcBotRatedArenaDebug())
+                {
+                    LOG_INFO("bg.battleground", "RatedArena NPCBot debug: deleting uninvited proxy arena team {} after queue removal of {}",
+                        proxyTeam->GetId(), guid.ToString());
+                }
+
+                sArenaTeamMgr->RemoveArenaTeam(proxyTeam->GetId());
+                delete proxyTeam;
+            }
+        }
+        else if (groupInfo->IsNpcBotRatedArenaProxy && NpcBotRatedArenaDebug())
+        {
+            LOG_INFO("bg.battleground", "RatedArena NPCBot debug: proxy queue group arenaTeam {} fully accepted into bg instance {}; keeping proxy team alive until arena end",
+                groupInfo->ArenaTeamId, groupInfo->IsInvitedToBGInstanceGUID);
+        }
+
         m_QueuedGroups[_bracketId][_groupType].erase(group_itr);
         delete groupInfo;
         return;
@@ -1105,6 +1237,23 @@ void BattlegroundQueue::BattlegroundQueueUpdate(uint32 diff, BattlegroundTypeId 
                 {
                     itr_teams[found++] = itr3;
                     break;
+                }
+            }
+
+            if (found == 1 && NpcBotRatedArenaOpponentBotsEnabled())
+            {
+                GroupQueueInfo* waitingTeam = *(itr_teams[0]);
+                if (waitingTeam && !waitingTeam->IsNpcBotRatedArenaProxy &&
+                    getMSTimeDiff(waitingTeam->JoinTime, GameTime::GetGameTimeMS().count()) >= NpcBotRatedArenaOpponentFallbackMs())
+                {
+                    if (Player* leader = FindConnectedRealQueuedPlayer(waitingTeam))
+                    {
+                        if (BotDataMgr::GenerateRatedArenaOpponentBots(leader, this, bracketEntry, waitingTeam))
+                        {
+                            sBattlegroundMgr->ScheduleQueueUpdate(waitingTeam->ArenaMatchmakerRating, arenaType,
+                                BattlegroundMgr::BGQueueTypeId(bgTypeId, arenaType), bgTypeId, bracket_id);
+                        }
+                    }
                 }
             }
         }

@@ -448,6 +448,7 @@ void WorldConfig::BuildConfigCache()
     SetConfigValue<uint32>(CONFIG_ARENA_AUTO_DISTRIBUTE_INTERVAL_DAYS, "Arena.AutoDistributeInterval", 7);
     SetConfigValue<uint32>(CONFIG_ARENA_GAMES_REQUIRED, "Arena.GamesRequired", 10);
     SetConfigValue<bool>(CONFIG_ARENA_FORCE_NAGRAND_ARENA, "Arena.ForceNagrandArena", false);
+    SetConfigValue<bool>(CONFIG_ARENA_DISABLE_RING_OF_VALOR, "Arena.DisableRingOfValor", true);
     SetConfigValue<bool>(CONFIG_ARENA_TEAM_INSTANT_CREATE, "ArenaTeam.InstantCreate", false);
     SetConfigValue<uint32>(CONFIG_ARENA_TEAM_MIN_CREATE_LEVEL, "ArenaTeam.MinCreateLevel", GetConfigValue<uint32>(CONFIG_MAX_PLAYER_LEVEL), ConfigValueCache::Reloadable::Yes, [this](uint32 const& value) { return value > 0 && value <= GetConfigValue<uint32>(CONFIG_MAX_PLAYER_LEVEL); }, "> 0 && <= CONFIG_MAX_PLAYER_LEVEL");
     SetConfigValue<uint32>(CONFIG_ARENA_START_RATING, "Arena.ArenaStartRating", 0);

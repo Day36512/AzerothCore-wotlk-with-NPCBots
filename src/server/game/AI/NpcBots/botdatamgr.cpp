@@ -1,5 +1,7 @@
 #include "BattlegroundMgr.h"
 #include "BattlegroundQueue.h"
+#include "ArenaTeam.h"
+#include "ArenaTeamMgr.h"
 #include "bot_ai.h"
 #include "botconfig.h"
 #include "botdatamgr.h"
@@ -11,6 +13,7 @@
 #include "botwanderful.h"
 #include "bpet_ai.h"
 #include "CharacterCache.h"
+#include "Config.h"
 #include "Containers.h"
 #include "Creature.h"
 #include "DatabaseEnv.h"
@@ -33,6 +36,8 @@
 #include "World.h"
 #include "WorldDatabase.h"
 
+#include <algorithm>
+#include <cmath>
 #include <numeric>
 /*
 Npc Bot Data Manager by Trickerer (onlysuffering@gmail.com)
@@ -65,6 +70,8 @@ static CreatureTemplateContainer _botsExtraCreatureTemplates;
 static std::unordered_map<uint32, EquipmentInfo const*> _botsExtraCreatureEquipmentTemplates;
 static std::set<uint32> _botsExtraCreaturesToDespawn;
 static std::list<std::pair<uint32, WanderNode const*>> _botsWanderCreaturesToSpawn;
+static std::unordered_map<uint32, uint8> _botsRatedArenaOpponentLevelOverrides;
+static std::unordered_map<uint32, std::pair<uint32, uint32>> _botsRatedArenaOpponentGearItemLevelOverrides;
 
 static ItemPerBotClassPerBotCategoryMap _botsExtraCreatureSortedGear;
 
@@ -79,6 +86,163 @@ static uint32 next_wandering_bot_spawn_delay = 0;
 
 static EventProcessor botSpawnEvents;
 static std::unordered_map<ObjectGuid, EventProcessor> botBGJoinEvents;
+
+static bool NpcBotRatedArenaDebug()
+{
+    return sConfigMgr->GetOption<bool>("NpcBot.RatedArena.Enabled", true) &&
+        sConfigMgr->GetOption<bool>("NpcBot.RatedArena.Debug", false);
+}
+
+struct RatedArenaOpponentGearBand
+{
+    uint32 minRating = 0;
+    uint32 maxRating = 0;
+    uint32 minItemLevel = 0;
+    uint32 maxItemLevel = 0;
+    bool explicitMinItemLevel = false;
+};
+
+static constexpr uint8 RATED_ARENA_GEAR_SCALE_MAX_BANDS = 8;
+
+static std::string GetDefaultRatedArenaOpponentGearBand(uint8 level, uint8 index)
+{
+    if (level <= 70)
+    {
+        switch (index)
+        {
+            case 0: return "0,999,90,115";
+            case 1: return "1000,1399,115,123";
+            case 2: return "1400,1699,123,136";
+            case 3: return "1700,1999,136,146";
+            case 4: return "2000,2399,146,154";
+            case 5: return "2400,3000,154,164";
+            default: return "";
+        }
+    }
+
+    switch (index)
+    {
+        case 0: return "0,999,150,187";
+        case 1: return "1000,1399,187,200";
+        case 2: return "1400,1699,200,213";
+        case 3: return "1700,1999,213,226";
+        case 4: return "2000,2399,226,239";
+        case 5: return "2400,3000,239,251";
+        default: return "";
+    }
+}
+
+static uint32 GetDefaultRatedArenaOpponentMinItemLevel(uint8 level)
+{
+    return level <= 70 ? 90 : 150;
+}
+
+static bool ParseRatedArenaOpponentGearBand(std::string const& key, std::string const& value, RatedArenaOpponentGearBand& band)
+{
+    if (value.empty())
+        return false;
+
+    std::vector<std::string_view> tokens = Bcore::Tokenize(value, ',', false);
+    if (tokens.size() != 3 && tokens.size() != 4)
+    {
+        BOT_LOG_ERROR("server.loading", "{} must be formatted as minRating,maxRating,maxItemLevel or minRating,maxRating,minItemLevel,maxItemLevel; got '{}'", key, value);
+        return false;
+    }
+
+    Optional<uint32> minRating = Bcore::StringTo<uint32>(tokens[0]);
+    Optional<uint32> maxRating = Bcore::StringTo<uint32>(tokens[1]);
+    Optional<uint32> minItemLevel = tokens.size() == 4 ? Bcore::StringTo<uint32>(tokens[2]) : Optional<uint32>(0);
+    Optional<uint32> maxItemLevel = Bcore::StringTo<uint32>(tokens[tokens.size() == 4 ? 3 : 2]);
+    if (!minRating || !maxRating || !maxItemLevel)
+    {
+        BOT_LOG_ERROR("server.loading", "{} contains invalid uint32 value '{}'", key, value);
+        return false;
+    }
+
+    band.minRating = std::clamp<uint32>(*minRating, 0, 10000);
+    band.maxRating = std::clamp<uint32>(*maxRating, 0, 10000);
+    band.minItemLevel = std::clamp<uint32>(minItemLevel.value_or(0), 0, 350);
+    band.maxItemLevel = std::clamp<uint32>(*maxItemLevel, 0, 350);
+    band.explicitMinItemLevel = tokens.size() == 4;
+
+    if (band.maxRating < band.minRating)
+        std::swap(band.minRating, band.maxRating);
+
+    if (band.maxItemLevel < band.minItemLevel)
+        std::swap(band.minItemLevel, band.maxItemLevel);
+
+    return band.maxItemLevel != 0;
+}
+
+static uint8 GetRatedArenaOpponentGearScaleLevel(PvPDifficultyEntry const* bracketEntry)
+{
+    if (bracketEntry && bracketEntry->maxLevel <= 70)
+        return 70;
+
+    return 80;
+}
+
+static RatedArenaOpponentGearBand GetRatedArenaOpponentGearBand(uint32 rating, PvPDifficultyEntry const* bracketEntry)
+{
+    if (!sConfigMgr->GetOption<bool>("NpcBot.RatedArena.OpponentBots.GearScale.Enabled", true))
+        return {};
+
+    uint8 level = GetRatedArenaOpponentGearScaleLevel(bracketEntry);
+    std::vector<RatedArenaOpponentGearBand> bands;
+    bands.reserve(RATED_ARENA_GEAR_SCALE_MAX_BANDS);
+
+    for (uint8 i = 0; i < RATED_ARENA_GEAR_SCALE_MAX_BANDS; ++i)
+    {
+        std::string key = "NpcBot.RatedArena.OpponentBots.GearScale." + std::to_string(level) + "." + std::to_string(i);
+        std::string defaultValue = GetDefaultRatedArenaOpponentGearBand(level, i);
+        std::string value = sConfigMgr->GetOption<std::string>(key, defaultValue, !defaultValue.empty());
+
+        RatedArenaOpponentGearBand band;
+        if (ParseRatedArenaOpponentGearBand(key, value, band))
+            bands.push_back(band);
+    }
+
+    if (bands.empty())
+        return {};
+
+    std::sort(bands.begin(), bands.end(), [](RatedArenaOpponentGearBand const& left, RatedArenaOpponentGearBand const& right)
+    {
+        return left.minRating < right.minRating;
+    });
+
+    uint32 inferredMinItemLevel = GetDefaultRatedArenaOpponentMinItemLevel(level);
+    for (RatedArenaOpponentGearBand& band : bands)
+    {
+        if (!band.explicitMinItemLevel)
+            band.minItemLevel = std::min(inferredMinItemLevel, band.maxItemLevel);
+
+        inferredMinItemLevel = band.maxItemLevel;
+    }
+
+    for (RatedArenaOpponentGearBand const& band : bands)
+        if (rating >= band.minRating && rating <= band.maxRating)
+            return band;
+
+    RatedArenaOpponentGearBand const* bestLowerBand = nullptr;
+    for (RatedArenaOpponentGearBand const& band : bands)
+    {
+        if (rating < band.minRating)
+            break;
+
+        bestLowerBand = &band;
+    }
+
+    return bestLowerBand ? *bestLowerBand : bands.front();
+}
+
+static float GetClampedRatedArenaOpponentDamageMultiplier(char const* optionName)
+{
+    float value = sConfigMgr->GetOption<float>(optionName, 1.0f);
+    if (!std::isfinite(value))
+        value = 1.0f;
+
+    return std::clamp(value, 0.0f, 10.0f);
+}
 
 bool BotBankItemCompare::operator()(Item const* item1, Item const* item2) const
 {
@@ -129,7 +293,9 @@ public:
     void AbortMe()
     {
         BOT_LOG_ERROR("npcbots", "BotBattlegroundEnterEvent: Aborting bot {} bg {}!", _botGUID.GetEntry(), uint32(_bgQueueTypeId));
-        sBattlegroundMgr->GetBattlegroundQueue(_bgQueueTypeId).RemovePlayer(_botGUID, true);
+        BattlegroundQueue& queue = sBattlegroundMgr->GetBattlegroundQueue(_bgQueueTypeId);
+        if (queue.m_QueuedPlayers.contains(_botGUID))
+            queue.RemovePlayer(_botGUID, true);
         BotDataMgr::DespawnWandererBot(_botGUID.GetEntry());
     }
 
@@ -141,6 +307,26 @@ public:
         auto itr = botBGJoinEvents.find(_playerGUID);
         if (itr != botBGJoinEvents.end())
             itr->second.KillAllEvents(false);
+    }
+
+    bool RetryLater(uint64 e_time, char const* reason)
+    {
+        constexpr uint32 retryDelayMs = 2000;
+        if (e_time + retryDelayMs >= _removeTime)
+            return false;
+
+        auto itr = botBGJoinEvents.find(_playerGUID);
+        if (itr == botBGJoinEvents.end())
+            return false;
+
+        if (NpcBotRatedArenaDebug())
+        {
+            BOT_LOG_INFO("npcbots", "RatedArena NPCBot debug: retrying bot {} entry in {} ms ({})",
+                _botGUID.ToString(), retryDelayMs, reason ? reason : "waiting");
+        }
+
+        itr->second.AddEventAtOffset(new BotBattlegroundEnterEvent(_playerGUID, _botGUID, _bgQueueTypeId, _bgTypeId, _removeTime), Milliseconds(retryDelayMs));
+        return true;
     }
 
     bool Execute(uint64 e_time, uint32 /*p_time*/) override
@@ -156,16 +342,61 @@ public:
             BattlegroundQueue& queue = sBattlegroundMgr->GetBattlegroundQueue(_bgQueueTypeId);
             BattlegroundQueue::QueuedPlayersMap::const_iterator qpm_citr = queue.m_QueuedPlayers.find(_botGUID);
             GroupQueueInfo const* my_gqi = qpm_citr != queue.m_QueuedPlayers.cend() ? qpm_citr->second : nullptr;
-            Battleground* bg = my_gqi ? sBattlegroundMgr->GetBattleground(my_gqi->IsInvitedToBGInstanceGUID, _bgTypeId) : nullptr;
-
-            if (!bg || bg->GetPlayersCountByTeam(TEAM_ALLIANCE) + bg->GetPlayersCountByTeam(TEAM_HORDE) >= bg->GetMaxPlayersPerTeam() * 2)
+            TeamId queuedTeamId = my_gqi && my_gqi->teamId < TEAM_NEUTRAL ? my_gqi->teamId : BotDataMgr::GetTeamIdForFaction(bot->GetFaction());
+            uint32 queuedArenaTeamId = my_gqi ? my_gqi->ArenaTeamId : 0;
+            bool queuedProxy = my_gqi && my_gqi->IsNpcBotRatedArenaProxy;
+            uint32 queuedParticipants = my_gqi ? uint32(my_gqi->Players.size()) : 0;
+            uint32 invitedInstanceId = my_gqi ? my_gqi->IsInvitedToBGInstanceGUID : 0;
+            Battleground* bg = nullptr;
+            if (invitedInstanceId)
             {
-                AbortAll();
+                bg = sBattlegroundMgr->GetBattleground(invitedInstanceId, _bgTypeId);
+                if (!bg)
+                    bg = sBattlegroundMgr->GetBattleground(invitedInstanceId, BATTLEGROUND_TYPE_NONE);
+            }
+
+            if (!my_gqi)
+            {
+                BOT_LOG_ERROR("npcbots", "BotBattlegroundEnterEvent: bot {} cannot enter bg because it is no longer queued (queueType {}, bgType {})",
+                    _botGUID.ToString(), uint32(_bgQueueTypeId), uint32(_bgTypeId));
+                AbortMe();
+                return true;
+            }
+
+            if (!invitedInstanceId)
+            {
+                if (RetryLater(e_time, "not invited yet"))
+                    return true;
+
+                BOT_LOG_ERROR("npcbots", "BotBattlegroundEnterEvent: bot {} cannot enter bg because no invite arrived before timeout (queueType {}, bgType {}, team {}, arenaTeam {}, proxy {}, participants {})",
+                    _botGUID.ToString(), uint32(_bgQueueTypeId), uint32(_bgTypeId), uint32(queuedTeamId), queuedArenaTeamId, queuedProxy, queuedParticipants);
+                AbortMe();
+                return true;
+            }
+
+            if (!bg)
+            {
+                if (RetryLater(e_time, "invited bg instance not visible yet"))
+                    return true;
+
+                BOT_LOG_ERROR("npcbots", "BotBattlegroundEnterEvent: bot {} cannot enter bg. bgExists=false invitedInstance={} queueType={} requestedBgType={} team={} arenaTeam={} proxy={} participants={}",
+                    _botGUID.ToString(), invitedInstanceId, uint32(_bgQueueTypeId), uint32(_bgTypeId), uint32(queuedTeamId), queuedArenaTeamId, queuedProxy, queuedParticipants);
+                AbortMe();
+                return true;
+            }
+
+            if (bg->GetPlayersCountByTeam(TEAM_ALLIANCE) + bg->GetPlayersCountByTeam(TEAM_HORDE) >= bg->GetMaxPlayersPerTeam() * 2)
+            {
+                BOT_LOG_ERROR("npcbots", "BotBattlegroundEnterEvent: bot {} cannot enter bg {} because it is full. map={} queueType={} requestedBgType={} actualBgType={} team={} arenaTeam={} proxy={} participants={}",
+                    _botGUID.ToString(), bg->GetInstanceID(), bg->GetMapId(), uint32(_bgQueueTypeId), uint32(_bgTypeId), uint32(bg->GetBgTypeID()), uint32(queuedTeamId), queuedArenaTeamId, queuedProxy, queuedParticipants);
+                AbortMe();
                 return true;
             }
 
             if (!queue.IsBotInvited(_botGUID, bg->GetInstanceID()))
             {
+                BOT_LOG_ERROR("npcbots", "BotBattlegroundEnterEvent: bot {} is not invited to bg instance {} (queuedTeam {}, arenaTeam {}, proxy {})",
+                    _botGUID.ToString(), bg->GetInstanceID(), uint32(queuedTeamId), queuedArenaTeamId, queuedProxy);
                 AbortMe();
                 return true;
             }
@@ -173,27 +404,41 @@ public:
             if (bg->GetPlayersCountByTeam(TEAM_ALLIANCE) + bg->GetPlayersCountByTeam(TEAM_HORDE) > 0)
             {
                 Map* bgMap = ASSERT_NOTNULL(sMapMgr->FindMap(bg->GetMapId(), bg->GetInstanceID()));
+                Position const* startPosition = bg->GetTeamStartPosition(queuedTeamId);
+                if (!startPosition)
+                {
+                    BOT_LOG_ERROR("npcbots", "BotBattlegroundEnterEvent: bot {} has invalid queued team {} for bg {} arenaTeam {} proxy {}",
+                        _botGUID.ToString(), uint32(queuedTeamId), bg->GetInstanceID(), queuedArenaTeamId, queuedProxy);
+                    AbortMe();
+                    return true;
+                }
+
+                if (NpcBotRatedArenaDebug())
+                {
+                    BOT_LOG_INFO("npcbots", "RatedArena NPCBot debug: moving bot {} entry {} to bg {} map {} team {} arenaTeam {} proxy {} queuedParticipants {}",
+                        _botGUID.ToString(), _botGUID.GetEntry(), bg->GetInstanceID(), bg->GetMapId(), uint32(queuedTeamId), queuedArenaTeamId, queuedProxy, queuedParticipants);
+                }
 
                 queue.RemovePlayer(bot->GetGUID(), false);
 
                 //BG is set second time in Battleground::AddBot() but it's the same value so this is alright
                 bot->GetBotAI()->SetBG(bg);
 
-                TeamId teamId = BotDataMgr::GetTeamIdForFaction(bot->GetFaction());
-                BotMgr::TeleportBot(const_cast<Creature*>(bot), bgMap, bg->GetTeamStartPosition(teamId), true, false);
-            }
-            else if (my_gqi && std::ranges::any_of(queue.m_QueuedPlayers, [=](BattlegroundQueue::QueuedPlayersMap::value_type const& qpm_pair) {
-                return qpm_pair.first.IsPlayer() && qpm_pair.second && qpm_pair.second->IsInvitedToBGInstanceGUID == my_gqi->IsInvitedToBGInstanceGUID;
-            }))
-            {
-                auto itr = botBGJoinEvents.find(_playerGUID);
-                if (itr != botBGJoinEvents.end())
-                    itr->second.AddEventAtOffset(new BotBattlegroundEnterEvent(_playerGUID, _botGUID, _bgQueueTypeId, _bgTypeId, _removeTime), 2s);
-                else
-                    AbortMe();
+                Creature* mutableBot = const_cast<Creature*>(bot);
+                if (mutableBot->IsFreeBot() || mutableBot->IsWandererBot())
+                    mutableBot->SetFaction(queuedTeamId == TEAM_ALLIANCE ? FACTION_TEMPLATE_ALLIANCE_DEFAULT : FACTION_TEMPLATE_HORDE_DEFAULT);
+
+                BotMgr::TeleportBot(mutableBot, bgMap, startPosition, true, false);
             }
             else
-                AbortAll();
+            {
+                if (RetryLater(e_time, "arena has no participants yet"))
+                    return true;
+
+                BOT_LOG_ERROR("npcbots", "BotBattlegroundEnterEvent: bot {} timed out waiting for players in bg {} (leader {}, team {}, arenaTeam {}, proxy {}, participants {})",
+                    _botGUID.ToString(), bg->GetInstanceID(), _playerGUID.ToString(), uint32(queuedTeamId), queuedArenaTeamId, queuedProxy, queuedParticipants);
+                AbortMe();
+            }
         }
 
         return true;
@@ -242,6 +487,56 @@ void BotDataMgr::DespawnWandererBot(uint32 entry)
     }
     else
         BOT_LOG_ERROR("npcbots", "DespawnWandererBot(): trying to despawn non-existing wanderer bot {} '{}'!", entry, bot ? bot->GetName() : "unknown");
+}
+
+bool BotDataMgr::IsRatedArenaOpponentBot(Creature const* bot)
+{
+    return bot && bot->IsNPCBot() && bot->GetMap() && bot->GetMap()->IsBattleArena() &&
+        GetRatedArenaOpponentLevelOverride(bot->GetEntry()) != 0;
+}
+
+float BotDataMgr::GetRatedArenaOpponentDamageDoneMultiplier()
+{
+    return GetClampedRatedArenaOpponentDamageMultiplier("NpcBot.RatedArena.OpponentBots.DamageDoneMultiplier");
+}
+
+float BotDataMgr::GetRatedArenaOpponentDamageTakenMultiplier()
+{
+    return GetClampedRatedArenaOpponentDamageMultiplier("NpcBot.RatedArena.OpponentBots.DamageTakenMultiplier");
+}
+
+void BotDataMgr::SetRatedArenaOpponentLevelOverride(uint32 entry, uint8 level)
+{
+    if (level)
+        _botsRatedArenaOpponentLevelOverrides[entry] = level;
+}
+
+uint8 BotDataMgr::GetRatedArenaOpponentLevelOverride(uint32 entry)
+{
+    auto itr = _botsRatedArenaOpponentLevelOverrides.find(entry);
+    return itr != _botsRatedArenaOpponentLevelOverrides.end() ? itr->second : 0;
+}
+
+void BotDataMgr::ClearRatedArenaOpponentLevelOverride(uint32 entry)
+{
+    _botsRatedArenaOpponentLevelOverrides.erase(entry);
+}
+
+void BotDataMgr::SetRatedArenaOpponentGearItemLevelOverride(uint32 entry, uint32 minItemLevel, uint32 maxItemLevel)
+{
+    if (maxItemLevel)
+        _botsRatedArenaOpponentGearItemLevelOverrides[entry] = { std::min(minItemLevel, maxItemLevel), maxItemLevel };
+}
+
+std::pair<uint32, uint32> BotDataMgr::GetRatedArenaOpponentGearItemLevelOverride(uint32 entry)
+{
+    auto itr = _botsRatedArenaOpponentGearItemLevelOverrides.find(entry);
+    return itr != _botsRatedArenaOpponentGearItemLevelOverrides.end() ? itr->second : std::pair<uint32, uint32>{};
+}
+
+void BotDataMgr::ClearRatedArenaOpponentGearItemLevelOverride(uint32 entry)
+{
+    _botsRatedArenaOpponentGearItemLevelOverrides.erase(entry);
 }
 
 static void SpawnDungeonBot(uint32 bot_id, Player const* owner)
@@ -388,7 +683,7 @@ private:
 
     bool GenerateWanderingBotToSpawn(std::pair<uint8, uint32> const& spareBotPair, uint8 desired_bracket,
         NodeVec const& spawns_a, NodeVec const& spawns_h, NodeVec const& spawns_n,
-        bool immediate, PvPDifficultyEntry const* bracketEntry, NpcBotRegistry* registry)
+        bool immediate, PvPDifficultyEntry const* bracketEntry, NpcBotRegistry* registry, uint32 gearMinItemLevelOverride = 0, uint32 gearMaxItemLevelOverride = 0, uint8 levelOverride = 0)
     {
         CreatureTemplateContainer const* all_templates = sObjectMgr->GetCreatureTemplates();
 
@@ -483,6 +778,12 @@ private:
 
         //We do not create CreatureData for generated bots
 
+        if (levelOverride)
+            BotDataMgr::SetRatedArenaOpponentLevelOverride(next_bot_id, levelOverride);
+
+        if (gearMaxItemLevelOverride)
+            BotDataMgr::SetRatedArenaOpponentGearItemLevelOverride(next_bot_id, gearMinItemLevelOverride, gearMaxItemLevelOverride);
+
         CellCoord c = Bcore::ComputeCellCoord(spawnLoc->m_positionX, spawnLoc->m_positionY);
         GridCoord g = Bcore::ComputeGridCoord(spawnLoc->m_positionX, spawnLoc->m_positionY);
         ASSERT(c.IsCoordValid(), "Invalid Cell coord!");
@@ -536,7 +837,7 @@ public:
         return count;
     }
 
-    bool GenerateWanderingBotsToSpawn(uint32 count, int32 map_id, int32 team, bool immediate, PvPDifficultyEntry const* bracketEntry, NpcBotRegistry* registry, uint32& spawned)
+    bool GenerateWanderingBotsToSpawn(uint32 count, int32 map_id, int32 team, bool immediate, PvPDifficultyEntry const* bracketEntry, NpcBotRegistry* registry, uint32& spawned, uint32 gearMinItemLevelOverride = 0, uint32 gearMaxItemLevelOverride = 0, uint8 levelOverride = 0)
     {
         using NodeVec = std::vector<WanderNode const*>;
 
@@ -693,7 +994,7 @@ public:
             int8 tries = 100;
             do {
                 --tries;
-                if (GenerateWanderingBotToSpawn(teamSpareBotIdsPerClass.back(), bracket, spawns_a, spawns_h, spawns_n, immediate, bracketEntry, registry))
+                if (GenerateWanderingBotToSpawn(teamSpareBotIdsPerClass.back(), bracket, spawns_a, spawns_h, spawns_n, immediate, bracketEntry, registry, gearMinItemLevelOverride, gearMaxItemLevelOverride, levelOverride))
                 {
                     ++i;
                     ++spawned;
@@ -832,6 +1133,8 @@ public:
             _botsAppearanceData.erase(baditr);
         _botsExtraCreatureEquipmentTemplates.erase(bwcetitr);
         _botsExtraCreatureTemplates.erase(bwctitr);
+        BotDataMgr::ClearRatedArenaOpponentLevelOverride(bot_despawn_id);
+        BotDataMgr::ClearRatedArenaOpponentGearItemLevelOverride(bot_despawn_id);
 
         _spareBotIdsPerClassMap[bot_class].insert(original_id);
     }
@@ -2144,6 +2447,121 @@ bool BotDataMgr::GenerateBattlegroundBots(Player const* groupLeader, [[maybe_unu
     return true;
 }
 
+bool BotDataMgr::GenerateRatedArenaOpponentBots(Player const* groupLeader, BattlegroundQueue* queue, PvPDifficultyEntry const* bracketEntry, GroupQueueInfo const* playerQueueInfo)
+{
+    if (!groupLeader || !queue || !bracketEntry || !playerQueueInfo || !playerQueueInfo->IsRated || playerQueueInfo->IsNpcBotRatedArenaProxy)
+        return false;
+
+    uint8 arenaType = playerQueueInfo->ArenaType;
+    if (arenaType != ARENA_TYPE_2v2 && arenaType != ARENA_TYPE_3v3 && arenaType != ARENA_TYPE_5v5)
+        return false;
+
+    BattlegroundTypeId bgTypeId = playerQueueInfo->BgTypeId;
+    Battleground const* arenaTemplate = sBattlegroundMgr->GetBattlegroundTemplate(bgTypeId);
+    if (!arenaTemplate || !arenaTemplate->isArena())
+        return false;
+
+    TeamId playerTeam = playerQueueInfo->teamId;
+    if (playerTeam >= TEAM_NEUTRAL)
+        playerTeam = groupLeader->GetTeamId();
+
+    TeamId opponentTeam = playerTeam == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
+    int32 opponentFaction = opponentTeam == TEAM_ALLIANCE ? ALLIANCE : HORDE;
+
+    uint32 minRating = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("NpcBot.RatedArena.OpponentBots.MinRating", 0), 0, 10000);
+    uint32 maxRating = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("NpcBot.RatedArena.OpponentBots.MaxRating", 3000), 0, 10000);
+    if (maxRating < minRating)
+        std::swap(minRating, maxRating);
+
+    uint32 referenceRating = playerQueueInfo->ArenaMatchmakerRating ? playerQueueInfo->ArenaMatchmakerRating : playerQueueInfo->ArenaTeamRating;
+    uint32 gearRating = playerQueueInfo->ArenaTeamRating ? playerQueueInfo->ArenaTeamRating : referenceRating;
+    uint32 ratingSpread = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("NpcBot.RatedArena.OpponentBots.RatingSpread", 150), 0, 5000);
+    uint32 lowRating = referenceRating > ratingSpread ? referenceRating - ratingSpread : 0;
+    uint32 highRating = referenceRating + ratingSpread;
+    lowRating = std::max(lowRating, minRating);
+    highRating = std::min(highRating, maxRating);
+
+    uint32 botRating = lowRating <= highRating ? urand(lowRating, highRating) : std::clamp(referenceRating, minRating, maxRating);
+    if (!botRating)
+        botRating = 1;
+
+    uint8 bracketMinLevel = uint8(std::min<uint32>(bracketEntry->minLevel, DEFAULT_MAX_LEVEL));
+    uint8 bracketMaxLevel = uint8(std::min<uint32>(bracketEntry->maxLevel, DEFAULT_MAX_LEVEL));
+    if (bracketMaxLevel < bracketMinLevel)
+        std::swap(bracketMinLevel, bracketMaxLevel);
+
+    uint8 opponentLevel = std::clamp<uint8>(groupLeader->GetLevel(), bracketMinLevel, bracketMaxLevel);
+    RatedArenaOpponentGearBand opponentGearBand = GetRatedArenaOpponentGearBand(gearRating, bracketEntry);
+
+    NpcBotRegistry spawnedBots;
+    uint32 spawned = 0;
+    if (!sBotGen->GenerateWanderingBotsToSpawn(arenaType, -1, opponentFaction, true, bracketEntry, &spawnedBots, spawned, opponentGearBand.minItemLevel, opponentGearBand.maxItemLevel, opponentLevel) ||
+        spawned != arenaType || spawnedBots.size() != arenaType)
+    {
+        for (Creature const* bot : spawnedBots)
+            DespawnWandererBot(bot->GetEntry());
+
+        BOT_LOG_WARN("npcbots", "RatedArena: failed to spawn {} opponent bots for leader {} bracket {} team {}",
+            uint32(arenaType), groupLeader->GetGUID().GetCounter(), uint32(bracketEntry->GetBracketId()), uint32(opponentTeam));
+        return false;
+    }
+
+    std::vector<ObjectGuid> botGuids;
+    botGuids.reserve(spawnedBots.size());
+
+    for (Creature const* bot : spawnedBots)
+    {
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai)
+            continue;
+
+        ai->SetBotCommandState(BOT_COMMAND_STAY);
+        ai->canUpdate = false;
+
+        Creature* mutableBot = const_cast<Creature*>(bot);
+        mutableBot->SetPvP(true);
+        if (mutableBot->GetLevel() != opponentLevel)
+            mutableBot->SetLevel(opponentLevel);
+
+        botGuids.push_back(bot->GetGUID());
+    }
+
+    if (botGuids.size() != arenaType)
+    {
+        for (Creature const* bot : spawnedBots)
+            DespawnWandererBot(bot->GetEntry());
+        return false;
+    }
+
+    ArenaTeam* proxyTeam = new ArenaTeam();
+    proxyTeam->CreateNpcBotProxyArenaTeam(arenaType, "NPCBot Arena Team", botRating);
+    sArenaTeamMgr->AddArenaTeam(proxyTeam);
+
+    BattlegroundQueueTypeId bgQueueTypeId = sBattlegroundMgr->BGQueueTypeId(bgTypeId, arenaType);
+    GroupQueueInfo* botGroup = queue->AddBotsAsGroup(botGuids, opponentTeam, bgTypeId, bracketEntry, arenaType, true,
+        botRating, botRating, proxyTeam->GetId(), playerQueueInfo->ArenaTeamId, true);
+
+    botBGJoinEvents[groupLeader->GetGUID()].AddEventAtOffset([botRating = botRating, arenaType = arenaType, bgQueueTypeId = bgQueueTypeId, bgTypeId = bgTypeId, bracketId = bracketEntry->GetBracketId()]()
+    {
+        sBattlegroundMgr->ScheduleQueueUpdate(botRating, arenaType, bgQueueTypeId, bgTypeId, bracketId);
+    }, Seconds(1));
+
+    uint32 delaySeconds = 5;
+    for (ObjectGuid const& botGuid : botGuids)
+    {
+        BotBattlegroundEnterEvent* event = new BotBattlegroundEnterEvent(groupLeader->GetGUID(), botGuid, bgQueueTypeId, bgTypeId,
+            botBGJoinEvents[groupLeader->GetGUID()].CalculateTime(Milliseconds(uint32(INVITE_ACCEPT_WAIT_TIME) + uint32(BG_START_DELAY_2M)).count()));
+        botBGJoinEvents[groupLeader->GetGUID()].AddEventAtOffset(event, Seconds(delaySeconds));
+        delaySeconds += 1;
+    }
+
+    BOT_LOG_INFO("npcbots", "RatedArena: queued {} opponent NPCBots for leader {} arenaType {} team {} proxyTeam {} rating {} level {} gearRating {} itemLevelRange {}-{} playersInTeam {}",
+        uint32(botGuids.size()), groupLeader->GetGUID().GetCounter(), uint32(arenaType), uint32(opponentTeam), proxyTeam->GetId(), botRating, uint32(opponentLevel),
+        gearRating, opponentGearBand.minItemLevel, opponentGearBand.maxItemLevel, uint32(botGroup ? botGroup->Players.size() : 0));
+
+    return true;
+}
+
 ItemPerBotClassPerBotCategoryMap const& BotDataMgr::GetWanderingBotsSortedGearMap()
 {
     return _botsExtraCreatureSortedGear;
@@ -2660,7 +3078,7 @@ void BotDataMgr::CreateGeneratedBotsSortedGear()
     BOT_LOG_INFO("server.loading", ">> Sorted wandering bots gear in {} ms", GetMSTimeDiffToNow(oldMSTime));
 }
 
-Item* BotDataMgr::GenerateWanderingBotItem(uint8 category, uint8 slot, uint8 botclass, uint8 level, uint32 maxitemlevel, std::function<bool(uint8, ItemTemplate const*)> const& check)
+Item* BotDataMgr::GenerateWanderingBotItem(uint8 category, uint8 slot, uint8 botclass, uint8 level, uint32 minitemlevel, uint32 maxitemlevel, std::function<bool(uint8, ItemTemplate const*)> const& check)
 {
     ASSERT(slot < BOT_INVENTORY_SIZE);
     ASSERT(botclass < BOT_CLASS_END);
@@ -2669,12 +3087,25 @@ Item* BotDataMgr::GenerateWanderingBotItem(uint8 category, uint8 slot, uint8 bot
     auto const& slot_items = _botsExtraCreatureSortedGear[category][botclass][slot];
     ItemIdVector valid_ids;
     valid_ids.reserve(slot_items.back().size());
-    const std::array ilevels_to_check{ maxitemlevel, decltype(maxitemlevel){} };
-    for (auto i : NPCBots::index_array<size_t, std::size(ilevels_to_check)>)
-    {
-        const uint32 max_item_lvl = ilevels_to_check[i];
 
-        if (i > 0 && (!valid_ids.empty() || ilevels_to_check[0] == max_item_lvl))
+    if (maxitemlevel && minitemlevel > maxitemlevel)
+        std::swap(minitemlevel, maxitemlevel);
+
+    std::vector<std::pair<uint32, uint32>> itemLevelRanges;
+    itemLevelRanges.reserve(3);
+    itemLevelRanges.emplace_back(minitemlevel, maxitemlevel);
+
+    if (minitemlevel && maxitemlevel)
+        itemLevelRanges.emplace_back(0, maxitemlevel);
+    else if (maxitemlevel)
+        itemLevelRanges.emplace_back(0, 0);
+
+    for (std::pair<uint32, uint32> const& itemLevelRange : itemLevelRanges)
+    {
+        uint32 const min_item_lvl = itemLevelRange.first;
+        uint32 const max_item_lvl = itemLevelRange.second;
+
+        if (!valid_ids.empty())
             break;
 
         for (uint8 lvl = level; lvl > ITEM_SORTING_LEVEL_STEP; lvl -= ITEM_SORTING_LEVEL_STEP)
@@ -2686,8 +3117,12 @@ Item* BotDataMgr::GenerateWanderingBotItem(uint8 category, uint8 slot, uint8 bot
             for (uint32 iid : item_id_vec)
             {
                 ItemTemplate const* proto = sObjectMgr->GetItemTemplate(iid);
-                if ((!max_item_lvl || proto->ItemLevel <= max_item_lvl) && check(slot, proto))
+                if ((!min_item_lvl || proto->ItemLevel >= min_item_lvl) &&
+                    (!max_item_lvl || proto->ItemLevel <= max_item_lvl) &&
+                    check(slot, proto))
+                {
                     valid_ids.push_back(iid);
+                }
             }
 
             if (valid_ids.empty())

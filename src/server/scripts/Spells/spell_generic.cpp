@@ -6295,5 +6295,5 @@ void AddSC_generic_spell_scripts()
     RegisterSpellScript(spell_gen_vampiric_might);
     RegisterSpellScript(spell_gen_mirrored_soul);
     RegisterSpellScript(spell_gen_black_bow_of_the_betrayer);
-    RegisterSpellScript(spell_gen_filter_party_level_80);
+//    RegisterSpellScript(spell_gen_filter_party_level_80);
 }

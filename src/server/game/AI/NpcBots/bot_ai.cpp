@@ -3053,8 +3053,14 @@ void bot_ai::SetStats(bool force)
     {
         if (_baseLevel == 0) //this only happens once
         {
-            mylevel = urand(me->GetCreatureTemplate()->minlevel, me->GetCreatureTemplate()->maxlevel);
-            mylevel += BotDataMgr::GetLevelBonusForBotRank(me->GetCreatureTemplate()->rank);
+            if (uint8 arenaOpponentLevel = BotDataMgr::GetRatedArenaOpponentLevelOverride(me->GetEntry()))
+                mylevel = arenaOpponentLevel;
+            else
+            {
+                mylevel = urand(me->GetCreatureTemplate()->minlevel, me->GetCreatureTemplate()->maxlevel);
+                mylevel += BotDataMgr::GetLevelBonusForBotRank(me->GetCreatureTemplate()->rank);
+            }
+
             _baseLevel = std::max<uint8>(mylevel, BotDataMgr::GetMinLevelForBotClass(_botclass));
             if (me->GetMap()->IsBattlegroundOrArena())
                 BOT_LOG_DEBUG("npcbots", "BG bot {} id {} selected level {}...", me->GetName().c_str(), me->GetEntry(), uint32(_baseLevel));
@@ -3068,6 +3074,9 @@ void bot_ai::SetStats(bool force)
             //TODO: experience system for levelups
             mylevel = std::max<uint8>(mylevel, std::min<uint8>(_baseLevel + uint8(uint32(float(_killsCount) * BotCfg::GetBotWandererXPGainMod()) / (mylevel * 20)), mapmaxlevel));
         }
+
+        if (uint8 arenaOpponentLevel = BotDataMgr::GetRatedArenaOpponentLevelOverride(me->GetEntry()))
+            mylevel = arenaOpponentLevel;
     }
     else
         mylevel += BotDataMgr::GetLevelBonusForBotRank(me->GetCreatureTemplate()->rank);
@@ -10700,6 +10709,9 @@ void bot_ai::OnSpellHit(Unit* caster, SpellInfo const* spell)
     case WANDERER_HEARTHSTONE:
         if (IsWanderer())
         {
+            if (GetBG() || me->GetMap()->IsBattlegroundOrArena())
+                return;
+
             Map* targetMap = (me->GetMap()->GetEntry()->IsContinent() && _travel_node_cur->GetMapId() != me->GetMap()->GetId()) ?
                 sMapMgr->CreateBaseMap(_travel_node_cur->GetMapId()) : me->GetMap();
             BotMgr::TeleportBot(me, targetMap, _travel_node_cur, true);
@@ -18564,6 +18576,7 @@ void bot_ai::InitEquips()
         const uint8 gen_category = is_wanderer ? BOT_GENERATED_WANDERING : BOT_GENERATED_DUNGEON;
         auto fit_check = [gen_category, this](uint8 slot, ItemTemplate const* proto) { return _isItemFitForGeneratedBot(gen_category, slot, proto); };
 
+        uint32 min_item_level = 0;
         uint32 max_item_level = 0;
         if (gen_category == BOT_GENERATED_DUNGEON)
         {
@@ -18573,7 +18586,15 @@ void bot_ai::InitEquips()
             max_item_level = BotCfg::GetBotDungeonMaxItemLevel(lvl, mymap->GetId(), map_difficulty);
         }
         else
+        {
             max_item_level = BotCfg::GetBotWandererMaxItemLevel(lvl);
+            auto [arenaOpponentMinItemLevel, arenaOpponentMaxItemLevel] = BotDataMgr::GetRatedArenaOpponentGearItemLevelOverride(me->GetEntry());
+            if (arenaOpponentMaxItemLevel)
+            {
+                min_item_level = arenaOpponentMinItemLevel;
+                max_item_level = arenaOpponentMaxItemLevel;
+            }
+        }
 
         GenerateRand();
         std::ostringstream gss;
@@ -18587,7 +18608,7 @@ void bot_ai::InitEquips()
             if ((i == BOT_SLOT_TRINKET1 || i == BOT_SLOT_TRINKET2 || i == BOT_SLOT_HEAD) && lvl < 30)
                 continue;
 
-            Item* item = BotDataMgr::GenerateWanderingBotItem(gen_category, i, _botclass, lvl, max_item_level, fit_check);
+            Item* item = BotDataMgr::GenerateWanderingBotItem(gen_category, i, _botclass, lvl, min_item_level, max_item_level, fit_check);
             if (!item)
             {
                 if (i <= BOT_SLOT_RANGED && einfo->ItemEntry[i] != 0)
@@ -19391,8 +19412,8 @@ void bot_ai::KilledUnit(Unit* u)
         }
     }
 
-    //handle BG kill BvP, BvB, BvC
-    if (me->GetMap()->IsBattleground())
+    //handle BG/arena kill BvP, BvB, BvC
+    if (me->GetMap()->IsBattlegroundOrArena())
     {
         Battleground* bg = GetBG();
         //could be removed from BG
@@ -21422,7 +21443,7 @@ bool bot_ai::GlobalUpdate(uint32 diff)
         uint32 fac_orig = rEntry ? rEntry->FactionID : 0;
         if (master->GetFaction() == fac_orig)
         {
-            uint32 fac = (!IAmFree() && me->GetMap()->IsBattleArena()) ? uint32(FACTION_MONSTER) : fac_orig;
+            uint32 fac = fac_orig;
             if (me->GetFaction() != fac)
             {
                 //std::ostringstream msg;
@@ -22064,6 +22085,14 @@ void bot_ai::Evade()
     {
         _atHome = true;
         _evadeMode = false;
+        return;
+    }
+
+    if (IsWanderer() && GetBG() && me->GetMap()->IsBattlegroundOrArena())
+    {
+        _atHome = true;
+        _evadeMode = false;
+        evadeDelayTimer = 0;
         return;
     }
 

@@ -80,6 +80,7 @@
 #include "botconfig.h"
 #include "botdatamgr.h"
 #include "botmgr.h"
+#include "bpet_ai.h"
 //end npcbot
 
 float baseMoveSpeed[MAX_MOVE_TYPE] =
@@ -94,6 +95,46 @@ float baseMoveSpeed[MAX_MOVE_TYPE] =
     4.5f,                  // MOVE_FLIGHT_BACK
     3.14f                  // MOVE_PITCH_RATE
 };
+
+//npcbot
+namespace
+{
+Creature const* GetRatedArenaOpponentBotActor(Unit const* unit)
+{
+    Creature const* creature = unit ? unit->ToCreature() : nullptr;
+    if (!creature)
+        return nullptr;
+
+    if (BotDataMgr::IsRatedArenaOpponentBot(creature))
+        return creature;
+
+    if (creature->IsNPCBotPet())
+    {
+        if (bot_pet_ai* petAI = creature->GetBotPetAI())
+            if (Creature const* owner = petAI->GetPetsOwner())
+                if (BotDataMgr::IsRatedArenaOpponentBot(owner))
+                    return owner;
+    }
+
+    return nullptr;
+}
+
+uint32 ApplyRatedArenaOpponentDamageMultiplier(uint32 damage, float multiplier)
+{
+    if (!damage || multiplier == 1.0f)
+        return damage;
+
+    if (multiplier <= 0.0f)
+        return 0;
+
+    double modifiedDamage = double(damage) * double(multiplier);
+    if (modifiedDamage >= double(std::numeric_limits<uint32>::max()))
+        return std::numeric_limits<uint32>::max();
+
+    return uint32(std::round(modifiedDamage));
+}
+}
+//end npcbot
 
 float playerBaseMoveSpeed[MAX_MOVE_TYPE] =
 {
@@ -1033,6 +1074,18 @@ void Unit::DealDamageMods(Unit const* victim, uint32& damage, uint32* absorb)
 uint32 Unit::DealDamage(Unit* attacker, Unit* victim, uint32 damage, CleanDamage const* cleanDamage, DamageEffectType damagetype, SpellSchoolMask damageSchoolMask, SpellInfo const* spellProto, bool durabilityLoss, bool /*allowGM*/, Spell const* damageSpell /*= nullptr*/)
 {
     damage = sScriptMgr->DealDamage(attacker, victim, damage, damagetype);
+
+    //npcbot: configurable generated rated-arena opponent handicap
+    if (damage)
+    {
+        if (GetRatedArenaOpponentBotActor(attacker))
+            damage = ApplyRatedArenaOpponentDamageMultiplier(damage, BotDataMgr::GetRatedArenaOpponentDamageDoneMultiplier());
+
+        if (GetRatedArenaOpponentBotActor(victim))
+            damage = ApplyRatedArenaOpponentDamageMultiplier(damage, BotDataMgr::GetRatedArenaOpponentDamageTakenMultiplier());
+    }
+    //end npcbot
+
     // Xinef: initialize damage done for rage calculations
     // Xinef: its rare to modify damage in hooks, however training dummy's sets damage to 0
     uint32 rage_damage = damage + ((cleanDamage != nullptr) ? cleanDamage->absorbed_damage : 0);

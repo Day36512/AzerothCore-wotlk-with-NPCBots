@@ -31,7 +31,7 @@
 
 ArenaTeam::ArenaTeam()
     : TeamId(0), Type(0), TeamName(), BackgroundColor(0), EmblemStyle(0), EmblemColor(0),
-      BorderStyle(0), BorderColor(0)
+      BorderStyle(0), BorderColor(0), NpcBotProxy(false)
 {
     Stats.WeekGames   = 0;
     Stats.SeasonGames = 0;
@@ -803,7 +803,7 @@ void ArenaTeam::FinishGame(int32 mod, const Map* bgMap)
     ArenaTeamMgr::ArenaTeamContainer::const_iterator i = sArenaTeamMgr->GetArenaTeamMapBegin();
     for (; i != sArenaTeamMgr->GetArenaTeamMapEnd(); ++i)
     {
-        if (i->second->GetType() == Type && i->second->GetStats().Rating > Stats.Rating)
+        if (!i->second->IsNpcBotProxy() && i->second->GetType() == Type && i->second->GetStats().Rating > Stats.Rating)
             ++Stats.Rank;
     }
 }
@@ -935,6 +935,9 @@ void ArenaTeam::UpdateArenaPointsHelper(std::map<ObjectGuid, uint32>& playerPoin
 
 void ArenaTeam::SaveToDB(bool forceMemberSave)
 {
+    if (IsNpcBotProxy())
+        return;
+
     if (!sScriptMgr->CanSaveToDB(this))
         return;
 
@@ -1092,6 +1095,29 @@ void ArenaTeam::CreateTempArenaTeam(std::vector<Player*> playerList, uint8 type,
     Stats.Rating /= playerCountInTeam;
     Stats.WeekWins /= playerCountInTeam;
     Stats.SeasonWins /= playerCountInTeam;
+}
+
+void ArenaTeam::CreateNpcBotProxyArenaTeam(uint8 type, std::string const& teamName, uint32 rating)
+{
+    TeamId = sArenaTeamMgr->GenerateTempArenaTeamId();
+    CaptainGuid.Clear();
+    Type = type;
+    TeamName = teamName;
+
+    BackgroundColor = 0;
+    EmblemStyle = 0;
+    EmblemColor = 0;
+    BorderStyle = 0;
+    BorderColor = 0;
+
+    Stats.WeekGames = 0;
+    Stats.SeasonGames = 0;
+    Stats.Rating = rating ? rating : 1;
+    Stats.WeekWins = 0;
+    Stats.SeasonWins = 0;
+    Stats.Rank = 0;
+    Members.clear();
+    NpcBotProxy = true;
 }
 
 // init/update unordered_map ArenaSlotByType

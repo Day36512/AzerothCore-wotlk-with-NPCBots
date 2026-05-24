@@ -26,6 +26,7 @@
 #include "BattlegroundRV.h"
 #include "Chat.h"
 #include "ChatTextBuilder.h"
+#include "Config.h"
 #include "Creature.h"
 #include "CreatureTextMgr.h"
 #include "Formulas.h"
@@ -54,6 +55,51 @@
 #include "botdatamgr.h"
 #include "botmgr.h"
 //end npcbot
+
+#include <cmath>
+
+namespace
+{
+void ActivateGeneratedArenaOpponentBot(Battleground* bg, Creature* bot, TeamId teamId, uint32 index)
+{
+    if (!bg || !bot || !bot->IsNPCBot() || !bot->IsWandererBot())
+        return;
+
+    bot_ai* ai = bot->GetBotAI();
+    if (!ai)
+        return;
+
+    ai->canUpdate = true;
+    ai->RemoveBotCommandState(BOT_COMMAND_STAY | BOT_COMMAND_FOLLOW | BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION);
+
+    if (!bg->isArena() || bg->GetStatus() != STATUS_IN_PROGRESS || teamId >= TEAM_NEUTRAL)
+        return;
+
+    Position const* ownStart = bg->GetTeamStartPosition(teamId);
+    Position const* enemyStart = bg->GetTeamStartPosition(Battleground::GetOtherTeamId(teamId));
+    if (!ownStart || !enemyStart)
+        return;
+
+    float dx = enemyStart->GetPositionX() - ownStart->GetPositionX();
+    float dy = enemyStart->GetPositionY() - ownStart->GetPositionY();
+    float length = std::sqrt(dx * dx + dy * dy);
+    if (length < 1.0f)
+        return;
+
+    static constexpr float sideOffsets[5] = { -4.0f, 0.0f, 4.0f, -8.0f, 8.0f };
+    float sideOffset = sideOffsets[index % 5];
+    float x = ownStart->GetPositionX() + dx * 0.58f + (-dy / length) * sideOffset;
+    float y = ownStart->GetPositionY() + dy * 0.58f + (dx / length) * sideOffset;
+    float z = bot->GetPositionZ();
+    if (!bot->CanFly())
+        bot->UpdateAllowedPositionZ(x, y, z);
+
+    Position engagePosition;
+    engagePosition.Relocate(x, y, z, std::atan2(enemyStart->GetPositionY() - y, enemyStart->GetPositionX() - x));
+    ai->SetBotCommandState(BOT_COMMAND_ATTACK);
+    ai->BotMovement(BOT_MOVE_POINT, &engagePosition);
+}
+}
 
 namespace Acore
 {
@@ -322,6 +368,10 @@ void Battleground::Update(uint32 diff)
                     EndBattleground(PVP_TEAM_NEUTRAL);
                     return;
                 }
+
+                CheckWinConditions();
+                if (GetStatus() == STATUS_WAIT_LEAVE)
+                    return;
             }
             else
             {
@@ -737,12 +787,21 @@ inline void Battleground::_ProcessJoin(uint32 diff)
         }
 
         //npcbot: activate bots
+        uint32 generatedArenaOpponentIndex = 0;
         for (auto const& kv : m_Bots)
         {
             if (Creature const* bot = BotDataMgr::FindBot(kv.first.GetEntry()))
             {
                 if (bot->IsNPCBot() && bot->IsWandererBot())
-                    bot->GetBotAI()->RemoveBotCommandState(BOT_COMMAND_STAY);
+                {
+                    ActivateGeneratedArenaOpponentBot(this, const_cast<Creature*>(bot), kv.second.Team, generatedArenaOpponentIndex++);
+
+                    if (isArena() && isRated() && sConfigMgr->GetOption<bool>("NpcBot.RatedArena.Debug", false))
+                    {
+                        LOG_INFO("bg.battleground", "RatedArena NPCBot debug: activating generated arena opponent bot {} entry {} team {} bg {} map {}",
+                            bot->GetGUID().ToString(), bot->GetEntry(), uint32(kv.second.Team), GetInstanceID(), GetMapId());
+                    }
+                }
             }
         }
         //end npcbot
@@ -1474,6 +1533,18 @@ void Battleground::AddBot(Creature* bot)
     ObjectGuid guid = bot->GetGUID();
     TeamId teamId = !bot->IsFreeBot() ? bot->GetBotOwner()->GetBgTeamId() : BotDataMgr::GetTeamIdForFaction(bot->GetFaction());
 
+    if (!bot->IsFreeBot() && bot->GetBotOwner())
+        bot->SetFaction(bot->GetBotOwner()->GetFaction());
+    else if (isArena() && teamId < TEAM_NEUTRAL)
+        bot->SetFaction(teamId == TEAM_ALLIANCE ? FACTION_TEMPLATE_ALLIANCE_DEFAULT : FACTION_TEMPLATE_HORDE_DEFAULT);
+
+    if (isArena() && isRated() && sConfigMgr->GetOption<bool>("NpcBot.RatedArena.Debug", false))
+    {
+        ObjectGuid ownerGuid = bot->GetBotOwner() ? bot->GetBotOwner()->GetGUID() : ObjectGuid::Empty;
+        LOG_INFO("bg.battleground", "RatedArena NPCBot debug: AddBot {} entry {} free {} owner {} bgTeam {} faction {} bg {} map {}",
+            guid.ToString(), bot->GetEntry(), bot->IsFreeBot(), ownerGuid.ToString(), uint32(teamId), bot->GetFaction(), GetInstanceID(), GetMapId());
+    }
+
     // Add to list/maps
     BattlegroundBot bb;
     bb.Team = teamId;
@@ -1481,14 +1552,19 @@ void Battleground::AddBot(Creature* bot)
 
     UpdatePlayersCountByTeam(teamId, false);                  // +1 player
 
-    WorldPacket data;
-    sBattlegroundMgr->BuildPlayerJoinedBattlegroundPacket(&data, (Player*)bot);
+    WorldPacket data(SMSG_BATTLEGROUND_PLAYER_JOINED, 8);
+    data << guid;
     SendPacketToTeam(teamId, &data, nullptr, false);
 
     AddOrSetBotToCorrectBgGroup(bot, teamId);
 
     bot->GetBotAI()->SetBG(this);
     bot->GetBotAI()->OnBotEnterBattleground();
+    if (bot->IsWandererBot())
+    {
+        if (GetStatus() == STATUS_IN_PROGRESS)
+            ActivateGeneratedArenaOpponentBot(this, bot, teamId, uint32(m_Bots.size()));
+    }
 }
 //end npcbot
 

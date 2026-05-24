@@ -379,9 +379,17 @@ uint32 BattlegroundMgr::CreateClientVisibleInstanceId(BattlegroundTypeId bgTypeI
 Battleground* BattlegroundMgr::CreateNewBattleground(BattlegroundTypeId originalBgTypeId, PvPDifficultyEntry const* bracketEntry, uint8 arenaType, bool isRated)
 {
     bool const forceNagrandArena = sWorld->getBoolConfig(CONFIG_ARENA_FORCE_NAGRAND_ARENA) && IsArenaType(originalBgTypeId);
+    bool const disableRingOfValor = sWorld->getBoolConfig(CONFIG_ARENA_DISABLE_RING_OF_VALOR) && IsArenaType(originalBgTypeId);
+
+    if (disableRingOfValor && originalBgTypeId == BATTLEGROUND_RV)
+        originalBgTypeId = BATTLEGROUND_NA;
+
     BattlegroundTypeId bgTypeId = forceNagrandArena ? BATTLEGROUND_NA : GetRandomBG(originalBgTypeId, bracketEntry->minLevel);
 
-    if (originalBgTypeId == BATTLEGROUND_AA || forceNagrandArena)
+    if (disableRingOfValor && bgTypeId == BATTLEGROUND_RV)
+        bgTypeId = BATTLEGROUND_NA;
+
+    if (originalBgTypeId == BATTLEGROUND_AA || forceNagrandArena || (disableRingOfValor && bgTypeId == BATTLEGROUND_NA))
         originalBgTypeId = bgTypeId;
 
     // get the template BG
@@ -929,6 +937,9 @@ BattlegroundTypeId BattlegroundMgr::GetRandomBG(BattlegroundTypeId bgTypeId, uin
 
             if (BattlegroundTemplate const* bg = GetBattlegroundTemplateByMapId(mapId))
             {
+                if (sWorld->getBoolConfig(CONFIG_ARENA_DISABLE_RING_OF_VALOR) && bg->Id == BATTLEGROUND_RV)
+                    continue;
+
                 if (bg->MinLevel <= minLevel)
                 {
                     ids.push_back(bg->Id);
@@ -936,6 +947,9 @@ BattlegroundTypeId BattlegroundMgr::GetRandomBG(BattlegroundTypeId bgTypeId, uin
                 }
             }
         }
+
+        if (ids.empty())
+            return BATTLEGROUND_TYPE_NONE;
 
         return *Acore::Containers::SelectRandomWeightedContainerElement(ids, weights);
     }

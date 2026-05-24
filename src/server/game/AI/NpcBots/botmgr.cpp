@@ -938,7 +938,7 @@ void BotMgr::_teleportBot(Creature* bot, Map* newMap, float x, float y, float z,
             botai->SetIsDuringTeleport(false);
             botai->ResetContestedPvP();
 
-            if (newMap->IsBattleground())
+            if (newMap->IsBattlegroundOrArena())
             {
                 Battleground* bg = botai->GetBG();
                 if (!bg)

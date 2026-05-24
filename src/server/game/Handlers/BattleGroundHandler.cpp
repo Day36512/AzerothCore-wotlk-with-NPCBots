@@ -22,6 +22,7 @@
 #include "Battleground.h"
 #include "BattlegroundMgr.h"
 #include "Chat.h"
+#include "Config.h"
 #include "DisableMgr.h"
 #include "GameTime.h"
 #include "Group.h"
@@ -39,6 +40,15 @@
 #include "botdatamgr.h"
 #include "botmgr.h"
 //end npcbot
+
+namespace
+{
+bool NpcBotRatedArenaOwnedBotsEnabled()
+{
+    return sConfigMgr->GetOption<bool>("NpcBot.RatedArena.Enabled", true) &&
+        sConfigMgr->GetOption<bool>("NpcBot.RatedArena.OwnedBots.Enabled", true);
+}
+}
 
 void WorldSession::HandleBattlemasterHelloOpcode(WorldPacket& recvData)
 {
@@ -845,11 +855,11 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPacket& recvData)
 
     //npcbot
     bool have_bots_in_group = false;
-    if (_player->GetGroup() && _player->HaveBot())
+    if (_player->GetGroup())
     {
-        for (auto const& mslot : _player->GetGroup()->GetMemberSlots())
+        for (GroupBotReference* itr = _player->GetGroup()->GetFirstBotMember(); itr != nullptr; itr = itr->next())
         {
-            if (mslot.guid.IsCreature() && _player->GetBotMgr()->GetBot(mslot.guid))
+            if (itr->GetSource())
             {
                 have_bots_in_group = true;
                 break;
@@ -938,8 +948,8 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPacket& recvData)
                 return;
             }
 
-            //npcbot: do not allow bots in rated matches
-            if (have_bots_in_group)
+            //npcbot: rated arena can use owned NPCBots as roster members when enabled
+            if (have_bots_in_group && !NpcBotRatedArenaOwnedBotsEnabled())
             {
                 WorldPacket data;
                 sBattlegroundMgr->BuildGroupJoinedBattlegroundPacket(&data, ERR_BATTLEGROUND_JOIN_TIMED_OUT);

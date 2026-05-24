@@ -24,6 +24,7 @@
 #include "ObjectGuid.h"
 #include "SharedDefines.h"
 #include <array>
+#include <vector>
 
 constexpr auto COUNT_OF_PLAYERS_TO_AVERAGE_WAIT_TIME = 10;
 
@@ -46,6 +47,7 @@ struct GroupQueueInfo                                       // stores informatio
     uint32  PreviousOpponentsTeamId;                        // excluded from the current queue until the timer is met
     uint8   BracketId;                                      // BattlegroundBracketId
     uint8   GroupType;                                      // BattlegroundQueueGroupTypes
+    bool    IsNpcBotRatedArenaProxy;                        // generated NPCBot-only rated arena opponent team
 };
 
 enum BattlegroundQueueGroupTypes
@@ -77,6 +79,7 @@ public:
     GroupQueueInfo* AddGroup(Player* leader, Group* group, BattlegroundTypeId bgTypeId, PvPDifficultyEntry const* bracketEntry, uint8 arenaType, bool isRated, bool isPremade, uint32 arenaRating, uint32 matchmakerRating, uint32 arenaTeamId = 0, uint32 opponentsArenaTeamId = 0);
     //npcbot
     GroupQueueInfo* AddBotAsGroup(ObjectGuid leaderGuid, TeamId teamId, BattlegroundTypeId bgTypeId, PvPDifficultyEntry const* bracketEntry, uint8 arenaType, bool isPremade, uint32 arenaRating, uint32 matchmakerRating, uint32 arenaTeamId = 0, uint32 opponentsArenaTeamId = 0);
+    GroupQueueInfo* AddBotsAsGroup(std::vector<ObjectGuid> const& botGuids, TeamId teamId, BattlegroundTypeId bgTypeId, PvPDifficultyEntry const* bracketEntry, uint8 arenaType, bool isRated, uint32 arenaRating, uint32 matchmakerRating, uint32 arenaTeamId = 0, uint32 opponentsArenaTeamId = 0, bool npcBotRatedArenaProxy = false);
         bool IsBotInvited(ObjectGuid guid, uint32 bgInstanceGuid) const;
     //end npcbot
     void RemovePlayer(ObjectGuid guid, bool decreaseInvitedCount);
