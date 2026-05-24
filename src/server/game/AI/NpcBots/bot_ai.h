@@ -466,6 +466,7 @@ protected:
     bool IsWithinAoERadius(Position const& pos) const;
 
     float InitAttackRange(float origRange, bool ranged) const;
+    bool ValidateArenaCombatPosition(Position& pos) const;
     void CalculateAttackPos(Unit* target, Position& pos, bool& force) const;
     void GetInPosition(bool force, Unit* newtarget, Position* pos = nullptr);
     bool AdjustTankingPosition(Unit const* mytarget) const;

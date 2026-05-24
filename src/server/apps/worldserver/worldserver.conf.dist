@@ -4800,6 +4800,14 @@ Daze.Enabled = 1
 InfiniteAmmo.Enabled = 0
 
 #
+#    LeatherworkingDrums.DisableAboveLevel70
+#        Description: If enabled, spells using spell_custom_disable_above_level_70
+#                     cannot be cast by players above level 70.
+#        Default:     0 - (Disabled)
+
+LeatherworkingDrums.DisableAboveLevel70 = 0
+
+#
 ###################################################################################################
 
 ###################################################################################################

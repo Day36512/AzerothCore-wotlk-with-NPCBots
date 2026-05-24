@@ -694,6 +694,7 @@ private:
     uint32 m_StartTime;
     uint32 m_ResetStatTimer;
     uint32 m_ValidStartPositionTimer;
+    uint32 m_GeneratedArenaOpponentNudgeTimer;
     int32 m_EndTime;                                    // it is set to 120000 when bg is ending and it decreases itself
     uint32 m_LastResurrectTime;
     BattlegroundBracketId m_BracketId{ BG_BRACKET_ID_FIRST };

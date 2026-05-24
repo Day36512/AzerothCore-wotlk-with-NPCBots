@@ -709,6 +709,8 @@ void MotionMaster::MoveFall(uint32 id /*=0*/, bool addFlagForNPC)
 {
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
+    if (!_owner->FindMap())
+        return;
 
     // use larger distance for vmap height search than in most other cases
     float tz = _owner->GetMapHeight(_owner->GetPositionX(), _owner->GetPositionY(), _owner->GetPositionZ(), true, MAX_FALL_DISTANCE);

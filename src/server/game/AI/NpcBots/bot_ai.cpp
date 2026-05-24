@@ -8465,6 +8465,51 @@ float bot_ai::InitAttackRange(float origRange, bool ranged) const
 
     return origRange;
 }
+
+bool bot_ai::ValidateArenaCombatPosition(Position& pos) const
+{
+    Unit const* mover = me->GetVehicle() ? me->GetVehicleBase() : me;
+    if (!mover || !mover->IsInWorld())
+        return false;
+
+    Map const* map = mover->FindMap();
+    if (!map || !map->IsBattleArena())
+        return true;
+
+    if (!pos.IsPositionValid())
+        return false;
+
+    if (mover->GetExactDist2d(&pos) < 0.1f && std::fabs(mover->GetPositionZ() - pos.GetPositionZ()) < 1.0f)
+        return true;
+
+    float x = pos.GetPositionX();
+    float y = pos.GetPositionY();
+    float z = pos.GetPositionZ();
+
+    PathGenerator path(mover);
+    if (!path.CalculatePath(x, y, z, false) ||
+        (path.GetPathType() & PathType(PATHFIND_NOPATH | PATHFIND_SHORTCUT | PATHFIND_INCOMPLETE | PATHFIND_NOT_USING_PATH | PATHFIND_FARFROMPOLY)) ||
+        path.GetPath().empty())
+        return false;
+
+    if (!map->CanReachPositionAndGetValidCoords(mover, &path, x, y, z, true, true))
+        return false;
+
+    float const collisionHeight = mover->GetCollisionHeight();
+    G3D::Vector3 previous = path.GetStartPosition();
+    for (G3D::Vector3 const& point : path.GetPath())
+    {
+        if (!map->isInLineOfSight(previous.x, previous.y, previous.z + collisionHeight,
+            point.x, point.y, point.z + collisionHeight, mover->GetPhaseMask(), LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::Nothing))
+            return false;
+
+        previous = point;
+    }
+
+    pos.Relocate(x, y, z, pos.GetOrientation());
+    return pos.IsPositionValid();
+}
+
 void bot_ai::_extendAttackRange(float& dist) const
 {
     ASSERT(!IAmFree());
@@ -8594,6 +8639,9 @@ void bot_ai::CalculateAttackPos(Unit* target, Position& pos, bool& force) const
             }
         }
 
+        if (!ValidateArenaCombatPosition(ppos))
+            ppos.Relocate(me->GetVehicleBase());
+
         pos.Relocate(ppos);
         //pos.m_positionX = x;
         //pos.m_positionY = y;
@@ -8628,13 +8676,17 @@ void bot_ai::CalculateAttackPos(Unit* target, Position& pos, bool& force) const
 
     bool angle_reset_to_master = false;
     uint8 collision_dist_max = IAmFree() ? 30 : 38;
+    bool foundArenaAttackPos = false;
     for (auto i : NPCBots::index_array<uint8, 5>)
     {
         ppos = target->GetFirstCollisionPosition(dist, Position::NormalizeOrientation(angle - target->GetOrientation()));
         // unchanged: non-vehicle collision cap path
         toofaraway = master->GetDistance(ppos) > (followdist > collision_dist_max ? float(collision_dist_max) : followdist < 20 ? 20.f : float(followdist));
-        if (!toofaraway)
+        if (!toofaraway && ValidateArenaCombatPosition(ppos))
+        {
+            foundArenaAttackPos = true;
             break;
+        }
 
         if (!angle_reset_to_master)
         {
@@ -8651,32 +8703,48 @@ void bot_ai::CalculateAttackPos(Unit* target, Position& pos, bool& force) const
     if (!safespots.empty())
     {
         //find closest safe spot
-        Position const* closestPos = nullptr;
-        Position const* closestAttackPos = nullptr;
+        Position closestPos;
+        Position closestAttackPos;
+        bool hasClosestPos = false;
+        bool hasClosestAttackPos = false;
         float minposdist = 100.f;
         float minattackposdist = 100.f;
         for (Position const& safepos : safespots)
         {
             float curdist = me->GetExactDist2d(safepos);
-            if (curdist < minposdist)
+            bool canattack = HasRole(BOT_ROLE_RANGED) ? (target->GetDistance(safepos) - me->GetCombatReach() < dist) : me->IsWithinMeleeRangeAt(safepos, target);
+            if (curdist < minposdist || (canattack && curdist < minattackposdist))
             {
-                closestPos = &safepos;
-                minposdist = curdist;
-            }
-            if (curdist < minattackposdist &&
-                (HasRole(BOT_ROLE_RANGED) ? (target->GetDistance(safepos) - me->GetCombatReach() < dist) : me->IsWithinMeleeRangeAt(safepos, target)))
-            {
-                closestAttackPos = &safepos;
-                minattackposdist = curdist;
+                Position candidate = safepos;
+                if (!ValidateArenaCombatPosition(candidate))
+                    continue;
+
+                if (curdist < minposdist)
+                {
+                    closestPos.Relocate(candidate);
+                    hasClosestPos = true;
+                    minposdist = curdist;
+                }
+
+                if (canattack && curdist < minattackposdist)
+                {
+                    closestAttackPos.Relocate(candidate);
+                    hasClosestAttackPos = true;
+                    minattackposdist = curdist;
+                }
             }
         }
 
-        //BOT_LOG_ERROR("scripts", "CalculateAttackPos %u safe spots, chosen at dist %.2f", uint32(safespots.size()), mindist);
-        pos.Relocate(closestAttackPos ? closestAttackPos : closestPos ? closestPos : me);
-        force = true;
-        return;
+        if (hasClosestAttackPos || hasClosestPos)
+        {
+            //BOT_LOG_ERROR("scripts", "CalculateAttackPos %u safe spots, chosen at dist %.2f", uint32(safespots.size()), mindist);
+            pos.Relocate(hasClosestAttackPos ? closestAttackPos : closestPos);
+            force = true;
+            return;
+        }
     }
-    else if (!aoespots.empty() && !IAmFree())
+
+    if (!aoespots.empty() && !IAmFree())
     {
         pos.Relocate(master);
         force = true;
@@ -8723,11 +8791,21 @@ void bot_ai::CalculateAttackPos(Unit* target, Position& pos, bool& force) const
             if (moveTarget->GetDistance(target) > ThresholdDistance && me->GetDistance(moveTarget) > ThresholdDistance * 2.0f)
             {
                 float distanceMod = moveTarget->HasInArc(float(M_PI), target) ? 0.5f : -1.5f;
-                pos.Relocate(moveTarget->GetFirstCollisionPosition(ThresholdDistance * distanceMod, Position::NormalizeOrientation(moveTarget->GetAbsoluteAngle(target) - moveTarget->GetOrientation())));
-                force = true;
-                return;
+                Position safetyPos = moveTarget->GetFirstCollisionPosition(ThresholdDistance * distanceMod, Position::NormalizeOrientation(moveTarget->GetAbsoluteAngle(target) - moveTarget->GetOrientation()));
+                if (ValidateArenaCombatPosition(safetyPos))
+                {
+                    pos.Relocate(safetyPos);
+                    force = true;
+                    return;
+                }
             }
         }
+    }
+
+    if (!foundArenaAttackPos && !ValidateArenaCombatPosition(ppos))
+    {
+        pos.Relocate(me);
+        return;
     }
 
     pos.Relocate(ppos);
@@ -8766,6 +8844,8 @@ void bot_ai::GetInPosition(bool force, Unit* newtarget, Position* mypos)
         attackpos.m_positionX = newtarget->GetPositionX() - frand(0.5f, 1.5f) * std::cos(me->GetAbsoluteAngle(newtarget));
         attackpos.m_positionY = newtarget->GetPositionY() - frand(0.5f, 1.5f) * std::sin(me->GetAbsoluteAngle(newtarget));
         attackpos.m_positionZ = newtarget->GetPositionZ();
+        if (!ValidateArenaCombatPosition(attackpos))
+            return;
         if (me->GetExactDist2d(&attackpos) > 3.5f)
             BotMovement(BOT_MOVE_POINT, &attackpos);
         //me->GetMotionMaster()->MovePoint(newtarget->GetMapId(), attackpos);
@@ -8790,6 +8870,8 @@ void bot_ai::GetInPosition(bool force, Unit* newtarget, Position* mypos)
         }
         //BOT_LOG_ERROR("scripts", "GetInPosition %s to %s dist %.2f, to pos %.2f", me->GetName().c_str(),
         //    newtarget->GetName().c_str(), me->GetExactDist2d(newtarget), me->GetExactDist2d(&attackpos));
+        if (!ValidateArenaCombatPosition(attackpos))
+            return;
         if (mover->GetExactDist2d(&attackpos) > (force ? 0.1f : 4.f))
         {
             BotMovement(BOT_MOVE_POINT, &attackpos);
@@ -22085,14 +22167,6 @@ void bot_ai::Evade()
     {
         _atHome = true;
         _evadeMode = false;
-        return;
-    }
-
-    if (IsWanderer() && GetBG() && me->GetMap()->IsBattlegroundOrArena())
-    {
-        _atHome = true;
-        _evadeMode = false;
-        evadeDelayTimer = 0;
         return;
     }
 

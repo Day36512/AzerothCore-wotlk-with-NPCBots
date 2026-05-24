@@ -60,17 +60,21 @@
 
 namespace
 {
-void ActivateGeneratedArenaOpponentBot(Battleground* bg, Creature* bot, TeamId teamId, uint32 index)
+static constexpr uint32 GENERATED_ARENA_OPPONENT_NUDGE_RETRY_MS = 6 * IN_MILLISECONDS;
+static constexpr float GENERATED_ARENA_OPPONENT_NUDGE_FRACTION = 0.66f;
+static constexpr float GENERATED_ARENA_OPPONENT_NUDGE_RETRY_RADIUS = 35.0f;
+
+void ActivateGeneratedArenaOpponentBot(Battleground* bg, Creature* bot, TeamId teamId, uint32 index, bool retry = false)
 {
     if (!bg || !bot || !bot->IsNPCBot() || !bot->IsWandererBot())
+        return;
+
+    if (!bot->IsAlive() || bot->FindMap() != bg->GetBgMap())
         return;
 
     bot_ai* ai = bot->GetBotAI();
     if (!ai)
         return;
-
-    ai->canUpdate = true;
-    ai->RemoveBotCommandState(BOT_COMMAND_STAY | BOT_COMMAND_FOLLOW | BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION);
 
     if (!bg->isArena() || bg->GetStatus() != STATUS_IN_PROGRESS || teamId >= TEAM_NEUTRAL)
         return;
@@ -80,16 +84,22 @@ void ActivateGeneratedArenaOpponentBot(Battleground* bg, Creature* bot, TeamId t
     if (!ownStart || !enemyStart)
         return;
 
+    if (retry && bot->GetExactDist2d(ownStart) > GENERATED_ARENA_OPPONENT_NUDGE_RETRY_RADIUS)
+        return;
+
     float dx = enemyStart->GetPositionX() - ownStart->GetPositionX();
     float dy = enemyStart->GetPositionY() - ownStart->GetPositionY();
     float length = std::sqrt(dx * dx + dy * dy);
     if (length < 1.0f)
         return;
 
+    ai->canUpdate = true;
+    ai->RemoveBotCommandState(BOT_COMMAND_STAY | BOT_COMMAND_FOLLOW | BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION);
+
     static constexpr float sideOffsets[5] = { -4.0f, 0.0f, 4.0f, -8.0f, 8.0f };
     float sideOffset = sideOffsets[index % 5];
-    float x = ownStart->GetPositionX() + dx * 0.58f + (-dy / length) * sideOffset;
-    float y = ownStart->GetPositionY() + dy * 0.58f + (dx / length) * sideOffset;
+    float x = ownStart->GetPositionX() + dx * GENERATED_ARENA_OPPONENT_NUDGE_FRACTION + (-dy / length) * sideOffset;
+    float y = ownStart->GetPositionY() + dy * GENERATED_ARENA_OPPONENT_NUDGE_FRACTION + (dx / length) * sideOffset;
     float z = bot->GetPositionZ();
     if (!bot->CanFly())
         bot->UpdateAllowedPositionZ(x, y, z);
@@ -98,6 +108,18 @@ void ActivateGeneratedArenaOpponentBot(Battleground* bg, Creature* bot, TeamId t
     engagePosition.Relocate(x, y, z, std::atan2(enemyStart->GetPositionY() - y, enemyStart->GetPositionX() - x));
     ai->SetBotCommandState(BOT_COMMAND_ATTACK);
     ai->BotMovement(BOT_MOVE_POINT, &engagePosition);
+}
+
+void RetryGeneratedArenaOpponentBotNudge(Battleground* bg)
+{
+    if (!bg || !bg->isArena() || bg->GetStatus() != STATUS_IN_PROGRESS)
+        return;
+
+    uint32 generatedArenaOpponentIndex = 0;
+    for (auto const& kv : bg->GetBots())
+        if (Creature const* bot = BotDataMgr::FindBot(kv.first.GetEntry()))
+            if (bot->IsNPCBot() && bot->IsWandererBot())
+                ActivateGeneratedArenaOpponentBot(bg, const_cast<Creature*>(bot), kv.second.Team, generatedArenaOpponentIndex++, true);
 }
 }
 
@@ -208,6 +230,7 @@ Battleground::Battleground()
     m_StartTime         = 0;
     m_ResetStatTimer    = 0;
     m_ValidStartPositionTimer = 0;
+    m_GeneratedArenaOpponentNudgeTimer = 0;
     m_Events            = 0;
     m_StartDelayTime    = 0;
     m_IsRated           = false;
@@ -367,6 +390,12 @@ void Battleground::Update(uint32 diff)
                 {
                     EndBattleground(PVP_TEAM_NEUTRAL);
                     return;
+                }
+
+                if (m_GeneratedArenaOpponentNudgeTimer)
+                {
+                    RetryGeneratedArenaOpponentBotNudge(this);
+                    m_GeneratedArenaOpponentNudgeTimer = (m_GeneratedArenaOpponentNudgeTimer > diff) ? m_GeneratedArenaOpponentNudgeTimer - diff : 0;
                 }
 
                 CheckWinConditions();
@@ -709,6 +738,8 @@ inline void Battleground::_ProcessJoin(uint32 diff)
         // Remove preparation
         if (isArena())
         {
+            m_GeneratedArenaOpponentNudgeTimer = GENERATED_ARENA_OPPONENT_NUDGE_RETRY_MS;
+
             // pussywizard: initial visibility range is 30yd, set it to a proper value now:
             if (BattlegroundMap* map = GetBgMap())
                 map->SetVisibilityRange(World::GetMaxVisibleDistanceInBGArenas());
@@ -794,13 +825,18 @@ inline void Battleground::_ProcessJoin(uint32 diff)
             {
                 if (bot->IsNPCBot() && bot->IsWandererBot())
                 {
-                    ActivateGeneratedArenaOpponentBot(this, const_cast<Creature*>(bot), kv.second.Team, generatedArenaOpponentIndex++);
-
-                    if (isArena() && isRated() && sConfigMgr->GetOption<bool>("NpcBot.RatedArena.Debug", false))
+                    if (isArena())
                     {
-                        LOG_INFO("bg.battleground", "RatedArena NPCBot debug: activating generated arena opponent bot {} entry {} team {} bg {} map {}",
-                            bot->GetGUID().ToString(), bot->GetEntry(), uint32(kv.second.Team), GetInstanceID(), GetMapId());
+                        ActivateGeneratedArenaOpponentBot(this, const_cast<Creature*>(bot), kv.second.Team, generatedArenaOpponentIndex++);
+
+                        if (isRated() && sConfigMgr->GetOption<bool>("NpcBot.RatedArena.Debug", false))
+                        {
+                            LOG_INFO("bg.battleground", "RatedArena NPCBot debug: activating generated arena opponent bot {} entry {} team {} bg {} map {}",
+                                bot->GetGUID().ToString(), bot->GetEntry(), uint32(kv.second.Team), GetInstanceID(), GetMapId());
+                        }
                     }
+                    else
+                        bot->GetBotAI()->RemoveBotCommandState(BOT_COMMAND_STAY);
                 }
             }
         }
@@ -1403,6 +1439,7 @@ void Battleground::Init()
     SetLastResurrectTime(0);
 
     m_Events = 0;
+    m_GeneratedArenaOpponentNudgeTimer = 0;
 
     if (m_BgInvitedPlayers[TEAM_ALLIANCE] > 0 || m_BgInvitedPlayers[TEAM_HORDE] > 0)
     {
@@ -1560,7 +1597,7 @@ void Battleground::AddBot(Creature* bot)
 
     bot->GetBotAI()->SetBG(this);
     bot->GetBotAI()->OnBotEnterBattleground();
-    if (bot->IsWandererBot())
+    if (isArena() && bot->IsWandererBot())
     {
         if (GetStatus() == STATUS_IN_PROGRESS)
             ActivateGeneratedArenaOpponentBot(this, bot, teamId, uint32(m_Bots.size()));
