@@ -91,7 +91,7 @@ void WorldSession::HandlePetitionBuyOpcode(WorldPacket& recvData)
     else
     {
         /// @todo: find correct opcode
-        if (_player->GetLevel() < sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
+        if (_player->GetLevel() < sWorld->getIntConfig(CONFIG_ARENA_TEAM_MIN_CREATE_LEVEL))
         {
             SendArenaTeamCommandResult(ERR_ARENA_TEAM_CREATE_S, "", _player->GetName(), ERR_ARENA_TEAM_TARGET_TOO_LOW_S);
             return;
@@ -154,6 +154,29 @@ void WorldSession::HandlePetitionBuyOpcode(WorldPacket& recvData)
             SendArenaTeamCommandResult(ERR_ARENA_TEAM_CREATE_S, name, "", ERR_ARENA_TEAM_NAME_INVALID);
             return;
         }
+    }
+
+    if (type != GUILD_CHARTER_TYPE && sWorld->getBoolConfig(CONFIG_ARENA_TEAM_INSTANT_CREATE))
+    {
+        if (!_player->HasEnoughMoney(cost))
+        {
+            _player->SendBuyError(BUY_ERR_NOT_ENOUGHT_MONEY, creature, charterid, 0);
+            return;
+        }
+
+        ArenaTeam* arenaTeam = new ArenaTeam();
+        if (!arenaTeam->Create(_player->GetGUID(), uint8(type), name, 4293102085, 101, 4293253939, 4, 4284049911))
+        {
+            delete arenaTeam;
+            SendArenaTeamCommandResult(ERR_ARENA_TEAM_CREATE_S, name, "", ERR_ARENA_TEAM_INTERNAL);
+            return;
+        }
+
+        _player->ModifyMoney(-(int32)cost);
+        sArenaTeamMgr->AddArenaTeam(arenaTeam);
+        SendArenaTeamCommandResult(ERR_ARENA_TEAM_CREATE_S, arenaTeam->GetName(), "", 0);
+        LOG_DEBUG("network", "PetitionsHandler: Arena team (guid: {}) created instantly without charter", arenaTeam->GetId());
+        return;
     }
 
     ItemTemplate const* pProto = sObjectMgr->GetItemTemplate(charterid);
@@ -425,7 +448,7 @@ void WorldSession::HandlePetitionSignOpcode(WorldPacket& recvData)
             return;
         }
 
-        if (_player->GetLevel() < sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
+        if (_player->GetLevel() < sWorld->getIntConfig(CONFIG_ARENA_TEAM_MIN_CREATE_LEVEL))
         {
             SendArenaTeamCommandResult(ERR_ARENA_TEAM_CREATE_S, "", _player->GetName().c_str(), ERR_ARENA_TEAM_TARGET_TOO_LOW_S);
             return;
@@ -578,7 +601,7 @@ void WorldSession::HandleOfferPetitionOpcode(WorldPacket& recvData)
             return;
         }
 
-        if (player->GetLevel() < sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
+        if (player->GetLevel() < sWorld->getIntConfig(CONFIG_ARENA_TEAM_MIN_CREATE_LEVEL))
         {
             // player is too low level to join an arena team
             SendArenaTeamCommandResult(ERR_ARENA_TEAM_CREATE_S, player->GetName().c_str(), "", ERR_ARENA_TEAM_TARGET_TOO_LOW_S);
@@ -700,6 +723,12 @@ void WorldSession::HandleTurnInPetitionOpcode(WorldPacket& recvData)
         uint8 slot = ArenaTeam::GetSlotByType(type);
         if (slot >= MAX_ARENA_SLOT)
             return;
+
+        if (_player->GetLevel() < sWorld->getIntConfig(CONFIG_ARENA_TEAM_MIN_CREATE_LEVEL))
+        {
+            SendArenaTeamCommandResult(ERR_ARENA_TEAM_CREATE_S, "", _player->GetName(), ERR_ARENA_TEAM_TARGET_TOO_LOW_S);
+            return;
+        }
 
         // Check if player is already in an arena team
         if (_player->GetArenaTeamId(slot))

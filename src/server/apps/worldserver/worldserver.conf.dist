@@ -3984,6 +3984,14 @@ Arena.AutoDistributeInterval = 7
 Arena.GamesRequired = 10
 
 #
+#    Arena.ForceNagrandArena
+#        Description: Force arena matches to use Nagrand Arena (map 559).
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+
+Arena.ForceNagrandArena = 0
+
+#
 #    Arena.QueueAnnouncer.Enable
 #        Description: Announce arena queue status to chat.
 #        Default:     0 - (Disabled)
@@ -4070,6 +4078,24 @@ Arena.ArenaLoseRatingModifier = 24
 #        Default:     24
 
 Arena.ArenaMatchmakerRatingModifier = 24
+
+#
+#    ArenaTeam.InstantCreate
+#        Description: Create arena teams immediately when buying an arena charter instead of
+#                     creating a charter item that must be signed and turned in.
+#                     ArenaTeam.CharterCost.* still applies.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+
+ArenaTeam.InstantCreate = 0
+
+#
+#    ArenaTeam.MinCreateLevel
+#        Description: Minimum level required to create an arena team.
+#        Range:       1-MaxPlayerLevel
+#        Default:     MaxPlayerLevel
+
+ArenaTeam.MinCreateLevel = 80
 
 #
 #    ArenaTeam.CharterCost.2v2

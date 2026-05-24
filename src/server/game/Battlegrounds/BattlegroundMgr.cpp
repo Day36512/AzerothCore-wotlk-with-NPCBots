@@ -378,9 +378,10 @@ uint32 BattlegroundMgr::CreateClientVisibleInstanceId(BattlegroundTypeId bgTypeI
 // create a new battleground that will really be used to play
 Battleground* BattlegroundMgr::CreateNewBattleground(BattlegroundTypeId originalBgTypeId, PvPDifficultyEntry const* bracketEntry, uint8 arenaType, bool isRated)
 {
-    BattlegroundTypeId bgTypeId = GetRandomBG(originalBgTypeId, bracketEntry->minLevel);
+    bool const forceNagrandArena = sWorld->getBoolConfig(CONFIG_ARENA_FORCE_NAGRAND_ARENA) && IsArenaType(originalBgTypeId);
+    BattlegroundTypeId bgTypeId = forceNagrandArena ? BATTLEGROUND_NA : GetRandomBG(originalBgTypeId, bracketEntry->minLevel);
 
-    if (originalBgTypeId == BATTLEGROUND_AA)
+    if (originalBgTypeId == BATTLEGROUND_AA || forceNagrandArena)
         originalBgTypeId = bgTypeId;
 
     // get the template BG
