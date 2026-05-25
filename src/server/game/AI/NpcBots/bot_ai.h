@@ -766,6 +766,8 @@ private:
     bool _saveMiscValues{};
     uint32 _wandererZoneActivityTimer{};
     bool _wandererZoneHasPlayer{ true };
+    mutable uint8 _avObjectiveRole{};
+    mutable uint32 _avObjectiveRoleExpireTime{};
 
     bool IsWandererZoneInactive() const { return IsWanderer() && !_wandererZoneHasPlayer; }
 

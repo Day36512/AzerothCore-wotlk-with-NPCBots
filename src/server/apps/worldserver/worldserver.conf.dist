@@ -5739,6 +5739,116 @@ NpcBot.WanderingBots.BG.TargetTeamPlayersCount.SA = 0
 NpcBot.WanderingBots.BG.TargetTeamPlayersCount.IC = 0
 
 #
+#    NpcBot.WanderingBots.BG.AV.RoleWeight.*
+#        Description: Relative weights for temporary Alterac Valley bot objective roles.
+#                     These values do not need to add up to 100. A value of 0 disables
+#                     that role from random assignment.
+#        Note:        Emergency objective overrides can still take priority, such as
+#                     defending the general, rushing the final boss when towers are down,
+#                     or responding to a threatened captain.
+#        Default:     45 - (NpcBot.WanderingBots.BG.AV.RoleWeight.TowerAssault)
+#                     17 - (NpcBot.WanderingBots.BG.AV.RoleWeight.CaptainAssault)
+#                     15 - (NpcBot.WanderingBots.BG.AV.RoleWeight.TowerDefense)
+#                     13 - (NpcBot.WanderingBots.BG.AV.RoleWeight.Frontline)
+#                     7  - (NpcBot.WanderingBots.BG.AV.RoleWeight.BaseDefense)
+#                     3  - (NpcBot.WanderingBots.BG.AV.RoleWeight.Scout)
+
+NpcBot.WanderingBots.BG.AV.RoleWeight.TowerAssault   = 45
+NpcBot.WanderingBots.BG.AV.RoleWeight.CaptainAssault = 17
+NpcBot.WanderingBots.BG.AV.RoleWeight.TowerDefense   = 15
+NpcBot.WanderingBots.BG.AV.RoleWeight.Frontline      = 13
+NpcBot.WanderingBots.BG.AV.RoleWeight.BaseDefense    = 7
+NpcBot.WanderingBots.BG.AV.RoleWeight.Scout          = 3
+
+#
+#    NpcBot.WanderingBots.BG.AV.RoleDuration.*
+#        Description: Minimum and maximum seconds a bot keeps its temporary AV role
+#                     before rolling a new one. Longer values make bots feel more
+#                     decisive and less likely to bounce between objectives.
+#        Default:     180 - (NpcBot.WanderingBots.BG.AV.RoleDuration.MinSeconds)
+#                     300 - (NpcBot.WanderingBots.BG.AV.RoleDuration.MaxSeconds)
+
+NpcBot.WanderingBots.BG.AV.RoleDuration.MinSeconds = 180
+NpcBot.WanderingBots.BG.AV.RoleDuration.MaxSeconds = 300
+
+#
+#    NpcBot.WanderingBots.BG.AV.BossRally.MaxBots
+#    NpcBot.WanderingBots.BG.AV.BossDefense.MaxBots
+#    NpcBot.WanderingBots.BG.AV.ObjectiveDefense.MaxBots
+#        Description: Maximum number of friendly players/bots that should answer
+#                     high-priority AV override calls before other bots continue
+#                     their current objective roles.
+#
+#                     BossRally limits how many bots gather/push into the enemy
+#                     general room after enough towers or bunkers are destroyed.
+#
+#                     BossDefense limits how many bots turn back when your general
+#                     is under attack.
+#
+#                     ObjectiveDefense limits the immediate response to an assaulted
+#                     friendly graveyard, tower, or bunker. Reserve defenders and
+#                     bots already nearby can answer this call first.
+#
+#                     A value of 0 disables that override response.
+#        Default:     12 - (NpcBot.WanderingBots.BG.AV.BossRally.MaxBots)
+#                     8  - (NpcBot.WanderingBots.BG.AV.BossDefense.MaxBots)
+#                     5  - (NpcBot.WanderingBots.BG.AV.ObjectiveDefense.MaxBots)
+
+NpcBot.WanderingBots.BG.AV.BossRally.MaxBots       = 12
+NpcBot.WanderingBots.BG.AV.BossDefense.MaxBots     = 8
+NpcBot.WanderingBots.BG.AV.ObjectiveDefense.MaxBots = 5
+
+#
+#    NpcBot.WanderingBots.BG.AV.AssaultSupportDistance.*
+#        Description: Yard radius used when deciding whether enough friendly players
+#                     or bots are already supporting an assault objective.
+#                     Lower values make bots less likely to count nearby passersby as
+#                     committed, so more bots may go click or hold that objective.
+#                     Higher values spread bots away sooner.
+#        Default:     25.0 - (NpcBot.WanderingBots.BG.AV.AssaultSupportDistance.Tower)
+#                     60.0 - (NpcBot.WanderingBots.BG.AV.AssaultSupportDistance.Node)
+
+NpcBot.WanderingBots.BG.AV.AssaultSupportDistance.Tower = 25.0
+NpcBot.WanderingBots.BG.AV.AssaultSupportDistance.Node  = 60.0
+
+#
+#    NpcBot.WanderingBots.BG.AV.DefenseSupportDistance.Node
+#        Description: Yard radius used when counting defenders around objectives your
+#                     team has assaulted and needs to hold.
+#                     Lower values assign more bots to sit on contested flags/towers.
+#                     Higher values make nearby allies count as defenders from farther away.
+#        Default:     60.0
+
+NpcBot.WanderingBots.BG.AV.DefenseSupportDistance.Node = 60.0
+
+#
+#    NpcBot.WanderingBots.BG.AV.CoveredNodeDistance
+#        Description: Yard radius used to prune objective choices that already have a
+#                     friendly player or bot nearby. Lower values allow more stacking
+#                     on the same objective. Higher values spread bots thinner.
+#        Default:     40.0
+
+NpcBot.WanderingBots.BG.AV.CoveredNodeDistance = 40.0
+
+#
+#    NpcBot.WanderingBots.BG.AV.AggroDistance.*
+#    NpcBot.WanderingBots.BG.AV.ChaseDistance.*
+#        Description: Yard limits for free wandering AV bots noticing and continuing
+#                     incidental combat targets.
+#                     Lower values make bots more objective-focused.
+#                     Higher values make them more willing to peel into nearby fights.
+#                     Direct attackers can still trigger a response.
+#        Default:     35.0 - (NpcBot.WanderingBots.BG.AV.AggroDistance.Melee)
+#                     45.0 - (NpcBot.WanderingBots.BG.AV.AggroDistance.Ranged)
+#                     45.0 - (NpcBot.WanderingBots.BG.AV.ChaseDistance.Melee)
+#                     60.0 - (NpcBot.WanderingBots.BG.AV.ChaseDistance.Ranged)
+
+NpcBot.WanderingBots.BG.AV.AggroDistance.Melee  = 35.0
+NpcBot.WanderingBots.BG.AV.AggroDistance.Ranged = 45.0
+NpcBot.WanderingBots.BG.AV.ChaseDistance.Melee  = 45.0
+NpcBot.WanderingBots.BG.AV.ChaseDistance.Ranged = 60.0
+
+#
 #    NpcBot.WanderingBots.Classes.<Class>.Enable
 #        Description: Allow players to hire bots of certain classes.
 #        Note:        Some non-standard class abilities may be unbalanced or game breaking.

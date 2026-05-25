@@ -60,6 +60,17 @@ static uint32 _targetBGPlayersPerTeamCount_AB;
 static uint32 _targetBGPlayersPerTeamCount_EY;
 static uint32 _targetBGPlayersPerTeamCount_SA;
 static uint32 _targetBGPlayersPerTeamCount_IC;
+static uint32 _avRoleWeightTowerAssault;
+static uint32 _avRoleWeightCaptainAssault;
+static uint32 _avRoleWeightTowerDefense;
+static uint32 _avRoleWeightFrontline;
+static uint32 _avRoleWeightBaseDefense;
+static uint32 _avRoleWeightScout;
+static uint32 _avRoleDurationMinSeconds;
+static uint32 _avRoleDurationMaxSeconds;
+static uint32 _avBossRallyMaxBots;
+static uint32 _avBossDefenseMaxBots;
+static uint32 _avObjectiveDefenseMaxBots;
 static uint32 _shared_ownership_options;
 static bool _enableNpcBots;
 static bool _logToDB;
@@ -178,6 +189,14 @@ static float _mult_dmg_necromancer;
 static float _mult_dmg_seawitch;
 static float _mult_dmg_cryptlord;
 static float _bothk_rate_honor;
+static float _avAssaultSupportDistanceTower;
+static float _avAssaultSupportDistanceNode;
+static float _avDefenseSupportDistanceNode;
+static float _avCoveredNodeDistance;
+static float _avAggroDistanceMelee;
+static float _avAggroDistanceRanged;
+static float _avChaseDistanceMelee;
+static float _avChaseDistanceRanged;
 static std::vector<float> _mult_dmg_levels;
 static std::vector<float> _mult_heal_levels;
 static std::vector<float> _mult_hp_levels;
@@ -480,6 +499,66 @@ private:
         _targetBGPlayersPerTeamCount_EY = sConfigMgr->GetIntDefault("NpcBot.WanderingBots.BG.TargetTeamPlayersCount.EY", 12);
         _targetBGPlayersPerTeamCount_SA = sConfigMgr->GetIntDefault("NpcBot.WanderingBots.BG.TargetTeamPlayersCount.SA", 0);
         _targetBGPlayersPerTeamCount_IC = sConfigMgr->GetIntDefault("NpcBot.WanderingBots.BG.TargetTeamPlayersCount.IC", 0);
+
+        auto getNonNegativeInt = [](char const* optionName, uint32 defaultValue) -> uint32
+        {
+            int32 value = sConfigMgr->GetIntDefault(optionName, int32(defaultValue));
+            if (value < 0)
+            {
+                BOT_LOG_ERROR("server.loading", "{} cannot be negative ({})! Using default value {}.", optionName, value, defaultValue);
+                return defaultValue;
+            }
+
+            return uint32(value);
+        };
+        auto getNonNegativeFloat = [](char const* optionName, float defaultValue) -> float
+        {
+            float value = sConfigMgr->GetFloatDefault(optionName, defaultValue);
+            if (value < 0.0f)
+            {
+                BOT_LOG_ERROR("server.loading", "{} cannot be negative ({})! Using default value {}.", optionName, value, defaultValue);
+                return defaultValue;
+            }
+
+            return value;
+        };
+
+        _avRoleWeightTowerAssault = getNonNegativeInt("NpcBot.WanderingBots.BG.AV.RoleWeight.TowerAssault", 45);
+        _avRoleWeightCaptainAssault = getNonNegativeInt("NpcBot.WanderingBots.BG.AV.RoleWeight.CaptainAssault", 17);
+        _avRoleWeightTowerDefense = getNonNegativeInt("NpcBot.WanderingBots.BG.AV.RoleWeight.TowerDefense", 15);
+        _avRoleWeightFrontline = getNonNegativeInt("NpcBot.WanderingBots.BG.AV.RoleWeight.Frontline", 13);
+        _avRoleWeightBaseDefense = getNonNegativeInt("NpcBot.WanderingBots.BG.AV.RoleWeight.BaseDefense", 7);
+        _avRoleWeightScout = getNonNegativeInt("NpcBot.WanderingBots.BG.AV.RoleWeight.Scout", 3);
+        _avRoleDurationMinSeconds = getNonNegativeInt("NpcBot.WanderingBots.BG.AV.RoleDuration.MinSeconds", 180);
+        _avRoleDurationMaxSeconds = getNonNegativeInt("NpcBot.WanderingBots.BG.AV.RoleDuration.MaxSeconds", 300);
+        if (_avRoleDurationMinSeconds == 0)
+        {
+            BOT_LOG_ERROR("server.loading", "NpcBot.WanderingBots.BG.AV.RoleDuration.MinSeconds cannot be 0! Using 1.");
+            _avRoleDurationMinSeconds = 1;
+        }
+        if (_avRoleDurationMaxSeconds == 0)
+        {
+            BOT_LOG_ERROR("server.loading", "NpcBot.WanderingBots.BG.AV.RoleDuration.MaxSeconds cannot be 0! Using 1.");
+            _avRoleDurationMaxSeconds = 1;
+        }
+        if (_avRoleDurationMaxSeconds < _avRoleDurationMinSeconds)
+        {
+            BOT_LOG_ERROR("server.loading", "NpcBot.WanderingBots.BG.AV.RoleDuration.MaxSeconds ({}) is lower than MinSeconds ({})! Using MinSeconds.",
+                _avRoleDurationMaxSeconds, _avRoleDurationMinSeconds);
+            _avRoleDurationMaxSeconds = _avRoleDurationMinSeconds;
+        }
+        _avBossRallyMaxBots = getNonNegativeInt("NpcBot.WanderingBots.BG.AV.BossRally.MaxBots", 12);
+        _avBossDefenseMaxBots = getNonNegativeInt("NpcBot.WanderingBots.BG.AV.BossDefense.MaxBots", 8);
+        _avObjectiveDefenseMaxBots = getNonNegativeInt("NpcBot.WanderingBots.BG.AV.ObjectiveDefense.MaxBots", 5);
+        _avAssaultSupportDistanceTower = getNonNegativeFloat("NpcBot.WanderingBots.BG.AV.AssaultSupportDistance.Tower", 25.0f);
+        _avAssaultSupportDistanceNode = getNonNegativeFloat("NpcBot.WanderingBots.BG.AV.AssaultSupportDistance.Node", 60.0f);
+        _avDefenseSupportDistanceNode = getNonNegativeFloat("NpcBot.WanderingBots.BG.AV.DefenseSupportDistance.Node", 60.0f);
+        _avCoveredNodeDistance = getNonNegativeFloat("NpcBot.WanderingBots.BG.AV.CoveredNodeDistance", 40.0f);
+        _avAggroDistanceMelee = getNonNegativeFloat("NpcBot.WanderingBots.BG.AV.AggroDistance.Melee", 35.0f);
+        _avAggroDistanceRanged = getNonNegativeFloat("NpcBot.WanderingBots.BG.AV.AggroDistance.Ranged", 45.0f);
+        _avChaseDistanceMelee = getNonNegativeFloat("NpcBot.WanderingBots.BG.AV.ChaseDistance.Melee", 45.0f);
+        _avChaseDistanceRanged = getNonNegativeFloat("NpcBot.WanderingBots.BG.AV.ChaseDistance.Ranged", 60.0f);
+
         _bothk_enable = sConfigMgr->GetBoolDefault("NpcBot.HK.Enable", true);
         _bothk_message_enable = sConfigMgr->GetBoolDefault("NpcBot.HK.Message.Enable", false);
         _bothk_achievements_enable = sConfigMgr->GetBoolDefault("NpcBot.HK.Achievements.Enable", false);
@@ -1144,6 +1223,82 @@ uint32 BotCfg::GetBGTargetTeamPlayersCount(BattlegroundTypeId bgTypeId)
     default:
         return 0;
     }
+}
+uint32 BotCfg::GetAVRoleWeightTowerAssault()
+{
+    return _avRoleWeightTowerAssault;
+}
+uint32 BotCfg::GetAVRoleWeightCaptainAssault()
+{
+    return _avRoleWeightCaptainAssault;
+}
+uint32 BotCfg::GetAVRoleWeightTowerDefense()
+{
+    return _avRoleWeightTowerDefense;
+}
+uint32 BotCfg::GetAVRoleWeightFrontline()
+{
+    return _avRoleWeightFrontline;
+}
+uint32 BotCfg::GetAVRoleWeightBaseDefense()
+{
+    return _avRoleWeightBaseDefense;
+}
+uint32 BotCfg::GetAVRoleWeightScout()
+{
+    return _avRoleWeightScout;
+}
+uint32 BotCfg::GetAVRoleDurationMinSeconds()
+{
+    return _avRoleDurationMinSeconds;
+}
+uint32 BotCfg::GetAVRoleDurationMaxSeconds()
+{
+    return _avRoleDurationMaxSeconds;
+}
+uint32 BotCfg::GetAVBossRallyMaxBots()
+{
+    return _avBossRallyMaxBots;
+}
+uint32 BotCfg::GetAVBossDefenseMaxBots()
+{
+    return _avBossDefenseMaxBots;
+}
+uint32 BotCfg::GetAVObjectiveDefenseMaxBots()
+{
+    return _avObjectiveDefenseMaxBots;
+}
+float BotCfg::GetAVAssaultSupportDistanceTower()
+{
+    return _avAssaultSupportDistanceTower;
+}
+float BotCfg::GetAVAssaultSupportDistanceNode()
+{
+    return _avAssaultSupportDistanceNode;
+}
+float BotCfg::GetAVDefenseSupportDistanceNode()
+{
+    return _avDefenseSupportDistanceNode;
+}
+float BotCfg::GetAVCoveredNodeDistance()
+{
+    return _avCoveredNodeDistance;
+}
+float BotCfg::GetAVAggroDistanceMelee()
+{
+    return _avAggroDistanceMelee;
+}
+float BotCfg::GetAVAggroDistanceRanged()
+{
+    return _avAggroDistanceRanged;
+}
+float BotCfg::GetAVChaseDistanceMelee()
+{
+    return _avChaseDistanceMelee;
+}
+float BotCfg::GetAVChaseDistanceRanged()
+{
+    return _avChaseDistanceRanged;
 }
 float BotCfg::GetBotHKHonorRate()
 {
