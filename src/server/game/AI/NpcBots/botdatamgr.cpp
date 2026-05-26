@@ -89,7 +89,8 @@ static std::unordered_map<ObjectGuid, EventProcessor> botBGJoinEvents;
 
 static bool NpcBotRatedArenaDebug()
 {
-    return sConfigMgr->GetOption<bool>("NpcBot.RatedArena.Enabled", true) &&
+    return sConfigMgr->GetOption<bool>("NpcBot.Enable.Arena", false) &&
+        sConfigMgr->GetOption<bool>("NpcBot.RatedArena.Enabled", true) &&
         sConfigMgr->GetOption<bool>("NpcBot.RatedArena.Debug", false);
 }
 
@@ -153,7 +154,7 @@ static bool ParseRatedArenaOpponentGearBand(std::string const& key, std::string 
     Optional<uint32> maxRating = Bcore::StringTo<uint32>(tokens[1]);
     Optional<uint32> minItemLevel = tokens.size() == 4 ? Bcore::StringTo<uint32>(tokens[2]) : Optional<uint32>(0);
     Optional<uint32> maxItemLevel = Bcore::StringTo<uint32>(tokens[tokens.size() == 4 ? 3 : 2]);
-    if (!minRating || !maxRating || !maxItemLevel)
+    if (!minRating || !maxRating || !maxItemLevel || (tokens.size() == 4 && !minItemLevel))
     {
         BOT_LOG_ERROR("server.loading", "{} contains invalid uint32 value '{}'", key, value);
         return false;

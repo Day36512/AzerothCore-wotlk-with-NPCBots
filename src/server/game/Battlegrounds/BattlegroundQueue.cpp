@@ -51,7 +51,8 @@ namespace
 {
 bool NpcBotRatedArenaEnabled()
 {
-    return sConfigMgr->GetOption<bool>("NpcBot.RatedArena.Enabled", true);
+    return sConfigMgr->GetOption<bool>("NpcBot.Enable.Arena", false) &&
+        sConfigMgr->GetOption<bool>("NpcBot.RatedArena.Enabled", true);
 }
 
 bool NpcBotRatedArenaOwnedBotsEnabled()

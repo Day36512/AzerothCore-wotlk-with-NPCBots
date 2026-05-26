@@ -209,6 +209,9 @@ struct boss_malchezaar : public BossAI
 
     void SpawnInfernal(Creature* relay, Creature* target)
     {
+        if (!relay || !target)
+            return;
+
         if (Creature* infernal = relay->SummonCreature(NPC_NETHERSPITE_INFERNAL, target->GetPosition(), TEMPSUMMON_TIMED_DESPAWN, 180000))
         {
             infernal->SetDisplayId(INFERNAL_MODEL_INVISIBLE);
@@ -220,15 +223,18 @@ struct boss_malchezaar : public BossAI
         }
     }
 
-    bool MaxSpawns(std::list<Creature*> spawns)
+    bool HasAvailableInfernalTarget(std::list<Creature*> const& targets) const
     {
-        return spawns.size() == 0;
+        return !targets.empty();
     }
 
-    Creature* PickTarget(std::list<Creature*> pickList)
+    Creature* PickTarget(std::list<Creature*> const& pickList)
     {
-        uint8 index = urand(0, pickList.size()-1);
-        uint8 counter = 0;
+        if (pickList.empty())
+            return nullptr;
+
+        uint32 index = urand(0, uint32(pickList.size() - 1));
+        uint32 counter = 0;
         for (Creature* creature : pickList)
         {
             if (counter == index)
@@ -266,26 +272,24 @@ struct boss_malchezaar : public BossAI
             context.Repeat(30s);
         }).Schedule(40s, [this](TaskContext context)
         {
-            if (!MaxSpawns(infernalTargets)) // only spawn infernal when the area is not full
+            if (HasAvailableInfernalTarget(infernalTargets) && !relays.empty()) // only spawn infernal when the area is not full
             {
                 Talk(SAY_SUMMON);
-                if (Creature* infernalRelayOne = relays.back())
+                Creature* infernalRelayOne = relays.back();
+                Creature* infernalRelayTwo = relays.front();
+                if (infernalRelayOne && infernalRelayTwo)
                 {
-                    if (Creature* infernalRelayTwo = relays.front())
+                    infernalRelayOne->CastSpell(infernalRelayTwo, SPELL_INFERNAL_RELAY_ONE, true);
+
+                    if (Creature* infernalTarget = PickTarget(infernalTargets))
                     {
-                        infernalRelayOne->CastSpell(infernalRelayTwo, SPELL_INFERNAL_RELAY_ONE, true);
+                        infernalTargets.remove(infernalTarget);
+                        SpawnInfernal(infernalRelayTwo, infernalTarget);
 
-                        if (Creature* infernalTarget = PickTarget(infernalTargets))
+                        scheduler.Schedule(3min, [this, infernalTarget](TaskContext)
                         {
-                            infernalTargets.remove(infernalTarget);
-                            SpawnInfernal(infernalRelayTwo, infernalTarget);
-
-                            scheduler.Schedule(3min, [this, infernalTarget](TaskContext)
-                            {
-                                infernalTargets.push_back(infernalTarget); //adds to list again
-                            });
-
-                        }
+                            infernalTargets.push_back(infernalTarget); //adds to list again
+                        });
                     }
                 }
             }

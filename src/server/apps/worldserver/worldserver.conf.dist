@@ -4125,6 +4125,7 @@ ArenaTeam.CharterCost.5v5 = 2000000
 #
 #    NpcBot.RatedArena.Enabled
 #        Description: Enables NPCBot support for rated arena queues.
+#                     Requires NpcBot.Enable.Arena = 1.
 #        Default:     1
 #
 NpcBot.RatedArena.Enabled = 1
