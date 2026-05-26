@@ -1,4 +1,5 @@
 #include "bot_ai.h"
+#include "botconfig.h"
 #include "botdatamgr.h"
 #include "botdump.h"
 #include "botgearscore.h"
@@ -3835,6 +3836,14 @@ public:
 
     static bool HandleNpcBotSpawnCommand(ChatHandler* handler, Optional<std::string> creVal)
     {
+        if (!BotCfg::IsNpcBotSpawnCommandEnabled())
+        {
+            handler->SendSysMessage(".npcbot spawn is disabled by NpcBot.SpawnCommand.Enable.");
+            handler->SendSysMessage("Adding bots yourself to the world will mess up future updates if you don't know what you're doing. Use with caution.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
         if (!creVal)
         {
             handler->SendSysMessage(".npcbot spawn");

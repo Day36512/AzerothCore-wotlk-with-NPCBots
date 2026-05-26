@@ -40,6 +40,7 @@ public:
     static bool IsNpcBotLogEnabled();
     static bool IsNpcBotDungeonFinderEnabled();
     static bool IsNpcBotDungeonFinderBotGenerationEnabled();
+    static bool IsNpcBotSpawnCommandEnabled();
     static bool LimitNpcBotsInDungeons();
     static bool LimitNpcBotsInRaids();
     static bool IsNpcBotsPremadeEnabled();

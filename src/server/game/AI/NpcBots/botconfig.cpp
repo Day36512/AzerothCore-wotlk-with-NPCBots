@@ -86,6 +86,7 @@ static bool _enableNpcBotsBGs;
 static bool _enableNpcBotsArenas;
 static bool _enableDungeonFinder;
 static bool _enableDungeonFinderBotsGen;
+static bool _enableNpcBotSpawnCommand;
 static bool _enableNpcBotsPremade;
 static bool _limitNpcBotsDungeons;
 static bool _limitNpcBotsRaids;
@@ -409,6 +410,7 @@ private:
         _enableNpcBotsArenas = sConfigMgr->GetBoolDefault("NpcBot.Enable.Arena", false);
         _enableDungeonFinder = sConfigMgr->GetBoolDefault("NpcBot.Enable.DungeonFinder", true);
         _enableDungeonFinderBotsGen = sConfigMgr->GetBoolDefault("NpcBot.DungeonBots.Enable", false);
+        _enableNpcBotSpawnCommand = sConfigMgr->GetBoolDefault("NpcBot.SpawnCommand.Enable", false);
         _enableNpcBotsPremade = sConfigMgr->GetBoolDefault("NpcBot.Premade.Enable", false);
         _limitNpcBotsDungeons = sConfigMgr->GetBoolDefault("NpcBot.Limit.Dungeon", true);
         _limitNpcBotsRaids = sConfigMgr->GetBoolDefault("NpcBot.Limit.Raid", true);
@@ -858,6 +860,11 @@ bool BotCfg::IsNpcBotDungeonFinderEnabled()
 bool BotCfg::IsNpcBotDungeonFinderBotGenerationEnabled()
 {
     return _enableDungeonFinderBotsGen;
+}
+
+bool BotCfg::IsNpcBotSpawnCommandEnabled()
+{
+    return _enableNpcBotSpawnCommand;
 }
 
 bool BotCfg::LimitNpcBotsInDungeons()

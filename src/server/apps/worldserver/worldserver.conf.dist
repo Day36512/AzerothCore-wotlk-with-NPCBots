@@ -5076,6 +5076,15 @@ NpcBot.Enable = 1
 NpcBot.LogToDB = 1
 
 #
+#    NpcBot.SpawnCommand.Enable
+#        Description: Enables .npcbot spawn, which creates persistent NPCBot spawns in the world and database.
+#        Warning:     Adding bots yourself to the world will mess up future updates if you don't know what you're doing. Use with caution.
+#        Default:     0 - disable
+#                     1 - enable
+
+NpcBot.SpawnCommand.Enable = 0
+
+#
 #    NpcBot.MaxBots
 #        Description: Maximum number of bots allowed for players per level bracket:
 #                     0-9, 10-19, 20,29, ... , 70-79, 80+.
