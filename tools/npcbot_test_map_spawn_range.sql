@@ -1,3 +1,5 @@
+USE `acore_world`;
+
 -- Manual NPCBot test-map spawn dump.
 --
 -- Run this against the WORLD database while worldserver is offline, then restart.
@@ -7,22 +9,22 @@
 --   1. inserts free bot rows into characters_npcbot
 --   2. inserts persistent creature spawns into world.creature
 --
--- Defaults below place the selected bots in a compact holding grid on map 1.
+-- Defaults below place the selected bots in a compact holding grid on map 13.
 -- Change the map/coordinates to your own test holding area before running.
 
 SET @NPCBOT_CHARACTERS_DB := 'acore_characters';
 
 SET @NPCBOT_ENTRY_MIN := 70001;
-SET @NPCBOT_ENTRY_MAX := 70586;
+SET @NPCBOT_ENTRY_MAX := 73586;
 
-SET @NPCBOT_MAP := 1;
-SET @NPCBOT_ORIGIN_X := 16222.1000;
-SET @NPCBOT_ORIGIN_Y := 16252.1000;
-SET @NPCBOT_ORIGIN_Z := 12.5872;
+SET @NPCBOT_MAP := 13;
+SET @NPCBOT_ORIGIN_X := -46.6300;
+SET @NPCBOT_ORIGIN_Y := 52.8400;
+SET @NPCBOT_ORIGIN_Z := -144.7100;
 SET @NPCBOT_ORIENTATION := 1.5708;
 
-SET @NPCBOT_GRID_COLUMNS := 20;
-SET @NPCBOT_GRID_SPACING := 3.0000;
+SET @NPCBOT_GRID_COLUMNS := 10;
+SET @NPCBOT_GRID_SPACING := 2.0000;
 
 SET @NPCBOT_SPAWN_MASK := 1;
 SET @NPCBOT_PHASE_MASK := 1;
@@ -32,6 +34,34 @@ SET @NPCBOT_COMMENT := 'NPCBot test-map spawn range';
 
 SET @NPCBOT_GRID_COLUMNS := GREATEST(1, @NPCBOT_GRID_COLUMNS);
 SET @NPCBOT_CHARACTERS_DB_ESCAPED := REPLACE(@NPCBOT_CHARACTERS_DB, '`', '``');
+
+SELECT
+    @NPCBOT_ENTRY_MIN AS `entry_min`,
+    @NPCBOT_ENTRY_MAX AS `entry_max`,
+    @NPCBOT_MAP AS `map`,
+    @NPCBOT_ORIGIN_X AS `origin_x`,
+    @NPCBOT_ORIGIN_Y AS `origin_y`,
+    @NPCBOT_ORIGIN_Z AS `origin_z`;
+
+SELECT COUNT(*) AS `npcbot_templates_in_range`
+FROM `creature_template` `ct`
+INNER JOIN `creature_template_npcbot_extras` `extras`
+    ON `extras`.`entry` = `ct`.`entry`
+WHERE `ct`.`entry` BETWEEN @NPCBOT_ENTRY_MIN AND @NPCBOT_ENTRY_MAX
+    AND `ct`.`entry` <> 70000
+    AND `ct`.`entry` <> 70552;
+
+SELECT COUNT(DISTINCT `ct`.`entry`) AS `npcbot_templates_already_in_creature`
+FROM `creature_template` `ct`
+INNER JOIN `creature_template_npcbot_extras` `extras`
+    ON `extras`.`entry` = `ct`.`entry`
+INNER JOIN `creature` `existing_creature`
+    ON `existing_creature`.`id1` = `ct`.`entry`
+    OR `existing_creature`.`id2` = `ct`.`entry`
+    OR `existing_creature`.`id3` = `ct`.`entry`
+WHERE `ct`.`entry` BETWEEN @NPCBOT_ENTRY_MIN AND @NPCBOT_ENTRY_MAX
+    AND `ct`.`entry` <> 70000
+    AND `ct`.`entry` <> 70552;
 
 DROP TEMPORARY TABLE IF EXISTS tmp_npcbot_test_existing_characters;
 
@@ -134,9 +164,6 @@ FROM
     FROM `creature_template` `ct`
     INNER JOIN `creature_template_npcbot_extras` `extras`
         ON `extras`.`entry` = `ct`.`entry`
-    INNER JOIN `map_dbc` `map`
-        ON `map`.`ID` = @NPCBOT_MAP
-        AND `map`.`InstanceType` = 0
     LEFT JOIN `creature_classlevelstats` `stats`
         ON `stats`.`level` = `ct`.`minlevel`
         AND `stats`.`class` = `ct`.`unit_class`

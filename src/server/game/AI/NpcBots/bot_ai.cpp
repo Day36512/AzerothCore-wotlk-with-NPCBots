@@ -11220,6 +11220,98 @@ float bot_ai::CalcSpellMaxRange(uint32 spellId, bool enemy) const
 //////////
 //GOSSIP//
 //////////
+namespace
+{
+    char const* GetNpcBotRenameFailureReason(PetNameInvalidReason reason)
+    {
+        switch (reason)
+        {
+        case PET_NAME_TOO_SHORT:             return "too short";
+        case PET_NAME_TOO_LONG:              return "too long";
+        case PET_NAME_MIXED_LANGUAGES:       return "invalid characters";
+        case PET_NAME_PROFANE:               return "profane";
+        case PET_NAME_RESERVED:              return "reserved";
+        case PET_NAME_THREE_CONSECUTIVE:     return "three consecutive letters";
+        case PET_NAME_INVALID_SPACE:         return "spaces are not allowed";
+        case PET_NAME_CONSECUTIVE_SPACES:    return "consecutive spaces";
+        default:                             return "invalid";
+        }
+    }
+
+    void SendNpcBotCreatureQueryResponse(Player* player, CreatureTemplate const* creatureInfo)
+    {
+        WorldPacket data(SMSG_CREATURE_QUERY_RESPONSE, 100);
+        data << uint32(creatureInfo->Entry);
+        data << creatureInfo->Name;
+        data << uint8(0) << uint8(0) << uint8(0);
+        data << creatureInfo->SubName;
+        data << creatureInfo->IconName;
+        data << uint32(creatureInfo->type_flags);
+        data << uint32(creatureInfo->type);
+        data << uint32(creatureInfo->family);
+        data << uint32(creatureInfo->rank);
+        data << uint32(creatureInfo->KillCredit[0]);
+        data << uint32(creatureInfo->KillCredit[1]);
+
+        for (uint8 i = 0; i < 4; ++i)
+            data << uint32(creatureInfo->GetModelByIdx(i) ? creatureInfo->GetModelByIdx(i)->CreatureDisplayID : 0);
+
+        data << float(creatureInfo->ModHealth);
+        data << float(creatureInfo->ModMana);
+        data << uint8(creatureInfo->RacialLeader);
+
+        if (CreatureQuestItemList const* items = sObjectMgr->GetCreatureQuestItemList(creatureInfo->Entry))
+            for (std::size_t i = 0; i < MAX_CREATURE_QUEST_ITEMS; ++i)
+                data << (i < items->size() ? uint32((*items)[i]) : uint32(0));
+        else
+            for (std::size_t i = 0; i < MAX_CREATURE_QUEST_ITEMS; ++i)
+                data << uint32(0);
+
+        data << uint32(creatureInfo->movementId);
+        player->SendDirectMessage(&data);
+    }
+
+    void RefreshNpcBotNameForVisibleClients(Creature* bot, CreatureTemplate const* creatureInfo)
+    {
+        if (!bot->IsInWorld())
+            return;
+
+        for (MapReference const& ref : bot->GetMap()->GetPlayers())
+        {
+            Player* player = ref.GetSource();
+            if (player && player->IsInWorld() && player->HaveAtClient(bot))
+                SendNpcBotCreatureQueryResponse(player, creatureInfo);
+        }
+
+        bot->DestroyForVisiblePlayers();
+        bot->UpdateObjectVisibility(true);
+    }
+
+    bool RenameNpcBotCreature(Creature* bot, std::string const& name)
+    {
+        CreatureTemplate const* creatureInfo = sObjectMgr->GetCreatureTemplate(bot->GetEntry());
+        if (!creatureInfo)
+            return false;
+
+        WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_UPD_NPCBOT_NAME);
+        stmt->SetData(0, name);
+        stmt->SetData(1, bot->GetEntry());
+        WorldDatabase.DirectExecute(stmt);
+
+        std::string escapedName = name;
+        WorldDatabase.EscapeString(escapedName);
+        WorldDatabase.DirectExecute("UPDATE creature_template_npcbot_appearance SET name = '{}' WHERE entry = {}", escapedName, bot->GetEntry());
+
+        CreatureTemplate* mutableCreatureInfo = const_cast<CreatureTemplate*>(creatureInfo);
+        mutableCreatureInfo->Name = name;
+        mutableCreatureInfo->InitializeQueryData();
+
+        bot->SetName(name);
+        RefreshNpcBotNameForVisibleClients(bot, mutableCreatureInfo);
+        return true;
+    }
+}
+
 //GossipHello
 bool bot_ai::OnGossipHello(Player* player, uint32 /*option*/)
 {
@@ -11349,6 +11441,8 @@ bool bot_ai::OnGossipHello(Player* player, uint32 /*option*/)
             AddGossipItemFor(player, GOSSIP_ICON_TALK, LocalizedNpcText(player, BOT_TEXT_MANAGE_ROLES), GOSSIP_SENDER_ROLES_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
             AddGossipItemFor(player, GOSSIP_ICON_TALK, LocalizedNpcText(player, BOT_TEXT_MANAGE_FORMATION), GOSSIP_SENDER_FORMATION, GOSSIP_ACTION_INFO_DEF + 1);
             AddGossipItemFor(player, GOSSIP_ICON_TALK, LocalizedNpcText(player, BOT_TEXT_MANAGE_ABILITIES), GOSSIP_SENDER_ABILITIES, GOSSIP_ACTION_INFO_DEF + 1);
+            player->PlayerTalkClass->GetGossipMenu().AddMenuItem(-1, GOSSIP_ICON_TABARD, "Rename", GOSSIP_SENDER_RENAME_BOT,
+                GOSSIP_ACTION_INFO_DEF + 1, "Enter a new name for this bot.", 0, true);
             if (_botclass < BOT_CLASS_EX_START)
             {
                 if (me->GetLevel() >= 10)
@@ -14849,6 +14943,48 @@ bool bot_ai::OnGossipSelectCode(Player* player, Creature* creature/* == me*/, ui
 
     switch (sender)
     {
+    case GOSSIP_SENDER_RENAME_BOT:
+    {
+        if (player != master || player->GetGUID().GetCounter() != _botData->owner)
+        {
+            player->PlayerTalkClass->SendCloseGossip();
+            return true;
+        }
+
+        std::string name(code);
+        if (!normalizePlayerName(name))
+        {
+            BotWhisper("That name cannot be used: invalid.", player);
+            player->PlayerTalkClass->SendCloseGossip();
+            return true;
+        }
+
+        PetNameInvalidReason reason = ObjectMgr::CheckPetName(name);
+        if (reason != PET_NAME_SUCCESS)
+        {
+            BotWhisper(Bcore::StringFormat("That name cannot be used: {}.", GetNpcBotRenameFailureReason(reason)), player);
+            player->PlayerTalkClass->SendCloseGossip();
+            return true;
+        }
+
+        if (name == me->GetName())
+        {
+            BotWhisper(Bcore::StringFormat("Already named {}.", name), player);
+            player->PlayerTalkClass->SendCloseGossip();
+            return true;
+        }
+
+        player->PlayerTalkClass->SendCloseGossip();
+
+        if (!RenameNpcBotCreature(me, name))
+        {
+            BotWhisper(LocalizedNpcText(player, BOT_TEXT_FAILED), player);
+            return true;
+        }
+
+        BotWhisper(Bcore::StringFormat("Renamed to {}.", name), player);
+        return true;
+    }
     case GOSSIP_SENDER_FORMATION_FOLLOW_DISTANCE_SET:
     {
         char* dist = strtok((char*)code, "");
