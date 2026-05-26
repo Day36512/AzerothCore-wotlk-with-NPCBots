@@ -11222,6 +11222,8 @@ float bot_ai::CalcSpellMaxRange(uint32 spellId, bool enemy) const
 //////////
 namespace
 {
+    constexpr std::size_t MAX_NPCBOT_RENAME_BYTES = MAX_PET_NAME * 4;
+
     char const* GetNpcBotRenameFailureReason(PetNameInvalidReason reason)
     {
         switch (reason)
@@ -11298,9 +11300,12 @@ namespace
         stmt->SetData(1, bot->GetEntry());
         WorldDatabase.DirectExecute(stmt);
 
-        std::string escapedName = name;
-        WorldDatabase.EscapeString(escapedName);
-        WorldDatabase.DirectExecute("UPDATE creature_template_npcbot_appearance SET name = '{}' WHERE entry = {}", escapedName, bot->GetEntry());
+        if (WorldDatabase.Query("SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'creature_template_npcbot_appearance' AND COLUMN_NAME = 'name' LIMIT 1"))
+        {
+            std::string escapedName = name;
+            WorldDatabase.EscapeString(escapedName);
+            WorldDatabase.DirectExecute("UPDATE creature_template_npcbot_appearance SET `name` = '{}' WHERE entry = {}", escapedName, bot->GetEntry());
+        }
 
         CreatureTemplate* mutableCreatureInfo = const_cast<CreatureTemplate*>(creatureInfo);
         mutableCreatureInfo->Name = name;
@@ -14947,6 +14952,13 @@ bool bot_ai::OnGossipSelectCode(Player* player, Creature* creature/* == me*/, ui
     {
         if (player != master || player->GetGUID().GetCounter() != _botData->owner)
         {
+            player->PlayerTalkClass->SendCloseGossip();
+            return true;
+        }
+
+        if (std::char_traits<char>::length(code) > MAX_NPCBOT_RENAME_BYTES)
+        {
+            BotWhisper(Bcore::StringFormat("That name cannot be used: {}.", GetNpcBotRenameFailureReason(PET_NAME_TOO_LONG)), player);
             player->PlayerTalkClass->SendCloseGossip();
             return true;
         }
