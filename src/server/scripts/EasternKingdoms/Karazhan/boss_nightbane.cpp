@@ -173,7 +173,7 @@ struct boss_nightbane : public BossAI
         me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
         me->SetReactState(REACT_PASSIVE);
 
-        ScheduleHealthCheckEvent({ 75, 50, 25 }, [&]{
+        ScheduleHealthCheckEvent({ 70, 35 }, [&]{
             TriggerHealthTakeOff();
         });
     }
@@ -195,7 +195,7 @@ struct boss_nightbane : public BossAI
 
     void DamageTaken(Unit* attacker, uint32& damage, DamageEffectType damageEffectType, SpellSchoolMask spellSchoolMask) override
     {
-        if (_airPhasesCompleted < 3)
+        if (_airPhasesCompleted < 2)
         {
             if (damage >= me->GetHealth())
             {
