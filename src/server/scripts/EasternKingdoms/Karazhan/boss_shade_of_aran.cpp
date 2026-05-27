@@ -133,6 +133,10 @@ static constexpr uint8 ARCANE_EXPLOSION_BOT_EVENT_SECONDS = 10;
 static constexpr uint8 ARCANE_EXPLOSION_BOT_RELEASE_PAD_SECONDS = 1;
 static constexpr uint8 ARCANE_EXPLOSION_NON_ATTACKABLE_SECONDS = 4;
 static constexpr uint8 ARCANE_EXPLOSION_BOT_SAFE_HOLD_SECONDS = ARCANE_EXPLOSION_BOT_EVENT_SECONDS + ARCANE_EXPLOSION_BOT_RELEASE_PAD_SECONDS;
+static constexpr uint8 FLAME_WREATH_CAST_SECONDS = 5;
+static constexpr uint8 FLAME_WREATH_GROUND_SECONDS = 20;
+static constexpr uint8 FLAME_WREATH_RELEASE_PAD_SECONDS = 1;
+static constexpr uint8 FLAME_WREATH_BOT_HOLD_SECONDS = FLAME_WREATH_CAST_SECONDS + FLAME_WREATH_GROUND_SECONDS + FLAME_WREATH_RELEASE_PAD_SECONDS;
 
 static std::array<Position, 7> const ArcaneExplosionBotSafeSpots =
 {
@@ -232,6 +236,7 @@ struct boss_shade_of_aran : public BossAI
         _drinking = false;
         _hasDrunk = false;
         _arcaneExplosionActive = false;
+        _flameWreathActive = false;
         _arcaneExplosionBotNudgeCount = 0;
         ClearArcaneExplosionNonAttackable(true);
 
@@ -770,13 +775,19 @@ struct boss_shade_of_aran : public BossAI
             ReleaseBotState(guid, reason, resumeCombat);
     }
 
-    void SetEncounterBotsToFollow()
+    void SetEncounterBotsToFollow(bool interruptCasts = false)
     {
         for (Creature* bot : GatherEncounterBots())
         {
             bot_ai* ai = bot ? bot->GetBotAI() : nullptr;
             if (bot && bot->IsAlive() && ai && !ai->IAmFree())
             {
+                if (interruptCasts)
+                {
+                    bot->AttackStop();
+                    bot->InterruptNonMeleeSpells(false);
+                }
+
                 bot->BotStopMovement();
                 bot->GetMotionMaster()->Clear();
                 ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
@@ -796,7 +807,7 @@ struct boss_shade_of_aran : public BossAI
         for (ObjectGuid const& guid : guids)
             ReleaseBotState(guid, BOT_STATE_ARCANE, false);
 
-        SetEncounterBotsToFollow();
+        SetEncounterBotsToFollow(true);
     }
 
     void ReleaseFlameWreathBotStates()
@@ -858,6 +869,7 @@ struct boss_shade_of_aran : public BossAI
         _botStates.clear();
         ClearArcaneExplosionNonAttackable();
         _arcaneExplosionActive = false;
+        _flameWreathActive = false;
         _arcaneExplosionBotNudgeCount = 0;
     }
 
@@ -905,7 +917,7 @@ struct boss_shade_of_aran : public BossAI
 
     void PositionBotsForAran()
     {
-        if (_drinking || _arcaneExplosionActive)
+        if (_drinking || _arcaneExplosionActive || _flameWreathActive)
             return;
 
         std::vector<Creature*> rangedBots;
@@ -1056,15 +1068,11 @@ struct boss_shade_of_aran : public BossAI
 
     void ScheduleFlameWreathBotLock()
     {
+        _flameWreathActive = true;
         scheduler.CancelGroup(GROUP_FLAME_WREATH_BOT_LOCK);
         LockBotsForFlameWreath();
 
-        int32 durationMs = 20000;
-        if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(SPELL_FLAME_WREATH_RING))
-            if (spellInfo->GetMaxDuration() > 0)
-                durationMs = spellInfo->GetMaxDuration();
-
-        scheduler.Schedule(std::chrono::milliseconds(durationMs + 500), GROUP_FLAME_WREATH_BOT_LOCK, [this](TaskContext)
+        scheduler.Schedule(std::chrono::seconds(FLAME_WREATH_BOT_HOLD_SECONDS), GROUP_FLAME_WREATH_BOT_LOCK, [this](TaskContext)
         {
             StopFlameWreathBotLock();
         });
@@ -1072,6 +1080,7 @@ struct boss_shade_of_aran : public BossAI
 
     void StopFlameWreathBotLock()
     {
+        _flameWreathActive = false;
         ReleaseFlameWreathBotStates();
         scheduler.CancelGroup(GROUP_FLAME_WREATH_BOT_LOCK);
     }
@@ -1102,7 +1111,7 @@ struct boss_shade_of_aran : public BossAI
 
     void FocusWaterElementals()
     {
-        if (_drinking || _arcaneExplosionActive)
+        if (_drinking || _arcaneExplosionActive || _flameWreathActive)
             return;
 
         Creature* elemental = FindWaterElementalTarget();
@@ -1159,6 +1168,7 @@ private:
     bool _hasDrunk;
     bool _atieshReaction;
     bool _arcaneExplosionActive = false;
+    bool _flameWreathActive = false;
     uint8 _arcaneExplosionBotNudgeCount = 0;
     bool _arcaneExplosionMadeNonAttackable = false;
 };
