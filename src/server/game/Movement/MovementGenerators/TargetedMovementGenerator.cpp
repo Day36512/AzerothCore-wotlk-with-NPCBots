@@ -23,6 +23,7 @@
 #include "Player.h"
 #include "Spell.h"
 #include "Transport.h"
+#include "World.h"
 
 static bool IsMutualChase(Unit* owner, Unit* target)
 {
@@ -41,6 +42,20 @@ inline float GetChaseRange(Unit const* owner, Unit const* target)
         return std::sqrt(std::max(hitboxSum * hitboxSum - hoverDelta * hoverDelta, 0.0f));
 
     return hitboxSum;
+}
+
+static bool ShouldRejectStrictGroundChasePath(Creature const* owner, Unit const* target, PathGenerator const& path, uint32 pathType)
+{
+    if (!sWorld->getBoolConfig(CONFIG_CREATURE_CHASE_STRICT_PATHING))
+        return false;
+
+    if (!owner || owner->CanFly() || owner->IsPet() || owner->IsControlledByPlayer())
+        return false;
+
+    if (pathType & (PATHFIND_INCOMPLETE | PATHFIND_SHORTCUT | PATHFIND_NOT_USING_PATH))
+        return true;
+
+    return path.IsInvalidDestinationZ(target);
 }
 
 template<class T>
@@ -107,6 +122,9 @@ bool ChaseMovementGenerator<T>::DispatchSplineToPosition(T* owner, float x, floa
     bool success = i_path->CalculatePath(x, y, z, forceDest);
     uint32 pathType = i_path->GetPathType();
     bool pathFailed = !success || (pathType & PATHFIND_NOPATH);
+
+    if (!pathFailed && ShouldRejectStrictGroundChasePath(cOwner, GetTarget(), *i_path, pathType))
+        pathFailed = true;
 
     // For pets, treat incomplete paths as failures to avoid clipping through geometry
     // Players and Player-controlled units have more erratic movement, skip failure

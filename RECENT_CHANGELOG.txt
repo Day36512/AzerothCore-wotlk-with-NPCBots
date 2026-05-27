@@ -1,0 +1,605 @@
+Recent Local Changelog
+Generated: 2026-05-27
+Repository: C:\AzerothCore\Burning_ Legacy_Server\AzerothCore-wotlk-with-NPCBots
+Branch observed: npcbots_3.3.5
+
+Scope
+=====
+
+This changelog records the recent work that is visible from the local Git
+history and current working tree.
+
+Included:
+- Current uncommitted working tree changes.
+- Recent local commits from 2026-05-20 through 2026-05-26.
+- A note about ignored custom-script files that Git does not track directly.
+
+Not included as exact diffs:
+- External client addon folders outside this repository.
+- Ignored files without a tracked baseline, except where noted.
+- Ideas that were discussed but are not present in the current Git diff/history.
+
+
+Current Uncommitted Changes
+===========================
+
+1. Experimental strict creature chase pathing
+---------------------------------------------
+
+Files changed:
+- src/server/apps/worldserver/worldserver.conf.dist
+- src/server/game/Movement/MovementGenerators/TargetedMovementGenerator.cpp
+- src/server/game/World/WorldConfig.cpp
+- src/server/game/World/WorldConfig.h
+
+New config:
+- Creature.Chase.StrictPathing = 0
+
+What changed:
+- Added a new world config enum entry:
+  CONFIG_CREATURE_CHASE_STRICT_PATHING
+- Wired the config into WorldConfig with a default value of false.
+- Added documentation in worldserver.conf.dist marking the option as
+  EXPERIMENTAL.
+- Added a helper in TargetedMovementGenerator.cpp:
+  ShouldRejectStrictGroundChasePath(...)
+- When the config is enabled, normal non-flying NPCs reject chase paths that
+  are:
+  - PATHFIND_INCOMPLETE
+  - PATHFIND_SHORTCUT
+  - PATHFIND_NOT_USING_PATH
+  - invalid destination Z
+- Pets and player-controlled creatures are excluded from this strict rejection,
+  preserving their separate existing handling.
+
+Reasoning:
+- AzerothCore's old fallback behavior can turn a failed or incomplete ground
+  chase into a direct shortcut toward the target.
+- That shortcut is what allows ground creatures to appear to walk through
+  terrain, up cliffs, or into the air toward players on unreachable terrain.
+- Strict mode intentionally prefers "stop/evade/unreachable" over a fake path.
+
+Behavior observed during testing/discussion:
+- Dire Maul North Gordok Hyenas stopped/evaded instead of air-walking when
+  strict mode rejected incomplete/shortcut paths.
+- An experimental allowance for PATHFIND_INCOMPLETE let the cheating return, so
+  it was removed.
+- Current behavior is safer: no direct cheating path, but long legitimate routes
+  may still stop/evade if the pathfinder reports them as incomplete.
+
+Verification run:
+- git diff --check passed.
+- cmake --build out\build\x64-Debug --target game --config Debug passed.
+
+
+2. MMap generator config tuning and documentation
+-------------------------------------------------
+
+File changed:
+- src/tools/mmaps_generator/mmaps-config.yaml
+
+What changed globally:
+- Added comments explaining that the global slope setting should stay
+  conservative and that per-map/per-tile overrides are preferred for problem
+  areas.
+- Changed the documented cell-size example from verticesPerMapEdge 2000 to
+  3000.
+- Increased global navmesh resolution:
+  - verticesPerMapEdge: 2000 -> 3000
+- Adjusted dependent global dimensions for the smaller cell size:
+  - walkableHeight: 6 -> 9
+  - walkableRadius: 2 -> 3
+- Left global walkableClimb at 6, with comments explaining that at the new
+  3000-vertex scale this is closer to the older effective climb of 4.
+- Tightened global simplification:
+  - maxSimplificationError: 1.8 -> 1.0
+
+Reasoning:
+- Higher navmesh resolution can preserve more terrain detail before
+  simplification.
+- Smaller simplification error keeps generated paths closer to the original
+  geometry.
+- Scaling height/radius helps keep similar world-space behavior after increasing
+  verticesPerMapEdge.
+- The comments steer future tuning toward local overrides instead of making the
+  entire world too permissive.
+
+Map/tile override changes:
+- Blackfathom Deeps, map 48:
+  - cellSizeVertical changed to 0.3556 for the new cell scale.
+- Arathi Basin, map 529:
+  - Lumber Mill tile 30,29 keeps walkableSlopeAngle 45 to avoid cliff/pathing
+    weirdness.
+- Outland, map 530:
+  - Dark Portal tile 32,30 keeps walkableSlopeAngle 45.
+  - Added tile 43,20 with CMaNGOS-style climb/height behavior:
+    walkableClimb 9, walkableHeight 8.
+- Karazhan, map 532:
+  - Added tile 35,52 override with maxSimplificationError 1.0,
+    walkableHeight 8, walkableClimb 6.
+- The Shattered Halls, map 540:
+  - Added map-wide walkableSlopeAngle 70.
+- The Blood Furnace, map 542:
+  - Added map-wide walkableSlopeAngle 50 and walkableClimb 8.
+- The Steamvault, map 545:
+  - Added map-wide walkableHeight 8, walkableClimb 7,
+    walkableRadius 2, walkableSlopeAngle 70, maxSimplificationError 2.1.
+- The Mechanar, map 554:
+  - Added map-wide walkableHeight 8, walkableClimb 7,
+    walkableSlopeAngle 60, walkableRadius 2.
+- Blade's Edge Arena, map 562:
+  - Changed walkableRadius from 0 to 1, with comments noting the rope/pillar
+    tradeoff.
+
+Documentation cleanup:
+- Rewrote the RecastDemo/debugOutput workflow comments.
+- Clarified how .mmap loc relates to tile names and Recast config values.
+- Removed broad example blocks that implied every field could safely be tuned
+  everywhere.
+
+Important caveat found while reviewing:
+- Tile overrides in Config.cpp are parsed as {tileX, tileY}, but looked up with
+  MakeTileKey(tileY, tileX). That means tile-specific overrides may require
+  extra verification because the lookup appears coordinate-swapped.
+- Map-level overrides are safer until that is fixed or confirmed.
+
+
+Recent Commits
+==============
+
+commit b96e40f2a
+Date: 2026-05-26
+Subject: Updates: Harden NPCBot gossip rename validation
+
+Files changed:
+- src/server/game/AI/NpcBots/bot_ai.cpp
+
+What changed:
+- Added MAX_NPCBOT_RENAME_BYTES as MAX_PET_NAME * 4 to guard against extremely
+  long rename input before normalizing.
+- Preserved the existing ObjectMgr::CheckPetName validation path.
+- Improved handling for optional creature_template_npcbot_appearance.name:
+  - Checks INFORMATION_SCHEMA before trying to update the column.
+  - Uses backticks around the `name` column.
+  - Avoids crashing worlds whose appearance table does not have that column.
+- Continued updating the active CreatureTemplate and refreshing visible clients.
+
+Reasoning:
+- The previous rename path could fail hard when a DB had
+  creature_template_npcbot_appearance without the expected name column.
+- User input needed a clear upper byte limit before normalization.
+- The client-side visible name still needs to refresh immediately without relog
+  or cache-clearing.
+
+
+commit 7482c3924
+Date: 2026-05-26
+Subject: Rename option for bots gossip
+
+Files changed:
+- src/server/game/AI/NpcBots/bot_ai.cpp
+- tools/npcbot_test_map_spawn_range.sql
+
+What changed in NPCBot gossip:
+- Added a Rename gossip option for the bot owner.
+- Added code-input handling for the new bot name.
+- Validates new names with normalizePlayerName and ObjectMgr::CheckPetName.
+- Rejects invalid, reserved, profane, too-long, too-short, mixed-language,
+  spaced, or repetitive names with whisper feedback.
+- Prevents non-owners from renaming bots.
+- Avoids work when the submitted name is the current name.
+- Updates the world DB name field through WORLD_UPD_NPCBOT_NAME.
+- Updates creature_template_npcbot_appearance.name where available.
+- Updates the in-memory CreatureTemplate name.
+- Reinitializes creature query data.
+- Sets the active bot object's name.
+- Sends SMSG_CREATURE_QUERY_RESPONSE to visible clients.
+- Destroys/rebuilds visibility for visible players so the renamed bot is visible
+  immediately without relog/cache tricks.
+
+What changed in the test-map SQL dump:
+- Added USE `acore_world`.
+- Expanded default entry range from 70001-70586 to 70001-73586.
+- Changed default holding map to map 13.
+- Changed default origin coordinates to:
+  - X -46.6300
+  - Y 52.8400
+  - Z -144.7100
+- Changed grid columns to 10 and spacing to 2.0000.
+- Added diagnostic SELECTs for entry range, map/origin, template count, and
+  already-spawned template count.
+- Removed the map_dbc instance-type join that blocked map 13 usage.
+
+Reasoning:
+- Bot owners needed a direct rename workflow from the bot's own gossip menu.
+- The name refresh needed to be visible immediately to nearby clients.
+- The SQL dump was adjusted to support the map 13 holding-area workflow and the
+  larger NPCBot entry range.
+
+
+commit 84f64874a
+Date: 2026-05-26
+Subject: Prior to name gossip add
+
+Files changed:
+- tools/npcbot_test_map_spawn_range.sql
+
+What changed:
+- Added the first version of a manual NPCBot test-map spawn dump.
+- The script lives under tools so it is not auto-applied by the DB updater.
+- The dump creates free rows in characters_npcbot for selected templates.
+- The dump creates persistent creature spawns in world.creature.
+- It uses a temporary table to choose entries in range.
+- It avoids entries that already have characters_npcbot rows.
+- It avoids entries already present in creature id1/id2/id3.
+- It computes health/mana from creature_template and
+  creature_classlevelstats.
+- It assigns default spec/role values by bot class.
+- It includes a commented rollback helper that avoids deleting hired bot rows.
+
+Reasoning:
+- The virtual hire pool experiment was abandoned.
+- The practical replacement was a durable SQL dump to place many hirable bots in
+  a holding map for manual/admin control.
+
+
+commit e1c292b4e
+Date: 2026-05-25
+Subject: Gate NPCBot spawn command behind config
+
+Files changed:
+- src/server/apps/worldserver/worldserver.conf.dist
+- src/server/game/AI/NpcBots/botcommands.cpp
+- src/server/game/AI/NpcBots/botconfig.cpp
+- src/server/game/AI/NpcBots/botconfig.h
+
+New config:
+- NpcBot.SpawnCommand.Enable = 0
+
+What changed:
+- Added a config gate for .npcbot spawn.
+- Defaulted the command to disabled.
+- Added the exact warning text:
+  "Adding bots yourself to the world will mess up future updates if you don't
+  know what you're doing. Use with caution."
+- Added BotCfg::IsNpcBotSpawnCommandEnabled().
+- Reads the config through BotCfg::ReloadConfig.
+- .npcbot spawn now fails early with a clear message when disabled.
+
+Reasoning:
+- Persistent manual bot spawns can conflict with future DB/content updates.
+- The command should exist, but it should be opt-in and explicitly warned.
+
+
+commit c55d94e3c
+Date: 2026-05-25
+Subject: Fix NPCBot arena gating and AV objective routing
+
+Files changed:
+- src/server/apps/worldserver/worldserver.conf.dist
+- src/server/game/AI/NpcBots/bot_ai.cpp
+- src/server/game/AI/NpcBots/bot_ai.h
+- src/server/game/AI/NpcBots/botdatamgr.cpp
+- src/server/game/Battlegrounds/ArenaTeam.cpp
+- src/server/game/Battlegrounds/BattlegroundQueue.cpp
+- src/server/scripts/EasternKingdoms/Karazhan/boss_prince_malchezaar.cpp
+
+What changed:
+- Rated arena NPCBot support is now gated behind the main arena bot enablement
+  instead of acting effectively enabled by default.
+- AV objective role timers were hardened against extreme config wrap/expiry
+  behavior.
+- AV objective routing was refactored toward cached objective waypoint groups
+  instead of repeatedly scanning and allocating during route selection.
+- Rated arena gear-band parsing now rejects invalid four-field bands when the
+  min item level field is malformed.
+- ArenaTeam::Create now checks the incoming teamName directly for duplicate
+  names instead of checking TeamName before assignment.
+- Prince Malchezaar infernal helper code avoids list copies, has clearer naming,
+  and guards empty relay lists before using front/back.
+
+Reasoning:
+- Fixes several review findings around config consistency, parser validation,
+  arena correctness, AV performance, and summon guard safety.
+
+
+commit e51f40bb7
+Date: 2026-05-24
+Subject: Add configurable AV NPCBot objective roles
+
+Files changed:
+- src/server/apps/worldserver/worldserver.conf.dist
+- src/server/game/AI/NpcBots/bot_ai.cpp
+- src/server/game/AI/NpcBots/bot_ai.h
+- src/server/game/AI/NpcBots/botconfig.cpp
+- src/server/game/AI/NpcBots/botconfig.h
+
+What changed:
+- Added configurable Alterac Valley NPCBot objective-role behavior.
+- Added config documentation for objective role timing and routing behavior.
+- Added BotCfg plumbing for the new AV settings.
+- Extended bot_ai to assign and use AV objective roles.
+- Added support data/methods in bot_ai.h.
+
+Reasoning:
+- AV bots needed more purposeful objective behavior instead of generic movement.
+- The behavior needed to be tunable because large battlegrounds and bot counts
+  can be sensitive to CPU and pathing decisions.
+
+
+commit a9cc739dc
+Date: 2026-05-24
+Subject: Fix arena bot positioning and gate leatherworking drums
+
+Files changed:
+- data/sql/custom/db_world/2026_05_24_00_leatherworking_drums_level_gate.sql
+- src/server/apps/worldserver/worldserver.conf.dist
+- src/server/game/AI/NpcBots/bot_ai.cpp
+- src/server/game/AI/NpcBots/bot_ai.h
+- src/server/game/Battlegrounds/Battleground.cpp
+- src/server/game/Battlegrounds/Battleground.h
+- src/server/game/Movement/MotionMaster.cpp
+
+What changed:
+- Added a custom DB mapping for a level-gated leatherworking drums spell hook.
+- Added config documentation for the drums level gate.
+- Adjusted arena bot positioning/reposition behavior.
+- Added battleground/movement support needed for the arena bot movement fix.
+
+Reasoning:
+- Prevents leatherworking drums behavior above the intended level band when the
+  config is enabled.
+- Fixes arena bot positioning issues after battleground/arena transitions.
+
+
+commit 78cb37ce6
+Date: 2026-05-23
+Subject: Add generated NPCBot rated arena opponents
+
+Files changed:
+- src/server/apps/worldserver/worldserver.conf.dist
+- src/server/game/AI/NpcBots/bot_ai.cpp
+- src/server/game/AI/NpcBots/botdatamgr.cpp
+- src/server/game/AI/NpcBots/botdatamgr.h
+- src/server/game/AI/NpcBots/botmgr.cpp
+- src/server/game/AI/NpcBots/bpet_ai.cpp
+- src/server/game/Battlegrounds/Arena.cpp
+- src/server/game/Battlegrounds/ArenaTeam.cpp
+- src/server/game/Battlegrounds/ArenaTeam.h
+- src/server/game/Battlegrounds/Battleground.cpp
+- src/server/game/Battlegrounds/BattlegroundMgr.cpp
+- src/server/game/Battlegrounds/BattlegroundQueue.cpp
+- src/server/game/Battlegrounds/BattlegroundQueue.h
+- src/server/game/Entities/Unit/Unit.cpp
+- src/server/game/Handlers/BattleGroundHandler.cpp
+- src/server/game/World/WorldConfig.cpp
+- src/server/game/World/WorldConfig.h
+- src/server/scripts/Spells/spell_generic.cpp
+
+What changed:
+- Added generated NPCBot rated arena opponents.
+- Added config support for rated-arena NPCBot generation and gear behavior.
+- Added bot data manager support for generated arena bot gear bands.
+- Added arena team support for generated/bot-backed arena opponents.
+- Updated queue and battleground flow so generated bot opponents can be inserted.
+- Added unit/spell support pieces needed by generated arena bot behavior.
+
+Reasoning:
+- Allows rated arena queues to be filled by generated NPCBot opponents when the
+  feature is enabled.
+- Centralizes generated bot data/gear handling in botdatamgr.
+
+
+commit bd6441e43
+Date: 2026-05-23
+Subject: Add configurable arena team creation rules
+
+Files changed:
+- src/server/apps/worldserver/worldserver.conf.dist
+- src/server/game/Battlegrounds/BattlegroundMgr.cpp
+- src/server/game/Handlers/PetitionsHandler.cpp
+- src/server/game/World/WorldConfig.cpp
+- src/server/game/World/WorldConfig.h
+
+What changed:
+- Added config-driven arena team creation rules.
+- Added world config plumbing for the new arena settings.
+- Updated petition handling so arena charter buy/sign/offer/turn-in behavior
+  follows the configured rule set.
+- Updated BattlegroundMgr support around arena map/rule behavior.
+
+Reasoning:
+- Lets the server customize arena team creation behavior without hardcoding it.
+- Keeps the full charter flow consistent instead of changing only one step.
+
+
+commit 94ed3c10b
+Date: 2026-05-23
+Subject: Improve Akil'zon bot storm handling and timed bear loot
+
+Files changed:
+- data/sql/custom/db_world/2026_05_22_00_zulaman_timed_run_bear.sql
+- src/server/game/AI/NpcBots/bot_ai.cpp
+- src/server/game/AI/NpcBots/bot_shaman_ai.cpp
+- src/server/scripts/EasternKingdoms/ZulAman/boss_akilzon.cpp
+- src/server/scripts/EasternKingdoms/ZulAman/zulaman.cpp
+
+What changed:
+- Improved NPCBot handling of Akil'zon storm mechanics.
+- Added supporting bot behavior updates in generic bot_ai and shaman bot AI.
+- Added a DB update for Zul'Aman timed-run bear loot.
+- Updated Zul'Aman instance/script behavior around the timed-run reward.
+
+Reasoning:
+- Makes NPCBots more reliable during Akil'zon's storm mechanics.
+- Restores or customizes timed bear loot behavior in a controlled SQL update.
+
+
+commit 8ae245c0d
+Date: 2026-05-22
+Subject: Add NPCBot support for Zul'Aman encounters
+
+Files changed:
+- src/server/apps/worldserver/worldserver.conf.dist
+- src/server/game/AI/NpcBots/bot_ai.cpp
+- src/server/scripts/EasternKingdoms/ZulAman/boss_akilzon.cpp
+- src/server/scripts/EasternKingdoms/ZulAman/boss_halazzi.cpp
+- src/server/scripts/EasternKingdoms/ZulAman/boss_hexlord.cpp
+- src/server/scripts/EasternKingdoms/ZulAman/boss_janalai.cpp
+- src/server/scripts/EasternKingdoms/ZulAman/boss_nalorakk.cpp
+- src/server/scripts/EasternKingdoms/ZulAman/boss_zuljin.cpp
+
+What changed:
+- Added config documentation for Zul'Aman NPCBot encounter support.
+- Added broad bot_ai support used by Zul'Aman encounters.
+- Added bot-aware logic to:
+  - Akil'zon
+  - Halazzi
+  - Hex Lord Malacrass
+  - Jan'alai
+  - Nalorakk
+  - Zul'jin
+
+Reasoning:
+- Allows NPCBots to handle raid mechanics that otherwise assume human players.
+- Keeps encounter support local to the relevant boss scripts.
+
+
+commit 39038d1f3
+Date: 2026-05-22
+Subject: Expose NPCBot spell power bonuses to spell scaling
+
+Files changed:
+- src/server/game/AI/NpcBots/bot_ai.cpp
+- src/server/game/AI/NpcBots/bot_ai.h
+- src/server/game/AI/NpcBots/botcommon.h
+- src/server/game/AI/NpcBots/botdatamgr.cpp
+- src/server/game/Entities/Creature/Creature.cpp
+- src/server/game/Entities/Creature/Creature.h
+- src/server/game/Entities/Unit/Unit.cpp
+
+What changed:
+- Exposed NPCBot spell-power bonus data through creature/unit paths.
+- Updated bot_ai and bot data structures to support spell scaling lookups.
+- Added Creature-side access needed for spell scaling.
+- Updated Unit spell-related logic to use the exposed bot spell bonus data.
+
+Reasoning:
+- Lets NPCBot spell damage/healing scale from bot-specific stat data instead of
+  missing or underusing those bonuses.
+
+
+commit 15f5b7029
+Date: 2026-05-21
+Subject: Add IndividualProgression Zul'Aman config
+
+Files changed:
+- configs/modules/individualProgression.conf
+
+What changed:
+- Added three IndividualProgression config lines for Zul'Aman.
+
+Reasoning:
+- Gives the IndividualProgression module explicit Zul'Aman configuration.
+
+
+commit cd26b58fd
+Date: 2026-05-20
+Subject: Add configurable Karazhan chess cheat events
+
+Files changed:
+- src/server/apps/worldserver/worldserver.conf.dist
+- src/server/scripts/EasternKingdoms/Karazhan/boss_chess_event.cpp
+
+What changed:
+- Added config documentation for Karazhan chess cheat-event behavior.
+- Reworked the chess event script so cheat behavior is configurable.
+- Added support for controlling or tuning Medivh cheat mechanics from config.
+
+Reasoning:
+- Makes Karazhan chess behavior adjustable instead of hardcoded.
+- Helps support custom tuning while preserving a documented default.
+
+
+commit f755ad70c
+Date: 2026-05-20
+Subject: Updates_chess
+
+Files changed:
+- src/server/scripts/Custom/custom_script_loader.cpp
+- src/server/scripts/EasternKingdoms/Karazhan/boss_chess_event.cpp
+- src/server/scripts/EasternKingdoms/Karazhan/boss_curator.cpp
+- src/server/scripts/EasternKingdoms/Karazhan/boss_moroes.cpp
+- src/server/scripts/EasternKingdoms/Karazhan/boss_netherspite.cpp
+- src/server/scripts/EasternKingdoms/Karazhan/boss_tenris_mirkblood.cpp
+
+What changed:
+- Added custom script loader wiring.
+- Updated Karazhan chess event support.
+- Added or adjusted NPCBot-aware behavior in multiple Karazhan boss scripts:
+  - Curator
+  - Moroes
+  - Netherspite
+  - Tenris Mirkblood
+
+Reasoning:
+- Improves Karazhan encounter support for custom/NPCBot gameplay.
+- Lays groundwork for later configurable chess changes.
+
+
+Ignored Or External Files Observed
+==================================
+
+Git ignored custom scripts:
+- src/server/scripts/Custom is ignored by Git in this checkout.
+- A focused check found:
+  src/server/scripts/Custom/Custom_Npc_Bots/NPCBotPaperdollBridge.cpp
+- Last observed write time:
+  2026-05-26 01:47:58 local time
+- Size:
+  63017 bytes
+
+Important:
+- Because this file is ignored and has no tracked baseline in this repository,
+  this changelog cannot safely list its exact diff.
+- Based on the file name and recent work, it is related to the NPCBot paperdoll
+  bridge/addon integration, but the exact on-disk change should be reviewed
+  directly if this file needs release notes.
+
+
+Explicitly Discussed But Not Currently Present As A Git Diff
+============================================================
+
+Virtual NPCBot hire pool:
+- A virtual/on-demand hire pool was explored and then abandoned/reverted.
+- It is not visible in the current recent Git history as an active feature.
+- The current practical replacement is the tools/npcbot_test_map_spawn_range.sql
+  dump for placing persistent hirable bots on a holding/test map.
+
+Path length cap increase:
+- Raising MAX_PATH_LENGTH and MAX_POINT_PATH_LENGTH to 128 was discussed as a
+  possible next experiment.
+- As of this changelog, PathGenerator.h is not modified in the working tree, and
+  the tracked values remain 74.
+- The active strict-chase change rejects incomplete paths instead of relying on a
+  larger cap.
+
+Incomplete path allowance:
+- Allowing PATHFIND_INCOMPLETE under strict chase mode was tested.
+- It let Dire Maul hyenas cheat again.
+- That allowance is not present in the current working tree.
+
+
+Current Working Tree Summary
+============================
+
+Modified files at generation time:
+- src/server/apps/worldserver/worldserver.conf.dist
+- src/server/game/Movement/MovementGenerators/TargetedMovementGenerator.cpp
+- src/server/game/World/WorldConfig.cpp
+- src/server/game/World/WorldConfig.h
+- src/tools/mmaps_generator/mmaps-config.yaml
+
+Current suggested commit name:
+- Add experimental strict creature chase pathing and mmap tuning
+

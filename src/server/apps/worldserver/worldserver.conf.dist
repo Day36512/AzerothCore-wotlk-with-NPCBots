@@ -3095,6 +3095,19 @@ ListenRange.Yell = 300
 Creature.RepositionAgainstNpcs = 1
 
 #
+#    Creature.Chase.StrictPathing
+#        Description: EXPERIMENTAL: Require normal pathfinder results for non-flying creature
+#                     chase movement. When enabled, ground creatures will stop chasing and use
+#                     the normal unreachable-target handling instead of falling back to shortcut,
+#                     incomplete, non-mmap, or invalid-Z chase paths.
+#                     This helps prevent ground NPCs from walking through terrain or up into the air
+#                     toward flying players, but requires good mmap coverage.
+#        Default:     0 - (Disabled, legacy behavior)
+#                     1 - (Enabled, stricter but experimental)
+
+Creature.Chase.StrictPathing = 0
+
+#
 #    Creature.MovingStopTimeForPlayer
 #        Description: Time (in milliseconds) during which creature will not move after
 #                     interaction with player.
