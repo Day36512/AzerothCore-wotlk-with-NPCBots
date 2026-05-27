@@ -131,6 +131,7 @@ static constexpr uint8 ARCANE_EXPLOSION_BOT_MAX_NUDGES = 12;
 static constexpr uint16 ARCANE_EXPLOSION_BOT_NUDGE_INTERVAL_MS = 750;
 static constexpr uint8 ARCANE_EXPLOSION_BOT_EVENT_SECONDS = 10;
 static constexpr uint8 ARCANE_EXPLOSION_BOT_RELEASE_PAD_SECONDS = 1;
+static constexpr uint8 ARCANE_EXPLOSION_NON_ATTACKABLE_SECONDS = 4;
 static constexpr uint8 ARCANE_EXPLOSION_BOT_SAFE_HOLD_SECONDS = ARCANE_EXPLOSION_BOT_EVENT_SECONDS + ARCANE_EXPLOSION_BOT_RELEASE_PAD_SECONDS;
 
 static std::array<Position, 7> const ArcaneExplosionBotSafeSpots =
@@ -775,7 +776,11 @@ struct boss_shade_of_aran : public BossAI
         {
             bot_ai* ai = bot ? bot->GetBotAI() : nullptr;
             if (bot && bot->IsAlive() && ai && !ai->IAmFree())
+            {
+                bot->BotStopMovement();
+                bot->GetMotionMaster()->Clear();
                 ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+            }
         }
     }
 
@@ -992,6 +997,11 @@ struct boss_shade_of_aran : public BossAI
             MoveBotsOutForArcaneExplosion();
             if (++_arcaneExplosionBotNudgeCount < ARCANE_EXPLOSION_BOT_MAX_NUDGES)
                 context.Repeat(std::chrono::milliseconds(ARCANE_EXPLOSION_BOT_NUDGE_INTERVAL_MS));
+        });
+
+        scheduler.Schedule(std::chrono::seconds(ARCANE_EXPLOSION_NON_ATTACKABLE_SECONDS), GROUP_ARCANE_EXPLOSION_BOT_ESCAPE, [this](TaskContext)
+        {
+            ClearArcaneExplosionNonAttackable();
         });
 
         scheduler.Schedule(std::chrono::seconds(ARCANE_EXPLOSION_BOT_SAFE_HOLD_SECONDS), GROUP_ARCANE_EXPLOSION_BOT_ESCAPE, [this](TaskContext)
