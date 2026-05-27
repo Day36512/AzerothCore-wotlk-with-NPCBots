@@ -180,6 +180,7 @@ bool LootItemStorage::LoadStoredLoot(Item* item, Player* player)
         if (it2->itemid == 0)
         {
             loot->gold = it2->count;
+            loot->goldProcessedByScript = false;
             continue;
         }
 

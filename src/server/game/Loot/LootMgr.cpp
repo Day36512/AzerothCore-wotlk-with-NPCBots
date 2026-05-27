@@ -807,6 +807,8 @@ void Loot::NotifyQuestItemRemoved(uint8 questIndex)
 
 void Loot::generateMoneyLoot(uint32 minAmount, uint32 maxAmount)
 {
+    goldProcessedByScript = false;
+
     if (maxAmount > 0)
     {
         if (maxAmount <= minAmount)

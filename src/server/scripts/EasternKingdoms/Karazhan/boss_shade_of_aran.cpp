@@ -38,6 +38,7 @@
 #include "SpellMgr.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <list>
@@ -128,6 +129,20 @@ enum Misc
 
 Position const roomCenter = {-11158.f, -1920.f};
 
+static constexpr uint8 ARCANE_EXPLOSION_BOT_MAX_NUDGES = 12;
+static constexpr uint8 ARCANE_EXPLOSION_BOT_SAFE_HOLD_SECONDS = 11;
+
+static std::array<Position, 7> const ArcaneExplosionBotSafeSpots =
+{
+    Position(-11138.65f, -1915.54f, 232.01f, 0.0f),
+    Position(-11149.38f, -1933.10f, 232.01f, 0.0f),
+    Position(-11168.77f, -1938.54f, 232.01f, 0.0f),
+    Position(-11185.18f, -1927.98f, 232.01f, 0.0f),
+    Position(-11190.73f, -1908.57f, 232.01f, 0.0f),
+    Position(-11163.47f, -1886.92f, 232.01f, 0.0f),
+    Position(-11144.53f, -1895.66f, 232.01f, 0.0f)
+};
+
 std::vector<uint32> immuneSpells = { SPELL_CURSE_OF_TONGUE_RANK1, SPELL_CURSE_OF_TONGUE_RANK2, SPELL_MIND_NUMBING_POISON };
 
 static bool IsNPCBotUnit(Unit* unit)
@@ -155,48 +170,58 @@ static void SafeBotMoveTo(Creature* bot, Position const& dest)
         ai->MoveToSendPosition(p);
 }
 
-static void LockFlameWreathedBot(Creature* bot, uint32& originalCommandState, bool& fullStopSet)
+static void ForceBotMoveTo(Creature* bot, Position const& dest)
+{
+    if (!bot || !bot->IsAlive() || !bot->IsNPCBot())
+        return;
+
+    float x = dest.GetPositionX();
+    float y = dest.GetPositionY();
+    float z = dest.GetPositionZ();
+
+    if (!bot->CanFly())
+        bot->UpdateAllowedPositionZ(x, y, z);
+
+    Position p;
+    p.Relocate(x, y, z, dest.GetOrientation());
+
+    if (bot_ai* ai = bot->GetBotAI())
+    {
+        ai->CancelAllActions();
+        ai->SetBotCommandState(BOT_COMMAND_STAY);
+        bot->BotStopMovement();
+        bot->GetMotionMaster()->Clear();
+        ai->BotMovement(BOT_MOVE_POINT, &p, nullptr, false);
+    }
+}
+
+static void LockFlameWreathedBot(Creature* bot, uint32& originalCommandState, bool& staySet)
 {
     bot_ai* ai = bot ? bot->GetBotAI() : nullptr;
     if (!bot || !bot->IsAlive() || !ai)
         return;
 
     originalCommandState = ai->GetBotCommandState();
-    fullStopSet = !(originalCommandState & BOT_COMMAND_FULLSTOP);
+    staySet = !(originalCommandState & (BOT_COMMAND_STAY | BOT_COMMAND_FULLSTOP));
 
-    bot->AttackStop();
-    bot->InterruptNonMeleeSpells(false);
     bot->BotStopMovement();
     bot->GetMotionMaster()->Clear();
 
-    if (fullStopSet)
-        ai->SetBotCommandState(BOT_COMMAND_FULLSTOP);
+    if (staySet)
+        ai->SetBotCommandState(BOT_COMMAND_STAY);
 }
 
-static void ReleaseFlameWreathedBot(Creature* bot, uint32 originalCommandState, bool fullStopSet)
+static void ReleaseFlameWreathedBot(Creature* bot, uint32 originalCommandState, bool staySet)
 {
     bot_ai* ai = bot ? bot->GetBotAI() : nullptr;
     if (!bot || !ai)
         return;
 
-    if (fullStopSet && !(originalCommandState & BOT_COMMAND_FULLSTOP))
-        ai->RemoveBotCommandState(BOT_COMMAND_FULLSTOP);
+    if (staySet && !(originalCommandState & BOT_COMMAND_STAY))
+        ai->RemoveBotCommandState(BOT_COMMAND_STAY);
 
     if (!bot->IsAlive())
         return;
-
-    if (InstanceScript* instance = bot->GetInstanceScript())
-    {
-        if (Creature* aran = instance->GetCreature(DATA_ARAN))
-        {
-            if (aran->IsAlive() && aran->IsEngaged())
-            {
-                ai->SetBotCommandState(BOT_COMMAND_ATTACK);
-                ai->AttackStart(aran);
-                return;
-            }
-        }
-    }
 
     if (!ai->IAmFree())
         ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
@@ -236,6 +261,7 @@ struct boss_shade_of_aran : public BossAI
         _drinking = false;
         _hasDrunk = false;
         _arcaneExplosionActive = false;
+        _arcaneExplosionBotNudgeCount = 0;
         _blizzardActive = false;
 
         for (auto spell : immuneSpells)
@@ -471,18 +497,19 @@ struct boss_shade_of_aran : public BossAI
                         Talk(EMOTE_ARCANE_EXPLOSION);
                         DoCastSelf(SPELL_PLAYERPULL, true);
                         DoCastSelf(SPELL_MASSSLOW, true);
-                        ScheduleArcaneExplosionBotEscape();
+                        if (DoCastAOE(SPELL_AEXPLOSION) == SPELL_CAST_OK)
+                            ScheduleArcaneExplosionBotEscape();
                         break;
                     case SPELL_FLAME_WREATH:
                         Talk(SAY_FLAMEWREATH);
+                        DoCastAOE(SPELL_FLAME_WREATH);
                         break;
                     case SPELL_SUMMON_BLIZZARD:
                         Talk(SAY_BLIZZARD);
                         ScheduleBlizzardBotAvoidance();
+                        DoCastAOE(SPELL_SUMMON_BLIZZARD);
                         break;
                 }
-
-                DoCastAOE(_lastSuperSpell);
             }
             context.Repeat(35s, 40s);
         }).Schedule(3s, GROUP_BOT_DIRECTOR, [this](TaskContext context)
@@ -813,6 +840,7 @@ struct boss_shade_of_aran : public BossAI
 
         _botStates.clear();
         _arcaneExplosionActive = false;
+        _arcaneExplosionBotNudgeCount = 0;
         _blizzardActive = false;
     }
 
@@ -896,32 +924,12 @@ struct boss_shade_of_aran : public BossAI
 
     Position GetArcaneExplosionEscapePosition(Creature* bot) const
     {
-        float dx = bot->GetPositionX() - roomCenter.GetPositionX();
-        float dy = bot->GetPositionY() - roomCenter.GetPositionY();
-        float length = std::sqrt(dx * dx + dy * dy);
-
-        if (length < 0.1f)
-        {
-            float angle = std::atan2(bot->GetPositionY() - me->GetPositionY(), bot->GetPositionX() - me->GetPositionX());
-            if (!std::isfinite(angle))
-                angle = me->GetOrientation();
-
-            dx = std::cos(angle);
-            dy = std::sin(angle);
-            length = 1.0f;
-        }
-
-        dx /= length;
-        dy /= length;
-
-        float desiredDistance = 36.0f;
-        float x = roomCenter.GetPositionX() + dx * desiredDistance;
-        float y = roomCenter.GetPositionY() + dy * desiredDistance;
-        float z = bot->GetPositionZ();
+        size_t index = bot ? bot->GetGUID().GetCounter() % ArcaneExplosionBotSafeSpots.size() : 0;
+        Position position = ArcaneExplosionBotSafeSpots[index];
+        float x = position.GetPositionX();
+        float y = position.GetPositionY();
         float orientation = Position::NormalizeOrientation(std::atan2(me->GetPositionY() - y, me->GetPositionX() - x));
-
-        Position position;
-        position.Relocate(x, y, z, orientation);
+        position.SetOrientation(orientation);
         return position;
     }
 
@@ -943,7 +951,8 @@ struct boss_shade_of_aran : public BossAI
                 continue;
             }
 
-            if (bot->GetExactDist2d(roomCenter.GetPositionX(), roomCenter.GetPositionY()) >= 25.0f)
+            Position escapePosition = GetArcaneExplosionEscapePosition(bot);
+            if (bot->GetExactDist2d(escapePosition.GetPositionX(), escapePosition.GetPositionY()) <= 2.5f)
                 continue;
 
             if (!CanMoveBot(bot, true))
@@ -951,24 +960,31 @@ struct boss_shade_of_aran : public BossAI
 
             bot->InterruptNonMeleeSpells(false);
             bot->AttackStop();
-            MoveBotIfNeeded(bot, GetArcaneExplosionEscapePosition(bot), 2.5f, BOT_STATE_ARCANE, true, false);
+            TrackBotState(bot, BOT_STATE_ARCANE, false);
+            ForceBotMoveTo(bot, escapePosition);
         }
     }
 
     void ScheduleArcaneExplosionBotEscape()
     {
         _arcaneExplosionActive = true;
+        _arcaneExplosionBotNudgeCount = 0;
         scheduler.CancelGroup(GROUP_ARCANE_EXPLOSION_BOT_ESCAPE);
 
-        scheduler.Schedule(500ms, GROUP_ARCANE_EXPLOSION_BOT_ESCAPE, [this](TaskContext context)
+        MoveBotsOutForArcaneExplosion();
+        _arcaneExplosionBotNudgeCount = 1;
+
+        scheduler.Schedule(900ms, GROUP_ARCANE_EXPLOSION_BOT_ESCAPE, [this](TaskContext context)
         {
             MoveBotsOutForArcaneExplosion();
-            context.Repeat(1s);
+            if (++_arcaneExplosionBotNudgeCount < ARCANE_EXPLOSION_BOT_MAX_NUDGES)
+                context.Repeat(900ms);
         });
 
-        scheduler.Schedule(9s, GROUP_ARCANE_EXPLOSION_BOT_ESCAPE, [this](TaskContext)
+        scheduler.Schedule(std::chrono::seconds(ARCANE_EXPLOSION_BOT_SAFE_HOLD_SECONDS), GROUP_ARCANE_EXPLOSION_BOT_ESCAPE, [this](TaskContext)
         {
             _arcaneExplosionActive = false;
+            _arcaneExplosionBotNudgeCount = 0;
             ReleaseBotStatesByReason(BOT_STATE_ARCANE, true);
             scheduler.CancelGroup(GROUP_ARCANE_EXPLOSION_BOT_ESCAPE);
         });
@@ -1172,6 +1188,7 @@ private:
     bool _hasDrunk;
     bool _atieshReaction;
     bool _arcaneExplosionActive = false;
+    uint8 _arcaneExplosionBotNudgeCount = 0;
     bool _blizzardActive = false;
 };
 
@@ -1224,7 +1241,7 @@ class spell_flamewreath_aura : public AuraScript
     PrepareAuraScript(spell_flamewreath_aura);
 
 public:
-    spell_flamewreath_aura() : _botOriginalCommandState(0), _botFullStopSet(false) { }
+    spell_flamewreath_aura() : _botOriginalCommandState(0), _botStaySet(false) { }
 
     bool Validate(SpellInfo const* /*spell*/) override
     {
@@ -1235,7 +1252,7 @@ public:
     {
         if (Creature* bot = GetTarget()->ToCreature())
             if (IsNPCBotUnit(bot))
-                LockFlameWreathedBot(bot, _botOriginalCommandState, _botFullStopSet);
+                LockFlameWreathedBot(bot, _botOriginalCommandState, _botStaySet);
     }
 
     void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
@@ -1243,7 +1260,7 @@ public:
         Unit* target = GetTarget();
         if (Creature* bot = target ? target->ToCreature() : nullptr)
             if (IsNPCBotUnit(bot))
-                ReleaseFlameWreathedBot(bot, _botOriginalCommandState, _botFullStopSet);
+                ReleaseFlameWreathedBot(bot, _botOriginalCommandState, _botStaySet);
 
         if (GetTargetApplication()->GetRemoveMode() == AURA_REMOVE_BY_DEFAULT && GetDuration())
         {
@@ -1264,7 +1281,7 @@ public:
 
 private:
     uint32 _botOriginalCommandState;
-    bool _botFullStopSet;
+    bool _botStaySet;
 
     void Register() override
     {

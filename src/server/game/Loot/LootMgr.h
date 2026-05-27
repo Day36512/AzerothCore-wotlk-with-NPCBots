@@ -320,6 +320,7 @@ struct Loot
     std::vector<LootItem> items;
     std::vector<LootItem> quest_items;
     uint32 gold;
+    bool goldProcessedByScript{false};
     uint8 unlootedCount{0};
     ObjectGuid roundRobinPlayer;        // GUID of the player having the Round-Robin ownership for the loot. If 0, round robin owner has released.
     ObjectGuid lootOwnerGUID;
@@ -358,6 +359,7 @@ struct Loot
         items.clear();
         quest_items.clear();
         gold = 0;
+        goldProcessedByScript = false;
         unlootedCount = 0;
         roundRobinPlayer.Clear();
         i_LootValidatorRefMgr.clearReferences();
