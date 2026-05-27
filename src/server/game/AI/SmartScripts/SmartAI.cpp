@@ -26,6 +26,7 @@
 #include "ScriptedCreature.h"
 #include "SpellMgr.h"
 #include "Vehicle.h"
+#include "World.h"
 
 SmartAI::SmartAI(Creature* c) : CreatureAI(c)
 {
@@ -927,7 +928,10 @@ void SmartAI::AttackStart(Unit* who)
                 me->GetMotionMaster()->Clear(false);
             }
 
-            me->GetMotionMaster()->MoveChase(who, _attackDistance);
+            if (_currentRangeMode)
+                me->GetMotionMaster()->MoveChase(who, _attackDistance);
+            else
+                me->GetMotionMaster()->MoveChase(who);
         }
     }
 }
@@ -1020,7 +1024,7 @@ void SmartAI::InitializeAI()
     }
 
     // Fallback: use first SMARTCAST_COMBAT_MOVE if no MAIN_SPELL found
-    if (!_currentRangeMode)
+    if (!_currentRangeMode && !sWorld->getBoolConfig(CONFIG_SMART_AI_CASTER_CHASE_REQUIRE_MAIN_SPELL))
     {
         for (SmartScriptHolder const& event : GetScript()->GetEvents())
         {
@@ -1190,7 +1194,12 @@ void SmartAI::SetCurrentRangeMode(bool on, float range)
     _attackDistance = range;
 
     if (Unit* victim = me->GetVictim())
-        me->GetMotionMaster()->MoveChase(victim, _attackDistance);
+    {
+        if (_currentRangeMode)
+            me->GetMotionMaster()->MoveChase(victim, _attackDistance);
+        else
+            me->GetMotionMaster()->MoveChase(victim);
+    }
 }
 
 void SmartAI::SetMainSpell(uint32 spellId)

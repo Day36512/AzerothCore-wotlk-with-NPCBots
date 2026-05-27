@@ -3108,6 +3108,19 @@ Creature.RepositionAgainstNpcs = 1
 Creature.Chase.StrictPathing = 0
 
 #
+#    SmartAI.CasterChase.RequireMainSpell
+#        Description: EXPERIMENTAL: Require an explicit SMARTCAST_MAIN_SPELL flag before
+#                     SmartAI assigns a spell-range chase distance on spawn. When enabled,
+#                     plain SMARTCAST_COMBAT_MOVE casts can still move into spell range when
+#                     their cast action runs, but they will not make melee or hybrid creatures
+#                     idle at spell range for the whole fight just because they have one ranged
+#                     utility spell.
+#        Default:     1 - (Enabled, safer for melee and hybrid movement)
+#                     0 - (Disabled, legacy fallback uses first SMARTCAST_COMBAT_MOVE spell)
+
+SmartAI.CasterChase.RequireMainSpell = 1
+
+#
 #    Creature.MovingStopTimeForPlayer
 #        Description: Time (in milliseconds) during which creature will not move after
 #                     interaction with player.
