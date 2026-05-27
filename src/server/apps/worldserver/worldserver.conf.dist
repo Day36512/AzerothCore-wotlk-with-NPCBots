@@ -5005,6 +5005,66 @@ Karazhan.Chess.Cheats.SoloBuff.MaxTargets = 4
 ###################################################################################################
 
 ###################################################################################################
+# THE MECHANAR - PATHALEON THE CALCULATOR MIND CONTROL REPLACEMENT
+#
+# Pathaleon's Domination remains enabled by default. The boss script now limits Domination to
+# non-tank players only; if the only valid player target is the tank and NPCBots are present,
+# Pathaleon casts Polymorph Rank 1 on a random non-tank NPCBot instead.
+#
+# These settings can replace Domination with another normal, interruptible cast.
+#
+###################################################################################################
+
+#
+#    Pathaleon.MindControlReplacement.Enabled
+#
+#        Description: Replaces Pathaleon's Domination spell with another spell.
+#
+#        0 = Disabled. Use Domination with player-only, non-tank targeting.
+#        1 = Enabled. Replace Domination.
+#
+#        Default:     0
+#
+
+Pathaleon.MindControlReplacement.Enabled = 0
+
+#
+#    Pathaleon.MindControlReplacement.SpellId
+#
+#        Description: Spell used instead of Domination when the replacement is enabled.
+#                     Invalid spell IDs fall back to Polymorph Rank 1.
+#
+#        Default:     118 - Polymorph Rank 1
+#
+
+Pathaleon.MindControlReplacement.SpellId = 118
+
+#
+#    Pathaleon.MindControlReplacement.TargetMode
+#
+#        Description: Target mode for the replacement spell.
+#
+#        0 = Current tank/victim
+#            Use this for a direct spell that should hit whoever is tanking.
+#
+#        1 = Random group member
+#            Chooses a random nearby player or NPCBot from the current group.
+#
+#        2 = Self
+#            Use this for self-centered AoE spells.
+#
+#        3 = Every group member
+#            Attempts a normal cast on each nearby player and NPCBot in the current group.
+#
+#        Default:     1
+#
+
+Pathaleon.MindControlReplacement.TargetMode = 1
+
+#
+###################################################################################################
+
+###################################################################################################
 # ZUL'AMAN - HEX LORD MALACRASS MIND CONTROL REPLACEMENT
 #
 # Hex Lord Malacrass can copy a shadow-priest-style kit through Siphon Soul.

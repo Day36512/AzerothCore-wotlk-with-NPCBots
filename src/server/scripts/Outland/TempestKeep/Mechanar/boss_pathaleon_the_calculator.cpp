@@ -15,9 +15,18 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Containers.h"
 #include "CreatureScript.h"
+#include "Config.h"
+#include "Group.h"
+#include "Player.h"
 #include "ScriptedCreature.h"
+#include "SpellMgr.h"
+#include "ThreatManager.h"
+#include "botmgr.h"
 #include "mechanar.h"
+
+#include <vector>
 
 enum Says
 {
@@ -36,6 +45,7 @@ enum Spells
     SPELL_DISGRUNTLED_ANGER         = 35289,
     SPELL_ARCANE_TORRENT            = 36022,
     SPELL_MANA_TAP                  = 36021,
+    SPELL_POLYMORPH_RANK_1          = 118,
     SPELL_DOMINATION                = 35280,
     SPELL_FRENZY                    = 36992,
     SPELL_SUICIDE                   = 35301,
@@ -53,6 +63,188 @@ enum Misc
     EQUIPMENT_NORMAL        = 1,
     EQUIPMENT_FRENZY        = 2,
 };
+
+enum PathaleonMindControlReplacementTargetMode : uint8
+{
+    PATHALEON_MC_REPLACEMENT_TARGET_TANK          = 0,
+    PATHALEON_MC_REPLACEMENT_TARGET_RANDOM_GROUP  = 1,
+    PATHALEON_MC_REPLACEMENT_TARGET_SELF          = 2,
+    PATHALEON_MC_REPLACEMENT_TARGET_EVERYONE      = 3
+};
+
+struct PathaleonMindControlReplacementConfig
+{
+    bool Enabled = false;
+    uint32 SpellId = SPELL_POLYMORPH_RANK_1;
+    PathaleonMindControlReplacementTargetMode TargetMode = PATHALEON_MC_REPLACEMENT_TARGET_RANDOM_GROUP;
+};
+
+static constexpr float PATHALEON_DOMINATION_RANGE = 50.0f;
+
+static bool IsPathaleonValidGroupTarget(Creature const* source, Unit* unit, float range)
+{
+    if (!source || !unit || !unit->IsInWorld() || !unit->IsAlive())
+        return false;
+
+    if (!unit->IsPlayer() && !unit->IsNPCBot())
+        return false;
+
+    if (unit->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
+        return false;
+
+    if (!unit->IsInMap(source) || !unit->InSamePhase(source))
+        return false;
+
+    if (!source->IsWithinDistInMap(unit, range))
+        return false;
+
+    if (!source->CanSeeOrDetect(unit) || !source->IsWithinLOSInMap(unit))
+        return false;
+
+    return true;
+}
+
+static void AddPathaleonTarget(Creature const* source, std::vector<Unit*>& targets, GuidSet& seen, Unit* unit, float range)
+{
+    if (!IsPathaleonValidGroupTarget(source, unit, range))
+        return;
+
+    if (!seen.insert(unit->GetGUID()).second)
+        return;
+
+    targets.push_back(unit);
+}
+
+static Player* GetPathaleonOwnerPlayer(Unit* unit)
+{
+    if (!unit)
+        return nullptr;
+
+    if (Player* player = unit->ToPlayer())
+        return player;
+
+    Creature* creature = unit->ToCreature();
+    return creature && creature->IsNPCBot() ? creature->GetBotOwner() : nullptr;
+}
+
+static Group const* GetPathaleonGroup(Unit* unit)
+{
+    if (!unit)
+        return nullptr;
+
+    if (Player* player = unit->ToPlayer())
+        return player->GetGroup();
+
+    Creature* creature = unit->ToCreature();
+    return creature && creature->IsNPCBot() ? creature->GetBotGroup() : nullptr;
+}
+
+static void AddPathaleonOwnedBots(Creature const* source, std::vector<Unit*>& targets, GuidSet& seen, Player* player, float range)
+{
+    if (!player || !player->HaveBot())
+        return;
+
+    BotMgr* botMgr = player->GetBotMgr();
+    if (!botMgr)
+        return;
+
+    if (BotMap const* botMap = botMgr->GetBotMap())
+        for (BotMap::value_type const& pair : *botMap)
+            AddPathaleonTarget(source, targets, seen, pair.second, range);
+}
+
+static Unit* GetPathaleonTank(Creature* source)
+{
+    if (!source)
+        return nullptr;
+
+    if (Unit* tank = source->GetThreatMgr().GetCurrentVictim())
+        return tank;
+
+    return source->GetVictim();
+}
+
+static void AddPathaleonThreatTargets(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, float range)
+{
+    if (!source)
+        return;
+
+    for (ThreatReference const* ref : source->GetThreatMgr().GetSortedThreatList())
+    {
+        if (!ref || !ref->IsAvailable())
+            continue;
+
+        AddPathaleonTarget(source, targets, seen, ref->GetVictim(), range);
+    }
+}
+
+static std::vector<Unit*> GatherPathaleonGroupTargets(Creature* source, float range)
+{
+    std::vector<Unit*> targets;
+    GuidSet seen;
+
+    if (!source)
+        return targets;
+
+    Unit* seed = GetPathaleonTank(source);
+    if (!seed)
+        seed = source->GetVictim();
+
+    if (Group const* group = GetPathaleonGroup(seed))
+    {
+        for (Unit* member : BotMgr::GetAllGroupMembers(group))
+        {
+            AddPathaleonTarget(source, targets, seen, member, range);
+
+            if (Player* player = member ? member->ToPlayer() : nullptr)
+                AddPathaleonOwnedBots(source, targets, seen, player, range);
+        }
+    }
+    else
+    {
+        AddPathaleonTarget(source, targets, seen, seed, range);
+
+        if (Player* player = GetPathaleonOwnerPlayer(seed))
+        {
+            AddPathaleonTarget(source, targets, seen, player, range);
+            AddPathaleonOwnedBots(source, targets, seen, player, range);
+        }
+    }
+
+    if (targets.empty())
+        AddPathaleonThreatTargets(source, targets, seen, range);
+
+    return targets;
+}
+
+static PathaleonMindControlReplacementTargetMode GetPathaleonMindControlReplacementTargetMode()
+{
+    switch (sConfigMgr->GetOption<uint32>("Pathaleon.MindControlReplacement.TargetMode", PATHALEON_MC_REPLACEMENT_TARGET_RANDOM_GROUP))
+    {
+        case PATHALEON_MC_REPLACEMENT_TARGET_TANK:
+            return PATHALEON_MC_REPLACEMENT_TARGET_TANK;
+        case PATHALEON_MC_REPLACEMENT_TARGET_SELF:
+            return PATHALEON_MC_REPLACEMENT_TARGET_SELF;
+        case PATHALEON_MC_REPLACEMENT_TARGET_EVERYONE:
+            return PATHALEON_MC_REPLACEMENT_TARGET_EVERYONE;
+        case PATHALEON_MC_REPLACEMENT_TARGET_RANDOM_GROUP:
+        default:
+            return PATHALEON_MC_REPLACEMENT_TARGET_RANDOM_GROUP;
+    }
+}
+
+static PathaleonMindControlReplacementConfig GetPathaleonMindControlReplacementConfig()
+{
+    PathaleonMindControlReplacementConfig config;
+    config.Enabled = sConfigMgr->GetOption<bool>("Pathaleon.MindControlReplacement.Enabled", false);
+    config.SpellId = sConfigMgr->GetOption<uint32>("Pathaleon.MindControlReplacement.SpellId", SPELL_POLYMORPH_RANK_1);
+
+    if (!config.SpellId || !sSpellMgr->GetSpellInfo(config.SpellId))
+        config.SpellId = SPELL_POLYMORPH_RANK_1;
+
+    config.TargetMode = GetPathaleonMindControlReplacementTargetMode();
+    return config;
+}
 
 struct boss_pathaleon_the_calculator : public BossAI
 {
@@ -115,7 +307,7 @@ struct boss_pathaleon_the_calculator : public BossAI
             context.Repeat(15s);
         }).Schedule(10s, 16s, [this](TaskContext context)
         {
-            if (DoCastRandomTarget(SPELL_DOMINATION, 0, 50.0f, true, false, false) == SPELL_CAST_OK)
+            if (CastDominationOrReplacement() == SPELL_CAST_OK)
             {
                 Talk(SAY_DOMINATION);
             }
@@ -173,6 +365,115 @@ struct boss_pathaleon_the_calculator : public BossAI
     {
         _JustDied();
         Talk(SAY_DEATH);
+    }
+
+private:
+    Unit* SelectDefaultMindControlTarget()
+    {
+        Unit* tank = GetPathaleonTank(me);
+        std::vector<Unit*> candidates;
+
+        for (Unit* unit : GatherPathaleonGroupTargets(me, PATHALEON_DOMINATION_RANGE))
+        {
+            if (!unit->IsPlayer() || unit == tank)
+                continue;
+
+            candidates.push_back(unit);
+        }
+
+        if (candidates.empty())
+            return nullptr;
+
+        return Acore::Containers::SelectRandomContainerElement(candidates);
+    }
+
+    Unit* SelectFallbackPolymorphBotTarget()
+    {
+        Unit* tank = GetPathaleonTank(me);
+        std::vector<Unit*> candidates;
+
+        for (Unit* unit : GatherPathaleonGroupTargets(me, PATHALEON_DOMINATION_RANGE))
+        {
+            if (!unit->IsNPCBot() || unit == tank)
+                continue;
+
+            candidates.push_back(unit);
+        }
+
+        if (candidates.empty())
+            return nullptr;
+
+        return Acore::Containers::SelectRandomContainerElement(candidates);
+    }
+
+    Unit* SelectRandomReplacementGroupTarget()
+    {
+        std::vector<Unit*> candidates = GatherPathaleonGroupTargets(me, PATHALEON_DOMINATION_RANGE);
+        if (candidates.empty())
+            return nullptr;
+
+        return Acore::Containers::SelectRandomContainerElement(candidates);
+    }
+
+    SpellCastResult CastDefaultDomination()
+    {
+        if (Unit* target = SelectDefaultMindControlTarget())
+            return me->CastSpell(target, SPELL_DOMINATION, false);
+
+        if (Unit* target = SelectFallbackPolymorphBotTarget())
+            return me->CastSpell(target, SPELL_POLYMORPH_RANK_1, false);
+
+        return SPELL_FAILED_BAD_TARGETS;
+    }
+
+    SpellCastResult CastReplacementOnEveryone(uint32 spellId)
+    {
+        SpellCastResult firstFailure = SPELL_FAILED_BAD_TARGETS;
+        bool castStarted = false;
+
+        for (Unit* target : GatherPathaleonGroupTargets(me, PATHALEON_DOMINATION_RANGE))
+        {
+            SpellCastResult result = me->CastSpell(target, spellId, false);
+            if (result == SPELL_CAST_OK)
+            {
+                castStarted = true;
+                continue;
+            }
+
+            if (firstFailure == SPELL_FAILED_BAD_TARGETS)
+                firstFailure = result;
+        }
+
+        return castStarted ? SPELL_CAST_OK : firstFailure;
+    }
+
+    SpellCastResult CastConfiguredMindControlReplacement(PathaleonMindControlReplacementConfig const& config)
+    {
+        switch (config.TargetMode)
+        {
+            case PATHALEON_MC_REPLACEMENT_TARGET_TANK:
+                if (Unit* target = GetPathaleonTank(me))
+                    return me->CastSpell(target, config.SpellId, false);
+                return SPELL_FAILED_BAD_TARGETS;
+            case PATHALEON_MC_REPLACEMENT_TARGET_SELF:
+                return me->CastSpell(me, config.SpellId, false);
+            case PATHALEON_MC_REPLACEMENT_TARGET_EVERYONE:
+                return CastReplacementOnEveryone(config.SpellId);
+            case PATHALEON_MC_REPLACEMENT_TARGET_RANDOM_GROUP:
+            default:
+                if (Unit* target = SelectRandomReplacementGroupTarget())
+                    return me->CastSpell(target, config.SpellId, false);
+                return SPELL_FAILED_BAD_TARGETS;
+        }
+    }
+
+    SpellCastResult CastDominationOrReplacement()
+    {
+        PathaleonMindControlReplacementConfig config = GetPathaleonMindControlReplacementConfig();
+        if (config.Enabled)
+            return CastConfiguredMindControlReplacement(config);
+
+        return CastDefaultDomination();
     }
 };
 
