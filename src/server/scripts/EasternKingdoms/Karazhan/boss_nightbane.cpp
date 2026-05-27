@@ -16,14 +16,22 @@
  */
 
 #include "CreatureScript.h"
+#include "Containers.h"
 #include "GameObjectScript.h"
+#include "Group.h"
+#include "Map.h"
 #include "PassiveAI.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "TaskScheduler.h"
+#include "bot_ai.h"
+#include "botmgr.h"
 #include "karazhan.h"
+
+#include <algorithm>
+#include <vector>
 
 enum Spells
 {
@@ -109,6 +117,42 @@ Position const preFlyPos      =  {-11154.900391f, -1850.670044f, 103.264999f};
 Position const flyPos         =  {-11160.125f,    -1870.683f,    97.73876f};
 Position const landPos        =  {-11162.231f,    -1900.3287f,   91.47627f};
 
+namespace
+{
+    bool IsNightbaneEncounterBot(Creature const* creature)
+    {
+        return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI();
+    }
+
+    bool IsNightbaneEncounterUnit(Unit const* unit, Creature const* source, float range)
+    {
+        if (!unit || !source || !source->GetMap())
+            return false;
+
+        if (!unit->IsInWorld() || !unit->IsAlive() || unit->GetMap() != source->GetMap())
+            return false;
+
+        if (unit->HasUnitState(UNIT_STATE_ISOLATED) || !unit->IsWithinDist(source, range))
+            return false;
+
+        if (!source->IsValidAttackTarget(unit))
+            return false;
+
+        if (unit->IsPlayer())
+            return true;
+
+        return IsNightbaneEncounterBot(unit->ToCreature());
+    }
+
+    bool ContainsNightbaneTarget(std::vector<Unit*> const& targets, ObjectGuid const& guid)
+    {
+        return std::any_of(targets.begin(), targets.end(), [guid](Unit const* target)
+        {
+            return target && target->GetGUID() == guid;
+        });
+    }
+}
+
 struct boss_nightbane : public BossAI
 {
     boss_nightbane(Creature* creature) : BossAI(creature, DATA_NIGHTBANE)
@@ -192,7 +236,9 @@ struct boss_nightbane : public BossAI
     {
         scheduler.Schedule(18s, 25s, GROUP_GROUND, [this](TaskContext context)
         {
-            DoCastRandomTarget(SPELL_CHARRED_EARTH, 0, 100.0f, true);
+            if (Unit* target = SelectRandomEncounterTarget(100.0f, true))
+                DoCast(target, SPELL_CHARRED_EARTH);
+
             context.Repeat(20s);
         }).Schedule(25s, 35s, GROUP_GROUND, [this](TaskContext context)
         {
@@ -204,7 +250,7 @@ struct boss_nightbane : public BossAI
             context.Repeat(32s, 40s);
         }).Schedule(12s, GROUP_GROUND, [this](TaskContext context)
         {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
+            if (Unit* target = SelectRandomEncounterTarget(100.0f, true))
             {
                 if (!me->HasInArc(M_PI, target))
                 {
@@ -218,7 +264,7 @@ struct boss_nightbane : public BossAI
             context.Repeat(6s, 12s);
         }).Schedule(25s, GROUP_GROUND, [this](TaskContext context)
         {
-            if (SelectTarget(SelectTargetMethod::MinDistance, 0, -40.0f, true))
+            if (HasEncounterTargetOutsideCombatRange(40.0f))
             {
                 DoCastAOE(SPELL_FIREBALL_BARRAGE);
             }
@@ -233,7 +279,7 @@ struct boss_nightbane : public BossAI
         scheduler.Schedule(2s, GROUP_AIR, [this](TaskContext /*context*/)
         {
             DoResetThreatList();
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f))
+            if (Unit* target = SelectRandomEncounterTarget(100.0f, true))
             {
                 _skeletonSpawnPos = target->GetPosition();
                 me->SetFacingTo(_skeletonSpawnPos.GetOrientation());
@@ -251,7 +297,7 @@ struct boss_nightbane : public BossAI
             }
         }).Schedule(15s, GROUP_AIR, [this](TaskContext context)
         {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random))
+            if (Unit* target = SelectRandomEncounterTarget(100.0f, true))
             {
                 DoCast(target, SPELL_SMOKING_BLAST_T);
             }
@@ -263,13 +309,13 @@ struct boss_nightbane : public BossAI
             context.Repeat(1500ms);
         }).Schedule(20s, GROUP_AIR, [this](TaskContext /*context*/)
         {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
+            if (Unit* target = SelectRandomEncounterTarget(100.0f, true))
             {
                 DoCast(target, SPELL_DISTRACTING_ASH);
             }
         }).Schedule(14s, GROUP_AIR, [this](TaskContext context)
         {
-            if (SelectTarget(SelectTargetMethod::MinDistance, 0, -40.0f, true))
+            if (HasEncounterTargetOutsideCombatRange(40.0f))
             {
                 DoCastAOE(SPELL_FIREBALL_BARRAGE);
             }
@@ -310,7 +356,7 @@ struct boss_nightbane : public BossAI
                 me->SetInCombatWithZone();
             }).Schedule(8s, [this](TaskContext /*context*/)
             {
-                if (!SelectTargetFromPlayerList(45.0f))
+                if (!HasEncounterTargetInRange(45.0f))
                 {
                     EnterEvadeMode(EVADE_REASON_NO_HOSTILES);
                 }
@@ -412,7 +458,11 @@ struct boss_nightbane : public BossAI
 
     void JustSummoned(Creature* summon) override
     {
-        summon->AI()->AttackStart(me->GetVictim());
+        if (Unit* target = SelectRandomEncounterTarget(100.0f, true))
+            summon->AI()->AttackStart(target);
+        else
+            summon->AI()->AttackStart(me->GetVictim());
+
         summons.Summon(summon);
     }
 
@@ -484,6 +534,85 @@ struct boss_nightbane : public BossAI
     }
 
 private:
+    std::vector<Unit*> GatherEncounterTargets(float range) const
+    {
+        std::vector<Unit*> targets;
+
+        if (!me->GetMap())
+            return targets;
+
+        auto addTarget = [&](Unit* unit)
+        {
+            if (!IsNightbaneEncounterUnit(unit, me, range))
+                return;
+
+            if (ContainsNightbaneTarget(targets, unit->GetGUID()))
+                return;
+
+            targets.push_back(unit);
+        };
+
+        Map::PlayerList const& players = me->GetMap()->GetPlayers();
+        for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+        {
+            Player* player = itr->GetSource();
+            if (!player)
+                continue;
+
+            addTarget(player);
+
+            if (Group* group = player->GetGroup())
+            {
+                for (Unit* member : BotMgr::GetAllGroupMembers(group))
+                    addTarget(member);
+            }
+
+            if (BotMgr* botMgr = player->GetBotMgr())
+            {
+                for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+                    addTarget(pair.second);
+            }
+        }
+
+        return targets;
+    }
+
+    Unit* SelectRandomEncounterTarget(float range, bool includeVictim) const
+    {
+        std::vector<Unit*> targets;
+        Unit* victim = me->GetVictim();
+
+        for (Unit* target : GatherEncounterTargets(range))
+        {
+            if (!includeVictim && target == victim)
+                continue;
+
+            targets.push_back(target);
+        }
+
+        if (targets.empty() && includeVictim && IsNightbaneEncounterUnit(victim, me, range))
+            return victim;
+
+        if (targets.empty())
+            return nullptr;
+
+        return Acore::Containers::SelectRandomContainerElement(targets);
+    }
+
+    bool HasEncounterTargetInRange(float range) const
+    {
+        return !GatherEncounterTargets(range).empty();
+    }
+
+    bool HasEncounterTargetOutsideCombatRange(float minRange) const
+    {
+        for (Unit* target : GatherEncounterTargets(160.0f))
+            if (!me->IsWithinCombatRange(target, minRange))
+                return true;
+
+        return false;
+    }
+
     uint8 _phase;
     uint8 _airPhasesCompleted;
     uint8 _triggerCountTakeOffWhileFlying;
@@ -534,7 +663,9 @@ class spell_nightbane_fireball_barrage : public SpellScript
         Unit* caster = GetCaster();
         targets.remove_if([&](WorldObject* target) -> bool
         {
-            return !target->IsPlayer() || caster->IsWithinCombatRange(target->ToUnit(), 40.0f);
+            Unit* unit = target ? target->ToUnit() : nullptr;
+            Creature* creatureCaster = caster ? caster->ToCreature() : nullptr;
+            return !unit || !creatureCaster || !IsNightbaneEncounterUnit(unit, creatureCaster, 160.0f) || caster->IsWithinCombatRange(unit, 40.0f);
         });
     }
 
