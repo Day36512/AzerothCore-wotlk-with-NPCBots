@@ -5116,6 +5116,67 @@ std::pair<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool& res
             }
         }
 
+        // Karazhan - Shade of Aran. Ranged DPS prioritize the summoned Conjured Elementals.
+        if (me->GetMapId() == MAP_KARAZHAN && me->IsInCombat() && HasRole(BOT_ROLE_DPS) && ranged && !IsTank() && !HasRole(BOT_ROLE_HEAL))
+        {
+            static constexpr uint32 NPC_ARAN_CONJURED_ELEMENTAL = 17167;
+
+            auto isAttackableAranElemental = [this, byspell](Creature* c) -> bool
+                {
+                    if (!c || !c->IsAlive())
+                        return false;
+
+                    if (c->GetEntry() != NPC_ARAN_CONJURED_ELEMENTAL)
+                        return false;
+
+                    if (c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE))
+                        return false;
+
+                    if (!c->IsVisible() || !c->isTargetableForAttack(false))
+                        return false;
+
+                    if (!(CanSeeEveryone() || (me->CanSeeOrDetect(c) && c->InSamePhase(me))))
+                        return false;
+
+                    if (!me->IsWithinLOSInMap(c))
+                        return false;
+
+                    if (!me->IsValidAttackTarget(c))
+                        return false;
+
+                    return CanBotAttack(c, byspell);
+                };
+
+            Creature* current = mytar ? mytar->ToCreature() : nullptr;
+            if (isAttackableAranElemental(current))
+                return { current, nullptr };
+
+            std::list<Creature*> elementals;
+            me->GetCreatureListWithEntryInGrid(elementals, NPC_ARAN_CONJURED_ELEMENTAL, 120.0f);
+
+            Creature* best = nullptr;
+            float bestHealthPct = 101.0f;
+            float bestDistance = std::numeric_limits<float>::max();
+
+            for (Creature* elemental : elementals)
+            {
+                if (!isAttackableAranElemental(elemental))
+                    continue;
+
+                float healthPct = elemental->GetHealthPct();
+                float distance = me->GetDistance(elemental);
+                if (!best || healthPct < bestHealthPct || (healthPct == bestHealthPct && distance < bestDistance))
+                {
+                    best = elemental;
+                    bestHealthPct = healthPct;
+                    bestDistance = distance;
+                }
+            }
+
+            if (best)
+                return { best, nullptr };
+        }
+
         // Zul'Aman. Keep encounter add/object priorities in normal bot target
         // selection so boss scripts can stay focused on mechanics and movement.
         if (me->GetMapId() == MAP_ZUL_AMAN && me->IsInCombat())

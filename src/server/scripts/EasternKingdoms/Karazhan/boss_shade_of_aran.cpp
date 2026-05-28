@@ -1029,6 +1029,7 @@ struct boss_shade_of_aran : public BossAI
         bot->BotStopMovement();
         bot->GetMotionMaster()->Clear();
         ai->SetBotCommandState(BOT_COMMAND_STAY);
+        ai->SetBotCommandState(BOT_COMMAND_INACTION);
 
         ForceBotMoveTo(bot, GetArcaneExplosionEscapePosition(bot));
     }
