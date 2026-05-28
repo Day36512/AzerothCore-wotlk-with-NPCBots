@@ -16,10 +16,12 @@
  */
 
 #include "CreatureScript.h"
+#include "InstanceScript.h"
 #include "Map.h"
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
 #include "ScriptedCreature.h"
+#include "SpellAuras.h"
 #include "SpellInfo.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
@@ -28,6 +30,7 @@
 #include "karazhan.h"
 
 #include <cmath>
+#include <list>
 #include <map>
 #include <vector>
 
@@ -81,14 +84,10 @@ enum Phases
     PHASE_THREE = 3
 };
 
-enum Actions
+enum MiscActions
 {
-    ACTION_ENFEEBLE_FINISHED = 1
+    ACTION_ENFEEBLE_AURA_REMOVED = 1
 };
-
-static constexpr uint32 ENFEEBLE_RELEASE_DELAY_MS = 9500;
-static constexpr uint32 ENFEEBLE_RELEASE_FAILSAFE_DELAY_MS = 11000;
-static constexpr uint32 ENFEEBLE_RETREAT_NUDGE_DELAY_MS = 2500;
 
 static bool IsNPCBotUnit(Unit* unit)
 {
@@ -216,6 +215,12 @@ struct boss_malchezaar : public BossAI
         _EnterEvadeMode(why);
     }
 
+    void SetGUID(ObjectGuid const& guid, int32 id) override
+    {
+        if (id == ACTION_ENFEEBLE_AURA_REMOVED)
+            HandleEnfeebleAuraRemoved(guid);
+    }
+
     void SpawnInfernal(Creature* relay, Creature* target)
     {
         if (!relay || !target)
@@ -267,11 +272,9 @@ struct boss_malchezaar : public BossAI
         {
             DoCastAOE(SPELL_ENFEEBLE);
 
-            // Primary release is now owned by spell_malchezaar_enfeeble::ScheduleBotRelease().
-            // This is only a safety net in case the spell script is not attached in the DB.
-            scheduler.Schedule(std::chrono::milliseconds(ENFEEBLE_RELEASE_FAILSAFE_DELAY_MS), [this](TaskContext)
+            scheduler.Schedule(9s, [this](TaskContext)
             {
-                FinishEnfeeble();
+                EnfeebleResetHealth();
             });
 
             context.SetGroup(GROUP_ENFEEBLE);
@@ -313,12 +316,6 @@ struct boss_malchezaar : public BossAI
         });
     }
 
-    void DoAction(int32 action) override
-    {
-        if (action == ACTION_ENFEEBLE_FINISHED)
-            FinishEnfeeble();
-    }
-
     void SpellHitTarget(Unit* target, SpellInfo const* spell) override
     {
         if (spell->Id == SPELL_ENFEEBLE)
@@ -330,6 +327,28 @@ struct boss_malchezaar : public BossAI
                 if (IsNPCBotUnit(bot))
                     HandleEnfeebledBot(bot);
         }
+    }
+
+    void RestoreEnfeebledTargetHealth(ObjectGuid const& guid)
+    {
+        std::map<ObjectGuid, uint32>::iterator itr = _enfeebleTargets.find(guid);
+        if (itr == _enfeebleTargets.end())
+            return;
+
+        if (Unit* target = ObjectAccessor::GetUnit(*me, guid))
+        {
+            if (target->IsAlive())
+                target->SetHealth(itr->second);
+        }
+
+        _enfeebleTargets.erase(itr);
+    }
+
+    void HandleEnfeebleAuraRemoved(ObjectGuid const& guid)
+    {
+        RestoreEnfeebledTargetHealth(guid);
+        ReleaseEnfeebledBot(guid);
+        _enfeebledBots.erase(guid);
     }
 
     void EnfeebleResetHealth()
@@ -344,12 +363,6 @@ struct boss_malchezaar : public BossAI
 
             itr = _enfeebleTargets.erase(itr);
         }
-    }
-
-    void FinishEnfeeble()
-    {
-        EnfeebleResetHealth();
-        ReleaseAllEnfeebledBots();
     }
 
     void ReleaseEnfeebledBot(ObjectGuid const& guid)
@@ -375,20 +388,14 @@ struct boss_malchezaar : public BossAI
             if (state.staySet)
                 ai->RemoveBotCommandState(BOT_COMMAND_STAY);
 
-            if (bot->IsAlive())
+            if (bot->IsAlive() && me->IsAlive() && me->IsEngaged() && me->GetVictim())
             {
-                bot->BotStopMovement();
-                bot->GetMotionMaster()->Clear();
-
-                if (me->IsAlive() && me->IsEngaged() && me->GetVictim())
-                {
-                    ai->SetBotCommandState(BOT_COMMAND_ATTACK);
-                    ai->AttackStart(me);
-                }
-                else if (!ai->IAmFree())
-                {
-                    ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
-                }
+                ai->SetBotCommandState(BOT_COMMAND_ATTACK);
+                ai->AttackStart(me);
+            }
+            else if (bot->IsAlive() && !ai->IAmFree())
+            {
+                ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
             }
         }
     }
@@ -479,11 +486,9 @@ struct boss_malchezaar : public BossAI
 
         EnfeebledBotState const& state = stateItr->second;
 
-        ai->CancelAllActions();
-        bot->InterruptNonMeleeSpells(true);
+        bot->InterruptNonMeleeSpells(false);
         bot->AttackStop();
         bot->BotStopMovement();
-        bot->GetMotionMaster()->Clear();
 
         if (state.inactionSet)
             ai->SetBotCommandState(BOT_COMMAND_INACTION);
@@ -499,7 +504,7 @@ struct boss_malchezaar : public BossAI
         Position retreat = GetEnfeebleRetreatPosition(bot);
         SafeBotMoveTo(bot, retreat);
 
-        scheduler.Schedule(std::chrono::milliseconds(ENFEEBLE_RETREAT_NUDGE_DELAY_MS), [this, botGuid](TaskContext)
+        scheduler.Schedule(2500ms, [this, botGuid](TaskContext)
         {
             Creature* bot = ObjectAccessor::GetCreature(*me, botGuid);
             if (!bot || !bot->IsAlive() || !bot->IsNPCBot())
@@ -507,6 +512,12 @@ struct boss_malchezaar : public BossAI
 
             if (!IsUnitSafelyAwayFromShadowNova(bot))
                 SafeBotMoveTo(bot, GetEnfeebleRetreatPosition(bot));
+        });
+
+        scheduler.Schedule(9500ms, [this, botGuid](TaskContext)
+        {
+            ReleaseEnfeebledBot(botGuid);
+            _enfeebledBots.erase(botGuid);
         });
     }
 
@@ -630,25 +641,38 @@ class spell_malchezaar_enfeeble : public SpellScript
         }
     }
 
-    void ScheduleBotRelease()
+    void Register() override
     {
-        Creature* prince = GetCaster() ? GetCaster()->ToCreature() : nullptr;
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_malchezaar_enfeeble::FilterTargets, EFFECT_ALL, TARGET_UNIT_SRC_AREA_ENEMY);
+    }
+};
+
+
+// 41624 - Enfeeble effect
+class spell_malchezaar_enfeeble_effect : public AuraScript
+{
+    PrepareAuraScript(spell_malchezaar_enfeeble_effect);
+
+    void HandleRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Unit* target = GetTarget();
+        if (!target)
+            return;
+
+        InstanceScript* instance = target->GetInstanceScript();
+        if (!instance)
+            return;
+
+        Creature* prince = instance->GetCreature(DATA_MALCHEZAAR);
         if (!prince || !prince->AI())
             return;
 
-        // Enfeeble is instant, so AfterCast marks the start of the Enfeeble/Nova danger window.
-        // Release through the spell script instead of trusting each individual bot's scheduler.
-        prince->m_Events.AddEventAtOffset([prince]
-        {
-            if (prince->IsInWorld() && prince->AI())
-                prince->AI()->DoAction(ACTION_ENFEEBLE_FINISHED);
-        }, std::chrono::milliseconds(ENFEEBLE_RELEASE_DELAY_MS));
+        prince->AI()->SetGUID(target->GetGUID(), ACTION_ENFEEBLE_AURA_REMOVED);
     }
 
     void Register() override
     {
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_malchezaar_enfeeble::FilterTargets, EFFECT_ALL, TARGET_UNIT_SRC_AREA_ENEMY);
-        AfterCast += SpellCastFn(spell_malchezaar_enfeeble::ScheduleBotRelease);
+        AfterEffectRemove += AuraEffectRemoveFn(spell_malchezaar_enfeeble_effect::HandleRemove, EFFECT_0, SPELL_AURA_ANY, AURA_EFFECT_HANDLE_REAL);
     }
 };
 
@@ -658,4 +682,5 @@ void AddSC_boss_malchezaar()
     RegisterKarazhanCreatureAI(npc_malchezaar_axe);
     RegisterKarazhanCreatureAI(npc_netherspite_infernal);
     RegisterSpellScript(spell_malchezaar_enfeeble);
+    RegisterSpellScript(spell_malchezaar_enfeeble_effect);
 }
