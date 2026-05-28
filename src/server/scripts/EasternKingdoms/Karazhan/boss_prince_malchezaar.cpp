@@ -15,6 +15,7 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Config.h"
 #include "CreatureScript.h"
 #include "InstanceScript.h"
 #include "Map.h"
@@ -626,7 +627,7 @@ class spell_malchezaar_enfeeble : public SpellScript
 
     void FilterTargets(std::list<WorldObject*>& targets)
     {
-        uint8 maxSize = 5;
+        uint32 maxSize = sConfigMgr->GetOption<uint32>("Boss.Malchezaar.Enfeeble.MaxTargets", 5);
         Unit* caster = GetCaster();
 
         targets.remove_if([caster](WorldObject const* target) -> bool
@@ -635,10 +636,16 @@ class spell_malchezaar_enfeeble : public SpellScript
             return caster->GetVictim() == target;
         });
 
-        if (targets.size() > maxSize)
+        // 0 is allowed as a tuning value. It effectively disables Enfeeble target selection
+        // without touching the spell schedule itself.
+        if (!maxSize)
         {
-            Acore::Containers::RandomResize(targets, maxSize);
+            targets.clear();
+            return;
         }
+
+        if (targets.size() > maxSize)
+            Acore::Containers::RandomResize(targets, maxSize);
     }
 
     void Register() override
