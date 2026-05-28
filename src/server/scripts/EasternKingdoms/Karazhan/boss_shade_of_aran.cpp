@@ -122,17 +122,15 @@ enum Groups
 
 enum Misc
 {
-    ACTION_ATIESH_REACT          = 1
+    ACTION_ATIESH_REACT          = 1,
+    ACTION_ARCANE_EXPLOSION_FINISHED = 2
 };
 
 Position const roomCenter = {-11158.f, -1920.f};
 
-static constexpr uint8 ARCANE_EXPLOSION_BOT_MAX_NUDGES = 12;
-static constexpr uint16 ARCANE_EXPLOSION_BOT_NUDGE_INTERVAL_MS = 750;
-static constexpr uint8 ARCANE_EXPLOSION_BOT_EVENT_SECONDS = 10;
-static constexpr uint8 ARCANE_EXPLOSION_BOT_RELEASE_PAD_SECONDS = 1;
-static constexpr uint8 ARCANE_EXPLOSION_NON_ATTACKABLE_SECONDS = 4;
-static constexpr uint8 ARCANE_EXPLOSION_BOT_SAFE_HOLD_SECONDS = ARCANE_EXPLOSION_BOT_EVENT_SECONDS + ARCANE_EXPLOSION_BOT_RELEASE_PAD_SECONDS;
+static constexpr uint8 ARCANE_EXPLOSION_BOT_FAILSAFE_SECONDS = 12;
+static constexpr uint8 ARCANE_EXPLOSION_BOT_START_NUDGES = 4;
+static constexpr uint16 ARCANE_EXPLOSION_BOT_START_NUDGE_INTERVAL_MS = 250;
 static constexpr uint8 FLAME_WREATH_CAST_SECONDS = 5;
 static constexpr uint8 FLAME_WREATH_GROUND_SECONDS = 20;
 static constexpr uint8 FLAME_WREATH_RELEASE_PAD_SECONDS = 1;
@@ -236,9 +234,8 @@ struct boss_shade_of_aran : public BossAI
         _drinking = false;
         _hasDrunk = false;
         _arcaneExplosionActive = false;
+        _arcaneExplosionBots.clear();
         _flameWreathActive = false;
-        _arcaneExplosionBotNudgeCount = 0;
-        ClearArcaneExplosionNonAttackable(true);
 
         for (auto spell : immuneSpells)
             me->ApplySpellImmune(0, IMMUNITY_ID, spell, true);
@@ -283,6 +280,12 @@ struct boss_shade_of_aran : public BossAI
                 me->SetFacingToObject(atieshOwner);
             }
         }
+    }
+
+    void DoAction(int32 action) override
+    {
+        if (action == ACTION_ARCANE_EXPLOSION_FINISHED)
+            FinishArcaneExplosionBotEscape();
     }
 
     void AttackStart(Unit* who) override
@@ -473,9 +476,10 @@ struct boss_shade_of_aran : public BossAI
                         Talk(EMOTE_ARCANE_EXPLOSION);
                         DoCastSelf(SPELL_PLAYERPULL, true);
                         DoCastSelf(SPELL_MASSSLOW, true);
-                        ScheduleArcaneExplosionBotEscape();
-                        if (DoCastAOE(SPELL_AEXPLOSION) != SPELL_CAST_OK)
-                            StopArcaneExplosionBotEscape();
+                        if (DoCastAOE(SPELL_AEXPLOSION) == SPELL_CAST_OK)
+                            ScheduleArcaneExplosionBotEscape();
+                        else
+                            FinishArcaneExplosionBotEscape();
                         break;
                     case SPELL_FLAME_WREATH:
                         Talk(SAY_FLAMEWREATH);
@@ -785,7 +789,10 @@ struct boss_shade_of_aran : public BossAI
                 if (interruptCasts)
                 {
                     bot->AttackStop();
-                    bot->InterruptNonMeleeSpells(false);
+                    bot->InterruptNonMeleeSpells(true);
+                    ai->RemoveBotCommandState(BOT_COMMAND_STAY);
+                    ai->RemoveBotCommandState(BOT_COMMAND_INACTION);
+                    ai->RemoveBotCommandState(BOT_COMMAND_MASK_NOCAST_ANY);
                 }
 
                 bot->BotStopMovement();
@@ -797,16 +804,28 @@ struct boss_shade_of_aran : public BossAI
 
     void ReleaseArcaneExplosionBotStates()
     {
-        std::vector<ObjectGuid> guids;
-        guids.reserve(_botStates.size());
+        for (ObjectGuid const& guid : _arcaneExplosionBots)
+        {
+            Creature* bot = ObjectAccessor::GetCreature(*me, guid);
+            bot_ai* ai = bot ? bot->GetBotAI() : nullptr;
+            if (!bot || !bot->IsAlive() || !ai || ai->IAmFree())
+                continue;
 
-        for (std::map<ObjectGuid, ScriptedBotState>::value_type const& pair : _botStates)
-            if (pair.second.reasons & BOT_STATE_ARCANE)
-                guids.push_back(pair.first);
+            bot->AttackStop();
+            bot->InterruptNonMeleeSpells(true);
+            bot->BotStopMovement();
+            bot->GetMotionMaster()->Clear();
 
-        for (ObjectGuid const& guid : guids)
-            ReleaseBotState(guid, BOT_STATE_ARCANE, false);
+            ai->RemoveBotCommandState(BOT_COMMAND_STAY);
+            ai->RemoveBotCommandState(BOT_COMMAND_INACTION);
+            ai->RemoveBotCommandState(BOT_COMMAND_MASK_NOCAST_ANY);
+            ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+        }
 
+        _arcaneExplosionBots.clear();
+
+        // Belt and suspenders: catch any encounter bot that was moved by the Arcane Explosion helper
+        // but was missed because of despawn/resummon timing or command-state weirdness.
         SetEncounterBotsToFollow(true);
     }
 
@@ -867,10 +886,10 @@ struct boss_shade_of_aran : public BossAI
         }
 
         _botStates.clear();
-        ClearArcaneExplosionNonAttackable();
+        _arcaneExplosionBots.clear();
+        scheduler.CancelGroup(GROUP_ARCANE_EXPLOSION_BOT_ESCAPE);
         _arcaneExplosionActive = false;
         _flameWreathActive = false;
-        _arcaneExplosionBotNudgeCount = 0;
     }
 
     void ReleaseBotsAfterDrink()
@@ -962,91 +981,104 @@ struct boss_shade_of_aran : public BossAI
         return position;
     }
 
-    void PrioritizeChainsDispel(Creature* /*bot*/)
+    bool IsArcaneExplosionBot(Creature* bot) const
     {
-        // NPCBot dispel AI can react to the aura naturally; the boss script only avoids moving rooted bots.
+        bot_ai* ai = bot ? bot->GetBotAI() : nullptr;
+        return bot && bot->IsAlive() && IsEncounterParticipant(bot) && !bot->HasAura(SPELL_FLAME_WREATH_RING) && ai && !ai->IAmFree();
+    }
+
+    void TeleportBotsToArcaneExplosionCenter()
+    {
+        for (Creature* bot : GatherEncounterBots())
+        {
+            if (!IsArcaneExplosionBot(bot))
+                continue;
+
+            float x = roomCenter.GetPositionX();
+            float y = roomCenter.GetPositionY();
+            float z = me->GetPositionZ();
+
+            if (!bot->CanFly())
+                bot->UpdateAllowedPositionZ(x, y, z);
+
+            if (bot_ai* ai = bot->GetBotAI())
+                ai->CancelAllActions();
+
+            bot->InterruptNonMeleeSpells(true);
+            bot->AttackStop();
+            bot->BotStopMovement();
+            bot->GetMotionMaster()->Clear();
+            bot->NearTeleportTo(x, y, z, me->GetOrientation());
+        }
+    }
+
+    void MoveBotOutForArcaneExplosion(Creature* bot)
+    {
+        if (!IsArcaneExplosionBot(bot))
+            return;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai)
+            return;
+
+        _arcaneExplosionBots.insert(bot->GetGUID());
+
+        ai->CancelAllActions();
+        bot->InterruptNonMeleeSpells(true);
+        bot->AttackStop();
+        bot->BotStopMovement();
+        bot->GetMotionMaster()->Clear();
+        ai->SetBotCommandState(BOT_COMMAND_STAY);
+
+        ForceBotMoveTo(bot, GetArcaneExplosionEscapePosition(bot));
     }
 
     void MoveBotsOutForArcaneExplosion()
     {
+        if (!_arcaneExplosionActive)
+            return;
+
         for (Creature* bot : GatherEncounterBots())
-        {
-            if (!bot || !bot->IsAlive() || bot->HasAura(SPELL_FLAME_WREATH_RING))
-                continue;
-
-            if (bot->HasAura(SPELL_CHAINSOFICE))
-            {
-                PrioritizeChainsDispel(bot);
-                continue;
-            }
-
-            Position escapePosition = GetArcaneExplosionEscapePosition(bot);
-            if (bot->GetExactDist2d(escapePosition.GetPositionX(), escapePosition.GetPositionY()) <= 2.5f)
-                continue;
-
-            if (!CanMoveBot(bot, true))
-                continue;
-
-            bot->InterruptNonMeleeSpells(false);
-            bot->AttackStop();
-            TrackBotState(bot, BOT_STATE_ARCANE, false);
-            ForceBotMoveTo(bot, escapePosition);
-        }
+            MoveBotOutForArcaneExplosion(bot);
     }
 
     void ScheduleArcaneExplosionBotEscape()
     {
+        scheduler.CancelGroup(GROUP_ARCANE_EXPLOSION_BOT_ESCAPE);
         _arcaneExplosionActive = true;
-        _arcaneExplosionBotNudgeCount = 0;
-        scheduler.CancelGroup(GROUP_ARCANE_EXPLOSION_BOT_ESCAPE);
+        _arcaneExplosionBots.clear();
 
-        SetArcaneExplosionNonAttackable();
+        // Aran's pull hits first. NPCBots are forced to the center too, then immediately sent out
+        // once the 10 second Arcane Explosion cast has actually started.
+        TeleportBotsToArcaneExplosionCenter();
         MoveBotsOutForArcaneExplosion();
-        _arcaneExplosionBotNudgeCount = 1;
 
-        scheduler.Schedule(std::chrono::milliseconds(ARCANE_EXPLOSION_BOT_NUDGE_INTERVAL_MS), GROUP_ARCANE_EXPLOSION_BOT_ESCAPE, [this](TaskContext context)
+        // Four quick nudges keep the point movement from being eaten by cast recovery, slow aura timing,
+        // or bot AI deciding to be clever at exactly the wrong moment.
+        for (uint8 i = 1; i <= ARCANE_EXPLOSION_BOT_START_NUDGES; ++i)
         {
-            MoveBotsOutForArcaneExplosion();
-            if (++_arcaneExplosionBotNudgeCount < ARCANE_EXPLOSION_BOT_MAX_NUDGES)
-                context.Repeat(std::chrono::milliseconds(ARCANE_EXPLOSION_BOT_NUDGE_INTERVAL_MS));
-        });
+            scheduler.Schedule(std::chrono::milliseconds(i * ARCANE_EXPLOSION_BOT_START_NUDGE_INTERVAL_MS), GROUP_ARCANE_EXPLOSION_BOT_ESCAPE, [this](TaskContext)
+            {
+                MoveBotsOutForArcaneExplosion();
+            });
+        }
 
-        scheduler.Schedule(std::chrono::seconds(ARCANE_EXPLOSION_NON_ATTACKABLE_SECONDS), GROUP_ARCANE_EXPLOSION_BOT_ESCAPE, [this](TaskContext)
+        // Backup release only. The real release is spell_shade_of_aran_arcane_explosion::HandleAfterCast(),
+        // which fires when spell 29973 finishes its cast.
+        scheduler.Schedule(std::chrono::seconds(ARCANE_EXPLOSION_BOT_FAILSAFE_SECONDS), GROUP_ARCANE_EXPLOSION_BOT_ESCAPE, [this](TaskContext)
         {
-            ClearArcaneExplosionNonAttackable();
-        });
-
-        scheduler.Schedule(std::chrono::seconds(ARCANE_EXPLOSION_BOT_SAFE_HOLD_SECONDS), GROUP_ARCANE_EXPLOSION_BOT_ESCAPE, [this](TaskContext)
-        {
-            StopArcaneExplosionBotEscape();
+            FinishArcaneExplosionBotEscape();
         });
     }
 
-    void StopArcaneExplosionBotEscape()
+    void FinishArcaneExplosionBotEscape()
     {
+        if (!_arcaneExplosionActive)
+            return;
+
         _arcaneExplosionActive = false;
-        _arcaneExplosionBotNudgeCount = 0;
-        ClearArcaneExplosionNonAttackable();
-        ReleaseArcaneExplosionBotStates();
         scheduler.CancelGroup(GROUP_ARCANE_EXPLOSION_BOT_ESCAPE);
-    }
-
-    void SetArcaneExplosionNonAttackable()
-    {
-        if (me->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE))
-            return;
-
-        me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-        _arcaneExplosionMadeNonAttackable = true;
-    }
-
-    void ClearArcaneExplosionNonAttackable(bool force = false)
-    {
-        if (!_arcaneExplosionMadeNonAttackable && !force)
-            return;
-
-        me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-        _arcaneExplosionMadeNonAttackable = false;
+        ReleaseArcaneExplosionBotStates();
     }
 
     void LockBotsForFlameWreath()
@@ -1160,6 +1192,7 @@ private:
     TaskScheduler _drinkScheduler;
 
     std::map<ObjectGuid, ScriptedBotState> _botStates;
+    std::set<ObjectGuid> _arcaneExplosionBots;
 
     uint32 _currentNormalSpell;
     uint32 _lastSuperSpell;
@@ -1169,8 +1202,28 @@ private:
     bool _atieshReaction;
     bool _arcaneExplosionActive = false;
     bool _flameWreathActive = false;
-    uint8 _arcaneExplosionBotNudgeCount = 0;
-    bool _arcaneExplosionMadeNonAttackable = false;
+};
+
+// 29973 - Arcane Explosion
+class spell_shade_of_aran_arcane_explosion : public SpellScript
+{
+    PrepareSpellScript(spell_shade_of_aran_arcane_explosion);
+
+    void HandleAfterCast()
+    {
+        Unit* caster = GetCaster();
+        Creature* creature = caster ? caster->ToCreature() : nullptr;
+        if (!creature || !creature->AI())
+            return;
+
+        creature->AI()->DoAction(ACTION_ARCANE_EXPLOSION_FINISHED);
+    }
+
+private:
+    void Register() override
+    {
+        AfterCast += SpellCastFn(spell_shade_of_aran_arcane_explosion::HandleAfterCast);
+    }
 };
 
 // 30004 - Flame Wreath
@@ -1279,6 +1332,7 @@ public:
 void AddSC_boss_shade_of_aran()
 {
     RegisterKarazhanCreatureAI(boss_shade_of_aran);
+    RegisterSpellScript(spell_shade_of_aran_arcane_explosion);
     RegisterSpellScript(spell_flamewreath);
     RegisterSpellScript(spell_flamewreath_aura);
     new at_karazhan_atiesh_aran();
