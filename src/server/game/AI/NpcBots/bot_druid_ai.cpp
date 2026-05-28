@@ -1399,6 +1399,49 @@ public:
             }
         }
 
+        bool CanPrePullHotLand(Unit* target, uint32 spellId) const
+        {
+            if (!target || !spellId)
+                return false;
+
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            if (!spellInfo)
+                return false;
+
+            spellInfo = spellInfo->TryGetSpellInfoOverride(me);
+            if (SpellInfo const* auraRank = spellInfo->GetAuraRankForLevel(target->GetLevel()))
+                spellInfo = auraRank;
+
+            if (spellInfo->IsTargetingArea())
+                return true;
+
+            uint8 auraEffectMask = 0;
+            uint8 nonAuraEffectMask = 0;
+            for (auto i : NPCBots::index_array<uint8, MAX_SPELL_EFFECTS>)
+            {
+                if (spellInfo->Effects[i].IsAura())
+                    auraEffectMask |= 1u << i;
+                else if (spellInfo->Effects[i].IsEffect())
+                    nonAuraEffectMask |= 1u << i;
+            }
+
+            if (nonAuraEffectMask)
+                return true;
+
+            for (auto i : NPCBots::index_array<uint8, MAX_SPELL_EFFECTS>)
+            {
+                if (!(auraEffectMask & (1u << i)))
+                    continue;
+
+                AuraType auraType = AuraType(spellInfo->Effects[i].ApplyAuraName);
+                int32 amount = spellInfo->Effects[i].CalcValue(me, &spellInfo->Effects[i].BasePoints, target);
+                if (!target->IsHighestExclusiveAuraEffect(spellInfo, auraType, amount, auraEffectMask, false))
+                    return false;
+            }
+
+            return true;
+        }
+
         bool DoPrePullTankHealing(uint32 diff)
         {
             if (!HasRole(BOT_ROLE_HEAL) || HasRole(BOT_ROLE_TANK) || IAmFree())
@@ -1517,6 +1560,7 @@ public:
                     if (uint32 REJUVENATION = GetSpell(REJUVENATION_1))
                     {
                         if (IsSpellReady(REJUVENATION_1, diff) &&
+                            CanPrePullHotLand(member, REJUVENATION) &&
                             !member->GetAuraEffect(SPELL_AURA_PERIODIC_HEAL, SPELLFAMILY_DRUID, 0x10, 0x0, 0x0, me->GetGUID()))
                         {
                             if (PrepareForDruidHealingCast() && doCast(member, REJUVENATION))
@@ -1539,7 +1583,8 @@ public:
                         if (IsSpellReady(LIFEBLOOM_1, diff))
                         {
                             AuraEffect const* bloom = member->GetAuraEffect(SPELL_AURA_PERIODIC_HEAL, SPELLFAMILY_DRUID, 0x0, 0x10, 0x0, me->GetGUID());
-                            if (!bloom || bloom->GetBase()->GetStackAmount() < 3 || bloom->GetBase()->GetDuration() < 3500)
+                            if (CanPrePullHotLand(member, LIFEBLOOM) &&
+                                (!bloom || bloom->GetBase()->GetStackAmount() < 3 || bloom->GetBase()->GetDuration() < 3500))
                             {
                                 if (PrepareForDruidHealingCast() && doCast(member, LIFEBLOOM))
                                     return true;
