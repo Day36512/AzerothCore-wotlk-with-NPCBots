@@ -654,40 +654,10 @@ class spell_malchezaar_enfeeble : public SpellScript
     }
 };
 
-
-// 41624 - Enfeeble effect
-class spell_malchezaar_enfeeble_effect : public AuraScript
-{
-    PrepareAuraScript(spell_malchezaar_enfeeble_effect);
-
-    void HandleRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
-    {
-        Unit* target = GetTarget();
-        if (!target)
-            return;
-
-        InstanceScript* instance = target->GetInstanceScript();
-        if (!instance)
-            return;
-
-        Creature* prince = instance->GetCreature(DATA_MALCHEZAAR);
-        if (!prince || !prince->AI())
-            return;
-
-        prince->AI()->SetGUID(target->GetGUID(), ACTION_ENFEEBLE_AURA_REMOVED);
-    }
-
-    void Register() override
-    {
-        AfterEffectRemove += AuraEffectRemoveFn(spell_malchezaar_enfeeble_effect::HandleRemove, EFFECT_0, SPELL_AURA_ANY, AURA_EFFECT_HANDLE_REAL);
-    }
-};
-
 void AddSC_boss_malchezaar()
 {
     RegisterKarazhanCreatureAI(boss_malchezaar);
     RegisterKarazhanCreatureAI(npc_malchezaar_axe);
     RegisterKarazhanCreatureAI(npc_netherspite_infernal);
     RegisterSpellScript(spell_malchezaar_enfeeble);
-    RegisterSpellScript(spell_malchezaar_enfeeble_effect);
 }
