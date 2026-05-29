@@ -101,7 +101,6 @@ enum Misc
 {
     GUID_CHARGE_TARGET            = 0,
     GROUP_LYNX                    = 1,
-    GROUP_BOT_EAGLE_DIRECTOR      = 10,
     GROUP_BOT_DRAGONHAWK_DIRECTOR = 11,
     GROUP_BOT_ZULJIN_PRIORITY     = 12,
     POINT_CENTER                  = 0
@@ -487,7 +486,6 @@ struct boss_zuljin : public BossAI
                     DoCastSelf(SPELL_ENERGY_STORM, true); // enemy aura
                     DoCastAOE(SPELL_SUMMON_CYCLONE, true);
                     me->SetFacingTo(me->GetHomePosition().GetOrientation());
-                    StartEagleBotDirector();
                 }
                 else
                 {
@@ -526,19 +524,8 @@ struct boss_zuljin : public BossAI
 
     void StopBotDirectors()
     {
-        scheduler.CancelGroup(GROUP_BOT_EAGLE_DIRECTOR);
         scheduler.CancelGroup(GROUP_BOT_DRAGONHAWK_DIRECTOR);
         scheduler.CancelGroup(GROUP_BOT_ZULJIN_PRIORITY);
-    }
-
-    void StartEagleBotDirector()
-    {
-        scheduler.CancelGroup(GROUP_BOT_EAGLE_DIRECTOR);
-        scheduler.Schedule(750ms, GROUP_BOT_EAGLE_DIRECTOR, [this](TaskContext context)
-        {
-            MoveBotsAwayFromHazard(CREATURE_FEATHER_VORTEX, 8.0f, 10.0f, true);
-            context.Repeat(750ms);
-        });
     }
 
     void StartDragonhawkBotDirector()
