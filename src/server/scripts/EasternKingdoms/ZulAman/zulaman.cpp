@@ -901,19 +901,17 @@ class spell_call_of_the_beast : public SpellScript
         return ValidateSpellInfo({ SPELL_FIXATE });
     }
 
-    void HandleEffect(SpellEffIndex effIndex)
+    void HandleEffect(SpellEffIndex /*effIndex*/)
     {
-        Unit* target = GetHitUnit();
-        if (!target)
-            return;
-
-        if (target->IsNPCBotOrPet())
+        //npcbot
+        if (GetHitUnit()->IsNPCBotOrPet())
         {
-            PreventHitDefaultEffect(effIndex);
+            PreventHitDefaultEffect(EFFECT_0);
             return;
         }
+        //end npcbot
 
-        target->CastSpell(target, SPELL_FIXATE, true);
+        GetHitUnit()->CastSpell(GetHitUnit(), SPELL_FIXATE, true);
     }
 
     void Register() override
