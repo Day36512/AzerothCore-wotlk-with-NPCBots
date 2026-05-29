@@ -4944,6 +4944,72 @@ std::pair<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool& res
             return false;
             };
 
+        // Raid DPS should switch to hostile creature-template totems without requiring
+        // every encounter script to hardcode its own totem entry list.
+        if (me->GetMap()->IsRaid() && me->IsInCombat() && HasRole(BOT_ROLE_DPS) && !IsTank() && !HasRole(BOT_ROLE_HEAL) &&
+            !HasBotCommandState(BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION))
+        {
+            auto isAttackableCreatureTypeTotem = [this](Creature* c) -> bool
+                {
+                    if (!c || !c->IsAlive())
+                        return false;
+
+                    if (c->GetCreatureType() != CREATURE_TYPE_TOTEM)
+                        return false;
+
+                    if (c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
+                        return false;
+
+                    if (!c->IsVisible() || !c->isTargetableForAttack(false))
+                        return false;
+
+                    if (!(CanSeeEveryone() || (me->CanSeeOrDetect(c) && c->InSamePhase(me))))
+                        return false;
+
+                    if (!me->IsWithinLOSInMap(c))
+                        return false;
+
+                    return me->IsValidAttackTarget(c);
+                };
+
+            if (Creature* current = mytar ? mytar->ToCreature() : nullptr)
+            {
+                if (isAttackableCreatureTypeTotem(current))
+                    return { current, nullptr };
+            }
+
+            std::list<Creature*> totems;
+            Bcore::CreatureListSearcher searcher(me, totems, isAttackableCreatureTypeTotem);
+            Cell::VisitObjects(me, searcher, ranged ? 120.0f : 35.0f);
+
+            Creature* bestTotem = nullptr;
+            float bestHealthPct = 101.0f;
+            float bestDistance = std::numeric_limits<float>::max();
+
+            for (Creature* totem : totems)
+            {
+                float healthPct = totem->GetHealthPct();
+                float distance = me->GetDistance(totem);
+
+                if (!bestTotem ||
+                    healthPct < bestHealthPct ||
+                    (healthPct == bestHealthPct && distance < bestDistance))
+                {
+                    bestTotem = totem;
+                    bestHealthPct = healthPct;
+                    bestDistance = distance;
+                }
+            }
+
+            if (bestTotem)
+            {
+                if (mytar && mytar != bestTotem)
+                    reset = true;
+
+                return { bestTotem, nullptr };
+            }
+        }
+
         // Magtheridon's Lair (Map 544) — Ranged DPS prioritize Hellfire Channelers.
         // This keeps ranged/caster bots burning the seal team instead of tunneling Magtheridon
         // or drifting onto incidental targets during the opener.
