@@ -158,6 +158,8 @@ public:
 
             if (go->GetEntry() == GO_GATE_HEXLORD)
                 CheckInstanceStatus(go);
+            else if (go->GetEntry() == GO_GATE_ZULJIN)
+                CheckZuljinGate(go);
         }
 
         void SummonHostage(uint8 num)
@@ -198,6 +200,13 @@ public:
         {
             if (AllBossesDone({ DATA_NALORAKK, DATA_AKILZON, DATA_JANALAI, DATA_HALAZZI }))
                 HandleGameObject(ObjectGuid::Empty, true, gate ? gate : GetGameObject(DATA_HEXLORD_GATE));
+        }
+
+        void CheckZuljinGate(GameObject* gate = nullptr)
+        {
+            if (GetBossState(DATA_HEXLORD) == DONE)
+                if (GameObject* zuljinGate = gate ? gate : GetGameObject(DATA_ZULJIN_GATE))
+                    zuljinGate->RemoveGameObjectFlag(GO_FLAG_LOCKED);
         }
 
         void SetData(uint32 type, uint32 data) override
@@ -319,8 +328,7 @@ public:
                         SummonHostage(type);
                         break;
                     case DATA_HEXLORD:
-                        if (GameObject* zuljinGate = GetGameObject(DATA_ZULJIN_GATE))
-                            zuljinGate->RemoveGameObjectFlag(GO_FLAG_LOCKED);
+                        CheckZuljinGate();
                         break;
                 }
 
