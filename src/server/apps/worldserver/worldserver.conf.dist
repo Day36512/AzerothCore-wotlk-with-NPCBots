@@ -4835,6 +4835,24 @@ InfiniteAmmo.Enabled = 0
 LeatherworkingDrums.DisableAboveLevel70 = 0
 
 #
+#    Glyph.ExtraSlots.RequiredItemQuality
+#        Description: Minimum item quality required when applying glyph items to the
+#                     ExtraGlyphSlots mastery slots. This does not affect normal
+#                     glyph slots.
+#                     Set to 3 to require rare/blue or better custom glyph items.
+#                     Values: 0 - Disabled
+#                             1 - Common/white
+#                             2 - Uncommon/green
+#                             3 - Rare/blue
+#                             4 - Epic/purple
+#                             5 - Legendary/orange
+#                             6 - Artifact
+#                             7 - Heirloom
+#        Default:     0 - (Disabled)
+
+Glyph.ExtraSlots.RequiredItemQuality = 0
+
+#
 ###################################################################################################
 
 ###################################################################################################
