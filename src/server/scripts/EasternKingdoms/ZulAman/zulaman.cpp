@@ -26,6 +26,10 @@
 #include "SpellScriptLoader.h"
 #include "zulaman.h"
 
+//npcbot
+#include "GridNotifiers.h"
+//end npcbot
+
 /*######
 ## npc_forest_frog
 ######*/
