@@ -2154,6 +2154,13 @@ namespace lfg
                     }
                 }
             }
+
+            //dungeon bots should automatically accept
+            for (auto& [guid, proposal] : proposal.players)
+            {
+                if (guid.IsCreature() && proposal.accept != LFG_ANSWER_AGREE)
+                    proposal.accept = LFG_ANSWER_AGREE;
+            }
         }
         //end npcbot
 
