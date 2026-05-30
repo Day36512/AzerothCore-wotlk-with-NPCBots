@@ -15061,6 +15061,15 @@ void Unit::Kill(Unit* killer, Unit* victim, bool durabilityLoss, WeaponAttackTyp
             {
                 creature->SetDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
             }
+            //npcbot
+            else if (killer && killer->IsCreature() && killer->ToCreature()->IsWandererBot() && !creature->IsNPCBotOrPet())
+            {
+                if (BotCfg::EnableWandererFreeLootSkinning() && creature->loot.loot_type != LOOT_SKINNING && !creature->IsPet() && creature->GetCreatureTemplate()->SkinLootId)
+                    if (LootTemplates_Skinning.HaveLootFor(creature->GetCreatureTemplate()->SkinLootId))
+                        creature->SetUnitFlag(UNIT_FLAG_SKINNABLE);
+                creature->AllLootRemovedFromCorpse();
+            }
+            //end npcbot
             else
             {
                 creature->AllLootRemovedFromCorpse();
