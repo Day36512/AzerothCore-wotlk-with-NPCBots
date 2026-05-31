@@ -25,6 +25,25 @@
 #include "WorldStateDefines.h"
 #include "WorldStatePackets.h"
 
+//npcbot
+#include "bot_ai.h"
+#include "botdatamgr.h"
+//end npcbot
+
+namespace
+{
+//npcbot
+static constexpr Milliseconds BG_DS_NPCBOT_TUNNEL_EXIT_TELEPORT_DELAY = 3s;
+static constexpr float BG_DS_NPCBOT_TUNNEL_EXIT_1_X = 1260.15f;
+static constexpr float BG_DS_NPCBOT_TUNNEL_EXIT_1_Y = 763.18f;
+static constexpr float BG_DS_NPCBOT_TUNNEL_EXIT_2_X = 1323.81f;
+static constexpr float BG_DS_NPCBOT_TUNNEL_EXIT_2_Y = 816.01f;
+static constexpr float BG_DS_NPCBOT_TUNNEL_EXIT_Z = 3.14f;
+static constexpr float BG_DS_NPCBOT_ARENA_CENTER_X = 1291.56f;
+static constexpr float BG_DS_NPCBOT_ARENA_CENTER_Y = 790.84f;
+//end npcbot
+}
+
 BattlegroundDS::BattlegroundDS()
 {
     BgObjects.resize(BG_DS_OBJECT_MAX);
@@ -74,6 +93,11 @@ void BattlegroundDS::PostUpdateImpl(uint32 diff)
                 if (Creature* waterSpout = GetBGCreature(i))
                     waterSpout->CastSpell(waterSpout, BG_DS_SPELL_FLUSH, true);
             break;
+        //npcbot
+        case BG_DS_EVENT_NPCBOT_TUNNEL_EXIT_TELEPORT:
+            TeleportGeneratedArenaOpponentBotsToTunnelExit();
+            break;
+        //end npcbot
         }
     }
 
@@ -93,6 +117,42 @@ void BattlegroundDS::PostUpdateImpl(uint32 diff)
     }
 }
 
+//npcbot
+void BattlegroundDS::TeleportGeneratedArenaOpponentBotsToTunnelExit()
+{
+    if (GetStatus() != STATUS_IN_PROGRESS)
+        return;
+
+    for (auto const& kv : GetBots())
+    {
+        Creature* bot = const_cast<Creature*>(BotDataMgr::FindBot(kv.first.GetEntry()));
+        if (!bot || !bot->IsNPCBot() || !bot->IsWandererBot())
+            continue;
+
+        if (!bot->IsAlive() || bot->FindMap() != GetBgMap())
+            continue;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai)
+            continue;
+
+        bool const useFirstExit = bot->GetExactDist2d(BG_DS_NPCBOT_TUNNEL_EXIT_1_X, BG_DS_NPCBOT_TUNNEL_EXIT_1_Y)
+            <= bot->GetExactDist2d(BG_DS_NPCBOT_TUNNEL_EXIT_2_X, BG_DS_NPCBOT_TUNNEL_EXIT_2_Y);
+
+        float const x = useFirstExit ? BG_DS_NPCBOT_TUNNEL_EXIT_1_X : BG_DS_NPCBOT_TUNNEL_EXIT_2_X;
+        float const y = useFirstExit ? BG_DS_NPCBOT_TUNNEL_EXIT_1_Y : BG_DS_NPCBOT_TUNNEL_EXIT_2_Y;
+        Position teleportPosition(x, y, BG_DS_NPCBOT_TUNNEL_EXIT_Z);
+        teleportPosition.SetOrientation(teleportPosition.GetAngle(BG_DS_NPCBOT_ARENA_CENTER_X, BG_DS_NPCBOT_ARENA_CENTER_Y));
+
+        ai->canUpdate = true;
+        ai->RemoveBotCommandState(BOT_COMMAND_STAY | BOT_COMMAND_FOLLOW | BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION);
+        bot->StopMoving();
+        bot->NearTeleportTo(teleportPosition);
+        ai->SetBotCommandState(BOT_COMMAND_ATTACK);
+    }
+}
+//end npcbot
+
 void BattlegroundDS::StartingEventCloseDoors()
 {
     for (uint32 i = BG_DS_OBJECT_DOOR_1; i <= BG_DS_OBJECT_DOOR_2; ++i)
@@ -108,6 +168,9 @@ void BattlegroundDS::StartingEventOpenDoors()
         SpawnBGObject(i, 90);
 
     _events.ScheduleEvent(BG_DS_EVENT_WATERFALL_WARNING, BG_DS_WATERFALL_TIMER_MIN, BG_DS_WATERFALL_TIMER_MAX);
+    //npcbot
+    _events.ScheduleEvent(BG_DS_EVENT_NPCBOT_TUNNEL_EXIT_TELEPORT, BG_DS_NPCBOT_TUNNEL_EXIT_TELEPORT_DELAY);
+    //end npcbot
     //for (uint8 i = 0; i < BG_DS_PIPE_KNOCKBACK_TOTAL_COUNT; ++i)
     //    _events.ScheduleEvent(BG_DS_EVENT_PIPE_KNOCKBACK, BG_DS_PIPE_KNOCKBACK_FIRST_DELAY + i * BG_DS_PIPE_KNOCKBACK_DELAY);
 

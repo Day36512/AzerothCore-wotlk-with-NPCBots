@@ -87,7 +87,11 @@ enum BattlegroundDSEvents
     BG_DS_EVENT_WATERFALL_OFF           = 3,
     BG_DS_EVENT_WATERFALL_KNOCKBACK     = 4,
 
-    BG_DS_EVENT_PIPE_KNOCKBACK          = 5
+    BG_DS_EVENT_PIPE_KNOCKBACK          = 5,
+
+    //npcbot
+    BG_DS_EVENT_NPCBOT_TUNNEL_EXIT_TELEPORT = 6
+    //end npcbot
 };
 
 class AC_GAME_API BattlegroundDS : public Arena
@@ -106,6 +110,9 @@ public:
 
 private:
     void PostUpdateImpl(uint32 diff) override;
+    //npcbot
+    void TeleportGeneratedArenaOpponentBotsToTunnelExit();
+    //end npcbot
 
     uint32 _pipeKnockBackTimer;
     uint8 _pipeKnockBackCount;
