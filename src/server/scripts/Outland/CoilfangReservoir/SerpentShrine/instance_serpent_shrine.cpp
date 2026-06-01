@@ -20,6 +20,7 @@
 #include "CreatureScript.h"
 #include "InstanceMapScript.h"
 #include "InstanceScript.h"
+#include "Log.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "SpellScriptLoader.h"
@@ -74,10 +75,29 @@ ObjectData const summonData[] =
 namespace
 {
     constexpr char const* CONFIG_COILFANG_FRENZY_ENABLE = "SerpentShrine.CoilfangFrenzy.Enable";
+    constexpr float VASHJ_SHIELD_GENERATOR_SEARCH_RANGE = 120.0f;
+    constexpr uint8 VASHJ_SHIELD_GENERATOR_COUNT = 4;
+
+    uint32 constexpr VashjShieldGeneratorEntries[VASHJ_SHIELD_GENERATOR_COUNT] =
+    {
+        GO_SHIELD_GENERATOR1,
+        GO_SHIELD_GENERATOR2,
+        GO_SHIELD_GENERATOR3,
+        GO_SHIELD_GENERATOR4
+    };
 
     bool AreCoilfangFrenzySpawnsEnabled()
     {
         return sConfigMgr->GetOption<bool>(CONFIG_COILFANG_FRENZY_ENABLE, true);
+    }
+
+    uint8 GetVashjShieldGeneratorIndex(uint32 entry)
+    {
+        for (uint8 i = 0; i < VASHJ_SHIELD_GENERATOR_COUNT; ++i)
+            if (VashjShieldGeneratorEntries[i] == entry)
+                return i;
+
+        return VASHJ_SHIELD_GENERATOR_COUNT;
     }
 }
 
@@ -98,6 +118,9 @@ public:
             LoadMinionData(minionData);
             LoadBossBoundaries(boundaries);
             LoadSummonData(summonData);
+
+            for (ObjectGuid& shieldGuid : _shieldGeneratorGUID)
+                shieldGuid.Clear();
 
             _aliveKeepersCount = 0;
             _frenzyCount = 0;
@@ -124,7 +147,7 @@ public:
                 case GO_SHIELD_GENERATOR2:
                 case GO_SHIELD_GENERATOR3:
                 case GO_SHIELD_GENERATOR4:
-                    _shieldGeneratorGUID[go->GetEntry() - GO_SHIELD_GENERATOR1] = go->GetGUID();
+                    _shieldGeneratorGUID[GetVashjShieldGeneratorIndex(go->GetEntry())] = go->GetGUID();
                     break;
                 case GO_LADY_VASHJ_BRIDGE_CONSOLE:
                 case GO_COILFANG_BRIDGE1:
@@ -184,14 +207,27 @@ public:
                 case DATA_ACTIVATE_SHIELD:
                     if (Creature* vashj = GetCreature(DATA_LADY_VASHJ))
                     {
-                        for (auto const& shieldGuid : _shieldGeneratorGUID)
+                        uint8 activatedGenerators = 0;
+                        for (uint8 i = 0; i < VASHJ_SHIELD_GENERATOR_COUNT; ++i)
                         {
-                            if (GameObject* gobject = instance->GetGameObject(shieldGuid))
+                            GameObject* gobject = instance->GetGameObject(_shieldGeneratorGUID[i]);
+                            if (!gobject || gobject->GetEntry() != VashjShieldGeneratorEntries[i])
+                            {
+                                gobject = vashj->FindNearestGameObject(VashjShieldGeneratorEntries[i], VASHJ_SHIELD_GENERATOR_SEARCH_RANGE, true);
+                                if (gobject)
+                                    _shieldGeneratorGUID[i] = gobject->GetGUID();
+                            }
+
+                            if (gobject)
                             {
                                 gobject->RemoveGameObjectFlag(GO_FLAG_NOT_SELECTABLE);
                                 vashj->SummonTrigger(gobject->GetPositionX(), gobject->GetPositionY(), gobject->GetPositionZ(), 0.0f, 0);
+                                ++activatedGenerators;
                             }
                         }
+
+                        if (activatedGenerators != VASHJ_SHIELD_GENERATOR_COUNT)
+                            LOG_WARN("scripts", "Lady Vashj shield activation found {}/{} shield generators. Missing generators may leave phase 2 shield state inconsistent.", activatedGenerators, VASHJ_SHIELD_GENERATOR_COUNT);
                     }
                     break;
             }
@@ -206,7 +242,7 @@ public:
         }
 
     private:
-        ObjectGuid _shieldGeneratorGUID[4];
+        ObjectGuid _shieldGeneratorGUID[VASHJ_SHIELD_GENERATOR_COUNT];
         uint32 _aliveKeepersCount;
         uint32 _frenzyCount;
     };

@@ -15,9 +15,11 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Config.h"
 #include "Containers.h"
 #include "CreatureScript.h"
 #include "Group.h"
+#include "Log.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "Spell.h"
@@ -34,6 +36,8 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <sstream>
+#include <string>
 #include <vector>
 
 enum Says
@@ -82,12 +86,67 @@ enum Misc
 
 namespace
 {
+    constexpr char const* CONFIG_TAINTED_ELEMENTAL_USE_OVERRIDE_SPAWNS = "SerpentShrine.LadyVashj.TaintedElemental.UseOverrideSpawnPositions";
+    constexpr char const* CONFIG_TAINTED_ELEMENTAL_OVERRIDE_SPAWNS = "SerpentShrine.LadyVashj.TaintedElemental.OverrideSpawnPositions";
+    constexpr char const* DEFAULT_TAINTED_ELEMENTAL_OVERRIDE_SPAWNS =
+        "3.56 -966.54 41.17; "
+        "29.70 -972.68 41.19; "
+        "52.66 -966.17 41.20; "
+        "73.83 -950.03 41.15; "
+        "79.93 -929.85 41.13; "
+        "67.11 -890.00 41.15; "
+        "28.62 -871.18 41.14; "
+        "3.59 -880.78 41.18; "
+        "-14.78 -901.12 41.17; "
+        "-21.61 -922.90 41.16; "
+        "-14.49 -947.85 41.17";
+
     constexpr float VASHJ_STATIC_CHARGE_SPREAD_MIN_RADIUS = 22.0f;
     constexpr float VASHJ_STATIC_CHARGE_SPREAD_MAX_RADIUS = 36.0f;
     constexpr float VASHJ_STATIC_CHARGE_SPREAD_STEP = 4.0f;
     constexpr float VASHJ_STATIC_CHARGE_SAFE_SCAN_RANGE = 95.0f;
     constexpr float VASHJ_STATIC_CHARGE_SAFE_MOVE_MAX_DIST = 80.0f;
     constexpr float VASHJ_PI = 3.14159265358979323846f;
+
+    std::vector<Position> ParseVashjTaintedElementalOverrideSpawns(std::string spawns)
+    {
+        for (char& ch : spawns)
+            if (ch == ',' || ch == ';' || ch == '|')
+                ch = ' ';
+
+        std::vector<Position> positions;
+        std::stringstream stream(spawns);
+        float x;
+        float y;
+        float z;
+
+        while (stream >> x >> y >> z)
+            positions.emplace_back(x, y, z, 0.0f);
+
+        return positions;
+    }
+
+    std::vector<Position> GetVashjTaintedElementalOverrideSpawns()
+    {
+        return ParseVashjTaintedElementalOverrideSpawns(sConfigMgr->GetOption<std::string>(
+            CONFIG_TAINTED_ELEMENTAL_OVERRIDE_SPAWNS, DEFAULT_TAINTED_ELEMENTAL_OVERRIDE_SPAWNS));
+    }
+
+    bool TrySummonVashjTaintedElementalFromOverride(Creature* vashj)
+    {
+        if (!vashj || !sConfigMgr->GetOption<bool>(CONFIG_TAINTED_ELEMENTAL_USE_OVERRIDE_SPAWNS, false))
+            return false;
+
+        std::vector<Position> const positions = GetVashjTaintedElementalOverrideSpawns();
+        if (positions.empty())
+        {
+            LOG_WARN("scripts", "Lady Vashj Tainted Elemental override spawns are enabled, but {} has no valid coordinate triples. Falling back to trigger-based spawns.", CONFIG_TAINTED_ELEMENTAL_OVERRIDE_SPAWNS);
+            return false;
+        }
+
+        Position const& position = Acore::Containers::SelectRandomContainerElement(positions);
+        return vashj->SummonCreature(NPC_TAINTED_ELEMENTAL, position.GetPositionX(), position.GetPositionY(), position.GetPositionZ(), position.GetAngle(vashj), TEMPSUMMON_CORPSE_TIMED_DESPAWN, 30 * IN_MILLISECONDS) != nullptr;
+    }
 
     bool IsVashjNpcBotTank(Unit* unit)
     {
@@ -567,7 +626,9 @@ struct boss_lady_vashj : public BossAI
             context.Repeat(60s);
         }).Schedule(50s, [this](TaskContext context)
         {
-            DoCastSelf(SPELL_SUMMON_TAINTED_ELEMENTAL, true);
+            if (!TrySummonVashjTaintedElementalFromOverride(me))
+                DoCastSelf(SPELL_SUMMON_TAINTED_ELEMENTAL, true);
+
             context.Repeat(50s);
         }).Schedule(1s, [this](TaskContext context)
         {
