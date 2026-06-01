@@ -5063,6 +5063,41 @@ Karazhan.Chess.Cheats.SoloBuff.MaxTargets = 4
 ###################################################################################################
 
 ###################################################################################################
+# SERPENTSHRINE CAVERN - HYDROSS WATER TOMB
+#
+# Hydross now selects Water Tomb and Vile Sludge targets from nearby players and NPCBots, while
+# excluding the current tank and marked/tank-role NPCBots.
+#
+###################################################################################################
+
+#
+#    SerpentShrine.Hydross.WaterTomb.DirectTargetOnly
+#
+#        Description: When enabled, only the direct Water Tomb target keeps the Water Tomb aura.
+#                     Any nearby player or NPCBot hit by the splash has the aura stripped.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+
+SerpentShrine.Hydross.WaterTomb.DirectTargetOnly = 1
+
+#
+#    SerpentShrine.Hydross.WaterTomb.DamageMultiplier
+#
+#        Description: Multiplies Water Tomb periodic damage after normal spell calculation.
+#                     1.0 keeps default damage, 0.5 halves it, and 0 disables the DoT damage.
+#                     Values below 0 are clamped to 0, and values above 1 are clamped to 1.
+#
+#        Default:     0.5
+#
+
+SerpentShrine.Hydross.WaterTomb.DamageMultiplier = 0.5
+
+#
+###################################################################################################
+
+###################################################################################################
 # THE MECHANAR - PATHALEON THE CALCULATOR MIND CONTROL REPLACEMENT
 #
 # Pathaleon's Domination remains enabled by default. The boss script now limits Domination to

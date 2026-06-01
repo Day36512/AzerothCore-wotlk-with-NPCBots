@@ -912,6 +912,7 @@ INSERT INTO `spell_script_names` VALUES
 (38196,'spell_anetheron_vampiric_aura'),
 (38215,'spell_hydross_mark_of_hydross'),
 (38219,'spell_hydross_mark_of_hydross'),
+(38235,'spell_hydross_water_tomb'),
 (38223,'spell_q10769_dissension_amongst_the_ranks'),
 (38224,'spell_q10769_dissension_amongst_the_ranks'),
 (38241,'spell_lady_vashj_summons'),

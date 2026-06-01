@@ -15,11 +15,22 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Config.h"
+#include "Containers.h"
 #include "CreatureScript.h"
+#include "Group.h"
+#include "Player.h"
 #include "ScriptedCreature.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "SpellScriptLoader.h"
 #include "serpent_shrine.h"
 #include "SpellScript.h"
+#include "ThreatManager.h"
+#include "bot_ai.h"
+#include "botmgr.h"
+
+#include <vector>
 
 enum Talk
 {
@@ -84,6 +95,210 @@ enum WaterElementalPathIds
     PATH_CENTER                     = 6,
     PATH_END                        = 13
 };
+
+namespace
+{
+    constexpr char const* CONFIG_WATER_TOMB_DIRECT_TARGET_ONLY = "SerpentShrine.Hydross.WaterTomb.DirectTargetOnly";
+    constexpr char const* CONFIG_WATER_TOMB_DAMAGE_MULTIPLIER = "SerpentShrine.Hydross.WaterTomb.DamageMultiplier";
+
+    bool IsWaterTombDirectTargetOnlyEnabled()
+    {
+        return sConfigMgr->GetOption<bool>(CONFIG_WATER_TOMB_DIRECT_TARGET_ONLY, true);
+    }
+
+    float GetWaterTombDamageMultiplier()
+    {
+        float multiplier = sConfigMgr->GetOption<float>(CONFIG_WATER_TOMB_DAMAGE_MULTIPLIER, 0.5f);
+        if (multiplier < 0.0f)
+            return 0.0f;
+
+        if (multiplier > 1.0f)
+            return 1.0f;
+
+        return multiplier;
+    }
+
+    bool IsHydrossNpcBotTank(Unit* unit)
+    {
+        Creature* creature = unit ? unit->ToCreature() : nullptr;
+        if (!creature || !creature->IsNPCBot())
+            return false;
+
+        bot_ai* ai = creature->GetBotAI();
+        return ai && (ai->IsTank() || ai->IsOffTank());
+    }
+
+    bool IsHydrossPlayerMarkedTank(Player* player)
+    {
+        Group* group = player ? player->GetGroup() : nullptr;
+        if (!group)
+            return false;
+
+        for (Group::member_citerator itr = group->GetMemberSlots().begin(); itr != group->GetMemberSlots().end(); ++itr)
+            if (itr->guid == player->GetGUID())
+                return itr->flags & MEMBER_FLAG_MAINTANK;
+
+        return false;
+    }
+
+    bool IsHydrossTank(Unit* unit, Creature* source)
+    {
+        if (!unit)
+            return false;
+
+        if (source && (unit == source->GetThreatMgr().GetCurrentVictim() || unit == source->GetThreatMgr().GetLastVictim() || unit == source->GetVictim()))
+            return true;
+
+        if (IsHydrossNpcBotTank(unit))
+            return true;
+
+        if (Player* player = unit->ToPlayer())
+            return IsHydrossPlayerMarkedTank(player);
+
+        return false;
+    }
+
+    bool IsHydrossValidRandomTarget(Creature* source, Unit* unit, float range)
+    {
+        if (!source || !unit || !unit->IsInWorld() || !unit->IsAlive())
+            return false;
+
+        if (!unit->IsPlayer() && !unit->IsNPCBot())
+            return false;
+
+        if (unit->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
+            return false;
+
+        if (IsHydrossTank(unit, source))
+            return false;
+
+        if (!unit->IsInMap(source) || !unit->InSamePhase(source))
+            return false;
+
+        if (range > 0.0f && !source->IsWithinDistInMap(unit, range))
+            return false;
+
+        if (!source->IsValidAttackTarget(unit) || !source->CanSeeOrDetect(unit) || !source->IsWithinLOSInMap(unit))
+            return false;
+
+        return true;
+    }
+
+    void AddHydrossRandomTarget(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, Unit* unit, float range)
+    {
+        if (!IsHydrossValidRandomTarget(source, unit, range))
+            return;
+
+        if (!seen.insert(unit->GetGUID()).second)
+            return;
+
+        targets.push_back(unit);
+    }
+
+    Player* GetHydrossOwnerPlayer(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player;
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotOwner() : nullptr;
+    }
+
+    Group* GetHydrossGroup(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player->GetGroup();
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotGroup() : nullptr;
+    }
+
+    void AddHydrossOwnedBots(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, Player* player, float range)
+    {
+        if (!player || !player->HaveBot())
+            return;
+
+        BotMgr* botMgr = player->GetBotMgr();
+        if (!botMgr)
+            return;
+
+        for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+            AddHydrossRandomTarget(source, targets, seen, pair.second, range);
+    }
+
+    void AddHydrossThreatTargets(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, float range)
+    {
+        if (!source)
+            return;
+
+        for (ThreatReference const* ref : source->GetThreatMgr().GetSortedThreatList())
+        {
+            if (!ref || !ref->IsAvailable())
+                continue;
+
+            AddHydrossRandomTarget(source, targets, seen, ref->GetVictim(), range);
+        }
+    }
+
+    float GetHydrossSpellRange(uint32 spellId)
+    {
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+        return spellInfo ? spellInfo->GetMaxRange(false) : 0.0f;
+    }
+
+    std::vector<Unit*> GatherHydrossRandomTargets(Creature* source, uint32 spellId)
+    {
+        std::vector<Unit*> targets;
+        GuidSet seen;
+
+        if (!source)
+            return targets;
+
+        float const range = GetHydrossSpellRange(spellId);
+        Unit* seed = source->GetThreatMgr().GetCurrentVictim();
+        if (!seed)
+            seed = source->GetVictim();
+
+        if (Group* group = GetHydrossGroup(seed))
+        {
+            for (Unit* member : BotMgr::GetAllGroupMembers(group))
+            {
+                AddHydrossRandomTarget(source, targets, seen, member, range);
+
+                if (Player* player = member ? member->ToPlayer() : nullptr)
+                    AddHydrossOwnedBots(source, targets, seen, player, range);
+            }
+        }
+        else
+        {
+            AddHydrossRandomTarget(source, targets, seen, seed, range);
+
+            if (Player* player = GetHydrossOwnerPlayer(seed))
+            {
+                AddHydrossRandomTarget(source, targets, seen, player, range);
+                AddHydrossOwnedBots(source, targets, seen, player, range);
+            }
+        }
+
+        AddHydrossThreatTargets(source, targets, seen, range);
+        return targets;
+    }
+
+    SpellCastResult CastHydrossRandomNonTankTarget(Creature* source, uint32 spellId, bool triggered)
+    {
+        std::vector<Unit*> targets = GatherHydrossRandomTargets(source, spellId);
+        if (targets.empty())
+            return SPELL_FAILED_BAD_TARGETS;
+
+        return source->CastSpell(Acore::Containers::SelectRandomContainerElement(targets), spellId, triggered);
+    }
+}
 
 struct boss_hydross_the_unstable : public BossAI
 {
@@ -167,7 +382,7 @@ struct boss_hydross_the_unstable : public BossAI
                 context.Repeat(15s);
             }).Schedule(12150ms, GROUP_ABILITIES, [this](TaskContext context)
             {
-                DoCastRandomTarget(SPELL_VILE_SLUDGE, 0, 0.0f, true, true);
+                CastHydrossRandomNonTankTarget(me, SPELL_VILE_SLUDGE, true);
                 context.Repeat(9700ms, 32800ms);
             });
         }
@@ -199,7 +414,7 @@ struct boss_hydross_the_unstable : public BossAI
                 context.Repeat(15s);
             }).Schedule(12150ms, GROUP_ABILITIES, [this](TaskContext context)
             {
-                DoCastRandomTarget(SPELL_WATER_TOMB, 0, 0.0f, true, true);
+                CastHydrossRandomNonTankTarget(me, SPELL_WATER_TOMB, true);
                 context.Repeat(9700ms, 32800ms);
             });
         }
@@ -353,10 +568,55 @@ class spell_hydross_mark_of_hydross : public AuraScript
     }
 };
 
+class spell_hydross_water_tomb : public SpellScript
+{
+    PrepareSpellScript(spell_hydross_water_tomb);
+
+    void KeepAuraOnDirectTargetOnly(SpellEffIndex /*effIndex*/)
+    {
+        if (!IsWaterTombDirectTargetOnlyEnabled())
+            return;
+
+        Unit* target = GetHitUnit();
+        Unit* explicitTarget = GetExplTargetUnit();
+        if (!target || !explicitTarget || target == explicitTarget)
+            return;
+
+        if (!target->IsPlayer() && !target->IsNPCBot())
+            return;
+
+        PreventHitAura();
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_hydross_water_tomb::KeepAuraOnDirectTargetOnly, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
+        OnEffectHitTarget += SpellEffectFn(spell_hydross_water_tomb::KeepAuraOnDirectTargetOnly, EFFECT_1, SPELL_EFFECT_APPLY_AURA);
+    }
+};
+
+class spell_hydross_water_tomb_aura : public AuraScript
+{
+    PrepareAuraScript(spell_hydross_water_tomb_aura);
+
+    void CalculatePeriodicDamage(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    {
+        amount = int32(float(amount) * GetWaterTombDamageMultiplier());
+        if (amount < 0)
+            amount = 0;
+    }
+
+    void Register() override
+    {
+        DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_hydross_water_tomb_aura::CalculatePeriodicDamage, EFFECT_1, SPELL_AURA_PERIODIC_DAMAGE);
+    }
+};
+
 void AddSC_boss_hydross_the_unstable()
 {
     RegisterSerpentShrineAI(boss_hydross_the_unstable);
     RegisterSpellScript(spell_hydross_cleansing_field_aura);
     RegisterSpellScript(spell_hydross_cleansing_field_command);
     RegisterSpellScript(spell_hydross_mark_of_hydross);
+    RegisterSpellAndAuraScriptPair(spell_hydross_water_tomb, spell_hydross_water_tomb_aura);
 }

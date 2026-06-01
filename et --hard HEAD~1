@@ -1,0 +1,141 @@
+[33macb1bf728[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mnpcbots_3.3.5[m[33m)[m Move Tempest Keep boss scripts to custom overrides
+[33m8b4a48ddd[m Help Dalaran arena NPCBots exit tunnels
+[33me9e82efe3[m[33m ([m[1;33mtag: [m[1;33mstable-after-trickerer-merge-2026-05-29[m[33m, [m[1;33mtag: [m[1;33mintegration-trickerer-npcbots-2026-05-29-builds[m[33m, [m[1;31morigin/npcbots_3.3.5[m[33m, [m[1;32mintegration/trickerer-npcbots-2026-05-29[m[33m)[m Resolve Trickerer NPCBot merge conflicts
+[33m64d932b1e[m[33m ([m[1;32mbackup/local-npcbots-before-upstream-merge-2026-05-29[m[33m)[m Update prior to pull
+[33m22fea24cd[m[33m ([m[1;31mupstream/npcbots_3.3.5[m[33m, [m[1;31mupstream/HEAD[m[33m)[m NPCBots: Warrior: Do not cast Vigilance on tanks
+[33mf74165fd4[m Fix save state for hex lord gate
+[33m4f86ad491[m Remove Zuljin eagle cyclone bot dodge
+[33mafd7cf408[m Prioritize raid totems for NPCBot DPS
+[33m751b9f6ba[m Gate extra glyph slots by item quality
+[33m38a4236f0[m Add server-backed extra glyph slots
+[33m4cc150387[m Glyph prep commit
+[33m261545a87[m Druid bot prepull hot fix
+[33m0a1590e5a[m Config key added for enfeeble targets
+[33m300b44c27[m Actual second pass Prince M
+[33m63b762c6a[m Second pass Prince M
+[33me845dca07[m Aran Finalized
+[33mf5453700b[m Fucking Aran
+[33mcab1dead7[m Fix aran arcane explosion release
+[33me57dbf5cb[m Simplify Aran Arcane Explosion bot timing
+[33m4614ce719[m Harden Aran Arcane Explosion reset cleanup
+[33m09cd3dfa9[m : Fix Shade of Aran NPCBot arcane escape timing
+[33m59ad19248[m Adjust Nightbane air phase thresholds
+[33m16abf490e[m Add NPCBot targeting support to Nightbane
+[33m07f2229ac[m Gate SmartAI caster chase fallback by main spell
+[33m565a1d785[m Add configurable Pathaleon Domination targeting
+[33ma7c66f502[m Add experimental strict creature chase pathing and mmap tuning
+[33mb96e40f2a[m Updates: Harden NPCBot gossip rename validation
+[33m7482c3924[m Rename option for bots gossip
+[33m84f64874a[m Prior to name gossip add
+[33me1c292b4e[m Gate NPCBot spawn command behind config
+[33mc55d94e3c[m Fix NPCBot arena gating and AV objective routing
+[33me51f40bb7[m Add configurable AV NPCBot objective roles
+[33ma9cc739dc[m Fix arena bot positioning and gate leatherworking drums
+[33m78cb37ce6[m Add generated NPCBot rated arena opponents
+[33mbd6441e43[m Add configurable arena team creation rules
+[33m94ed3c10b[m Improve Akil'zon bot storm handling and timed bear loot
+[33m18d740453[m NPCBots: Add bonus damage calculations for shaman spells (#34)
+[33m2797aaecf[m Merge 3.3.5 to npcbots_3.3.5
+[33m8ae245c0d[m Add NPCBot support for Zul'Aman encounters
+[33mb99d6c769[m[33m ([m[1;31mupstream/3.3.5[m[33m)[m chore(DB): import pending files
+[33m90f635b14[m fix(DB/SAI): Deadliest Trap Ever Laid counter survives evade (#25923)
+[33m2d92b338d[m feat(Core/SmartAI): add SMART_ACTION_INC_DATA (242) (#25922)
+[33m39038d1f3[m Expose NPCBot spell power bonuses to spell scaling
+[33m027306fa0[m fix(Core/Player): increase jumpRadius of melee chain to 10y (#25815)
+[33m15f5b7029[m Add IndividualProgression Zul'Aman config
+[33mcd26b58fd[m Add configurable Karazhan chess cheat events
+[33mf755ad70c[m Updates_chess
+[33meda634316[m chore(DB): import pending files
+[33m7a942fea3[m fix(DB/CompletionText) - Corrected the text for the quest "Vejrek"  (#25812)
+[33m0462b8ca0[m Updates
+[33m656561008[m Updates232
+[33m0c9d7a6da[m Updates
+[33me944605b9[m fix(Core/SotA): stuck-in-combat after damaging cannons/demolishers (#25905)
+[33m169e31f2c[m feat(Core/Groups): mail roll-won items when inventory is full (#25909)
+[33ma5c11d081[m chore(DB): import pending files
+[33mb9e2bcd68[m fix(DB/Creature): Add Kodo Packs and waypoints. (#25892)
+[33me897d22e8[m chore(DB): import pending files
+[33m2a48cbc9e[m fix(DB/Creature): Sniffed Values for 'Ludin Farrow' spawns (#25899)
+[33med3a6a1bd[m fix(Scripts/GruulsLair): Fix time unit typo (#25900)
+[33m9a655ab4a[m Maulgar
+[33mefc80edd2[m Maggy's Lair
+[33m771253f43[m chore(CMake):  enable standard conforming MSVC preprocessor (#25828)
+[33mdfa100986[m fix(Core/Chat): fix crash when using GetModuleString() from console (#25896)
+[33m3474fb94f[m chore(DB): import pending files
+[33me9840ab60[m fix(DB/SAI): Lost Soul now have 4 spawn points and right behaviors. (#25895)
+[33m47046c4cb[m chore(vscode): C++20 (#25891)
+[33mf79b59426[m fix(Scripts/CoS): prevent Arthas from spamming Exorcism (#25889)
+[33m7042450ed[m Update17
+[33me5ba1bde3[m chore(DB): import pending files
+[33m693e20535[m fix(DB/Creature): Add Baron Longshore missing spawnpoints and pool. (#25886)
+[33md7b037f24[m chore(DB): import pending files
+[33m36234f03a[m fix(DB/SAI): Solve waypoint and behavior issues for Fizzle Darkstorm and other creatures near him. (#25888)
+[33m08a01ab6f[m chore(DB): import pending files
+[33m53f2c04b3[m fix(DB/Creature): Remove 'Dead Alliance Soldier' from Icecrown spawn (#25827)
+[33m7e229e99f[m fix(Scripts/HoR): drop player combat with Arthas on chase end (#25884)
+[33m6a21c7419[m chore(DB): import pending files
+[33m5cdd837ed[m fix(DB/Loot): equalize gem drop chance of Small Velvet Bag (#25883)
+[33m00bbc7c6b[m chore(DB): import pending files
+[33m1624d908e[m fix(DB/Spells): Scourgebane Infusion and Scourgebane Draught should stack (#25823)
+[33m243016826[m fix(Core/Vehicle): parachute on vehicle exit (#25848)
+[33m380f6cb60[m fix(Core/Spells): Stop JoL/JoW from procing caster's heal trinkets (#25881)
+[33m108039fdb[m chore(DB): import pending files
+[33m32759d707[m fix(DB/Quest): Reward bag contains 0 gems (#25858)
+[33m56ba43501[m fix(DB/Text): SMART_ACTION_TALK error worldserver. (#25666)
+[33maf3f304a3[m chore(DB): import pending files
+[33m5e3050c2d[m feat(Core/DB): split debug command RBAC into three permission tiers (#25882)
+[33m48f37cc3d[m chore(DB): import pending files
+[33m6350a611d[m fix(DB/Commands): Help text for 7 missing commands (#25878)
+[33m9722cd4f1[m fix(Scripts/Spells): Mark of Conquest energize wrong spell ID (#25877)
+[33mb97fc0a87[m fix(DB/SAI): The Second Trial champions not attacking (#25879)
+[33mc3214bade[m fix(DB/Spell): Reckoning extra attack on miss/dodge/parry (#25880)
+[33m8f293d00e[m feat(Core): add OnPlayerQuestAccept hook to PlayerScript (#25875)
+[33m5f5c287cd[m feat(Core/Battlefield): Add OnBattlefieldPlayerKill script hook (#25871)
+[33mac12f5d27[m fix(Core/Battlefield): fire OnBattlefieldPlayerLeaveZone before HasPlayer guard (#25870)
+[33md45e01e1e[m chore(DB): import pending files
+[33m9cdcccff3[m fix(DB/PlayerShapeshiftModel): Night Elf shapeshift models (#25862)
+[33m076016836[m fix(Core/Player): preserve extra_flags when GM-state restore gate skips (#25861)
+[33m84a66e345[m chore(Docker): Upgrade Ubuntu to 24.04 (#24459)
+[33mc0c86d21d[m chore(DB): import pending files
+[33m9d182cf12[m fix(DB/Text): One of the Nifflevar in Howling Fjord shouts in Orcish (#25857)
+[33mf0f61042e[m chore(DB): import pending files
+[33mcefdcb92b[m fix(DB/SAI): Add Trok and Karu behavior. (#25853)
+[33m04dff5141[m fix(Scripts/Karazhan): fix Moroes guests not respawning on evade (#25851)
+[33mfd8594514[m Merge 3.3.5 to npcbots_3.3.5
+[33m46a649c6f[m chore(DB): import pending files
+[33mde9461976[m fix(DB/SAI): Rampage! chain bunnies not arming on spawn (#25808)
+[33m0b30b3f99[m fix(Scripts/Gundrak): Dispell puncture aura from players after killing Gal'darah (#25830)
+[33m61e99f9c4[m fix(Core/Maps): fix pooled creature/GO respawn in instanced maps (#25826)
+[33m868ba119d[m NPCBots: Fix build 1
+[33mb1e226db9[m chore(DB): import pending files
+[33m485769354[m feat(Scripts/Commands): add `respawn guid/entry' command and expand `list resp… (#25787)
+[33m1dd2236a0[m fix(Scripts/Spells): Fix 'still in combat' status after hunter tames a beast (in quest) (#25811)
+[33m408bb1ab5[m NPCBots: Druid: Rewrite pre-pull healing (simplicity & bugfixes)
+[33m96d08c22d[m NPCBots: Extend pull order duration to 5 seconds
+[33md5397367e[m NPCBots: Fix copypaste errors. Thanks @Day36512
+[33mfb0cc377d[m NPCBots: Death Knight: Fix ANTI_MAGIC_ZONE_1 spell ID (#31)
+[33m4ccf0d7a2[m NPCBots: Warrior: Fix Poleaxe Specialization checking Protection spec instead of Arms (#30)
+[33m4098fe391[m NPCBots: Implement pre-pull healing for Druid bot AI (#32)
+[33m277418c8b[m Updates
+[33mcb999cf88[m fix(ICC/Putricide): add Mutated Plague cast in P3 (#25802)
+[33m3678096ef[m fix(Scripts/Ulduar): kologarn eyebeam emote being visible to all players (#25807)
+[33m3720bc585[m chore(gitignore): optimize Claude ignores (#25796)
+[33m1a951f5e7[m chore(DB): import pending files
+[33ma9571bcc5[m feat(Scripts/Commands): show level on character deleted list, show characters from most recent (#25791)
+[33m40a52c885[m feat(Core/Scripts): Add ChatLog.Enable config to chat_log.cpp (#25795)
+[33m925912246[m chore(DB): import pending files
+[33m7e13d17cc[m feat(Core/Config): Resurrection durability loss percentage (#25715)
+[33mf4be7b1e2[m fix(DB/Quest): On Ruby Wings - prevent Antiok idle despawn pre-engage (#25785)
+[33mbf7b54c89[m chore(DB): import pending files
+[33m5df0282ba[m fix(Core/Commands): limit .character deleted list results to 50 (#25779)
+[33mc03fdf101[m chore(DB): import pending files
+[33m64d0b993a[m fix(Scripts/RFD): make Belnistrasz's Brazier persist after his despawn (#25782)
+[33m6c4f96de8[m fix(DB/SmartAI): fix excessive amount of Flamebringers spawns (#25780)
+[33m06a9c8146[m Merge branch '3.3.5' into npcbots_3.3.5
+[33m1f24863e5[m fix(Scripts/UP): fix "My Girl Loves to Skadi All the Time" achievement (#25770)
+[33m94a096d77[m chore(DB): import pending files
+[33me72d8e94d[m fix(Core/RBAC): use filter perm to gate .whispers command (#25771)
+[33mb71ff9787[m fix(Scripts/HoR): The correct method to fix Quel'Delar freeze (#25756)
+[33mfa2ce2b12[m fix(Core/Vehicles): Remove incorrect passenger->vehicle threat redirection (#25719)
+[33mdb4bf267a[m fix(Core/Player): Recheck shapeshift bonus auras on spec swap (#25764)
+[33mfc4582c4e[m chore(DB): import pending files
