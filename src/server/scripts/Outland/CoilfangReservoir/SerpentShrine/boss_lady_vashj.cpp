@@ -107,6 +107,9 @@ namespace
     constexpr float VASHJ_STATIC_CHARGE_SAFE_SCAN_RANGE = 95.0f;
     constexpr float VASHJ_STATIC_CHARGE_SAFE_MOVE_MAX_DIST = 80.0f;
     constexpr float VASHJ_PI = 3.14159265358979323846f;
+    constexpr uint32 VASHJ_PLAYER_WIPE_CHECK_INTERVAL_MS = 1000;
+    constexpr float VASHJ_BOT_WIPE_KILL_RANGE = 150.0f;
+    constexpr char const* VASHJ_PLAYER_WIPE_YELL = "Your champions have fallen; their servants are nothing without them.";
 
     std::vector<Position> ParseVashjTaintedElementalOverrideSpawns(std::string spawns)
     {
@@ -489,6 +492,81 @@ namespace
         ai->SetBotCommandState(BOT_COMMAND_STAY);
         ai->BotMovement(BOT_MOVE_POINT, &destination, nullptr, true);
     }
+
+    bool HasLivingPlayerInVashjEncounter(Creature* vashj)
+    {
+        if (!vashj || !vashj->GetMap())
+            return false;
+
+        for (MapReference const& ref : vashj->GetMap()->GetPlayers())
+        {
+            Player* player = ref.GetSource();
+            if (!player || !player->IsInWorld() || !player->IsAlive())
+                continue;
+
+            if (player->IsInMap(vashj) && player->InSamePhase(vashj))
+                return true;
+        }
+
+        return false;
+    }
+
+    void KillVashjEncounterBotUnit(Creature* vashj, Unit* unit, GuidSet& killed, bool requireEncounterRange)
+    {
+        if (!vashj || !unit || !unit->IsAlive())
+            return;
+
+        if (!unit->IsNPCBot() && !unit->IsNPCBotPet())
+            return;
+
+        if (!unit->IsInMap(vashj) || !unit->InSamePhase(vashj))
+            return;
+
+        if (requireEncounterRange && !vashj->IsWithinDistInMap(unit, VASHJ_BOT_WIPE_KILL_RANGE))
+            return;
+
+        if (!killed.insert(unit->GetGUID()).second)
+            return;
+
+        Unit::Kill(vashj, unit, false);
+    }
+
+    void KillVashjEncounterBotAndPet(Creature* vashj, Creature* bot, GuidSet& killed, bool requireEncounterRange)
+    {
+        if (!bot)
+            return;
+
+        KillVashjEncounterBotUnit(vashj, bot, killed, requireEncounterRange);
+
+        if (bot->IsNPCBot())
+            KillVashjEncounterBotUnit(vashj, bot->GetBotsPet(), killed, requireEncounterRange);
+    }
+
+    void KillVashjEncounterBots(Creature* vashj)
+    {
+        if (!vashj || !vashj->GetMap())
+            return;
+
+        GuidSet killed;
+
+        for (ThreatReference const* ref : vashj->GetThreatMgr().GetSortedThreatList())
+            if (ref && ref->IsAvailable())
+                KillVashjEncounterBotUnit(vashj, ref->GetVictim(), killed, false);
+
+        for (MapReference const& ref : vashj->GetMap()->GetPlayers())
+        {
+            Player* player = ref.GetSource();
+            if (!player || !player->HaveBot())
+                continue;
+
+            BotMgr* botMgr = player->GetBotMgr();
+            if (!botMgr)
+                continue;
+
+            for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+                KillVashjEncounterBotAndPet(vashj, pair.second, killed, true);
+        }
+    }
 }
 
 struct boss_lady_vashj : public BossAI
@@ -504,6 +582,8 @@ struct boss_lady_vashj : public BossAI
         _recentlySpoken = false;
         _batTimer = 20s;
         _playerAngle = 0.0f;
+        _playerWipeCheckTimer = VASHJ_PLAYER_WIPE_CHECK_INTERVAL_MS;
+        _playerWipeResetting = false;
         BossAI::Reset();
 
         ScheduleHealthCheckEvent(70, [&]{
@@ -539,6 +619,8 @@ struct boss_lady_vashj : public BossAI
         BossAI::JustEngagedWith(who);
         Talk(SAY_AGGRO);
         DoCastSelf(SPELL_REMOVE_TAINTED_CORES, true);
+        _playerWipeCheckTimer = VASHJ_PLAYER_WIPE_CHECK_INTERVAL_MS;
+        _playerWipeResetting = false;
         ScheduleSpells();
     }
 
@@ -655,6 +737,24 @@ struct boss_lady_vashj : public BossAI
 
     void UpdateAI(uint32 diff) override
     {
+        if (!_playerWipeResetting && instance && instance->GetBossState(DATA_LADY_VASHJ) == IN_PROGRESS)
+        {
+            if (_playerWipeCheckTimer <= diff)
+            {
+                _playerWipeCheckTimer = VASHJ_PLAYER_WIPE_CHECK_INTERVAL_MS;
+                if (!HasLivingPlayerInVashjEncounter(me))
+                {
+                    _playerWipeResetting = true;
+                    me->Yell(VASHJ_PLAYER_WIPE_YELL, LANG_UNIVERSAL);
+                    KillVashjEncounterBots(me);
+                    EnterEvadeMode(EVADE_REASON_NO_HOSTILES);
+                    return;
+                }
+            }
+            else
+                _playerWipeCheckTimer -= diff;
+        }
+
         if (!UpdateVictim())
             return;
 
@@ -685,8 +785,10 @@ struct boss_lady_vashj : public BossAI
 
 private:
     float _playerAngle;
+    uint32 _playerWipeCheckTimer;
     bool _recentlySpoken;
     bool _intro;
+    bool _playerWipeResetting;
     int32 _count;
     std::chrono::seconds _batTimer;
 };
