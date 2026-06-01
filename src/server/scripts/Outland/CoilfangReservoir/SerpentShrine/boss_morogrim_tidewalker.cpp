@@ -25,6 +25,7 @@
 #include "SpellScript.h"
 #include "ThreatManager.h"
 #include "bot_ai.h"
+#include "botmgr.h"
 
 enum Yells
 {
@@ -59,6 +60,9 @@ const uint32 waterGlobuleIds[4] = {SPELL_SUMMON_WATER_GLOBULE_1, SPELL_SUMMON_WA
 
 namespace
 {
+    constexpr uint32 NPC_TIDEWALKER_LURKER = 21920;
+    constexpr float MOROGRIM_MURLOC_TANK_THREAT_NUDGE = 5000.0f;
+
     bool IsMorogrimNpcBotTank(Unit* unit)
     {
         Creature* creature = unit ? unit->ToCreature() : nullptr;
@@ -103,6 +107,58 @@ namespace
     {
         return unit && unit->IsAlive() && (unit->IsPlayer() || unit->IsNPCBot());
     }
+
+    Group* GetMorogrimGroup(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player->GetGroup();
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotGroup() : nullptr;
+    }
+
+    bool TryAddMorogrimMurlocTankThreat(Creature* boss, Creature* summon, Unit* target, GuidSet& seen)
+    {
+        if (!target || !target->IsAlive() || !target->IsInMap(summon) || !IsMorogrimTank(target, boss))
+            return false;
+
+        if (!seen.insert(target->GetGUID()).second)
+            return false;
+
+        summon->AddThreat(target, MOROGRIM_MURLOC_TANK_THREAT_NUDGE);
+        return true;
+    }
+
+    void AddMorogrimMurlocTankThreat(Creature* boss, Creature* summon)
+    {
+        if (!boss || !summon || summon->GetEntry() != NPC_TIDEWALKER_LURKER)
+            return;
+
+        GuidSet seen;
+        bool addedThreat = false;
+        Unit* seed = boss->GetThreatMgr().GetCurrentVictim();
+        if (!seed)
+            seed = boss->GetVictim();
+
+        if (Group* group = GetMorogrimGroup(seed))
+            for (Unit* member : BotMgr::GetAllGroupMembers(group))
+                addedThreat |= TryAddMorogrimMurlocTankThreat(boss, summon, member, seen);
+
+        for (ThreatReference const* ref : boss->GetThreatMgr().GetSortedThreatList())
+        {
+            if (!ref || !ref->IsAvailable())
+                continue;
+
+            addedThreat |= TryAddMorogrimMurlocTankThreat(boss, summon, ref->GetVictim(), seen);
+        }
+
+        if (!addedThreat)
+            if (Unit* victim = boss->GetVictim())
+                summon->AddThreat(victim, MOROGRIM_MURLOC_TANK_THREAT_NUDGE);
+    }
 }
 
 struct boss_morogrim_tidewalker : public BossAI
@@ -134,6 +190,7 @@ struct boss_morogrim_tidewalker : public BossAI
     {
         summons.Summon(summon);
         summon->SetInCombatWithZone();
+        AddMorogrimMurlocTankThreat(me, summon);
     }
 
     void JustDied(Unit* killer) override

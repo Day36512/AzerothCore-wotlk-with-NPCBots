@@ -8072,6 +8072,24 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
             }
         }
     }
+    // Serpentshrine Cavern - Morogrim Tidewalker Water Globules
+    else if (unit->GetMapId() == MAP_COILFANG_SERPENTSHRINE_CAVERN)
+    {
+        static constexpr uint32 NPC_MOROGRIM_WATER_GLOBULE = 21913;
+
+        std::list<Creature*> globules;
+        Bcore::AllCreaturesOfEntryInRange globuleCheck(unit, NPC_MOROGRIM_WATER_GLOBULE, 160.0f);
+        Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> globuleSearcher(unit, globules, globuleCheck);
+        Cell::VisitObjects(unit, globuleSearcher, 160.0f);
+
+        for (Creature* globule : globules)
+        {
+            if (!globule || !globule->IsAlive())
+                continue;
+
+            spots.emplace_back(*globule, 16.0f + globule->GetCombatReach() + DEFAULT_COMBAT_REACH);
+        }
+    }
     // Dinkle Zul'Gurub
     else if (unit->GetMapId() == 309)
     {
