@@ -15,11 +15,16 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Containers.h"
 #include "CreatureScript.h"
+#include "Group.h"
+#include "Player.h"
 #include "ScriptedCreature.h"
 #include "SpellScriptLoader.h"
 #include "serpent_shrine.h"
 #include "SpellScript.h"
+#include "ThreatManager.h"
+#include "bot_ai.h"
 
 enum Yells
 {
@@ -51,6 +56,54 @@ enum Spells
 
 const uint32 wateryGraveIds[4] = {SPELL_WATERY_GRAVE_1, SPELL_WATERY_GRAVE_2, SPELL_WATERY_GRAVE_3, SPELL_WATERY_GRAVE_4};
 const uint32 waterGlobuleIds[4] = {SPELL_SUMMON_WATER_GLOBULE_1, SPELL_SUMMON_WATER_GLOBULE_2, SPELL_SUMMON_WATER_GLOBULE_3, SPELL_SUMMON_WATER_GLOBULE_4};
+
+namespace
+{
+    bool IsMorogrimNpcBotTank(Unit* unit)
+    {
+        Creature* creature = unit ? unit->ToCreature() : nullptr;
+        if (!creature || !creature->IsNPCBot())
+            return false;
+
+        bot_ai* ai = creature->GetBotAI();
+        return ai && (ai->IsTank() || ai->IsOffTank());
+    }
+
+    bool IsMorogrimPlayerMarkedTank(Player* player)
+    {
+        Group* group = player ? player->GetGroup() : nullptr;
+        if (!group)
+            return false;
+
+        for (Group::member_citerator itr = group->GetMemberSlots().begin(); itr != group->GetMemberSlots().end(); ++itr)
+            if (itr->guid == player->GetGUID())
+                return itr->flags & MEMBER_FLAG_MAINTANK;
+
+        return false;
+    }
+
+    bool IsMorogrimTank(Unit* unit, Creature* source)
+    {
+        if (!unit)
+            return false;
+
+        if (source && (unit == source->GetThreatMgr().GetCurrentVictim() || unit == source->GetThreatMgr().GetLastVictim() || unit == source->GetVictim()))
+            return true;
+
+        if (IsMorogrimNpcBotTank(unit))
+            return true;
+
+        if (Player* player = unit->ToPlayer())
+            return IsMorogrimPlayerMarkedTank(player);
+
+        return false;
+    }
+
+    bool IsMorogrimPlayerOrBot(Unit* unit)
+    {
+        return unit && unit->IsAlive() && (unit->IsPlayer() || unit->IsNPCBot());
+    }
+}
 
 struct boss_morogrim_tidewalker : public BossAI
 {
@@ -148,12 +201,12 @@ class spell_morogrim_tidewalker_watery_grave : public SpellScript
     void FilterTargets(std::list<WorldObject*>& targets)
     {
         uint8 maxSize = 4;
-        Unit* caster = GetCaster();
+        Creature* caster = GetCaster() ? GetCaster()->ToCreature() : nullptr;
 
-        targets.remove_if([caster](WorldObject const* target) -> bool
+        targets.remove_if([caster](WorldObject* target) -> bool
             {
-                // Should not target current victim.
-                return caster->GetVictim() == target;
+                Unit* unit = target ? target->ToUnit() : nullptr;
+                return !IsMorogrimPlayerOrBot(unit) || IsMorogrimTank(unit, caster);
             });
 
         if (targets.size() > maxSize)
@@ -186,6 +239,11 @@ class spell_morogrim_tidewalker_water_globule_new_target : public SpellScript
 
     void FilterTargets(std::list<WorldObject*>& unitList)
     {
+        unitList.remove_if([](WorldObject* target) -> bool
+        {
+            return !IsMorogrimPlayerOrBot(target ? target->ToUnit() : nullptr);
+        });
+
         Acore::Containers::RandomResize(unitList, 1);
     }
 

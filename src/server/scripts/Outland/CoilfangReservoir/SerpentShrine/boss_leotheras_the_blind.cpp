@@ -15,16 +15,27 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Containers.h"
+#include "Config.h"
 #include "CreatureGroups.h"
 #include "CreatureScript.h"
 #include "GridNotifiers.h"
+#include "Group.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "SpellScriptLoader.h"
 #include "TaskScheduler.h"
 #include "serpent_shrine.h"
 #include "SpellAuraEffects.h"
 #include "SpellScript.h"
+#include "ThreatManager.h"
+#include "bot_ai.h"
+#include "botmgr.h"
+
+#include <vector>
 
 enum Talk
 {
@@ -56,7 +67,8 @@ enum Spells
 
     // Other
     SPELL_CLEAR_CONSUMING_MADNESS       = 37750,
-    SPELL_SHADOW_BOLT                   = 39309
+    SPELL_SHADOW_BOLT                   = 39309,
+    SPELL_FULL_HEAL                     = 17683
 };
 
 enum Misc
@@ -72,6 +84,202 @@ enum Groups
     GROUP_COMBAT                        = 1,
     GROUP_DEMON                         = 2
 };
+
+namespace
+{
+    constexpr char const* CONFIG_DEMON_PHASE_DELAY_MS = "SerpentShrine.Leotheras.DemonPhaseDelayMs";
+
+    Milliseconds GetLeotherasDemonPhaseDelay()
+    {
+        return Milliseconds(sConfigMgr->GetOption<uint32>(CONFIG_DEMON_PHASE_DELAY_MS, 60350u));
+    }
+
+    bool IsLeotherasNpcBotTank(Unit* unit)
+    {
+        Creature* creature = unit ? unit->ToCreature() : nullptr;
+        if (!creature || !creature->IsNPCBot())
+            return false;
+
+        bot_ai* ai = creature->GetBotAI();
+        return ai && (ai->IsTank() || ai->IsOffTank());
+    }
+
+    bool IsLeotherasPlayerMarkedTank(Player* player)
+    {
+        Group* group = player ? player->GetGroup() : nullptr;
+        if (!group)
+            return false;
+
+        for (Group::member_citerator itr = group->GetMemberSlots().begin(); itr != group->GetMemberSlots().end(); ++itr)
+            if (itr->guid == player->GetGUID())
+                return itr->flags & MEMBER_FLAG_MAINTANK;
+
+        return false;
+    }
+
+    bool IsLeotherasTank(Unit* unit, Creature* source)
+    {
+        if (!unit)
+            return false;
+
+        if (source && (unit == source->GetThreatMgr().GetCurrentVictim() || unit == source->GetThreatMgr().GetLastVictim() || unit == source->GetVictim()))
+            return true;
+
+        if (IsLeotherasNpcBotTank(unit))
+            return true;
+
+        if (Player* player = unit->ToPlayer())
+            return IsLeotherasPlayerMarkedTank(player);
+
+        return false;
+    }
+
+    float GetLeotherasSpellRange(uint32 spellId, float rangeOverride = 0.0f)
+    {
+        if (rangeOverride > 0.0f)
+            return rangeOverride;
+
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+        return spellInfo ? spellInfo->GetMaxRange(false) : 0.0f;
+    }
+
+    bool IsLeotherasPlayerOrBot(Unit* unit)
+    {
+        return unit && unit->IsAlive() && (unit->IsPlayer() || unit->IsNPCBot());
+    }
+
+    bool IsValidLeotherasRandomTarget(Creature* source, Unit* unit, float range, bool excludeTanks)
+    {
+        if (!source || !unit || !unit->IsInWorld() || !unit->IsAlive())
+            return false;
+
+        if (!unit->IsPlayer() && !unit->IsNPCBot())
+            return false;
+
+        if (unit->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
+            return false;
+
+        if (excludeTanks && IsLeotherasTank(unit, source))
+            return false;
+
+        if (!unit->IsInMap(source) || !unit->InSamePhase(source))
+            return false;
+
+        if (range > 0.0f && !source->IsWithinDistInMap(unit, range))
+            return false;
+
+        if (!source->IsValidAttackTarget(unit) || !source->CanSeeOrDetect(unit) || !source->IsWithinLOSInMap(unit))
+            return false;
+
+        return true;
+    }
+
+    void AddLeotherasRandomTarget(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, Unit* unit, float range, bool excludeTanks)
+    {
+        if (!IsValidLeotherasRandomTarget(source, unit, range, excludeTanks))
+            return;
+
+        if (!seen.insert(unit->GetGUID()).second)
+            return;
+
+        targets.push_back(unit);
+    }
+
+    Player* GetLeotherasOwnerPlayer(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player;
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotOwner() : nullptr;
+    }
+
+    Group* GetLeotherasGroup(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player->GetGroup();
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotGroup() : nullptr;
+    }
+
+    void AddLeotherasOwnedBots(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, Player* player, float range, bool excludeTanks)
+    {
+        if (!player || !player->HaveBot())
+            return;
+
+        BotMgr* botMgr = player->GetBotMgr();
+        if (!botMgr)
+            return;
+
+        for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+            AddLeotherasRandomTarget(source, targets, seen, pair.second, range, excludeTanks);
+    }
+
+    void AddLeotherasThreatTargets(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, float range, bool excludeTanks)
+    {
+        if (!source)
+            return;
+
+        for (ThreatReference const* ref : source->GetThreatMgr().GetSortedThreatList())
+        {
+            if (!ref || !ref->IsAvailable())
+                continue;
+
+            AddLeotherasRandomTarget(source, targets, seen, ref->GetVictim(), range, excludeTanks);
+        }
+    }
+
+    std::vector<Unit*> GatherLeotherasRandomTargets(Creature* source, uint32 spellId, bool excludeTanks, float rangeOverride = 0.0f)
+    {
+        std::vector<Unit*> targets;
+        GuidSet seen;
+
+        if (!source)
+            return targets;
+
+        float const range = GetLeotherasSpellRange(spellId, rangeOverride);
+        Unit* seed = source->GetThreatMgr().GetCurrentVictim();
+        if (!seed)
+            seed = source->GetVictim();
+
+        if (Group* group = GetLeotherasGroup(seed))
+        {
+            for (Unit* member : BotMgr::GetAllGroupMembers(group))
+            {
+                AddLeotherasRandomTarget(source, targets, seen, member, range, excludeTanks);
+
+                if (Player* player = member ? member->ToPlayer() : nullptr)
+                    AddLeotherasOwnedBots(source, targets, seen, player, range, excludeTanks);
+            }
+        }
+        else
+        {
+            AddLeotherasRandomTarget(source, targets, seen, seed, range, excludeTanks);
+
+            if (Player* player = GetLeotherasOwnerPlayer(seed))
+            {
+                AddLeotherasRandomTarget(source, targets, seen, player, range, excludeTanks);
+                AddLeotherasOwnedBots(source, targets, seen, player, range, excludeTanks);
+            }
+        }
+
+        AddLeotherasThreatTargets(source, targets, seen, range, excludeTanks);
+        return targets;
+    }
+
+    Unit* SelectLeotherasRandomTarget(Creature* source, uint32 spellId, bool excludeTanks, float rangeOverride = 0.0f)
+    {
+        std::vector<Unit*> targets = GatherLeotherasRandomTargets(source, spellId, excludeTanks, rangeOverride);
+        return targets.empty() ? nullptr : Acore::Containers::SelectRandomContainerElement(targets);
+    }
+}
 
 struct boss_leotheras_the_blind : public BossAI
 {
@@ -170,7 +378,7 @@ struct boss_leotheras_the_blind : public BossAI
         {
             DoCastSelf(SPELL_WHIRLWIND);
             context.Repeat(30250ms, 34900ms);
-        }).Schedule(60350ms, GROUP_DEMON, [this](TaskContext)
+        }).Schedule(GetLeotherasDemonPhaseDelay(), GROUP_DEMON, [this](TaskContext)
         {
             DoResetThreatList();
             Talk(SAY_SWITCH_TO_DEMON);
@@ -249,15 +457,32 @@ private:
 struct npc_inner_demon : public ScriptedAI
 {
     npc_inner_demon(Creature* creature) : ScriptedAI(creature)
-    {    }
+    { }
 
     void IsSummonedBy(WorldObject* summoner) override
     {
         if (!summoner)
             return;
 
+        me->SetMaxHealth(me->GetMaxHealth() * 5);
+        me->SetHealth(me->GetMaxHealth());
+        DoCastSelf(SPELL_FULL_HEAL, true);
+
+        if (Unit* target = summoner->ToUnit())
+        {
+            _targetGuid = target->GetGUID();
+            AttackStart(target);
+            ForceTargetBotToFightDemon(target);
+        }
+        else
+            _targetGuid = me->GetSummonerGUID();
+
         scheduler.CancelAll();
-        scheduler.Schedule(4s, [this](TaskContext context)
+        scheduler.Schedule(1s, [this](TaskContext context)
+        {
+            TryFixateAssignedTarget();
+            context.Repeat(2s);
+        }).Schedule(4s, [this](TaskContext context)
         {
             DoCastVictim(SPELL_SHADOW_BOLT);
             context.Repeat(6s);
@@ -266,20 +491,20 @@ struct npc_inner_demon : public ScriptedAI
 
     void JustDied(Unit* /*killer*/) override
     {
-        if (Unit* affectedPlayer = ObjectAccessor::GetUnit(*me, me->GetSummonerGUID()))
-        {
-            affectedPlayer->RemoveAurasDueToSpell(SPELL_INSIDIOUS_WHISPER);
-        }
+        if (Unit* target = GetAssignedTarget())
+            target->RemoveAurasDueToSpell(SPELL_INSIDIOUS_WHISPER);
+
+        RestoreTargetBotAfterDemon();
     }
 
     bool CanBeSeen(Player const* player) override
     {
-        return player && player->GetGUID() == me->GetSummonerGUID();
+        return IsAssignedTargetRaidMember(player);
     }
 
     bool CanReceiveDamage(Unit* attacker)
     {
-        return attacker && attacker->GetGUID() == me->GetSummonerGUID();
+        return IsAssignedTargetRaidMember(attacker);
     }
 
     void OnCalculateMeleeDamageReceived(uint32& damage, Unit* attacker) override
@@ -308,20 +533,156 @@ struct npc_inner_demon : public ScriptedAI
 
     bool CanAIAttack(Unit const* who) const override
     {
-        return who->GetGUID() == me->GetSummonerGUID();
+        return who && who->GetGUID() == GetAssignedTargetGUID();
     }
 
     void UpdateAI(uint32 diff) override
     {
+        scheduler.Update(diff);
+
         if (!UpdateVictim())
         {
             return;
         }
 
-        scheduler.Update(diff);
-
         DoMeleeAttackIfReady();
     }
+
+private:
+    ObjectGuid GetAssignedTargetGUID() const
+    {
+        return !_targetGuid.IsEmpty() ? _targetGuid : me->GetSummonerGUID();
+    }
+
+    Unit* GetAssignedTarget() const
+    {
+        return ObjectAccessor::GetUnit(*me, GetAssignedTargetGUID());
+    }
+
+    Group const* GetAssignedTargetGroup(Unit const* target) const
+    {
+        if (!target)
+            return nullptr;
+
+        if (Player const* player = target->ToPlayer())
+            return player->GetGroup();
+
+        Creature const* creature = target->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotGroup() : nullptr;
+    }
+
+    Player const* GetAssignedTargetOwner(Unit const* target) const
+    {
+        if (!target)
+            return nullptr;
+
+        if (Player const* player = target->ToPlayer())
+            return player;
+
+        Creature const* creature = target->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotOwner() : nullptr;
+    }
+
+    bool IsAssignedTargetRaidMember(Unit const* unit) const
+    {
+        if (!unit)
+            return false;
+
+        Unit const* target = GetAssignedTarget();
+        if (!target)
+            return false;
+
+        if (unit->GetGUID() == target->GetGUID())
+            return true;
+
+        if (unit->GetMap() != target->GetMap())
+            return false;
+
+        if (Group const* group = GetAssignedTargetGroup(target))
+            return group->IsMember(unit->GetGUID());
+
+        Player const* targetOwner = GetAssignedTargetOwner(target);
+        if (!targetOwner)
+            return false;
+
+        if (Player const* player = unit->ToPlayer())
+            return player->GetGUID() == targetOwner->GetGUID();
+
+        Creature const* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() && creature->GetBotOwner() == targetOwner;
+    }
+
+    Creature* GetLeotheras() const
+    {
+        if (InstanceScript* instance = me->GetInstanceScript())
+            return instance->GetCreature(DATA_LEOTHERAS_THE_BLIND);
+
+        return nullptr;
+    }
+
+    void ForceTargetBotToFightDemon(Unit* target)
+    {
+        Creature* bot = target ? target->ToCreature() : nullptr;
+        if (!bot || !bot->IsNPCBot())
+            return;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai)
+            return;
+
+        ai->RemoveBotCommandState(BOT_COMMAND_COMBATRESET | BOT_COMMAND_INACTION | BOT_COMMAND_MASK_NOCAST_ANY);
+        ai->SetBotCommandState(BOT_COMMAND_ATTACK);
+        ai->AttackStart(me);
+    }
+
+    void RestoreTargetBotAfterDemon()
+    {
+        Creature* bot = GetAssignedTarget() ? GetAssignedTarget()->ToCreature() : nullptr;
+        if (!bot || !bot->IsNPCBot() || !bot->IsAlive())
+            return;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai)
+            return;
+
+        ai->RemoveBotCommandState(BOT_COMMAND_COMBATRESET | BOT_COMMAND_INACTION | BOT_COMMAND_MASK_NOCAST_ANY);
+
+        if (Creature* leotheras = GetLeotheras())
+        {
+            if (leotheras->IsAlive() && leotheras->IsEngaged() && bot->IsInMap(leotheras))
+            {
+                ai->SetBotCommandState(BOT_COMMAND_ATTACK);
+                ai->AttackStart(leotheras);
+                return;
+            }
+        }
+
+        if (!ai->IAmFree())
+            ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+    }
+
+    void TryFixateAssignedTarget()
+    {
+        Unit* target = GetAssignedTarget();
+        if (!target || !target->IsAlive() || !target->HasAura(SPELL_INSIDIOUS_WHISPER))
+        {
+            me->DespawnOrUnsummon();
+            return;
+        }
+
+        if (target->GetMap() != me->GetMap())
+            return;
+
+        me->GetThreatMgr().ResetAllThreat();
+        me->GetThreatMgr().AddThreat(target, 1000000.0f);
+
+        if (me->GetVictim() != target)
+            AttackStart(target);
+
+        ForceTargetBotToFightDemon(target);
+    }
+
+    ObjectGuid _targetGuid;
 };
 
 class spell_leotheras_whirlwind : public SpellScript
@@ -334,7 +695,7 @@ class spell_leotheras_whirlwind : public SpellScript
         GetCaster()->GetThreatMgr().ResetAllThreat();
 
         if (roll_chance_i(33))
-            if (Unit* target = GetCaster()->GetAI()->SelectTarget(SelectTargetMethod::Random, 0, 30.0f, true))
+            if (Unit* target = SelectLeotherasRandomTarget(GetCaster()->ToCreature(), SPELL_TAUNT, true, 30.0f))
                 target->CastSpell(GetCaster(), SPELL_TAUNT, true);
     }
 
@@ -367,10 +728,12 @@ class spell_leotheras_insidious_whisper : public SpellScript
 
     void FilterTargets(std::list<WorldObject*>& unitList)
     {
-        if (Unit* victim = GetCaster()->GetVictim())
+        Creature* caster = GetCaster() ? GetCaster()->ToCreature() : nullptr;
+        unitList.remove_if([caster](WorldObject* target) -> bool
         {
-            unitList.remove_if(Acore::ObjectGUIDCheck(victim->GetGUID(), true));
-        }
+            Unit* unit = target ? target->ToUnit() : nullptr;
+            return !IsLeotherasPlayerOrBot(unit) || IsLeotherasTank(unit, caster);
+        });
     }
 
     void Register() override
@@ -390,16 +753,21 @@ class spell_leotheras_insidious_whisper_aura : public AuraScript
 
     void HandleEffectRemove(AuraEffect const*  /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
-        if (GetTargetApplication()->GetRemoveMode() != AURA_REMOVE_BY_DEFAULT)
+        if (GetTargetApplication()->GetRemoveMode() != AURA_REMOVE_BY_EXPIRE)
+            return;
+
+        Unit* target = GetUnitOwner();
+        if (!target || !target->IsAlive())
+            return;
+
+        Unit* killer = target;
+        if (InstanceScript* instance = target->GetInstanceScript())
         {
-            if (InstanceScript* instance = GetUnitOwner()->GetInstanceScript())
-            {
-                if (Creature* leotheras = instance->GetCreature(DATA_LEOTHERAS_THE_BLIND))
-                {
-                    leotheras->CastSpell(GetUnitOwner(), SPELL_CONSUMING_MADNESS, true);
-                }
-            }
+            if (Creature* leotheras = instance->GetCreature(DATA_LEOTHERAS_THE_BLIND))
+                killer = leotheras;
         }
+
+        Unit::Kill(killer, target);
     }
 
     void Register() override

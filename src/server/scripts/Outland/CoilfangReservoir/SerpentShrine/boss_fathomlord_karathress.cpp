@@ -15,13 +15,23 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Containers.h"
 #include "CreatureScript.h"
+#include "Group.h"
+#include "Player.h"
 #include "ScriptedCreature.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "SpellScriptLoader.h"
 #include "TaskScheduler.h"
 #include "serpent_shrine.h"
 #include "SpellAuraEffects.h"
 #include "SpellScript.h"
+#include "ThreatManager.h"
+#include "bot_ai.h"
+#include "botmgr.h"
+
+#include <vector>
 
 enum Talk
 {
@@ -73,6 +83,209 @@ enum Misc
 };
 
 const Position olumWalk = { 456.17194f, -544.31866f, -7.5470476f, 0.00f };
+
+namespace
+{
+    bool IsKarathressNpcBotTank(Unit* unit)
+    {
+        Creature* creature = unit ? unit->ToCreature() : nullptr;
+        if (!creature || !creature->IsNPCBot())
+            return false;
+
+        bot_ai* ai = creature->GetBotAI();
+        return ai && (ai->IsTank() || ai->IsOffTank());
+    }
+
+    bool IsKarathressPlayerMarkedTank(Player* player)
+    {
+        Group* group = player ? player->GetGroup() : nullptr;
+        if (!group)
+            return false;
+
+        for (Group::member_citerator itr = group->GetMemberSlots().begin(); itr != group->GetMemberSlots().end(); ++itr)
+            if (itr->guid == player->GetGUID())
+                return itr->flags & MEMBER_FLAG_MAINTANK;
+
+        return false;
+    }
+
+    bool IsKarathressTank(Unit* unit, Creature* source)
+    {
+        if (!unit)
+            return false;
+
+        if (source && (unit == source->GetThreatMgr().GetCurrentVictim() || unit == source->GetThreatMgr().GetLastVictim() || unit == source->GetVictim()))
+            return true;
+
+        if (IsKarathressNpcBotTank(unit))
+            return true;
+
+        if (Player* player = unit->ToPlayer())
+            return IsKarathressPlayerMarkedTank(player);
+
+        return false;
+    }
+
+    float GetKarathressSpellRange(uint32 spellId, float rangeOverride = 0.0f)
+    {
+        if (rangeOverride > 0.0f)
+            return rangeOverride;
+
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+        return spellInfo ? spellInfo->GetMaxRange(false) : 0.0f;
+    }
+
+    bool IsKarathressAnyTarget(Unit*)
+    {
+        return true;
+    }
+
+    template <typename Predicate>
+    bool IsValidKarathressRandomTarget(Creature* source, Unit* unit, float range, bool excludeTanks, Predicate const& predicate)
+    {
+        if (!source || !unit || !unit->IsInWorld() || !unit->IsAlive())
+            return false;
+
+        if (!unit->IsPlayer() && !unit->IsNPCBot())
+            return false;
+
+        if (unit->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
+            return false;
+
+        if (excludeTanks && IsKarathressTank(unit, source))
+            return false;
+
+        if (!predicate(unit))
+            return false;
+
+        if (!unit->IsInMap(source) || !unit->InSamePhase(source))
+            return false;
+
+        if (range > 0.0f && !source->IsWithinDistInMap(unit, range))
+            return false;
+
+        if (!source->IsValidAttackTarget(unit) || !source->CanSeeOrDetect(unit) || !source->IsWithinLOSInMap(unit))
+            return false;
+
+        return true;
+    }
+
+    template <typename Predicate>
+    void AddKarathressRandomTarget(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, Unit* unit, float range, bool excludeTanks, Predicate const& predicate)
+    {
+        if (!IsValidKarathressRandomTarget(source, unit, range, excludeTanks, predicate))
+            return;
+
+        if (!seen.insert(unit->GetGUID()).second)
+            return;
+
+        targets.push_back(unit);
+    }
+
+    Player* GetKarathressOwnerPlayer(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player;
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotOwner() : nullptr;
+    }
+
+    Group* GetKarathressGroup(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player->GetGroup();
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotGroup() : nullptr;
+    }
+
+    template <typename Predicate>
+    void AddKarathressOwnedBots(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, Player* player, float range, bool excludeTanks, Predicate const& predicate)
+    {
+        if (!player || !player->HaveBot())
+            return;
+
+        BotMgr* botMgr = player->GetBotMgr();
+        if (!botMgr)
+            return;
+
+        for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+            AddKarathressRandomTarget(source, targets, seen, pair.second, range, excludeTanks, predicate);
+    }
+
+    template <typename Predicate>
+    void AddKarathressThreatTargets(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, float range, bool excludeTanks, Predicate const& predicate)
+    {
+        if (!source)
+            return;
+
+        for (ThreatReference const* ref : source->GetThreatMgr().GetSortedThreatList())
+        {
+            if (!ref || !ref->IsAvailable())
+                continue;
+
+            AddKarathressRandomTarget(source, targets, seen, ref->GetVictim(), range, excludeTanks, predicate);
+        }
+    }
+
+    template <typename Predicate>
+    std::vector<Unit*> GatherKarathressRandomTargets(Creature* source, uint32 spellId, bool excludeTanks, float rangeOverride, Predicate const& predicate)
+    {
+        std::vector<Unit*> targets;
+        GuidSet seen;
+
+        if (!source)
+            return targets;
+
+        float const range = GetKarathressSpellRange(spellId, rangeOverride);
+        Unit* seed = source->GetThreatMgr().GetCurrentVictim();
+        if (!seed)
+            seed = source->GetVictim();
+
+        if (Group* group = GetKarathressGroup(seed))
+        {
+            for (Unit* member : BotMgr::GetAllGroupMembers(group))
+            {
+                AddKarathressRandomTarget(source, targets, seen, member, range, excludeTanks, predicate);
+
+                if (Player* player = member ? member->ToPlayer() : nullptr)
+                    AddKarathressOwnedBots(source, targets, seen, player, range, excludeTanks, predicate);
+            }
+        }
+        else
+        {
+            AddKarathressRandomTarget(source, targets, seen, seed, range, excludeTanks, predicate);
+
+            if (Player* player = GetKarathressOwnerPlayer(seed))
+            {
+                AddKarathressRandomTarget(source, targets, seen, player, range, excludeTanks, predicate);
+                AddKarathressOwnedBots(source, targets, seen, player, range, excludeTanks, predicate);
+            }
+        }
+
+        AddKarathressThreatTargets(source, targets, seen, range, excludeTanks, predicate);
+        return targets;
+    }
+
+    template <typename Predicate>
+    Unit* SelectKarathressRandomTarget(Creature* source, uint32 spellId, bool excludeTanks, float rangeOverride, Predicate const& predicate)
+    {
+        std::vector<Unit*> targets = GatherKarathressRandomTargets(source, spellId, excludeTanks, rangeOverride, predicate);
+        return targets.empty() ? nullptr : Acore::Containers::SelectRandomContainerElement(targets);
+    }
+
+    Unit* SelectKarathressRandomTarget(Creature* source, uint32 spellId, bool excludeTanks)
+    {
+        return SelectKarathressRandomTarget(source, spellId, excludeTanks, 0.0f, IsKarathressAnyTarget);
+    }
+}
 
 struct boss_fathomlord_karathress : public BossAI
 {
@@ -156,7 +369,7 @@ struct boss_fathomlord_karathress : public BossAI
 
         scheduler.Schedule(10s, [this](TaskContext context)
         {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, PowerUsersSelector(me, POWER_MANA, 50.0f, true)))
+            if (Unit* target = SelectKarathressRandomTarget(me, SPELL_CATACLYSMIC_BOLT, true, 50.0f, [](Unit* unit) { return unit->getPowerType() == POWER_MANA; }))
             {
                 me->CastSpell(target, SPELL_CATACLYSMIC_BOLT);
             }
@@ -184,19 +397,6 @@ struct boss_fathomlord_karathress : public BossAI
     }
 private:
     bool _recentlySpoken;
-};
-
-struct LeechingThrowSelector
-{
-public:
-    explicit LeechingThrowSelector(WorldObject const* source) : _source(source) { }
-
-    bool operator() (Unit* unit) const
-    {
-        return unit->getPowerType() == POWER_MANA && _source->GetDistance(unit) < 50.0f;
-    }
-private:
-    WorldObject const* _source;
 };
 
 struct boss_fathomguard_sharkkis : public ScriptedAI
@@ -230,15 +430,19 @@ struct boss_fathomguard_sharkkis : public ScriptedAI
 
         scheduler.Schedule(2500ms, [this](TaskContext context)
         {
-            DoCastRandomTarget(SPELL_HURL_TRIDENT);
+            if (Unit* target = SelectKarathressRandomTarget(me, SPELL_HURL_TRIDENT, true))
+                DoCast(target, SPELL_HURL_TRIDENT);
+
             context.Repeat(5s);
         }).Schedule(20650ms, [this](TaskContext context)
         {
-            DoCastRandomTarget(SPELL_MULTI_TOSS);
+            if (Unit* target = SelectKarathressRandomTarget(me, SPELL_MULTI_TOSS, true))
+                DoCast(target, SPELL_MULTI_TOSS);
+
             context.Repeat(12150ms, 26350ms);
         }).Schedule(6050ms, [this](TaskContext context)
         {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, LeechingThrowSelector(me)))
+            if (Unit* target = SelectKarathressRandomTarget(me, SPELL_LEECHING_THROW, true, 50.0f, [](Unit* unit) { return unit->getPowerType() == POWER_MANA; }))
             {
                 me->CastSpell(target, SPELL_LEECHING_THROW);
             }
@@ -523,7 +727,9 @@ struct boss_fathomguard_caribdis : public ScriptedAI
             context.Repeat(24250ms, 33250ms);
         }).Schedule(15750ms, [this](TaskContext context)
         {
-            DoCastRandomTarget(SPELL_SUMMON_CYCLONE);
+            if (Unit* target = SelectKarathressRandomTarget(me, SPELL_SUMMON_CYCLONE, true))
+                DoCast(target, SPELL_SUMMON_CYCLONE);
+
             context.Repeat(47250ms, 51550ms);
         }).Schedule(20s, [this](TaskContext context)
         {

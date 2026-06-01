@@ -112,9 +112,6 @@ namespace
         if (multiplier < 0.0f)
             return 0.0f;
 
-        if (multiplier > 1.0f)
-            return 1.0f;
-
         return multiplier;
     }
 

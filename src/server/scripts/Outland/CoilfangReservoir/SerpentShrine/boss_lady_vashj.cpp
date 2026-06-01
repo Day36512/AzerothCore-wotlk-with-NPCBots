@@ -15,14 +15,26 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Containers.h"
 #include "CreatureScript.h"
+#include "Group.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "Spell.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "SpellScriptLoader.h"
 #include "WorldSession.h"
 #include "serpent_shrine.h"
 #include "SpellScript.h"
+#include "ThreatManager.h"
+#include "bot_ai.h"
+#include "botmgr.h"
+
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <vector>
 
 enum Says
 {
@@ -67,6 +79,358 @@ enum Misc
     POINT_HOME                      = 1,
     NPC_TRIGGER                     = 15384
 };
+
+namespace
+{
+    constexpr float VASHJ_STATIC_CHARGE_SPREAD_MIN_RADIUS = 22.0f;
+    constexpr float VASHJ_STATIC_CHARGE_SPREAD_MAX_RADIUS = 36.0f;
+    constexpr float VASHJ_STATIC_CHARGE_SPREAD_STEP = 4.0f;
+    constexpr float VASHJ_STATIC_CHARGE_SAFE_SCAN_RANGE = 95.0f;
+    constexpr float VASHJ_STATIC_CHARGE_SAFE_MOVE_MAX_DIST = 80.0f;
+    constexpr float VASHJ_PI = 3.14159265358979323846f;
+
+    bool IsVashjNpcBotTank(Unit* unit)
+    {
+        Creature* creature = unit ? unit->ToCreature() : nullptr;
+        if (!creature || !creature->IsNPCBot())
+            return false;
+
+        bot_ai* ai = creature->GetBotAI();
+        return ai && (ai->IsTank() || ai->IsOffTank());
+    }
+
+    bool IsVashjPlayerMarkedTank(Player* player)
+    {
+        Group* group = player ? player->GetGroup() : nullptr;
+        if (!group)
+            return false;
+
+        for (Group::member_citerator itr = group->GetMemberSlots().begin(); itr != group->GetMemberSlots().end(); ++itr)
+            if (itr->guid == player->GetGUID())
+                return itr->flags & MEMBER_FLAG_MAINTANK;
+
+        return false;
+    }
+
+    bool IsVashjTank(Unit* unit, Creature* source)
+    {
+        if (!unit)
+            return false;
+
+        if (source && (unit == source->GetThreatMgr().GetCurrentVictim() || unit == source->GetThreatMgr().GetLastVictim() || unit == source->GetVictim()))
+            return true;
+
+        if (IsVashjNpcBotTank(unit))
+            return true;
+
+        if (Player* player = unit->ToPlayer())
+            return IsVashjPlayerMarkedTank(player);
+
+        return false;
+    }
+
+    float GetVashjSpellRange(uint32 spellId)
+    {
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+        return spellInfo ? spellInfo->GetMaxRange(false) : 0.0f;
+    }
+
+    bool IsValidVashjRandomTarget(Creature* source, Unit* unit, float range, bool excludeTanks)
+    {
+        if (!source || !unit || !unit->IsInWorld() || !unit->IsAlive())
+            return false;
+
+        if (!unit->IsPlayer() && !unit->IsNPCBot())
+            return false;
+
+        if (unit->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
+            return false;
+
+        if (excludeTanks && IsVashjTank(unit, source))
+            return false;
+
+        if (!unit->IsInMap(source) || !unit->InSamePhase(source))
+            return false;
+
+        if (range > 0.0f && !source->IsWithinDistInMap(unit, range))
+            return false;
+
+        if (!source->IsValidAttackTarget(unit) || !source->CanSeeOrDetect(unit) || !source->IsWithinLOSInMap(unit))
+            return false;
+
+        return true;
+    }
+
+    void AddVashjRandomTarget(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, Unit* unit, float range, bool excludeTanks)
+    {
+        if (!IsValidVashjRandomTarget(source, unit, range, excludeTanks))
+            return;
+
+        if (!seen.insert(unit->GetGUID()).second)
+            return;
+
+        targets.push_back(unit);
+    }
+
+    Player* GetVashjOwnerPlayer(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player;
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotOwner() : nullptr;
+    }
+
+    Group* GetVashjGroup(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player->GetGroup();
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotGroup() : nullptr;
+    }
+
+    void AddVashjOwnedBots(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, Player* player, float range, bool excludeTanks)
+    {
+        if (!player || !player->HaveBot())
+            return;
+
+        BotMgr* botMgr = player->GetBotMgr();
+        if (!botMgr)
+            return;
+
+        for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+            AddVashjRandomTarget(source, targets, seen, pair.second, range, excludeTanks);
+    }
+
+    void AddVashjThreatTargets(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, float range, bool excludeTanks)
+    {
+        if (!source)
+            return;
+
+        for (ThreatReference const* ref : source->GetThreatMgr().GetSortedThreatList())
+        {
+            if (!ref || !ref->IsAvailable())
+                continue;
+
+            AddVashjRandomTarget(source, targets, seen, ref->GetVictim(), range, excludeTanks);
+        }
+    }
+
+    std::vector<Unit*> GatherVashjRandomTargets(Creature* source, uint32 spellId, bool excludeTanks)
+    {
+        std::vector<Unit*> targets;
+        GuidSet seen;
+
+        if (!source)
+            return targets;
+
+        float const range = GetVashjSpellRange(spellId);
+        Unit* seed = source->GetThreatMgr().GetCurrentVictim();
+        if (!seed)
+            seed = source->GetVictim();
+
+        if (Group* group = GetVashjGroup(seed))
+        {
+            for (Unit* member : BotMgr::GetAllGroupMembers(group))
+            {
+                AddVashjRandomTarget(source, targets, seen, member, range, excludeTanks);
+
+                if (Player* player = member ? member->ToPlayer() : nullptr)
+                    AddVashjOwnedBots(source, targets, seen, player, range, excludeTanks);
+            }
+        }
+        else
+        {
+            AddVashjRandomTarget(source, targets, seen, seed, range, excludeTanks);
+
+            if (Player* player = GetVashjOwnerPlayer(seed))
+            {
+                AddVashjRandomTarget(source, targets, seen, player, range, excludeTanks);
+                AddVashjOwnedBots(source, targets, seen, player, range, excludeTanks);
+            }
+        }
+
+        AddVashjThreatTargets(source, targets, seen, range, excludeTanks);
+        return targets;
+    }
+
+    Unit* SelectVashjRandomTarget(Creature* source, uint32 spellId, bool excludeTanks)
+    {
+        std::vector<Unit*> targets = GatherVashjRandomTargets(source, spellId, excludeTanks);
+        return targets.empty() ? nullptr : Acore::Containers::SelectRandomContainerElement(targets);
+    }
+
+    Creature* GetVashjForUnit(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        InstanceScript* instance = unit->GetInstanceScript();
+        return instance ? instance->GetCreature(DATA_LADY_VASHJ) : nullptr;
+    }
+
+    bool IsValidVashjStaticChargeObstacle(Creature* bot, Creature* vashj, Unit* unit)
+    {
+        if (!bot || !unit || unit == bot || !unit->IsInWorld() || !unit->IsAlive())
+            return false;
+
+        if (!unit->IsPlayer() && !unit->IsNPCBot())
+            return false;
+
+        if (!unit->IsInMap(bot) || !unit->InSamePhase(bot))
+            return false;
+
+        Position const& anchor = vashj ? vashj->GetHomePosition() : bot->GetPosition();
+        return unit->GetExactDist2d(anchor.GetPositionX(), anchor.GetPositionY()) <= VASHJ_STATIC_CHARGE_SAFE_SCAN_RANGE;
+    }
+
+    void AddVashjStaticChargeObstacle(Creature* bot, Creature* vashj, std::vector<Unit*>& units, GuidSet& seen, Unit* unit)
+    {
+        if (!IsValidVashjStaticChargeObstacle(bot, vashj, unit))
+            return;
+
+        if (!seen.insert(unit->GetGUID()).second)
+            return;
+
+        units.push_back(unit);
+    }
+
+    void AddVashjOwnedStaticChargeBotObstacles(Creature* bot, Creature* vashj, std::vector<Unit*>& units, GuidSet& seen, Player* player)
+    {
+        if (!player || !player->HaveBot())
+            return;
+
+        BotMgr* botMgr = player->GetBotMgr();
+        if (!botMgr)
+            return;
+
+        for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+            AddVashjStaticChargeObstacle(bot, vashj, units, seen, pair.second);
+    }
+
+    std::vector<Unit*> GatherVashjStaticChargeObstacles(Creature* bot)
+    {
+        std::vector<Unit*> units;
+        GuidSet seen;
+
+        Creature* vashj = GetVashjForUnit(bot);
+        Group* group = GetVashjGroup(bot);
+        if (group)
+        {
+            for (Unit* member : BotMgr::GetAllGroupMembers(group))
+            {
+                AddVashjStaticChargeObstacle(bot, vashj, units, seen, member);
+
+                if (Player* player = member ? member->ToPlayer() : nullptr)
+                    AddVashjOwnedStaticChargeBotObstacles(bot, vashj, units, seen, player);
+            }
+        }
+
+        Player* owner = GetVashjOwnerPlayer(bot);
+        AddVashjStaticChargeObstacle(bot, vashj, units, seen, owner);
+        AddVashjOwnedStaticChargeBotObstacles(bot, vashj, units, seen, owner);
+
+        return units;
+    }
+
+    float GetVashjStaticChargePositionScore(Position const& candidate, std::vector<Unit*> const& obstacles)
+    {
+        if (obstacles.empty())
+            return 1000.0f;
+
+        float score = std::numeric_limits<float>::max();
+        for (Unit* unit : obstacles)
+        {
+            if (!unit)
+                continue;
+
+            score = std::min(score, unit->GetExactDist2d(candidate.GetPositionX(), candidate.GetPositionY()));
+        }
+
+        return score;
+    }
+
+    bool TryGetVashjStaticChargeSafePosition(Creature* bot, Position& destination)
+    {
+        if (!bot)
+            return false;
+
+        Creature* vashj = GetVashjForUnit(bot);
+        Position const& anchor = vashj ? vashj->GetHomePosition() : bot->GetPosition();
+        std::vector<Unit*> obstacles = GatherVashjStaticChargeObstacles(bot);
+
+        float bestScore = -1.0f;
+        Position bestPosition;
+        bool found = false;
+
+        float const baseAngle = std::atan2(bot->GetPositionY() - anchor.GetPositionY(), bot->GetPositionX() - anchor.GetPositionX());
+        for (float radius = VASHJ_STATIC_CHARGE_SPREAD_MIN_RADIUS; radius <= VASHJ_STATIC_CHARGE_SPREAD_MAX_RADIUS; radius += VASHJ_STATIC_CHARGE_SPREAD_STEP)
+        {
+            for (uint8 step = 0; step < 16; ++step)
+            {
+                float const angle = baseAngle + (2.0f * VASHJ_PI * float(step) / 16.0f);
+                float x = anchor.GetPositionX() + std::cos(angle) * radius;
+                float y = anchor.GetPositionY() + std::sin(angle) * radius;
+                float z = anchor.GetPositionZ();
+
+                if (!bot->CanFly())
+                    bot->UpdateAllowedPositionZ(x, y, z);
+
+                if (!bot->IsWithinLOS(x, y, z))
+                    continue;
+
+                Position candidate;
+                candidate.Relocate(x, y, z, vashj ? bot->GetAngle(vashj) : bot->GetOrientation());
+
+                if (bot->GetExactDist(candidate) > VASHJ_STATIC_CHARGE_SAFE_MOVE_MAX_DIST)
+                    continue;
+
+                float score = GetVashjStaticChargePositionScore(candidate, obstacles);
+                score -= bot->GetExactDist2d(candidate.GetPositionX(), candidate.GetPositionY()) * 0.04f;
+
+                if (!found || score > bestScore)
+                {
+                    found = true;
+                    bestScore = score;
+                    bestPosition = candidate;
+                }
+            }
+        }
+
+        if (!found)
+            return false;
+
+        destination = bestPosition;
+        return true;
+    }
+
+    void MoveVashjStaticChargeBot(Creature* bot)
+    {
+        if (!bot || !bot->IsAlive() || !bot->IsNPCBot())
+            return;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai || ai->IAmFree())
+            return;
+
+        Position destination;
+        if (!TryGetVashjStaticChargeSafePosition(bot, destination))
+            return;
+
+        bot->InterruptNonMeleeSpells(false);
+        bot->AttackStop();
+        bot->BotStopMovement();
+        ai->SetBotCommandState(BOT_COMMAND_STAY);
+        ai->BotMovement(BOT_MOVE_POINT, &destination, nullptr, true);
+    }
+}
 
 struct boss_lady_vashj : public BossAI
 {
@@ -150,7 +514,9 @@ struct boss_lady_vashj : public BossAI
             context.Repeat(10850ms, 25100ms);
         }).Schedule(18150ms, [this](TaskContext context)
         {
-            DoCastRandomTarget(SPELL_STATIC_CHARGE);
+            if (Unit* target = SelectVashjRandomTarget(me, SPELL_STATIC_CHARGE, true))
+                DoCast(target, SPELL_STATIC_CHARGE);
+
             context.Repeat(7250ms, 27050ms);
         }).Schedule(25450ms, [this](TaskContext context)
         {
@@ -180,7 +546,7 @@ struct boss_lady_vashj : public BossAI
         instance->SetData(DATA_ACTIVATE_SHIELD, 0);
         scheduler.Schedule(2400ms, [this](TaskContext context)
         {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0))
+            if (Unit* target = SelectVashjRandomTarget(me, SPELL_FORKED_LIGHTNING, false))
             {
                 _playerAngle = me->GetAngle(target);
                 me->SetOrientation(_playerAngle);
@@ -396,6 +762,92 @@ class spell_lady_vashj_summons : public SpellScript
     }
 };
 
+class spell_lady_vashj_static_charge_bot_movement : public AuraScript
+{
+    PrepareAuraScript(spell_lady_vashj_static_charge_bot_movement);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SPELL_STATIC_CHARGE });
+    }
+
+    void HandleApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        _handledBot = false;
+        _originalCommandState = 0;
+
+        Creature* bot = GetTarget() ? GetTarget()->ToCreature() : nullptr;
+        if (!bot || !bot->IsNPCBot() || !bot->IsAlive())
+            return;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai || ai->IAmFree())
+            return;
+
+        _handledBot = true;
+        _originalCommandState = ai->GetBotCommandState();
+
+        if (!(_originalCommandState & BOT_COMMAND_INACTION))
+            ai->SetBotCommandState(BOT_COMMAND_INACTION);
+
+        MoveVashjStaticChargeBot(bot);
+
+        ObjectGuid const botGuid = bot->GetGUID();
+        uint32 const originalCommandState = _originalCommandState;
+        for (uint32 i = 1; i <= 4; ++i)
+        {
+            bot->m_Events.AddEventAtOffset([botGuid, originalCommandState, bot]()
+            {
+                if (!bot || !bot->IsInWorld() || bot->GetGUID() != botGuid || !bot->IsAlive() || !bot->HasAura(SPELL_STATIC_CHARGE))
+                    return;
+
+                MoveVashjStaticChargeBot(bot);
+
+                if (!(originalCommandState & BOT_COMMAND_INACTION))
+                    if (bot_ai* ai = bot->GetBotAI())
+                        ai->RemoveBotCommandState(BOT_COMMAND_INACTION);
+            }, Milliseconds(i * 500));
+        }
+    }
+
+    void HandleRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (!_handledBot)
+            return;
+
+        Creature* bot = GetTarget() ? GetTarget()->ToCreature() : nullptr;
+        if (!bot || !bot->IsNPCBot())
+            return;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai)
+            return;
+
+        if (!(_originalCommandState & BOT_COMMAND_INACTION))
+            ai->RemoveBotCommandState(BOT_COMMAND_INACTION);
+
+        if (!(_originalCommandState & BOT_COMMAND_MASK_NOCAST_ANY))
+            ai->RemoveBotCommandState(BOT_COMMAND_MASK_NOCAST_ANY);
+        else
+            ai->SetBotCommandState(_originalCommandState & BOT_COMMAND_MASK_NOCAST_ANY);
+
+        ai->RemoveBotCommandState(BOT_COMMAND_STAY | BOT_COMMAND_FULLSTOP | BOT_COMMAND_ATTACK | BOT_COMMAND_COMBATRESET);
+
+        if (bot->IsAlive() && !ai->IAmFree())
+            ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+    }
+
+    void Register() override
+    {
+        AfterEffectApply += AuraEffectApplyFn(spell_lady_vashj_static_charge_bot_movement::HandleApply, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
+        AfterEffectRemove += AuraEffectRemoveFn(spell_lady_vashj_static_charge_bot_movement::HandleRemove, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
+    }
+
+private:
+    bool _handledBot = false;
+    uint32 _originalCommandState = 0;
+};
+
 // Spell 38132 - Paralyze (applied to player when looting Tainted Core item 31088)
 class spell_lady_vashj_tainted_core_paralyze : public AuraScript
 {
@@ -424,5 +876,6 @@ void AddSC_boss_lady_vashj()
     RegisterSpellScript(spell_lady_vashj_summon_sporebat);
     RegisterSpellScript(spell_lady_vashj_spore_drop_effect);
     RegisterSpellScript(spell_lady_vashj_summons);
+    RegisterSpellScript(spell_lady_vashj_static_charge_bot_movement);
     RegisterSpellScript(spell_lady_vashj_tainted_core_paralyze);
 }

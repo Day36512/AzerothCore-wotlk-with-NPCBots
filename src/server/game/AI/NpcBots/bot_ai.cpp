@@ -5243,6 +5243,208 @@ std::pair<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool& res
                 return { best, nullptr };
         }
 
+        // Serpentshrine Cavern - Fathom-Lord Karathress. DPS bots follow the
+        // requested council kill order instead of tunneling whichever target
+        // they happened to acquire first.
+        if (me->GetMapId() == MAP_COILFANG_SERPENTSHRINE_CAVERN && me->IsInCombat() && HasRole(BOT_ROLE_DPS) && !IsTank() &&
+            !(HasRole(BOT_ROLE_HEAL) && IsCasting()))
+        {
+            static constexpr uint32 NPC_FATHOM_LORD_KARATHRESS = 21214;
+            static constexpr uint32 NPC_FATHOM_GUARD_TIDALVESS = 21965;
+            static constexpr uint32 NPC_FATHOM_GUARD_SHARKKIS = 21966;
+            static constexpr uint32 NPC_FATHOM_GUARD_CARIBDIS = 21964;
+
+            static constexpr std::array<uint32, 4> KarathressPriority =
+            {
+                NPC_FATHOM_GUARD_TIDALVESS,
+                NPC_FATHOM_GUARD_SHARKKIS,
+                NPC_FATHOM_GUARD_CARIBDIS,
+                NPC_FATHOM_LORD_KARATHRESS
+            };
+
+            auto isAttackableKarathressUnit = [this, byspell](Creature* c) -> bool
+                {
+                    if (!c || !c->IsAlive())
+                        return false;
+
+                    if (c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE))
+                        return false;
+
+                    if (!c->IsVisible() || !c->isTargetableForAttack(false))
+                        return false;
+
+                    if (!(CanSeeEveryone() || (me->CanSeeOrDetect(c) && c->InSamePhase(me))))
+                        return false;
+
+                    if (!me->IsWithinLOSInMap(c))
+                        return false;
+
+                    if (!me->IsValidAttackTarget(c))
+                        return false;
+
+                    return CanBotAttack(c, byspell);
+                };
+
+            Creature* current = mytar ? mytar->ToCreature() : nullptr;
+            for (uint32 entry : KarathressPriority)
+            {
+                std::list<Creature*> councilUnits;
+                me->GetCreatureListWithEntryInGrid(councilUnits, entry, 180.0f);
+
+                Creature* best = nullptr;
+                float bestHealthPct = 101.0f;
+                float bestDistance = std::numeric_limits<float>::max();
+
+                for (Creature* councilUnit : councilUnits)
+                {
+                    if (!isAttackableKarathressUnit(councilUnit))
+                        continue;
+
+                    if (current == councilUnit)
+                        return { current, nullptr };
+
+                    float healthPct = councilUnit->GetHealthPct();
+                    float distance = me->GetDistance(councilUnit);
+
+                    if (!best ||
+                        healthPct < bestHealthPct ||
+                        (healthPct == bestHealthPct && distance < bestDistance))
+                    {
+                        best = councilUnit;
+                        bestHealthPct = healthPct;
+                        bestDistance = distance;
+                    }
+                }
+
+                if (best)
+                {
+                    if (mytar && mytar != best)
+                        reset = true;
+
+                    return { best, nullptr };
+                }
+            }
+        }
+
+        // Serpentshrine Cavern - Lady Vashj. Split phase-2 add priorities by
+        // bot role/class so DPS bots do not all pile onto the same add type.
+        if (me->GetMapId() == MAP_COILFANG_SERPENTSHRINE_CAVERN && me->IsInCombat() && HasRole(BOT_ROLE_DPS) && !IsTank() &&
+            !(HasRole(BOT_ROLE_HEAL) && IsCasting()))
+        {
+            static constexpr uint32 NPC_LADY_VASHJ = 21212;
+            static constexpr uint32 NPC_COILFANG_STRIDER = 22056;
+            static constexpr uint32 NPC_COILFANG_ELITE = 22055;
+            static constexpr uint32 NPC_ENCHANTED_ELEMENTAL = 21958;
+            static constexpr uint32 NPC_TOXIC_SPOREBAT = 22140;
+
+            auto isLadyVashjEncounterActive = [this]() -> bool
+                {
+                    std::list<Creature*> bosses;
+                    me->GetCreatureListWithEntryInGrid(bosses, NPC_LADY_VASHJ, 220.0f);
+                    for (Creature* boss : bosses)
+                        if (boss && boss->IsAlive() && boss->IsInCombat())
+                            return true;
+
+                    return false;
+                };
+
+            auto isAttackableVashjUnit = [this, byspell](Creature* c) -> bool
+                {
+                    if (!c || !c->IsAlive())
+                        return false;
+
+                    if (c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE))
+                        return false;
+
+                    if (!c->IsVisible() || !c->isTargetableForAttack(false))
+                        return false;
+
+                    if (!(CanSeeEveryone() || (me->CanSeeOrDetect(c) && c->InSamePhase(me))))
+                        return false;
+
+                    if (!me->IsWithinLOSInMap(c))
+                        return false;
+
+                    if (!me->IsValidAttackTarget(c))
+                        return false;
+
+                    return CanBotAttack(c, byspell);
+                };
+
+            auto selectVashjPriorityTarget = [&](uint32 entry, float range) -> Creature*
+                {
+                    std::list<Creature*> units;
+                    me->GetCreatureListWithEntryInGrid(units, entry, range);
+
+                    Creature* best = nullptr;
+                    float bestHealthPct = 101.0f;
+                    float bestDistance = std::numeric_limits<float>::max();
+
+                    for (Creature* unit : units)
+                    {
+                        if (!isAttackableVashjUnit(unit))
+                            continue;
+
+                        float healthPct = unit->GetHealthPct();
+                        float distance = me->GetDistance(unit);
+
+                        if (!best ||
+                            healthPct < bestHealthPct ||
+                            (healthPct == bestHealthPct && distance < bestDistance))
+                        {
+                            best = unit;
+                            bestHealthPct = healthPct;
+                            bestDistance = distance;
+                        }
+                    }
+
+                    return best;
+                };
+
+            auto selectVashjPriorityTier = [&](uint32 entry, float range) -> std::pair<Unit*, Unit*>
+                {
+                    Creature* current = mytar ? mytar->ToCreature() : nullptr;
+                    if (current && current->GetEntry() == entry && isAttackableVashjUnit(current))
+                        return { current, nullptr };
+
+                    if (Creature* target = selectVashjPriorityTarget(entry, range))
+                    {
+                        if (mytar && mytar != target)
+                            reset = true;
+
+                        return { target, nullptr };
+                    }
+
+                    return { nullptr, nullptr };
+                };
+
+            if (isLadyVashjEncounterActive())
+            {
+                if (GetBotClass() == BOT_CLASS_HUNTER)
+                {
+                    if (auto priority = selectVashjPriorityTier(NPC_ENCHANTED_ELEMENTAL, 220.0f); priority.first)
+                        return priority;
+                }
+                else if (ranged)
+                {
+                    if (auto priority = selectVashjPriorityTier(NPC_COILFANG_STRIDER, 180.0f); priority.first)
+                        return priority;
+                }
+                else
+                {
+                    if (auto priority = selectVashjPriorityTier(NPC_COILFANG_ELITE, 80.0f); priority.first)
+                        return priority;
+                }
+
+                if (ranged || GetBotClass() == BOT_CLASS_HUNTER)
+                    if (auto priority = selectVashjPriorityTier(NPC_TOXIC_SPOREBAT, 220.0f); priority.first)
+                        return priority;
+
+                if (auto priority = selectVashjPriorityTier(NPC_LADY_VASHJ, 220.0f); priority.first)
+                    return priority;
+            }
+        }
+
         // Zul'Aman. Keep encounter add/object priorities in normal bot target
         // selection so boss scripts can stay focused on mechanics and movement.
         if (me->GetMapId() == MAP_ZUL_AMAN && me->IsInCombat())

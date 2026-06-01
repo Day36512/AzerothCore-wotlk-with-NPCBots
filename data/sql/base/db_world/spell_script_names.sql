@@ -919,6 +919,7 @@ INSERT INTO `spell_script_names` VALUES
 (38248,'spell_lady_vashj_summons'),
 (38249,'spell_calling_korkron_or_wildhammer'),
 (38252,'spell_warl_seed_of_corruption_generic'),
+(38280,'spell_lady_vashj_static_charge_bot_movement'),
 (38441,'spell_gen_50pct_count_pct_from_max_hp'),
 (38443,'spell_sha_totemic_mastery'),
 (38451,'spell_karathress_power_of_caribdis'),

@@ -5063,6 +5063,30 @@ Karazhan.Chess.Cheats.SoloBuff.MaxTargets = 4
 ###################################################################################################
 
 ###################################################################################################
+# SERPENTSHRINE CAVERN - COILFANG FRENZY SPAWNS
+#
+# Controls the Coilfang Frenzy fish periodically summoned in Serpentshrine Cavern water before
+# The Lurker Below has been defeated.
+#
+###################################################################################################
+
+#
+#    SerpentShrine.CoilfangFrenzy.Enable
+#
+#        Description: Enables Coilfang Frenzy water spawns while Serpentshrine Cavern keepers are alive.
+#                     When disabled, the periodic summon is skipped and any Coilfang Frenzy that is
+#                     still created by that path despawns immediately.
+#
+#        Default:     1 - Enabled
+#                     0 - Disabled
+#
+
+SerpentShrine.CoilfangFrenzy.Enable = 1
+
+#
+###################################################################################################
+
+###################################################################################################
 # SERPENTSHRINE CAVERN - HYDROSS WATER TOMB
 #
 # Hydross now selects Water Tomb and Vile Sludge targets from nearby players and NPCBots, while
@@ -5086,13 +5110,39 @@ SerpentShrine.Hydross.WaterTomb.DirectTargetOnly = 1
 #    SerpentShrine.Hydross.WaterTomb.DamageMultiplier
 #
 #        Description: Multiplies Water Tomb periodic damage after normal spell calculation.
-#                     1.0 keeps default damage, 0.5 halves it, and 0 disables the DoT damage.
-#                     Values below 0 are clamped to 0, and values above 1 are clamped to 1.
+#                     1.0 keeps default damage, 0.5 halves it, 0 disables the DoT damage,
+#                     and values above 1 increase the DoT damage.
+#                     Values below 0 are clamped to 0.
 #
 #        Default:     0.5
 #
 
 SerpentShrine.Hydross.WaterTomb.DamageMultiplier = 0.5
+
+#
+###################################################################################################
+
+###################################################################################################
+# SERPENTSHRINE CAVERN - LEOTHERAS DEMON PHASE
+#
+# Controls how long Leotheras remains in elf phase before switching to demon phase.
+#
+###################################################################################################
+
+#
+#    SerpentShrine.Leotheras.DemonPhaseDelayMs
+#
+#        Description: Delay, in milliseconds, from the start of Leotheras's elf phase until
+#                     he switches to demon phase.
+#                     This applies both to the first demon phase after the spellbinders die
+#                     and to later elf-to-demon cycles.
+#                     Lower values make Insidious Whisper happen sooner because it is cast
+#                     about 24.25 seconds after demon phase begins.
+#
+#        Default:     60350
+#
+
+SerpentShrine.Leotheras.DemonPhaseDelayMs = 60350
 
 #
 ###################################################################################################

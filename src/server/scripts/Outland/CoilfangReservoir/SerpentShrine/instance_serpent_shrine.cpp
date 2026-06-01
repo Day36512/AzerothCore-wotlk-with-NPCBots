@@ -16,6 +16,7 @@
  */
 
 #include "AreaDefines.h"
+#include "Config.h"
 #include "CreatureScript.h"
 #include "InstanceMapScript.h"
 #include "InstanceScript.h"
@@ -69,6 +70,16 @@ ObjectData const summonData[] =
     { NPC_TAINTED_ELEMENTAL,   DATA_LADY_VASHJ },
     { 0, 0 }
 };
+
+namespace
+{
+    constexpr char const* CONFIG_COILFANG_FRENZY_ENABLE = "SerpentShrine.CoilfangFrenzy.Enable";
+
+    bool AreCoilfangFrenzySpawnsEnabled()
+    {
+        return sConfigMgr->GetOption<bool>(CONFIG_COILFANG_FRENZY_ENABLE, true);
+    }
+}
 
 class instance_serpent_shrine : public InstanceMapScript
 {
@@ -138,7 +149,7 @@ public:
                     creature->RemoveNpcFlag(UNIT_NPC_FLAG_QUESTGIVER);
                     break;
                 case NPC_COILFANG_FRENZY:
-                    if (!creature->IsInWater() || _frenzyCount >= MAX_FRENZY_COUNT)
+                    if (!AreCoilfangFrenzySpawnsEnabled() || !creature->IsInWater() || _frenzyCount >= MAX_FRENZY_COUNT)
                         creature->DespawnOrUnsummon();
                     else
                         ++_frenzyCount;
@@ -299,7 +310,7 @@ class spell_serpentshrine_cavern_coilfang_water : public AuraScript
 
         if (instance->GetBossState(DATA_THE_LURKER_BELOW) != DONE && GetUnitOwner()->IsInWater())
         {
-            if (instance->GetData(DATA_ALIVE_KEEPERS) > 0)
+            if (AreCoilfangFrenzySpawnsEnabled() && instance->GetData(DATA_ALIVE_KEEPERS) > 0)
                 for (uint8 i = 0; i < urand(2, 3); ++i)
                     GetUnitOwner()->CastSpell(GetUnitOwner(), SPELL_SERVERSIDE_SUMMON_FRENZY, true);
 

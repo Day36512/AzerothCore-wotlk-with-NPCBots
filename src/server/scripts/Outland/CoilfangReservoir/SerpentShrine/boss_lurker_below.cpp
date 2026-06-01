@@ -15,14 +15,23 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Containers.h"
 #include "CreatureScript.h"
 #include "GameObjectScript.h"
+#include "Group.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "SpellScriptLoader.h"
 #include "serpent_shrine.h"
 #include "SpellAuraEffects.h"
 #include "SpellScript.h"
+#include "ThreatManager.h"
+#include "bot_ai.h"
+#include "botmgr.h"
+
+#include <vector>
 
 enum Spells
 {
@@ -66,6 +75,187 @@ const Position positions[MAX_SUMMONS] =
     {14.388216f, -423.468018f, -19.625271f, 0.0f},
     {42.471519f, -445.115295f, -19.769423f, 0.0f}
 };
+
+namespace
+{
+    bool IsLurkerNpcBotTank(Unit* unit)
+    {
+        Creature* creature = unit ? unit->ToCreature() : nullptr;
+        if (!creature || !creature->IsNPCBot())
+            return false;
+
+        bot_ai* ai = creature->GetBotAI();
+        return ai && (ai->IsTank() || ai->IsOffTank());
+    }
+
+    bool IsLurkerPlayerMarkedTank(Player* player)
+    {
+        Group* group = player ? player->GetGroup() : nullptr;
+        if (!group)
+            return false;
+
+        for (Group::member_citerator itr = group->GetMemberSlots().begin(); itr != group->GetMemberSlots().end(); ++itr)
+            if (itr->guid == player->GetGUID())
+                return itr->flags & MEMBER_FLAG_MAINTANK;
+
+        return false;
+    }
+
+    bool IsLurkerTank(Unit* unit, Creature* source)
+    {
+        if (!unit)
+            return false;
+
+        if (source && (unit == source->GetThreatMgr().GetCurrentVictim() || unit == source->GetThreatMgr().GetLastVictim() || unit == source->GetVictim()))
+            return true;
+
+        if (IsLurkerNpcBotTank(unit))
+            return true;
+
+        if (Player* player = unit->ToPlayer())
+            return IsLurkerPlayerMarkedTank(player);
+
+        return false;
+    }
+
+    float GetLurkerSpellRange(uint32 spellId)
+    {
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+        return spellInfo ? spellInfo->GetMaxRange(false) : 0.0f;
+    }
+
+    bool IsValidLurkerRandomTarget(Creature* source, Unit* unit, float range, bool excludeTanks)
+    {
+        if (!source || !unit || !unit->IsInWorld() || !unit->IsAlive())
+            return false;
+
+        if (!unit->IsPlayer() && !unit->IsNPCBot())
+            return false;
+
+        if (unit->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
+            return false;
+
+        if (excludeTanks && IsLurkerTank(unit, source))
+            return false;
+
+        if (!unit->IsInMap(source) || !unit->InSamePhase(source))
+            return false;
+
+        if (range > 0.0f && !source->IsWithinDistInMap(unit, range))
+            return false;
+
+        if (!source->IsValidAttackTarget(unit) || !source->CanSeeOrDetect(unit) || !source->IsWithinLOSInMap(unit))
+            return false;
+
+        return true;
+    }
+
+    void AddLurkerRandomTarget(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, Unit* unit, float range, bool excludeTanks)
+    {
+        if (!IsValidLurkerRandomTarget(source, unit, range, excludeTanks))
+            return;
+
+        if (!seen.insert(unit->GetGUID()).second)
+            return;
+
+        targets.push_back(unit);
+    }
+
+    Player* GetLurkerOwnerPlayer(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player;
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotOwner() : nullptr;
+    }
+
+    Group* GetLurkerGroup(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player->GetGroup();
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotGroup() : nullptr;
+    }
+
+    void AddLurkerOwnedBots(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, Player* player, float range, bool excludeTanks)
+    {
+        if (!player || !player->HaveBot())
+            return;
+
+        BotMgr* botMgr = player->GetBotMgr();
+        if (!botMgr)
+            return;
+
+        for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+            AddLurkerRandomTarget(source, targets, seen, pair.second, range, excludeTanks);
+    }
+
+    void AddLurkerThreatTargets(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, float range, bool excludeTanks)
+    {
+        if (!source)
+            return;
+
+        for (ThreatReference const* ref : source->GetThreatMgr().GetSortedThreatList())
+        {
+            if (!ref || !ref->IsAvailable())
+                continue;
+
+            AddLurkerRandomTarget(source, targets, seen, ref->GetVictim(), range, excludeTanks);
+        }
+    }
+
+    std::vector<Unit*> GatherLurkerRandomTargets(Creature* source, uint32 spellId, bool excludeTanks)
+    {
+        std::vector<Unit*> targets;
+        GuidSet seen;
+
+        if (!source)
+            return targets;
+
+        float const range = GetLurkerSpellRange(spellId);
+        Unit* seed = source->GetThreatMgr().GetCurrentVictim();
+        if (!seed)
+            seed = source->GetVictim();
+
+        if (Group* group = GetLurkerGroup(seed))
+        {
+            for (Unit* member : BotMgr::GetAllGroupMembers(group))
+            {
+                AddLurkerRandomTarget(source, targets, seen, member, range, excludeTanks);
+
+                if (Player* player = member ? member->ToPlayer() : nullptr)
+                    AddLurkerOwnedBots(source, targets, seen, player, range, excludeTanks);
+            }
+        }
+        else
+        {
+            AddLurkerRandomTarget(source, targets, seen, seed, range, excludeTanks);
+
+            if (Player* player = GetLurkerOwnerPlayer(seed))
+            {
+                AddLurkerRandomTarget(source, targets, seen, player, range, excludeTanks);
+                AddLurkerOwnedBots(source, targets, seen, player, range, excludeTanks);
+            }
+        }
+
+        AddLurkerThreatTargets(source, targets, seen, range, excludeTanks);
+        return targets;
+    }
+
+    Unit* SelectLurkerRandomTarget(Creature* source, uint32 spellId, bool excludeTanks)
+    {
+        std::vector<Unit*> targets = GatherLurkerRandomTargets(source, spellId, excludeTanks);
+        return targets.empty() ? nullptr : Acore::Containers::SelectRandomContainerElement(targets);
+    }
+}
 
 struct boss_the_lurker_below : public BossAI
 {
@@ -144,7 +334,9 @@ struct boss_the_lurker_below : public BossAI
     {
         scheduler.Schedule(10900ms, GROUP_GEYSER, [this](TaskContext context)
         {
-            DoCastRandomTarget(SPELL_GEYSER);
+            if (Unit* target = SelectLurkerRandomTarget(me, SPELL_GEYSER, true))
+                DoCast(target, SPELL_GEYSER);
+
             context.Repeat(10200ms, 54900ms);
         }).Schedule(18150ms, GROUP_WHIRL, [this](TaskContext context)
         {
@@ -228,7 +420,7 @@ struct boss_the_lurker_below : public BossAI
         {
             me->AttackerStateUpdate(target);
         }
-        else if ((target = SelectTarget(SelectTargetMethod::Random, 0)))
+        else if ((target = SelectLurkerRandomTarget(me, SPELL_WATER_BOLT, false)))
         {
             me->CastSpell(target, SPELL_WATER_BOLT, false);
         }
@@ -311,7 +503,8 @@ class spell_lurker_below_spout_cone : public SpellScript
     {
         targets.remove_if([this](WorldObject const* target) -> bool
         {
-            return !GetCaster()->HasInLine(target, 5.0f) || !target->IsPlayer() || target->ToUnit()->IsInWater();
+            Unit const* unit = target->ToUnit();
+            return !unit || !GetCaster()->HasInLine(target, 5.0f) || (!unit->IsPlayer() && !unit->IsNPCBot()) || unit->IsInWater();
         });
     }
 
