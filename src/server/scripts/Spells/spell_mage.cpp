@@ -763,11 +763,32 @@ class spell_mage_ignite : public AuraScript
 
         // -----------------------------------------------------------------
         //  CALCULATE PERCENTAGE
-        //  Base: 7 % per talent rank
-        //  Bonus: +5 pp if caster has Aura 300258
+        //  Base Ignite by talent rank:
+        //      Rank 1:  7%
+        //      Rank 2: 13%
+        //      Rank 3: 20%
+        //      Rank 4: 26%
+        //      Rank 5: 33%
+        //
+        //  Bonus: +5 percentage points if caster has Aura 300258
         // -----------------------------------------------------------------
-        uint8 rank = GetSpellInfo()->GetRank(); // talent rank (1–5)
-        int32 pct = 7 * rank;                  // base % per rank
+        static constexpr int32 IgnitePctByRank[5] =
+        {
+            7,
+            13,
+            20,
+            26,
+            33
+        };
+
+        uint8 rank = GetSpellInfo()->GetRank(); // talent rank 1-5
+
+        if (rank < 1)
+            rank = 1;
+        else if (rank > 5)
+            rank = 5;
+
+        int32 pct = IgnitePctByRank[rank - 1];
 
         Unit* caster = eventInfo.GetActor();
         if (caster && caster->HasAura(AURA_BONUS_IGNITE_PCT))
@@ -781,9 +802,6 @@ class spell_mage_ignite : public AuraScript
             caster, SPELL_MAGE_IGNITE, SPELL_AURA_PERIODIC_DAMAGE, amount);
     }
 
-    // ---------------------------------------------------------------------
-    //  REGISTRATION
-    // ---------------------------------------------------------------------
     void Register() override
     {
         DoCheckProc += AuraCheckProcFn(spell_mage_ignite::CheckProc);

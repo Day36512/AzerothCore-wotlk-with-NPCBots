@@ -32,7 +32,17 @@
 #include "bot_ai.h"
 #include "botmgr.h"
 
+#include <string>
+
 using namespace std::chrono_literals;
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceDebuffOnMeForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+    void AnnounceMoveAwayFromMeForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
 
 namespace Maker
 {
@@ -332,7 +342,11 @@ struct boss_the_maker : public BossAI
         case Maker::EVENT_TRANSMOGRIFY:
         {
             if (Unit* tgt = SelectRandomPlayerOrNPCBotFromThreat(true))
+            {
                 me->CastSpell(tgt, Maker::SPELL_TRANSMOGRIFY, false);
+                if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(tgt))
+                    DBMFTABotCallouts::AnnounceDebuffOnMeForModule(bot, Maker::SPELL_TRANSMOGRIFY, "DBM-Party-BC", "555", "Transmogrify", DBMFTABotCallouts::GetCooldownMs());
+            }
 
             events.Repeat(22s, 30s);
             break;
@@ -361,6 +375,8 @@ struct boss_the_maker : public BossAI
             {
                 me->CastSpell(tgt, Maker::SPELL_VOLATILE_MARK_VISUAL, true);
                 me->CastSpell(tgt, Maker::SPELL_VOLATILE_CLOUD, false);
+                if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(tgt))
+                    DBMFTABotCallouts::AnnounceMoveAwayFromMeForModule(bot, Maker::SPELL_VOLATILE_CLOUD, "DBM-Party-BC", "555", "Volatile Cloud", DBMFTABotCallouts::GetCooldownMs());
             }
             else
             {

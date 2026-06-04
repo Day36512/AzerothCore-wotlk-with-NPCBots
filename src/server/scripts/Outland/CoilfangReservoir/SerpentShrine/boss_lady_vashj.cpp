@@ -16,8 +16,11 @@
  */
 
 #include "Config.h"
+#include "CellImpl.h"
 #include "Containers.h"
 #include "CreatureScript.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
 #include "Group.h"
 #include "Log.h"
 #include "Player.h"
@@ -35,10 +38,18 @@
 
 #include <algorithm>
 #include <cmath>
+#include <list>
 #include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    void AnnounceDebuffOnMe(Creature* bot, uint32 spellId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+    void AnnounceMoveAwayFromMe(Creature* bot, uint32 spellId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
 
 enum Says
 {
@@ -54,6 +65,7 @@ enum Says
 
 enum Spells
 {
+    SPELL_DEATH_TOUCH                = 5,
     SPELL_SHOOT                     = 37770,
     SPELL_MULTI_SHOT                = 38310,
     SPELL_SHOCK_BLAST               = 38509,
@@ -88,6 +100,8 @@ namespace
 {
     constexpr char const* CONFIG_TAINTED_ELEMENTAL_USE_OVERRIDE_SPAWNS = "SerpentShrine.LadyVashj.TaintedElemental.UseOverrideSpawnPositions";
     constexpr char const* CONFIG_TAINTED_ELEMENTAL_OVERRIDE_SPAWNS = "SerpentShrine.LadyVashj.TaintedElemental.OverrideSpawnPositions";
+    constexpr char const* CONFIG_TAINTED_ELEMENTAL_SPAWN_COUNT = "SerpentShrine.LadyVashj.TaintedElemental.SpawnCount";
+    constexpr char const* CONFIG_TAINTED_ELEMENTAL_SPAWN_INTERVAL_MS = "SerpentShrine.LadyVashj.TaintedElemental.SpawnIntervalMs";
     constexpr char const* DEFAULT_TAINTED_ELEMENTAL_OVERRIDE_SPAWNS =
         "3.56 -966.54 41.17; "
         "29.70 -972.68 41.19; "
@@ -109,7 +123,17 @@ namespace
     constexpr float VASHJ_PI = 3.14159265358979323846f;
     constexpr uint32 VASHJ_PLAYER_WIPE_CHECK_INTERVAL_MS = 1000;
     constexpr float VASHJ_BOT_WIPE_KILL_RANGE = 150.0f;
+    constexpr uint32 VASHJ_TAINTED_ELEMENTAL_DEFAULT_SPAWN_INTERVAL_MS = 50 * IN_MILLISECONDS;
+    constexpr uint32 VASHJ_TAINTED_ELEMENTAL_MAX_SPAWN_COUNT = 4;
     constexpr char const* VASHJ_PLAYER_WIPE_YELL = "Your champions have fallen; their servants are nothing without them.";
+
+    enum class VashjPhase : uint8
+    {
+        PhaseOne,
+        PhaseTwoTransition,
+        PhaseTwoShield,
+        PhaseThree
+    };
 
     std::vector<Position> ParseVashjTaintedElementalOverrideSpawns(std::string spawns)
     {
@@ -135,20 +159,36 @@ namespace
             CONFIG_TAINTED_ELEMENTAL_OVERRIDE_SPAWNS, DEFAULT_TAINTED_ELEMENTAL_OVERRIDE_SPAWNS));
     }
 
-    bool TrySummonVashjTaintedElementalFromOverride(Creature* vashj)
+    uint32 GetVashjTaintedElementalSpawnCount()
+    {
+        return std::clamp<uint32>(sConfigMgr->GetOption<uint32>(CONFIG_TAINTED_ELEMENTAL_SPAWN_COUNT, 1), 1, VASHJ_TAINTED_ELEMENTAL_MAX_SPAWN_COUNT);
+    }
+
+    Milliseconds GetVashjTaintedElementalSpawnInterval()
+    {
+        return Milliseconds(std::max<uint32>(1, sConfigMgr->GetOption<uint32>(CONFIG_TAINTED_ELEMENTAL_SPAWN_INTERVAL_MS, VASHJ_TAINTED_ELEMENTAL_DEFAULT_SPAWN_INTERVAL_MS)));
+    }
+
+    uint32 TrySummonVashjTaintedElementalsFromOverride(Creature* vashj, uint32 spawnCount)
     {
         if (!vashj || !sConfigMgr->GetOption<bool>(CONFIG_TAINTED_ELEMENTAL_USE_OVERRIDE_SPAWNS, false))
-            return false;
+            return 0;
 
-        std::vector<Position> const positions = GetVashjTaintedElementalOverrideSpawns();
+        std::vector<Position> positions = GetVashjTaintedElementalOverrideSpawns();
         if (positions.empty())
         {
             LOG_WARN("scripts", "Lady Vashj Tainted Elemental override spawns are enabled, but {} has no valid coordinate triples. Falling back to trigger-based spawns.", CONFIG_TAINTED_ELEMENTAL_OVERRIDE_SPAWNS);
-            return false;
+            return 0;
         }
 
-        Position const& position = Acore::Containers::SelectRandomContainerElement(positions);
-        return vashj->SummonCreature(NPC_TAINTED_ELEMENTAL, position.GetPositionX(), position.GetPositionY(), position.GetPositionZ(), position.GetAngle(vashj), TEMPSUMMON_CORPSE_TIMED_DESPAWN, 30 * IN_MILLISECONDS) != nullptr;
+        Acore::Containers::RandomResize(positions, std::min<std::size_t>(spawnCount, positions.size()));
+
+        uint32 summoned = 0;
+        for (Position const& position : positions)
+            if (vashj->SummonCreature(NPC_TAINTED_ELEMENTAL, position.GetPositionX(), position.GetPositionY(), position.GetPositionZ(), position.GetAngle(vashj), TEMPSUMMON_CORPSE_TIMED_DESPAWN, 30 * IN_MILLISECONDS))
+                ++summoned;
+
+        return summoned;
     }
 
     bool IsVashjNpcBotTank(Unit* unit)
@@ -528,7 +568,7 @@ namespace
         if (!killed.insert(unit->GetGUID()).second)
             return;
 
-        Unit::Kill(vashj, unit, false);
+        vashj->CastSpell(unit, SPELL_DEATH_TOUCH, true);
     }
 
     void KillVashjEncounterBotAndPet(Creature* vashj, Creature* bot, GuidSet& killed, bool requireEncounterRange)
@@ -549,9 +589,13 @@ namespace
 
         GuidSet killed;
 
-        for (ThreatReference const* ref : vashj->GetThreatMgr().GetSortedThreatList())
-            if (ref && ref->IsAvailable())
-                KillVashjEncounterBotUnit(vashj, ref->GetVictim(), killed, false);
+        std::list<Unit*> nearby;
+        Acore::AnyUnitInObjectRangeCheck check(vashj, VASHJ_BOT_WIPE_KILL_RANGE);
+        Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(vashj, nearby, check);
+        Cell::VisitObjects(vashj, searcher, VASHJ_BOT_WIPE_KILL_RANGE);
+
+        for (Unit* unit : nearby)
+            KillVashjEncounterBotUnit(vashj, unit, killed, false);
 
         for (MapReference const& ref : vashj->GetMap()->GetPlayers())
         {
@@ -574,6 +618,8 @@ struct boss_lady_vashj : public BossAI
     boss_lady_vashj(Creature* creature) : BossAI(creature, DATA_LADY_VASHJ)
     {
         _intro = false;
+        _phase = VashjPhase::PhaseOne;
+        _shieldPhaseActive = false;
     }
 
     void Reset() override
@@ -584,15 +630,11 @@ struct boss_lady_vashj : public BossAI
         _playerAngle = 0.0f;
         _playerWipeCheckTimer = VASHJ_PLAYER_WIPE_CHECK_INTERVAL_MS;
         _playerWipeResetting = false;
+        _phase = VashjPhase::PhaseOne;
+        SetShieldPhaseProtection(false);
         BossAI::Reset();
 
-        ScheduleHealthCheckEvent(70, [&]{
-            Talk(SAY_PHASE2);
-            scheduler.CancelAll();
-            me->CastStop();
-            me->SetReactState(REACT_PASSIVE);
-            me->GetMotionMaster()->MovePoint(POINT_HOME, me->GetHomePosition().GetPositionX(), me->GetHomePosition().GetPositionY(), me->GetHomePosition().GetPositionZ(), FORCED_MOVEMENT_NONE, 0.f, true, true);
-        });
+        ScheduleHealthCheckEvent(70, [&]{ BeginPhaseTwoTransition(); });
     }
 
     void KilledUnit(Unit* /*victim*/) override
@@ -621,6 +663,8 @@ struct boss_lady_vashj : public BossAI
         DoCastSelf(SPELL_REMOVE_TAINTED_CORES, true);
         _playerWipeCheckTimer = VASHJ_PLAYER_WIPE_CHECK_INTERVAL_MS;
         _playerWipeResetting = false;
+        _phase = VashjPhase::PhaseOne;
+        SetShieldPhaseProtection(false);
         ScheduleSpells();
     }
 
@@ -679,60 +723,18 @@ struct boss_lady_vashj : public BossAI
 
     void MovementInform(uint32 type, uint32 id) override
     {
-        if (type != POINT_MOTION_TYPE || id != POINT_HOME)
+        if (type != POINT_MOTION_TYPE || id != POINT_HOME || _phase != VashjPhase::PhaseTwoTransition)
             return;
 
-        me->AddUnitState(UNIT_STATE_ROOT);
-        me->SetFacingTo(me->GetHomePosition().GetOrientation());
-        instance->SetData(DATA_ACTIVATE_SHIELD, 0);
-        scheduler.Schedule(2400ms, [this](TaskContext context)
-        {
-            if (Unit* target = SelectVashjRandomTarget(me, SPELL_FORKED_LIGHTNING, false))
-            {
-                _playerAngle = me->GetAngle(target);
-                me->SetOrientation(_playerAngle);
-                DoCast(target, SPELL_FORKED_LIGHTNING);
-            }
-            context.Repeat(2400ms, 12450ms);
-        }).Schedule(0s, [this](TaskContext context)
-        {
-            DoCastSelf(SPELL_SUMMON_ENCHANTED_ELEMENTAL, true);
-            context.Repeat(2500ms);
-        }).Schedule(45s, [this](TaskContext context)
-        {
-            DoCastSelf(SPELL_SUMMON_COILFANG_ELITE, true);
-            context.Repeat(45s);
-        }).Schedule(60s, [this](TaskContext context)
-        {
-            DoCastSelf(SPELL_SUMMON_COILFANG_STRIDER, true);
-            context.Repeat(60s);
-        }).Schedule(50s, [this](TaskContext context)
-        {
-            if (!TrySummonVashjTaintedElementalFromOverride(me))
-                DoCastSelf(SPELL_SUMMON_TAINTED_ELEMENTAL, true);
+        StartPhaseTwoShield();
+    }
 
-            context.Repeat(50s);
-        }).Schedule(1s, [this](TaskContext context)
-        {
-            if (!me->HasAura(SPELL_MAGIC_BARRIER))
-            {
-                Talk(SAY_PHASE3);
-                me->ClearUnitState(UNIT_STATE_ROOT);
-                me->SetReactState(REACT_AGGRESSIVE);
-                me->GetMotionMaster()->MoveChase(me->GetVictim());
-                scheduler.CancelAll();
+    void DamageTaken(Unit* attacker, uint32& damage, DamageEffectType damageEffectType, SpellSchoolMask spellSchoolMask) override
+    {
+        BossAI::DamageTaken(attacker, damage, damageEffectType, spellSchoolMask);
 
-                ScheduleSpells();
-                scheduler.Schedule(5s, [this](TaskContext context)
-                {
-                    DoCastSelf(SPELL_SUMMON_TOXIC_SPOREBAT, true);
-                    _batTimer = 20s - static_cast<std::chrono::seconds>(std::min(_count++, 16));
-                    context.Repeat(_batTimer);
-                });
-            }
-            else
-                context.Repeat(1s);
-        });
+        if (_phase == VashjPhase::PhaseTwoShield && attacker != me && instance && instance->GetData(DATA_ACTIVE_SHIELD_GENERATORS) > 0)
+            damage = 0;
     }
 
     void UpdateAI(uint32 diff) override
@@ -784,11 +786,159 @@ struct boss_lady_vashj : public BossAI
     }
 
 private:
+    void BeginPhaseTwoTransition()
+    {
+        if (_phase != VashjPhase::PhaseOne)
+            return;
+
+        _phase = VashjPhase::PhaseTwoTransition;
+        Talk(SAY_PHASE2);
+        scheduler.CancelAll();
+        me->CastStop();
+        SetShieldPhaseProtection(false);
+        me->AttackStop();
+        me->SetReactState(REACT_PASSIVE);
+        me->GetMotionMaster()->Clear();
+        me->GetMotionMaster()->MovePoint(POINT_HOME, me->GetHomePosition().GetPositionX(), me->GetHomePosition().GetPositionY(), me->GetHomePosition().GetPositionZ(), FORCED_MOVEMENT_NONE, 0.f, true, true);
+
+        scheduler.Schedule(1s, [this](TaskContext context)
+        {
+            if (_phase != VashjPhase::PhaseTwoTransition)
+                return;
+
+            if (me->GetHomePosition().GetExactDist2d(me) <= 2.0f)
+            {
+                StartPhaseTwoShield();
+                return;
+            }
+
+            context.Repeat(1s);
+        });
+    }
+
+    void StartPhaseTwoShield()
+    {
+        if (_phase != VashjPhase::PhaseTwoTransition)
+            return;
+
+        _phase = VashjPhase::PhaseTwoShield;
+        scheduler.CancelAll();
+        me->CastStop();
+        me->AttackStop();
+        me->GetMotionMaster()->Clear();
+        me->GetMotionMaster()->MoveIdle();
+        SetShieldPhaseProtection(true);
+        me->SetFacingTo(me->GetHomePosition().GetOrientation());
+        instance->SetData(DATA_ACTIVATE_SHIELD, 0);
+
+        scheduler.Schedule(2400ms, [this](TaskContext context)
+        {
+            if (_phase != VashjPhase::PhaseTwoShield)
+                return;
+
+            if (Unit* target = SelectVashjRandomTarget(me, SPELL_FORKED_LIGHTNING, false))
+            {
+                _playerAngle = me->GetAngle(target);
+                me->SetOrientation(_playerAngle);
+                DoCast(target, SPELL_FORKED_LIGHTNING);
+            }
+            context.Repeat(2400ms, 12450ms);
+        }).Schedule(0s, [this](TaskContext context)
+        {
+            if (_phase != VashjPhase::PhaseTwoShield)
+                return;
+
+            DoCastSelf(SPELL_SUMMON_ENCHANTED_ELEMENTAL, true);
+            context.Repeat(2500ms);
+        }).Schedule(45s, [this](TaskContext context)
+        {
+            if (_phase != VashjPhase::PhaseTwoShield)
+                return;
+
+            DoCastSelf(SPELL_SUMMON_COILFANG_ELITE, true);
+            context.Repeat(45s);
+        }).Schedule(60s, [this](TaskContext context)
+        {
+            if (_phase != VashjPhase::PhaseTwoShield)
+                return;
+
+            DoCastSelf(SPELL_SUMMON_COILFANG_STRIDER, true);
+            context.Repeat(60s);
+        }).Schedule(GetVashjTaintedElementalSpawnInterval(), [this](TaskContext context)
+        {
+            if (_phase != VashjPhase::PhaseTwoShield)
+                return;
+
+            uint32 const spawnCount = GetVashjTaintedElementalSpawnCount();
+            uint32 const overrideSummons = TrySummonVashjTaintedElementalsFromOverride(me, spawnCount);
+            for (uint32 i = overrideSummons; i < spawnCount; ++i)
+                DoCastSelf(SPELL_SUMMON_TAINTED_ELEMENTAL, true);
+
+            context.Repeat(GetVashjTaintedElementalSpawnInterval());
+        }).Schedule(1s, [this](TaskContext context)
+        {
+            if (_phase != VashjPhase::PhaseTwoShield)
+                return;
+
+            // Multiple shield generators can collapse into one visible barrier aura; the GO/channel state is the real encounter counter.
+            uint32 const activeShieldGenerators = instance->GetData(DATA_ACTIVE_SHIELD_GENERATORS);
+            if (activeShieldGenerators == 0)
+            {
+                StartPhaseThree();
+                return;
+            }
+
+            SetShieldPhaseProtection(true);
+            context.Repeat(1s);
+        });
+    }
+
+    void StartPhaseThree()
+    {
+        if (_phase == VashjPhase::PhaseThree)
+            return;
+
+        _phase = VashjPhase::PhaseThree;
+        SetShieldPhaseProtection(false);
+        me->RemoveAurasDueToSpell(SPELL_MAGIC_BARRIER);
+        Talk(SAY_PHASE3);
+        me->SetReactState(REACT_AGGRESSIVE);
+        if (me->GetVictim())
+            me->GetMotionMaster()->MoveChase(me->GetVictim());
+        scheduler.CancelAll();
+
+        ScheduleSpells();
+        scheduler.Schedule(5s, [this](TaskContext context)
+        {
+            DoCastSelf(SPELL_SUMMON_TOXIC_SPOREBAT, true);
+            _batTimer = 20s - static_cast<std::chrono::seconds>(std::min(_count++, 16));
+            context.Repeat(_batTimer);
+        });
+    }
+
+    void SetShieldPhaseProtection(bool apply)
+    {
+        _shieldPhaseActive = apply;
+        if (apply)
+        {
+            me->SetReactState(REACT_PASSIVE);
+            me->AddUnitState(UNIT_STATE_ROOT);
+            me->SetUnitFlag(UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC);
+        }
+        else
+        {
+            me->ClearUnitState(UNIT_STATE_ROOT);
+            me->RemoveUnitFlag(UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC);
+        }
+    }
+
     float _playerAngle;
     uint32 _playerWipeCheckTimer;
     bool _recentlySpoken;
     bool _intro;
     bool _playerWipeResetting;
+    VashjPhase _phase;
+    bool _shieldPhaseActive;
     int32 _count;
     std::chrono::seconds _batTimer;
 };
@@ -949,6 +1099,7 @@ class spell_lady_vashj_static_charge_bot_movement : public AuraScript
 
         _handledBot = true;
         _originalCommandState = ai->GetBotCommandState();
+        DBMFTABotCallouts::AnnounceMoveAwayFromMe(bot, SPELL_STATIC_CHARGE, "Static Charge", DBMFTABotCallouts::GetCooldownMs());
 
         if (!(_originalCommandState & BOT_COMMAND_INACTION))
             ai->SetBotCommandState(BOT_COMMAND_INACTION);

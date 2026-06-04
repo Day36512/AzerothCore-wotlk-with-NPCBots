@@ -46,6 +46,13 @@
 #include <set>
 #include <vector>
 
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceMoveAwayFromMe(Creature* bot, uint32 spellId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
+
 enum Texts
 {
     SAY_AGGRO              = 0,
@@ -1281,6 +1288,12 @@ public:
         return ValidateSpellInfo({ SPELL_FLAME_WREATH_RAN_THRU, SPELL_FLAME_WREATH_EXPLOSION });
     }
 
+    void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(GetTarget()))
+            DBMFTABotCallouts::AnnounceMoveAwayFromMe(bot, SPELL_FLAME_WREATH_RING, "Flame Wreath", DBMFTABotCallouts::GetCooldownMs());
+    }
+
     void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         Unit* target = GetTarget();
@@ -1304,6 +1317,7 @@ public:
 private:
     void Register() override
     {
+        AfterEffectApply += AuraEffectApplyFn(spell_flamewreath_aura::OnApply, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
         OnEffectRemove += AuraEffectRemoveFn(spell_flamewreath_aura::OnRemove, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
     }
 };

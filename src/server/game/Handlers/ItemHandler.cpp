@@ -1236,11 +1236,6 @@ void WorldSession::HandleSocketOpcode(WorldPackets::Item::SocketGems& packet)
     if (!packet.ItemGuid)
         return;
 
-    //cheat -> tried to socket same gem multiple times
-    if ((packet.GemGuids[0] && (packet.GemGuids[0] == packet.GemGuids[1] || packet.GemGuids[0] == packet.GemGuids[2])) ||
-            (packet.GemGuids[1] && (packet.GemGuids[1] == packet.GemGuids[2])))
-        return;
-
     Item* itemTarget = _player->GetItemByGuid(packet.ItemGuid);
     if (!itemTarget)                                         //missing item to socket
         return;
@@ -1255,6 +1250,38 @@ void WorldSession::HandleSocketOpcode(WorldPackets::Item::SocketGems& packet)
     Item* Gems[MAX_GEM_SOCKETS];
     for (int i = 0; i < MAX_GEM_SOCKETS; ++i)
         Gems[i] = packet.GemGuids[i] ? _player->GetItemByGuid(packet.GemGuids[i]) : nullptr;
+
+    // Allow stackable gems to use the same source stack in multiple sockets.
+    // Non-stackable gems still cannot reuse one item GUID for several sockets.
+    for (int i = 0; i < MAX_GEM_SOCKETS; ++i)
+    {
+        if (!packet.GemGuids[i])
+            continue;
+
+        if (!Gems[i])
+            return;
+
+        bool alreadyChecked = false;
+        for (int j = 0; j < i; ++j)
+        {
+            if (packet.GemGuids[j] == packet.GemGuids[i])
+            {
+                alreadyChecked = true;
+                break;
+            }
+        }
+
+        if (alreadyChecked)
+            continue;
+
+        uint32 sameGuidUses = 0;
+        for (int j = 0; j < MAX_GEM_SOCKETS; ++j)
+            if (packet.GemGuids[j] == packet.GemGuids[i])
+                ++sameGuidUses;
+
+        if (sameGuidUses > 1 && (Gems[i]->GetCount() < sameGuidUses || Gems[i]->GetMaxStackCount() < sameGuidUses))
+            return;
+    }
 
     GemPropertiesEntry const* GemProps[MAX_GEM_SOCKETS];
     for (int i = 0; i < MAX_GEM_SOCKETS; ++i)                //get geminfo from dbc storage
@@ -1396,7 +1423,10 @@ void WorldSession::HandleSocketOpcode(WorldPackets::Item::SocketGems& packet)
         {
             itemTarget->SetEnchantment(EnchantmentSlot(SOCK_ENCHANTMENT_SLOT + i), GemEnchants[i], 0, 0, _player->GetGUID());
             if (Item* guidItem = _player->GetItemByGuid(packet.GemGuids[i]))
-                _player->DestroyItem(guidItem->GetBagSlot(), guidItem->GetSlot(), true);
+            {
+                uint32 count = 1;
+                _player->DestroyItemCount(guidItem, count, true);
+            }
         }
     }
 

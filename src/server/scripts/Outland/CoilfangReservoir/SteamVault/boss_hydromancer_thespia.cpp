@@ -19,6 +19,15 @@
 #include "ScriptedCreature.h"
 #include "steam_vault.h"
 
+#include <string>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceDebuffOnMeForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
+
 enum HydromancerThespia
 {
     SAY_SUMMON                  = 0, // Unused or Unknown Use
@@ -66,11 +75,21 @@ struct boss_hydromancer_thespia : public BossAI
             context.Repeat(12100ms, 14500ms);
         }).Schedule(13300ms, [this](TaskContext context)
         {
-            DoCastRandomTarget(SPELL_LUNG_BURST);
+            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0))
+            {
+                DoCast(target, SPELL_LUNG_BURST);
+                if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                    DBMFTABotCallouts::AnnounceDebuffOnMeForModule(bot, SPELL_LUNG_BURST, "DBM-Party-BC", "573", "Lung Burst", DBMFTABotCallouts::GetCooldownMs());
+            }
             context.Repeat(21800ms, 25400ms);
         }).Schedule(14500ms, [this](TaskContext context)
         {
-            DoCastRandomTarget(SPELL_ENVELOPING_WINDS);
+            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0))
+            {
+                DoCast(target, SPELL_ENVELOPING_WINDS);
+                if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                    DBMFTABotCallouts::AnnounceDebuffOnMeForModule(bot, SPELL_ENVELOPING_WINDS, "DBM-Party-BC", "573", "Enveloping Winds", DBMFTABotCallouts::GetCooldownMs());
+            }
             context.Repeat(30s, 40s);
         });
     }

@@ -19,6 +19,15 @@
 #include "ScriptedCreature.h"
 #include "steam_vault.h"
 
+#include <string>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceDebuffOnMeForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
+
 enum MekgineerSteamrigger
 {
     SAY_MECHANICS               = 0,
@@ -76,7 +85,12 @@ struct boss_mekgineer_steamrigger : public BossAI
             context.Repeat(6050ms, 17650ms);
         }).Schedule(14400ms, [this](TaskContext context)
         {
-            DoCastRandomTarget(SPELL_ELECTRIFIED_NET);
+            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0))
+            {
+                DoCast(target, SPELL_ELECTRIFIED_NET);
+                if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                    DBMFTABotCallouts::AnnounceDebuffOnMeForModule(bot, SPELL_ELECTRIFIED_NET, "DBM-Party-BC", "574", "Electrified Net", DBMFTABotCallouts::GetCooldownMs());
+            }
             context.Repeat(21800ms, 34200ms);
         }).Schedule(5min, [this](TaskContext /*context*/)
         {

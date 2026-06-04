@@ -27,9 +27,17 @@
 #include "botmgr.h"
 
 #include <chrono>
+#include <string>
 #include <vector>
 
 using namespace std::chrono_literals;
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceMoveAwayFromMeForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
 
 /*
 How levitation sequence works: boss casts Levitate and it triggers a chain of spells, target(any target, player or pet, any position in
@@ -150,7 +158,11 @@ struct boss_the_black_stalker : public BossAI
                 {
                     //Dinkle custom
                     if (Unit* target = SelectRandomPlayerOrNPCBotFromThreat(false))
+                    {
                         me->CastSpell(target, SPELL_STATIC_CHARGE, false);
+                        if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                            DBMFTABotCallouts::AnnounceMoveAwayFromMeForModule(bot, SPELL_STATIC_CHARGE, "DBM-Party-BC", "579", "Static Charge", DBMFTABotCallouts::GetCooldownMs());
+                    }
                     else
                         DoCastRandomTarget(SPELL_STATIC_CHARGE, false);
 

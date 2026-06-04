@@ -31,9 +31,17 @@
 #include "auchenai_crypts.h"
 
 #include <unordered_set>
+#include <string>
 #include <vector>
 
 using namespace std::chrono_literals;
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceCustomForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& message, uint32 cooldownMs = 5000);
+}
 
 enum Text
 {
@@ -299,6 +307,8 @@ struct boss_exarch_maladaar : public BossAI
                             {
                                 Talk(SAY_ROAR);
                                 DoCast(target, SPELL_STOLEN_SOUL);
+                                if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                                    DBMFTABotCallouts::AnnounceCustomForModule(bot, SPELL_STOLEN_SOUL, "DBM-Party-BC", "524", "Stolen Soul on me!", DBMFTABotCallouts::GetCooldownMs());
 
                                 if (Creature* summon = me->SummonCreature(
                                     ENTRY_STOLEN_SOUL,

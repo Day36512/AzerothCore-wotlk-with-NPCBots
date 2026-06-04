@@ -26,7 +26,16 @@
 #include "botmgr.h"
 #include "mechanar.h"
 
+#include <string>
 #include <vector>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceDebuffOnMeForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+    void AnnounceCustomForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& message, uint32 cooldownMs = 5000);
+}
 
 enum Says
 {
@@ -368,6 +377,21 @@ struct boss_pathaleon_the_calculator : public BossAI
     }
 
 private:
+    void AnnounceDominationTarget(Unit* target, uint32 spellId)
+    {
+        Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target);
+        if (!bot)
+            return;
+
+        if (spellId == SPELL_DOMINATION)
+        {
+            DBMFTABotCallouts::AnnounceCustomForModule(bot, spellId, "DBM-Party-BC", "565", "Domination on me!", DBMFTABotCallouts::GetCooldownMs());
+            return;
+        }
+
+        DBMFTABotCallouts::AnnounceDebuffOnMeForModule(bot, spellId, "DBM-Party-BC", "565", "Polymorph", DBMFTABotCallouts::GetCooldownMs());
+    }
+
     Unit* SelectDefaultMindControlTarget()
     {
         Unit* tank = GetPathaleonTank(me);
@@ -418,10 +442,20 @@ private:
     SpellCastResult CastDefaultDomination()
     {
         if (Unit* target = SelectDefaultMindControlTarget())
-            return me->CastSpell(target, SPELL_DOMINATION, false);
+        {
+            SpellCastResult result = me->CastSpell(target, SPELL_DOMINATION, false);
+            if (result == SPELL_CAST_OK)
+                AnnounceDominationTarget(target, SPELL_DOMINATION);
+            return result;
+        }
 
         if (Unit* target = SelectFallbackPolymorphBotTarget())
-            return me->CastSpell(target, SPELL_POLYMORPH_RANK_1, false);
+        {
+            SpellCastResult result = me->CastSpell(target, SPELL_POLYMORPH_RANK_1, false);
+            if (result == SPELL_CAST_OK)
+                AnnounceDominationTarget(target, SPELL_POLYMORPH_RANK_1);
+            return result;
+        }
 
         return SPELL_FAILED_BAD_TARGETS;
     }
@@ -437,6 +471,7 @@ private:
             if (result == SPELL_CAST_OK)
             {
                 castStarted = true;
+                AnnounceDominationTarget(target, spellId);
                 continue;
             }
 
@@ -453,7 +488,12 @@ private:
         {
             case PATHALEON_MC_REPLACEMENT_TARGET_TANK:
                 if (Unit* target = GetPathaleonTank(me))
-                    return me->CastSpell(target, config.SpellId, false);
+                {
+                    SpellCastResult result = me->CastSpell(target, config.SpellId, false);
+                    if (result == SPELL_CAST_OK)
+                        AnnounceDominationTarget(target, config.SpellId);
+                    return result;
+                }
                 return SPELL_FAILED_BAD_TARGETS;
             case PATHALEON_MC_REPLACEMENT_TARGET_SELF:
                 return me->CastSpell(me, config.SpellId, false);
@@ -462,7 +502,12 @@ private:
             case PATHALEON_MC_REPLACEMENT_TARGET_RANDOM_GROUP:
             default:
                 if (Unit* target = SelectRandomReplacementGroupTarget())
-                    return me->CastSpell(target, config.SpellId, false);
+                {
+                    SpellCastResult result = me->CastSpell(target, config.SpellId, false);
+                    if (result == SPELL_CAST_OK)
+                        AnnounceDominationTarget(target, config.SpellId);
+                    return result;
+                }
                 return SPELL_FAILED_BAD_TARGETS;
         }
     }

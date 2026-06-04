@@ -21,7 +21,15 @@
 #include "ThreatManager.h"
 #include "the_botanica.h"
 
+#include <string>
 #include <vector>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceCustomForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& message, uint32 cooldownMs = 5000);
+}
 
 enum Says
 {
@@ -180,7 +188,12 @@ private:
         if (!target)
             return SPELL_FAILED_BAD_TARGETS;
 
-        return me->CastSpell(target, SPELL_SACRIFICE, false);
+        SpellCastResult result = me->CastSpell(target, SPELL_SACRIFICE, false);
+        if (result == SPELL_CAST_OK)
+            if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                DBMFTABotCallouts::AnnounceCustomForModule(bot, SPELL_SACRIFICE, "DBM-Party-BC", "560", "Sacrifice on me!", DBMFTABotCallouts::GetCooldownMs());
+
+        return result;
     }
 };
 

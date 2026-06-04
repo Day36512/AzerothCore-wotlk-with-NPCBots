@@ -43,7 +43,8 @@ enum DataTypes
     DATA_CONSOLE                            = 26,  // Used by the console SAI.
     DATA_BRIDGE_PART1                       = 27,  // Used by the console SAI.
     DATA_BRIDGE_PART2                       = 28,  // Used by the console SAI.
-    DATA_BRIDGE_PART3                       = 29   // Used by the console SAI.
+    DATA_BRIDGE_PART3                       = 29,  // Used by the console SAI.
+    DATA_ACTIVE_SHIELD_GENERATORS           = 30
 };
 
 enum SSNPCs

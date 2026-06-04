@@ -29,7 +29,15 @@
 #include "CellImpl.h"
 
 #include <algorithm>
+#include <string>
 #include <unordered_set>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceMoveAwayFromMeForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
 
 enum Says
 {
@@ -119,6 +127,8 @@ struct boss_omor_the_unscarred : public BossAI
                     _lastCurseTarget = markGuid;
 
                     DoCast(mark, SPELL_TREACHEROUS_AURA, false);
+                    if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(mark))
+                        DBMFTABotCallouts::AnnounceMoveAwayFromMeForModule(bot, SPELL_TREACHEROUS_AURA, "DBM-Party-BC", "528", "Treacherous Aura", DBMFTABotCallouts::GetCooldownMs());
 
                     scheduler.Schedule(TREACHEROUS_AURA_SPREAD_DELAY, [this, markGuid](TaskContext /*ctx*/)
                         {
@@ -330,7 +340,11 @@ private:
         Acore::Containers::RandomResize(nearby, std::min<size_t>(maxExtra, nearby.size()));
 
         for (Unit* u : nearby)
+        {
             DoCast(u, SPELL_TREACHEROUS_AURA, true);
+            if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(u))
+                DBMFTABotCallouts::AnnounceMoveAwayFromMeForModule(bot, SPELL_TREACHEROUS_AURA, "DBM-Party-BC", "528", "Treacherous Aura", DBMFTABotCallouts::GetCooldownMs());
+        }
     }
 
     void StartShieldCycle()

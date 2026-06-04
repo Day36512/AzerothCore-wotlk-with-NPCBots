@@ -38,6 +38,14 @@
 #include <cmath>
 #include <string>
 
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceBombOnMe(Creature* bot, uint32 spellId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+    void AnnounceDispelMe(Creature* bot, uint32 spellId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
+
 enum Emotes
 {
     EMOTE_SERVICE = 0
@@ -63,15 +71,6 @@ enum Events
 static inline bool IsNPCBot(Unit* u)
 {
     return u && u->GetTypeId() == TYPEID_UNIT && u->ToCreature() && u->ToCreature()->IsNPCBot();
-}
-
-static inline void BotSay(Unit* u, char const* text)
-{
-    if (!u || !text || !*text)
-        return;
-
-    if (IsNPCBot(u))
-        u->ToCreature()->Say(text, LANG_UNIVERSAL);
 }
 //Dinkle custom end
 
@@ -154,7 +153,11 @@ struct boss_baron_geddon : public BossAI
         {
             //Dinkle custom start
             if (Unit* target = SelectRandomPlayerOrNPCBot(100.0f, SPELL_IGNITE_MANA))
+            {
                 DoCast(target, SPELL_IGNITE_MANA);
+                if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                    DBMFTABotCallouts::AnnounceDispelMe(bot, SPELL_IGNITE_MANA, "Ignite Mana", DBMFTABotCallouts::GetCooldownMs());
+            }
             //Dinkle custom end
 
             events.Repeat(27s, 32s);
@@ -473,8 +476,8 @@ class spell_geddon_living_bomb_aura : public AuraScript
         if (target->IsPlayer())
             return;
 
-        if (IsNPCBot(target))
-            BotSay(target, "Living Bomb on me!");
+        if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+            DBMFTABotCallouts::AnnounceBombOnMe(bot, SPELL_LIVING_BOMB, "Living Bomb", DBMFTABotCallouts::GetCooldownMs());
 
         Position dest;
         if (FindSafeSpot(target, dest))

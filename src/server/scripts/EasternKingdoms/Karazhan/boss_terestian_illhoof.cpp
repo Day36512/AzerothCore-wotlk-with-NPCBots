@@ -27,7 +27,15 @@
 #include "botmgr.h"
 #include "karazhan.h"
 
+#include <string>
 #include <vector>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceDebuffOnMe(Creature* bot, uint32 spellId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
 
 enum Text
 {
@@ -292,6 +300,9 @@ struct boss_terestian_illhoof : public BossAI
             if (Unit* target = SelectSacrificeTarget())
             {
                 DoCast(target, SPELL_SACRIFICE, true);
+                if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                    DBMFTABotCallouts::AnnounceDebuffOnMe(bot, SPELL_SACRIFICE, "Sacrifice", DBMFTABotCallouts::GetCooldownMs());
+
                 target->m_Events.AddEventAtOffset([target] {
                     target->CastSpell(target, SPELL_SUMMON_DEMONCHAINS, true);
                 }, 1s);

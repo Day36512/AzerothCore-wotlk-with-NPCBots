@@ -21,6 +21,15 @@
 #include "Unit.h"
 #include "sethekk_halls.h"
 
+#include <string>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceDebuffOnMeForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
+
 enum Text
 {
     SAY_ANZU_INTRO1             = 0,
@@ -115,6 +124,8 @@ struct boss_anzu : public BossAI
             if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 50.0f, true))
             {
                 DoCast(target, SPELL_SPELL_BOMB);
+                if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                    DBMFTABotCallouts::AnnounceDebuffOnMeForModule(bot, SPELL_SPELL_BOMB, "DBM-Party-BC", "542", "Spell Bomb", DBMFTABotCallouts::GetCooldownMs());
             }
             context.Repeat(16s, 24500ms);
             scheduler.DelayAll(3s);
@@ -123,6 +134,8 @@ struct boss_anzu : public BossAI
             if (Unit* target = SelectTarget(SelectTargetMethod::Random, 9, 45.0f, true, false))
             {
                 DoCast(target, SPELL_CYCLONE);
+                if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                    DBMFTABotCallouts::AnnounceDebuffOnMeForModule(bot, SPELL_CYCLONE, "DBM-Party-BC", "542", "Cyclone", DBMFTABotCallouts::GetCooldownMs());
             }
             context.Repeat(22s, 27s);
             scheduler.DelayAll(3s);

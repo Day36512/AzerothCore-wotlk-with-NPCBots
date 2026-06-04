@@ -76,6 +76,7 @@ namespace
 {
     constexpr char const* CONFIG_COILFANG_FRENZY_ENABLE = "SerpentShrine.CoilfangFrenzy.Enable";
     constexpr float VASHJ_SHIELD_GENERATOR_SEARCH_RANGE = 120.0f;
+    constexpr float VASHJ_SHIELD_GENERATOR_TRIGGER_SEARCH_RANGE = 10.0f;
     constexpr uint8 VASHJ_SHIELD_GENERATOR_COUNT = 4;
 
     uint32 constexpr VashjShieldGeneratorEntries[VASHJ_SHIELD_GENERATOR_COUNT] =
@@ -98,6 +99,18 @@ namespace
                 return i;
 
         return VASHJ_SHIELD_GENERATOR_COUNT;
+    }
+
+    bool IsVashjShieldGeneratorActive(GameObject* gobject)
+    {
+        if (!gobject)
+            return true;
+
+        if (gobject->HasGameObjectFlag(GO_FLAG_NOT_SELECTABLE))
+            return false;
+
+        Creature* trigger = gobject->FindNearestCreature(WORLD_TRIGGER, VASHJ_SHIELD_GENERATOR_TRIGGER_SEARCH_RANGE, true);
+        return trigger && trigger->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
     }
 }
 
@@ -122,6 +135,7 @@ public:
             for (ObjectGuid& shieldGuid : _shieldGeneratorGUID)
                 shieldGuid.Clear();
 
+            _vashjShieldGeneratorsActivated = false;
             _aliveKeepersCount = 0;
             _frenzyCount = 0;
         }
@@ -132,9 +146,12 @@ public:
                 return false;
 
             if (type == DATA_LADY_VASHJ)
-                for (uint8 i = 0; i < 4; ++i)
+            {
+                _vashjShieldGeneratorsActivated = false;
+                for (uint8 i = 0; i < VASHJ_SHIELD_GENERATOR_COUNT; ++i)
                     if (GameObject* gobject = instance->GetGameObject(_shieldGeneratorGUID[i]))
                         gobject->SetGameObjectFlag(GO_FLAG_NOT_SELECTABLE);
+            }
 
             return true;
         }
@@ -228,6 +245,8 @@ public:
 
                         if (activatedGenerators != VASHJ_SHIELD_GENERATOR_COUNT)
                             LOG_WARN("scripts", "Lady Vashj shield activation found {}/{} shield generators. Missing generators may leave phase 2 shield state inconsistent.", activatedGenerators, VASHJ_SHIELD_GENERATOR_COUNT);
+
+                        _vashjShieldGeneratorsActivated = activatedGenerators != 0;
                     }
                     break;
             }
@@ -238,11 +257,28 @@ public:
             if (type == DATA_ALIVE_KEEPERS)
                 return _aliveKeepersCount;
 
+            if (type == DATA_ACTIVE_SHIELD_GENERATORS)
+            {
+                if (!_vashjShieldGeneratorsActivated)
+                    return VASHJ_SHIELD_GENERATOR_COUNT;
+
+                uint32 activeGenerators = 0;
+                for (ObjectGuid const& shieldGuid : _shieldGeneratorGUID)
+                {
+                    GameObject* gobject = instance->GetGameObject(shieldGuid);
+                    if (IsVashjShieldGeneratorActive(gobject))
+                        ++activeGenerators;
+                }
+
+                return activeGenerators;
+            }
+
             return 0;
         }
 
     private:
         ObjectGuid _shieldGeneratorGUID[VASHJ_SHIELD_GENERATOR_COUNT];
+        bool _vashjShieldGeneratorsActivated;
         uint32 _aliveKeepersCount;
         uint32 _frenzyCount;
     };

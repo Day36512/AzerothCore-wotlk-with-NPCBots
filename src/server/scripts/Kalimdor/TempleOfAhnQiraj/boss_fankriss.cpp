@@ -19,6 +19,15 @@
 #include "ScriptedCreature.h"
 #include "temple_of_ahnqiraj.h"
 
+#include <string>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceDebuffOnMe(Creature* bot, uint32 spellId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
+
 enum Spells
 {
     SPELL_MORTAL_WOUND      = 25646,
@@ -138,6 +147,8 @@ struct boss_fankriss : public BossAI
                     {
                         uint32 spellId = Acore::Containers::SelectRandomContainerElement(entangleSpells);
                         DoCast(target, spellId);
+                        if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                            DBMFTABotCallouts::AnnounceDebuffOnMe(bot, spellId, "Entangle", DBMFTABotCallouts::GetCooldownMs());
                     }
 
                     SummonHatchlingWaves();

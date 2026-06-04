@@ -25,6 +25,15 @@
 #include "GridNotifiersImpl.h"
 #include "CellImpl.h"
 
+#include <string>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceMoveAwayFromMe(Creature* bot, uint32 spellId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
+
 enum Spells
 {
     SPELL_GEHENNAS_CURSE = 19716,
@@ -67,7 +76,11 @@ struct boss_gehennas : public BossAI
         {
             //Dinkle custom
             if (Unit* target = SelectRandomPlayerOrBot(100.0f, true))
+            {
                 DoCast(target, SPELL_RAIN_OF_FIRE, true);
+                if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                    DBMFTABotCallouts::AnnounceMoveAwayFromMe(bot, SPELL_RAIN_OF_FIRE, "Rain of Fire", DBMFTABotCallouts::GetCooldownMs());
+            }
             else
                 DoCastVictim(SPELL_RAIN_OF_FIRE, true);
 

@@ -34,9 +34,17 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <string>
 #include <vector>
 
 using namespace std::chrono_literals;
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceMoveAwayFromMeForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
 
 enum Spells
 {
@@ -534,6 +542,8 @@ private:
             return;
 
         me->CastSpell(target, SPELL_MURMURS_TOUCH, false);
+        if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+            DBMFTABotCallouts::AnnounceMoveAwayFromMeForModule(bot, SPELL_MURMURS_TOUCH, "DBM-Party-BC", "547", "Murmur's Touch", DBMFTABotCallouts::GetCooldownMs());
     }
 
     void CastMagneticPullOnDungeonParticipants()

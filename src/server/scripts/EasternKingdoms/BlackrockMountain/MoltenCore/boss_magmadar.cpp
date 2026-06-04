@@ -21,6 +21,15 @@
 #include "SpellScriptLoader.h"
 #include "molten_core.h"
 
+#include <string>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceMoveAwayFromMe(Creature* bot, uint32 spellId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
+
 enum Texts
 {
     EMOTE_FRENZY = 0,
@@ -104,7 +113,11 @@ struct boss_magmadar : public BossAI
                 });
 
             if (!candidates.empty())
+            {
                 DoCast(candidates.front(), SPELL_LAVA_BOMB);
+                if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(candidates.front()))
+                    DBMFTABotCallouts::AnnounceMoveAwayFromMe(bot, SPELL_LAVA_BOMB, "Lava Bomb", DBMFTABotCallouts::GetCooldownMs());
+            }
 
             events.Repeat(12s, 15s);
             break;
@@ -123,7 +136,11 @@ struct boss_magmadar : public BossAI
                 });
 
             if (!targets.empty())
+            {
                 DoCast(targets.front(), SPELL_LAVA_BOMB_RANGED);
+                if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(targets.front()))
+                    DBMFTABotCallouts::AnnounceMoveAwayFromMe(bot, SPELL_LAVA_BOMB_RANGED, "Ranged Lava Bomb", DBMFTABotCallouts::GetCooldownMs());
+            }
 
             events.Repeat(12s, 15s);
             break;

@@ -5100,13 +5100,37 @@ SerpentShrine.CoilfangFrenzy.Enable = 1
 #        Description: Enables the configured Tainted Elemental override spawn positions.
 #                     When disabled, Lady Vashj uses the default nearby trigger selection.
 #                     When enabled and the position list has at least one valid coordinate triple,
-#                     Tainted Elementals are summoned directly at one random configured position.
+#                     Tainted Elementals are summoned directly at configured positions.
 #
 #        Default:     0 - Disabled
 #                     1 - Enabled
 #
 
 SerpentShrine.LadyVashj.TaintedElemental.UseOverrideSpawnPositions = 0
+
+#
+#    SerpentShrine.LadyVashj.TaintedElemental.SpawnCount
+#
+#        Description: Number of Tainted Elementals spawned per wave during Lady Vashj phase 2.
+#                     Values below 1 are clamped to 1. Values above 4 are clamped to 4.
+#                     When override positions are enabled, each wave tries to use distinct
+#                     configured positions before falling back to default trigger-based spawns.
+#
+#        Default:     1
+#
+
+SerpentShrine.LadyVashj.TaintedElemental.SpawnCount = 1
+
+#
+#    SerpentShrine.LadyVashj.TaintedElemental.SpawnIntervalMs
+#
+#        Description: Time between Tainted Elemental spawn waves during Lady Vashj phase 2.
+#                     Value is in milliseconds.
+#
+#        Default:     50000
+#
+
+SerpentShrine.LadyVashj.TaintedElemental.SpawnIntervalMs = 50000
 
 #
 #    SerpentShrine.LadyVashj.TaintedElemental.OverrideSpawnPositions

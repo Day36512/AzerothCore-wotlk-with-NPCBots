@@ -19,6 +19,16 @@
 #include "ScriptedCreature.h"
 #include "arcatraz.h"
 
+#include <string>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceDebuffOnMeForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+    void AnnounceCustomForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& message, uint32 cooldownMs = 5000);
+}
+
 enum Says
 {
     SAY_INTRO                   = 0,
@@ -81,7 +91,12 @@ struct boss_harbinger_skyriss : public BossAI
 
         scheduler.Schedule(10s, [this](TaskContext context)
         {
-            DoCastRandomTarget(SPELL_MIND_REND, 0, 50.0f);
+            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 50.0f, true))
+            {
+                DoCast(target, SPELL_MIND_REND);
+                if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                    DBMFTABotCallouts::AnnounceDebuffOnMeForModule(bot, SPELL_MIND_REND, "DBM-Party-BC", "551", "Mind Rend", DBMFTABotCallouts::GetCooldownMs());
+            }
             context.Repeat(10s);
         }).Schedule(15s, [this](TaskContext context)
         {
@@ -92,8 +107,11 @@ struct boss_harbinger_skyriss : public BossAI
             context.Repeat(25s);
         }).Schedule(30s, [this](TaskContext context)
         {
-            if (DoCastRandomTarget(SPELL_DOMINATION, 0, 30.0f, true, false, false) == SPELL_CAST_OK)
+            Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 30.0f, true, false);
+            if (target && me->CastSpell(target, SPELL_DOMINATION, false) == SPELL_CAST_OK)
             {
+                if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                    DBMFTABotCallouts::AnnounceCustomForModule(bot, SPELL_DOMINATION, "DBM-Party-BC", "551", "Domination on me!", DBMFTABotCallouts::GetCooldownMs());
                 Talk(SAY_MIND);
             }
             context.Repeat();

@@ -26,6 +26,15 @@
 #include "SpellScriptLoader.h"
 #include "Unit.h"
 
+#include <string>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceDebuffOnMeForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
+
 enum Texts
 {
     SAY_AGGRO = 0,
@@ -239,7 +248,12 @@ private:
     void DoCastOnRandomPlayerOrNPCBot(uint32 spellId, float range = 0.0f)
     {
         if (Unit* target = SelectRandomPlayerOrNPCBot(range))
+        {
             DoCast(target, spellId);
+            if (spellId == SPELL_VEIL_OF_SHADOW)
+                if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                    DBMFTABotCallouts::AnnounceDebuffOnMeForModule(bot, SPELL_VEIL_OF_SHADOW, "DBM-Party-BC", "534", "Veil of Shadow", DBMFTABotCallouts::GetCooldownMs());
+        }
     }
 
     uint8 _shadowWordPainStage; // 0..5

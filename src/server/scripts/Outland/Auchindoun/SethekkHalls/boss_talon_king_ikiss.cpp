@@ -27,7 +27,15 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <string>
 #include <vector>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceDebuffOnMeForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
 
 namespace
 {
@@ -143,6 +151,8 @@ struct boss_talon_king_ikiss : public BossAI
                     }))
                 {
                     DoCast(target, SPELL_POLYMORPH);
+                    if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                        DBMFTABotCallouts::AnnounceDebuffOnMeForModule(bot, SPELL_POLYMORPH, "DBM-Party-BC", "543", "Polymorph", DBMFTABotCallouts::GetCooldownMs());
                 }
 
                 context.Repeat(15s, 17500ms);

@@ -56,10 +56,18 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <string>
 #include <unordered_set>
 #include <vector>
 
 using namespace std::chrono_literals;
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceMoveAwayFromMeForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
 
 namespace
 {
@@ -1576,7 +1584,11 @@ struct boss_shirrak_the_dead_watcher : public BossAI
                 if (canCastCombatSpell)
                 {
                     if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
+                    {
                         me->CastSpell(target, SPELL_CHAIN_BEAM, false);
+                        if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                            DBMFTABotCallouts::AnnounceMoveAwayFromMeForModule(bot, SPELL_CHAIN_BEAM, "DBM-Party-BC", "523", "Chain Beam", DBMFTABotCallouts::GetCooldownMs());
+                    }
                 }
                 events.ScheduleEvent(EVENT_CHAIN_BEAM, 12s);
                 break;

@@ -36,7 +36,15 @@
 #include <functional>
 #include <limits>
 #include <list>
+#include <string>
 #include <vector>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceBombOnMe(Creature* bot, uint32 spellId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
 
 constexpr float aNefariusSpawnLoc[4] = { -7466.16f, -1040.80f, 412.053f, 2.14675f };
 
@@ -540,6 +548,8 @@ class spell_vael_burning_adrenaline : public AuraScript
             {
                 if (c->IsNPCBot())
                 {
+                    DBMFTABotCallouts::AnnounceBombOnMe(c, SPELL_BURNING_ADRENALINE, "Burning Adrenaline", DBMFTABotCallouts::GetCooldownMs());
+
                     //Dinkle custom
                     if (bot_ai* bai = c->GetBotAI())
                         bai->MoveToSendPosition(BA_SAFE_POS);

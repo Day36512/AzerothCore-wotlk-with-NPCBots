@@ -31,9 +31,17 @@
 #include <chrono>
 #include <cmath>
 #include <list>
+#include <string>
 #include <vector>
 
 using namespace std::chrono_literals;
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceDebuffOnMeForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
 
 enum Spells
 {
@@ -165,7 +173,12 @@ private:
     void DoCastOnRandomPlayerOrNPCBot(uint32 spellId, float range = 0.0f, bool skipCurrentTank = false)
     {
         if (Unit* target = SelectRandomPlayerOrNPCBot(range, skipCurrentTank))
+        {
             DoCast(target, spellId);
+            if (spellId == SPELL_CRYSTAL_PRISON)
+                if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                    DBMFTABotCallouts::AnnounceDebuffOnMeForModule(bot, SPELL_CRYSTAL_PRISON, "DBM-Party-BC", "535", "Crystal Prison", DBMFTABotCallouts::GetCooldownMs());
+        }
     }
 
     void DoGravityWell()
