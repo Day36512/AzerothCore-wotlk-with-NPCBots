@@ -3492,7 +3492,7 @@ public:
         if (bot->IsSummon() && !bot->IsTempBot())
         {
             BotDataMgr::DespawnDungeonBot(bot->GetEntry());
-            handler->PSendSysMessage("Dungeon bot %u '%s' successfully deleted", bot->GetEntry(), bot->GetName());
+            handler->PSendSysMessage("Dungeon bot {} '{}' successfully deleted", bot->GetEntry(), bot->GetName());
             return true;
         }
 
@@ -3542,7 +3542,7 @@ public:
         if (bot->IsSummon() && !bot->IsTempBot())
         {
             BotDataMgr::DespawnDungeonBot(bot->GetEntry());
-            handler->PSendSysMessage("Dungeon bot %u '%s' successfully deleted", bot->GetEntry(), bot->GetName());
+            handler->PSendSysMessage("Dungeon bot {} '{}' successfully deleted", bot->GetEntry(), bot->GetName());
             return true;
         }
 

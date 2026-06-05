@@ -11084,17 +11084,17 @@ bool bot_ai::OnGossipSelect(Player* player, Creature* creature/* == me*/, uint32
                 {
                     close = false;
                     ChatHandler ch(player->GetSession());
-                    ch.PSendSysMessage("%s's Owners:", me->GetName());
+                    ch.PSendSysMessage("{}'s Owners:", me->GetName());
                     uint32 counter = 0;
                     uint32 real_owner_guid = _botData->owner;
                     CharacterCacheEntry const* owner_entry = sCharacterCache->GetCharacterCacheByGuid(ObjectGuid::Create<HighGuid::Player>(real_owner_guid));
-                    ch.PSendSysMessage("%u) %s (%u, main)", ++counter, owner_entry ? owner_entry->Name : LocalizedNpcText(player, BOT_TEXT_UNKNOWN), real_owner_guid);
+                    ch.PSendSysMessage("{}) {} ({}, main)", ++counter, owner_entry ? owner_entry->Name : LocalizedNpcText(player, BOT_TEXT_UNKNOWN), real_owner_guid);
                     std::vector showners(_botData->shared_owners.cbegin(), _botData->shared_owners.cend());
                     std::ranges::sort(showners);
                     for (uint32 showner_guid : showners)
                     {
                         owner_entry = sCharacterCache->GetCharacterCacheByGuid(ObjectGuid::Create<HighGuid::Player>(showner_guid));
-                        ch.PSendSysMessage("%u) %s (%u)", ++counter, owner_entry ? owner_entry->Name : LocalizedNpcText(player, BOT_TEXT_UNKNOWN), showner_guid);
+                        ch.PSendSysMessage("{}) {} ({})", ++counter, owner_entry ? owner_entry->Name : LocalizedNpcText(player, BOT_TEXT_UNKNOWN), showner_guid);
                     }
                     break;
                 }

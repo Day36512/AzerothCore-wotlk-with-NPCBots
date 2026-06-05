@@ -771,7 +771,7 @@ namespace lfg
                                         if (Player const* leader = ObjectAccessor::FindPlayer(grp->GetLeaderGUID()))
                                         {
                                             ChatHandler ch(leader->GetSession());
-                                            ch.PSendSysMessage("There is a npcbot in your group (owner: %s). Using npcbots in Dungeon Finder is restricted. Contact your administration.", plrg->GetName());
+                                            ch.PSendSysMessage("There is a npcbot in your group (owner: {}). Using npcbots in Dungeon Finder is restricted. Contact your administration.", plrg->GetName());
                                         }
                                     }
 
