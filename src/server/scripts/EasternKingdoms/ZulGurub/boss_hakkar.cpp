@@ -82,8 +82,7 @@ enum Events
     EVENT_ASPECT_OF_VENOXIS = 6,
     EVENT_ASPECT_OF_MARLI = 7,
     EVENT_ASPECT_OF_THEKAL = 8,
-    EVENT_ASPECT_OF_ARLOKK = 9,
-    EVENT_HAKKAR_STASIS_PULSE = 10
+    EVENT_ASPECT_OF_ARLOKK = 9
 };
 
 
@@ -100,14 +99,12 @@ public:
     struct boss_hakkarAI : public BossAI
     {
 
-        static constexpr std::array<uint32, 8> STASIS_ENTRIES =
+        static constexpr std::array<uint32, 9> HAKKAR_PULL_KILL_ENTRIES =
         {
-            15043, 11352, 11359, 11340, 11356, 11830, 11389, 11374
+            15043, 11352, 11359, 11340, 11356, 11830, 11389, 11374, 11357
         };
 
-        static constexpr uint32 SPELL_STASIS = 300334;
-        static constexpr float  STASIS_RADIUS = 200.0f;
-        static constexpr Milliseconds STASIS_PERIOD = 5s;
+        static constexpr float HAKKAR_PULL_KILL_RADIUS = 150.0f;
 
         boss_hakkarAI(Creature* creature) : BossAI(creature, DATA_HAKKAR)
         {
@@ -156,7 +153,7 @@ public:
         {
             _JustEngagedWith();
 
-            events.ScheduleEvent(EVENT_HAKKAR_STASIS_PULSE, STASIS_PERIOD);
+            KillNearbyPriestsOnPull();
 
             events.ScheduleEvent(EVENT_BLOOD_SIPHON, 90s);
             events.ScheduleEvent(EVENT_CORRUPTED_BLOOD, 25s);
@@ -179,7 +176,6 @@ public:
         {
             BossAI::EnterEvadeMode(evadeReason);
             Talk(SAY_EVADE);
-            // Event system is cleared by BossAI; STASIS pulses stop automatically
         }
 
         void UpdateAI(uint32 diff) override
@@ -196,13 +192,6 @@ public:
             {
                 switch (eventId)
                 {
-                case EVENT_HAKKAR_STASIS_PULSE:
-                {
-                    ApplyStasisPulse();
-                    events.ScheduleEvent(EVENT_HAKKAR_STASIS_PULSE, STASIS_PERIOD);
-                    break;
-                }
-
                 case EVENT_BLOOD_SIPHON:
                 {
                     if (_swapSiphonToMindBlast)
@@ -320,13 +309,12 @@ public:
         bool IncludeBotsInSiphon() const { return _includeBotsInSiphon; }
 
     private:
-        // ---- STASIS pulse implementation ----
-        void ApplyStasisPulse()
+        void KillNearbyPriestsOnPull()
         {
             std::list<Unit*> nearby;
-            Acore::AnyUnitInObjectRangeCheck check(me, STASIS_RADIUS);
+            Acore::AnyUnitInObjectRangeCheck check(me, HAKKAR_PULL_KILL_RADIUS);
             Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, nearby, check);
-            Cell::VisitObjects(me, searcher, STASIS_RADIUS);
+            Cell::VisitObjects(me, searcher, HAKKAR_PULL_KILL_RADIUS);
 
             if (nearby.empty())
                 return;
@@ -339,12 +327,10 @@ public:
                 Creature* c = static_cast<Creature*>(u);
                 uint32 entry = c->GetEntry();
 
-                // Check if creature is in our target set
-                if (std::find(STASIS_ENTRIES.begin(), STASIS_ENTRIES.end(), entry) == STASIS_ENTRIES.end())
+                if (std::find(HAKKAR_PULL_KILL_ENTRIES.begin(), HAKKAR_PULL_KILL_ENTRIES.end(), entry) == HAKKAR_PULL_KILL_ENTRIES.end())
                     continue;
 
-                // Apply STASIS with Hakkar as the caster
-                me->AddAura(SPELL_STASIS, c);
+                Unit::Kill(me, c, false);
             }
         }
 

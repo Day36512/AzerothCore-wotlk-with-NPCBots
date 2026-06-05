@@ -312,6 +312,7 @@ struct npc_batrider : public CreatureAI
 {
     BatRiderMode _mode;     // the version of this creature (trash or boss)
     TaskScheduler _scheduler;
+    bool _liquidFireScheduled = false;
 
     npc_batrider(Creature* creature) : CreatureAI(creature)
     {
@@ -357,10 +358,12 @@ struct npc_batrider : public CreatureAI
         CreatureAI::Reset();
 
         _scheduler.CancelAll();
+        _liquidFireScheduled = false;
 
         if (_mode == BATRIDER_MODE_BOSS)
         {
             me->GetMotionMaster()->Clear();
+            ScheduleBossLiquidFire();
         }
         else if (_mode == BATRIDER_MODE_TRASH)
         {
@@ -374,21 +377,7 @@ struct npc_batrider : public CreatureAI
 
         if (_mode == BATRIDER_MODE_BOSS)
         {
-            _scheduler.Schedule(2s, [this](TaskContext context)
-                {
-                    // CUSTOM: Throw Liquid Fire at player or NPCBot
-                    if (Unit* t = SelectRandomPlayerOrNPCBot(80.0f, [this](Unit* u)
-                        {
-                            if (!me->IsValidAttackTarget(u))
-                                return false;
-                            // avoid pets; prefer real units (players/bots)
-                            return !u->IsPet();
-                        }))
-                    {
-                        DoCast(t, SPELL_BATRIDER_THROW_LIQUID_FIRE);
-                    }
-                    context.Repeat(8s);
-                });
+            ScheduleBossLiquidFire();
         }
         else if (_mode == BATRIDER_MODE_TRASH)
         {
@@ -441,6 +430,30 @@ struct npc_batrider : public CreatureAI
     }
 
 private:
+    void ScheduleBossLiquidFire()
+    {
+        if (_mode != BATRIDER_MODE_BOSS || _liquidFireScheduled)
+            return;
+
+        _liquidFireScheduled = true;
+        _scheduler.Schedule(2s, [this](TaskContext context)
+        {
+            // CUSTOM: Throw Liquid Fire at a player or NPCBot, but not their pets.
+            if (Unit* target = SelectRandomPlayerOrNPCBot(80.0f, [this](Unit* u)
+                {
+                    if (!me->IsValidAttackTarget(u))
+                        return false;
+
+                    return !u->IsPet();
+                }))
+            {
+                DoCast(target, SPELL_BATRIDER_THROW_LIQUID_FIRE);
+            }
+
+            context.Repeat(8s);
+        });
+    }
+
     // === Contained selector: players OR NPCBots within range, valid hostile target ===
     Unit* SelectRandomPlayerOrNPCBot(float range, std::function<bool(Unit*)> extra = {})
     {

@@ -20,6 +20,7 @@
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "TaskScheduler.h"
+#include "bot_ai.h"
 #include "zulgurub.h"
 #include "Config.h" // <— added for sConfigMgr
 
@@ -58,6 +59,10 @@ enum Events
     EVENT_DELUSIONS_OF_JINDO = 4,
     EVENT_TELEPORT = 5
 };
+
+static constexpr float JINDO_BOT_BANISH_X = -11584.27f;
+static constexpr float JINDO_BOT_BANISH_Y = -1249.73f;
+static constexpr float JINDO_BOT_BANISH_Z = 77.55f;
 
 struct boss_jindo : public BossAI
 {
@@ -214,8 +219,48 @@ struct boss_jindo : public BossAI
         if (!targets.empty())
         {
             Unit* target = Acore::Containers::SelectRandomContainerElement(targets);
+            if (spellId == SPELL_BANISH)
+            {
+                if (Creature* bot = target->ToCreature())
+                {
+                    if (bot->IsNPCBot())
+                    {
+                        CastBanishOnBot(bot);
+                        return;
+                    }
+                }
+            }
+
             DoCast(target, spellId, true); // instant/triggered to keep flow snappy
         }
+    }
+
+    void CorrectBanishBotTeleport(Creature* bot)
+    {
+        if (!bot || !bot->IsAlive() || !bot->IsInWorld() || !bot->IsNPCBot())
+            return;
+
+        bot->NearTeleportTo(JINDO_BOT_BANISH_X, JINDO_BOT_BANISH_Y, JINDO_BOT_BANISH_Z, bot->GetOrientation());
+
+        if (bot_ai* ai = bot->GetBotAI())
+            ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+    }
+
+    void CastBanishOnBot(Creature* bot)
+    {
+        if (!bot)
+            return;
+
+        ObjectGuid botGuid = bot->GetGUID();
+
+        DoCast(bot, SPELL_BANISH, true);
+        CorrectBanishBotTeleport(bot);
+
+        _scheduler.Schedule(100ms, [this, botGuid](TaskContext /*context*/)
+        {
+            if (Creature* delayedBot = ObjectAccessor::GetCreature(*me, botGuid))
+                CorrectBanishBotTeleport(delayedBot);
+        });
     }
 
     bool CanAIAttack(Unit const* target) const override
