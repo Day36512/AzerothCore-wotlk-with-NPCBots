@@ -759,6 +759,13 @@ class spell_mage_ignite : public AuraScript
     {
         PreventDefaultAction(); // We apply our own Ignite DoT
 
+        Unit* caster = eventInfo.GetActor();
+        Unit* target = eventInfo.GetProcTarget();
+        DamageInfo* damageInfo = eventInfo.GetDamageInfo();
+
+        if (!caster || !target || !damageInfo)
+            return;
+
         SpellInfo const* igniteDot = sSpellMgr->AssertSpellInfo(SPELL_MAGE_IGNITE);
 
         // -----------------------------------------------------------------
@@ -790,15 +797,47 @@ class spell_mage_ignite : public AuraScript
 
         int32 pct = IgnitePctByRank[rank - 1];
 
-        Unit* caster = eventInfo.GetActor();
-        if (caster && caster->HasAura(AURA_BONUS_IGNITE_PCT))
+        if (caster->HasAura(AURA_BONUS_IGNITE_PCT))
             pct += 5; // flat +5 percentage points
 
-        int32 amount = int32(CalculatePct(eventInfo.GetDamageInfo()->GetDamage(), pct)
-            / igniteDot->GetMaxTicks());
+        int32 igniteTicks = igniteDot->GetMaxTicks();
+        if (igniteTicks <= 0)
+            igniteTicks = 1;
 
-        // Xinef: implement original Ignite stacking bug behaviour
-        eventInfo.GetProcTarget()->CastDelayedSpellWithPeriodicAmount(
+        int64 totalIgniteDamage = CalculatePct(damageInfo->GetDamage(), pct);
+
+        // -----------------------------------------------------------------
+        //  ROLLING IGNITE / ANTI-MUNCHING
+        //
+        //  If this target already has our Ignite, preserve the remaining
+        //  unpaid damage and roll it into the refreshed Ignite.
+        //
+        //  GetTickNumber() = ticks already fired.
+        //  Remaining ticks = total ticks - ticks already fired.
+        // -----------------------------------------------------------------
+        if (AuraEffect* currentIgnite = target->GetAuraEffect(SPELL_MAGE_IGNITE, EFFECT_0, caster->GetGUID()))
+        {
+            int32 currentTotalTicks = currentIgnite->GetTotalTicks();
+            if (currentTotalTicks <= 0)
+                currentTotalTicks = igniteTicks;
+
+            uint32 ticksDone = currentIgnite->GetTickNumber();
+
+            uint32 remainingTicks = 0;
+            if (uint32(currentTotalTicks) > ticksDone)
+                remainingTicks = uint32(currentTotalTicks) - ticksDone;
+
+            if (remainingTicks > 0 && currentIgnite->GetAmount() > 0)
+                totalIgniteDamage += int64(currentIgnite->GetAmount()) * remainingTicks;
+        }
+
+        int32 amount = int32(totalIgniteDamage / igniteTicks);
+
+        // Avoid a positive Ignite being rounded down to 0 damage per tick.
+        if (totalIgniteDamage > 0 && amount <= 0)
+            amount = 1;
+
+        target->CastDelayedSpellWithPeriodicAmount(
             caster, SPELL_MAGE_IGNITE, SPELL_AURA_PERIODIC_DAMAGE, amount);
     }
 
