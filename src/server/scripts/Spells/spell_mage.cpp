@@ -771,21 +771,21 @@ class spell_mage_ignite : public AuraScript
         // -----------------------------------------------------------------
         //  CALCULATE PERCENTAGE
         //  Base Ignite by talent rank:
-        //      Rank 1:  7%
-        //      Rank 2: 13%
-        //      Rank 3: 20%
-        //      Rank 4: 26%
-        //      Rank 5: 33%
+        //      Rank 1:  6%
+        //      Rank 2: 12%
+        //      Rank 3: 18%
+        //      Rank 4: 24%
+        //      Rank 5: 30%
         //
         //  Bonus: +5 percentage points if caster has Aura 300258
         // -----------------------------------------------------------------
         static constexpr int32 IgnitePctByRank[5] =
         {
-            7,
-            13,
-            20,
-            26,
-            33
+            6,
+            12,
+            18,
+            24,
+            30
         };
 
         uint8 rank = GetSpellInfo()->GetRank(); // talent rank 1-5
