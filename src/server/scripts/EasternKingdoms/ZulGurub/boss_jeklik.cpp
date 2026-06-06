@@ -59,7 +59,6 @@ enum Spells
     SPELL_GREATER_HEAL                  = 23954,
 
     // Bat Rider (Boss)
-    SPELL_BATRIDER_THROW_LIQUID_FIRE    = 23970,
     SPELL_BATRIDER_SUMMON_LIQUID_FIRE   = 23971,
 
     // Bat Rider (Trash)
@@ -247,7 +246,10 @@ struct boss_jeklik : public BossAI
                                                                     {
                                                                         Talk(SAY_CALL_RIDERS);
                                                                         if (me->SummonCreature(NPC_BATRIDER, SpawnBatRider, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT))
+                                                                        {
                                                                             batRidersCount++;
+                                                                            ScheduleBossLiquidFire();
+                                                                        }
 
                                                                         if (batRidersCount == 1)
                                                                             context.Repeat(10s, 15s);
@@ -305,6 +307,21 @@ private:
 
         return Acore::Containers::SelectRandomContainerElement(units);
     }
+
+    void ScheduleBossLiquidFire()
+    {
+        // Jeklik owns this timer because the summoned raid bat riders are passive,
+        // immune flight props and their combat-log cast path was unreliable with
+        // NPCBot groups. The target still self-casts 23971, matching the original
+        // spell_batrider_bomb effect that creates the Liquid Fire ground object.
+        scheduler.Schedule(2s, PHASE_TWO, [this](TaskContext context)
+        {
+            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 80.0f, false))
+                target->CastSpell(target, SPELL_BATRIDER_SUMMON_LIQUID_FIRE, true);
+
+            context.Repeat(8s);
+        });
+    }
 };
 
 // Gurubashi Bat Rider (14750) - trash and boss summon are same creature ID
@@ -312,7 +329,6 @@ struct npc_batrider : public CreatureAI
 {
     BatRiderMode _mode;     // the version of this creature (trash or boss)
     TaskScheduler _scheduler;
-    bool _liquidFireScheduled = false;
 
     npc_batrider(Creature* creature) : CreatureAI(creature)
     {
@@ -358,12 +374,10 @@ struct npc_batrider : public CreatureAI
         CreatureAI::Reset();
 
         _scheduler.CancelAll();
-        _liquidFireScheduled = false;
 
         if (_mode == BATRIDER_MODE_BOSS)
         {
             me->GetMotionMaster()->Clear();
-            ScheduleBossLiquidFire();
         }
         else if (_mode == BATRIDER_MODE_TRASH)
         {
@@ -375,11 +389,7 @@ struct npc_batrider : public CreatureAI
     {
         CreatureAI::JustEngagedWith(who);
 
-        if (_mode == BATRIDER_MODE_BOSS)
-        {
-            ScheduleBossLiquidFire();
-        }
-        else if (_mode == BATRIDER_MODE_TRASH)
+        if (_mode == BATRIDER_MODE_TRASH)
         {
             _scheduler.Schedule(1s, [this](TaskContext /*context*/)
                 {
@@ -429,64 +439,6 @@ struct npc_batrider : public CreatureAI
         _scheduler.Update();
     }
 
-private:
-    void ScheduleBossLiquidFire()
-    {
-        if (_mode != BATRIDER_MODE_BOSS || _liquidFireScheduled)
-            return;
-
-        _liquidFireScheduled = true;
-        _scheduler.Schedule(2s, [this](TaskContext context)
-        {
-            // CUSTOM: Throw Liquid Fire at a player or NPCBot, but not their pets.
-            if (Unit* target = SelectRandomPlayerOrNPCBot(80.0f, [this](Unit* u)
-                {
-                    if (!me->IsValidAttackTarget(u))
-                        return false;
-
-                    return !u->IsPet();
-                }))
-            {
-                DoCast(target, SPELL_BATRIDER_THROW_LIQUID_FIRE);
-            }
-
-            context.Repeat(8s);
-        });
-    }
-
-    // === Contained selector: players OR NPCBots within range, valid hostile target ===
-    Unit* SelectRandomPlayerOrNPCBot(float range, std::function<bool(Unit*)> extra = {})
-    {
-        std::list<Unit*> units;
-        Acore::AnyUnitInObjectRangeCheck check(me, range);
-        Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(me, units, check);
-        Cell::VisitObjects(me, searcher, range);
-
-        units.remove_if([this, &extra](Unit* u) -> bool
-            {
-                if (!u || !u->IsAlive())
-                    return true;
-
-                const bool isPlayer = u->IsPlayer();
-                const bool isNPCBot = (u->GetTypeId() == TYPEID_UNIT) && u->ToCreature() && u->ToCreature()->IsNPCBot();
-
-                if (!isPlayer && !isNPCBot)
-                    return true;
-
-                if (!me->IsValidAttackTarget(u))
-                    return true;
-
-                if (extra && !extra(u))
-                    return true;
-
-                return false;
-            });
-
-        if (units.empty())
-            return nullptr;
-
-        return Acore::Containers::SelectRandomContainerElement(units);
-    }
 };
 
 class spell_batrider_bomb : public SpellScript
