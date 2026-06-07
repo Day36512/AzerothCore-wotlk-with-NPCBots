@@ -627,6 +627,7 @@ namespace
         case BotEquipResult::BOT_EQUIP_RESULT_FAIL_LINKED_UNEQUIP_FAILED: return "FAIL_LINKED_UNEQUIP_FAILED";
         case BotEquipResult::BOT_EQUIP_RESULT_FAIL_LINKED_RESET_FAILED:   return "FAIL_LINKED_RESET_FAILED";
         case BotEquipResult::BOT_EQUIP_RESULT_FAIL_WANDERER:              return "FAIL_WANDERER";
+        case BotEquipResult::BOT_EQUIP_RESULT_FAIL_UNIQUE_EQUIPPED:       return "FAIL_UNIQUE_EQUIPPED";
         default:                                                          return "UNKNOWN";
         }
     }
@@ -806,6 +807,23 @@ BotEquipResult bot_ai::PaperdollEquip(Player* player, uint8 slot, Item* item)
 
             return BotEquipResult::BOT_EQUIP_RESULT_FAIL_SAME_ID;
         }
+    }
+
+    BotEquipUniqueCheckResult unique_check;
+    if (!_canEquipUniqueItem(item, slot, &unique_check, nullptr, _getEquipUniqueIgnoreSlotMask(proto, slot)))
+    {
+        BOT_LOG_ERROR("npcbots",
+            "BOTDOLL equip reject: bot {} ({}) player {} ({}) slot {} ({}) item {} ({}) result {} ({}) reason unique_equipped unique_reason {} unique_item {} unique_limit_category {}",
+            me->GetName(), me->GetEntry(),
+            player->GetName(), player->GetGUID().ToString(),
+            uint32(slot), BotDollSlotName(slot),
+            proto->Name1, proto->ItemId,
+            BotDollEquipResultName(BotEquipResult::BOT_EQUIP_RESULT_FAIL_UNIQUE_EQUIPPED),
+            uint32(BotEquipResult::BOT_EQUIP_RESULT_FAIL_UNIQUE_EQUIPPED),
+            uint32(unique_check.reason), unique_check.itemId, unique_check.limitCategory);
+
+        _whisperEquipUniqueFailure(player, item, unique_check);
+        return BotEquipResult::BOT_EQUIP_RESULT_FAIL_UNIQUE_EQUIPPED;
     }
 
     // Manual paperdoll behavior:
@@ -13481,7 +13499,8 @@ bool bot_ai::OnGossipSelect(Player* player, Creature* creature/* == me*/, uint32
     }
     case GOSSIP_SENDER_EQUIP_RESET: //equips change s4a: reset equipment
     {
-        if (_resetEquipment(action - GOSSIP_ACTION_INFO_DEF, player->GetGUID(), false) != BotEquipResult::BOT_EQUIP_RESULT_OK)
+        BotEquipResult reset_result = _resetEquipment(action - GOSSIP_ACTION_INFO_DEF, player->GetGUID(), false);
+        if (reset_result != BotEquipResult::BOT_EQUIP_RESULT_OK && reset_result != BotEquipResult::BOT_EQUIP_RESULT_FAIL_UNIQUE_EQUIPPED)
             BotWhisper(LocalizedNpcText(player, BOT_TEXT_FAILED), player);
         return OnGossipSelect(player, creature, GOSSIP_SENDER_EQUIPMENT, GOSSIP_ACTION_INFO_DEF + 1);
     }
@@ -13497,7 +13516,7 @@ bool bot_ai::OnGossipSelect(Player* player, Creature* creature/* == me*/, uint32
                 ChatHandler ch(player->GetSession());
                 ch.PSendSysMessage(bot_ai::LocalizedNpcText(player, BOT_TEXT_NOT_ENOUGH_GEAR_BANK_SPACE).c_str(), uint32(1), gb_size, max_size);
             }
-            else
+            else if (reset_result != BotEquipResult::BOT_EQUIP_RESULT_FAIL_UNIQUE_EQUIPPED)
                 BotWhisper(LocalizedNpcText(player, BOT_TEXT_FAILED), player);
         }
         return OnGossipSelect(player, creature, GOSSIP_SENDER_EQUIPMENT, GOSSIP_ACTION_INFO_DEF + 1);
@@ -13785,6 +13804,8 @@ bool bot_ai::OnGossipSelect(Player* player, Creature* creature/* == me*/, uint32
         }
 
         BotEquipResult check_res;
+        BotEquipUniqueCheckResult unique_check;
+        Item const* unique_check_item = nullptr;
 
         if (all_same)
             check_res = BotEquipResult::BOT_EQUIP_RESULT_OK;
@@ -13834,14 +13855,40 @@ bool bot_ai::OnGossipSelect(Player* player, Creature* creature/* == me*/, uint32
                         items_to_unequip[i] = item;
                 }
             }
+
+            if (check_res == BotEquipResult::BOT_EQUIP_RESULT_OK)
+            {
+                std::array<Item const*, BOT_INVENTORY_SIZE> final_equips{};
+                for (uint8 i : NPCBots::index_array<uint8, BOT_INVENTORY_SIZE>)
+                    final_equips[i] = items_to_equip[i] ? items_to_equip[i] : (items_to_unequip[i] ? nullptr : _equips[i]);
+
+                for (uint8 i : NPCBots::index_array<uint8, BOT_INVENTORY_SIZE>)
+                {
+                    Item const* item = final_equips[i];
+                    if (!item)
+                        continue;
+
+                    if (!_canEquipUniqueItem(item, i, &unique_check, &final_equips))
+                    {
+                        unique_check_item = item;
+                        check_res = BotEquipResult::BOT_EQUIP_RESULT_FAIL_UNIQUE_EQUIPPED;
+                        break;
+                    }
+                }
+            }
         }
 
         if (all_same)
             me->HandleEmoteCommand(EMOTE_ONESHOT_CHICKEN);
         else if (check_res != BotEquipResult::BOT_EQUIP_RESULT_OK)
         {
-            std::string err_code = Bcore::ToString(uint32(AsUnderlyingType(check_res)));
-            BotWhisper(LocalizedNpcText(player, BOT_TEXT_FAILED) + " (" + err_code + ")");
+            if (check_res == BotEquipResult::BOT_EQUIP_RESULT_FAIL_UNIQUE_EQUIPPED && unique_check_item)
+                _whisperEquipUniqueFailure(player, unique_check_item, unique_check);
+            else
+            {
+                std::string err_code = Bcore::ToString(uint32(AsUnderlyingType(check_res)));
+                BotWhisper(LocalizedNpcText(player, BOT_TEXT_FAILED) + " (" + err_code + ")");
+            }
         }
         else
         {
@@ -16938,6 +16985,208 @@ bool bot_ai::_canEquip(ItemTemplate const* newProto, uint8 slot, bool ignoreItem
     return false;
 }
 
+bool bot_ai::_canEquipUniqueItem(Item const* newItem, uint8 slot, BotEquipUniqueCheckResult* checkResult/* = nullptr*/,
+    std::array<Item const*, BOT_INVENTORY_SIZE> const* equips/* = nullptr*/, uint32 ignoreSlotMask/* = 0*/) const
+{
+    if (checkResult)
+        *checkResult = {};
+
+    if (!newItem || slot >= BOT_INVENTORY_SIZE)
+        return false;
+
+    ItemTemplate const* newProto = newItem->GetTemplate();
+    if (!newProto)
+        return false;
+
+    auto fail = [checkResult](BotEquipUniqueReason reason, uint32 itemId, uint32 limitCategory)
+    {
+        if (checkResult)
+        {
+            checkResult->reason = reason;
+            checkResult->itemId = itemId;
+            checkResult->limitCategory = limitCategory;
+        }
+
+        return false;
+    };
+
+    auto get_equipped_item = [this, equips](uint8 equipSlot) -> Item const*
+    {
+        return equips ? (*equips)[equipSlot] : _equips[equipSlot];
+    };
+
+    auto is_except_slot = [slot, ignoreSlotMask](uint8 equipSlot)
+    {
+        return equipSlot == slot || (ignoreSlotMask & (1u << equipSlot));
+    };
+
+    auto equipped_item_or_gem_count = [&](uint32 itemId)
+    {
+        uint32 count = 0;
+        ItemTemplate const* itemProto = sObjectMgr->GetItemTemplate(itemId);
+        bool const checkGems = itemProto && itemProto->GemProperties;
+
+        for (uint8 equipSlot : NPCBots::index_array<uint8, BOT_INVENTORY_SIZE>)
+        {
+            if (is_except_slot(equipSlot))
+                continue;
+
+            Item const* item = get_equipped_item(equipSlot);
+            if (!item)
+                continue;
+
+            if (item->GetEntry() == itemId)
+                count += item->GetCount();
+
+            if (checkGems)
+                count += item->GetGemCountWithID(itemId);
+        }
+
+        return count;
+    };
+
+    auto equipped_limit_category_count = [&](uint32 limitCategory)
+    {
+        uint32 count = 0;
+
+        for (uint8 equipSlot : NPCBots::index_array<uint8, BOT_INVENTORY_SIZE>)
+        {
+            if (is_except_slot(equipSlot))
+                continue;
+
+            Item const* item = get_equipped_item(equipSlot);
+            if (!item)
+                continue;
+
+            if (ItemTemplate const* proto = item->GetTemplate())
+                if (proto->ItemLimitCategory == limitCategory)
+                    count += item->GetCount();
+
+            count += item->GetGemCountWithLimitCategory(limitCategory);
+        }
+
+        return count;
+    };
+
+    if (newProto->HasFlag(ITEM_FLAG_UNIQUE_EQUIPPABLE))
+        if (equipped_item_or_gem_count(newProto->ItemId))
+            return fail(BotEquipUniqueReason::BOT_EQUIP_UNIQUE_ITEM, newProto->ItemId, 0);
+
+    if (newProto->ItemLimitCategory)
+    {
+        ItemLimitCategoryEntry const* limitEntry = sItemLimitCategoryStore.LookupEntry(newProto->ItemLimitCategory);
+        if (!limitEntry)
+            return fail(BotEquipUniqueReason::BOT_EQUIP_UNIQUE_ITEM_LIMIT_CATEGORY, newProto->ItemId, newProto->ItemLimitCategory);
+
+        if (limitEntry->maxCount < 1 || equipped_limit_category_count(newProto->ItemLimitCategory) + 1 > limitEntry->maxCount)
+            return fail(BotEquipUniqueReason::BOT_EQUIP_UNIQUE_ITEM_LIMIT_CATEGORY, newProto->ItemId, newProto->ItemLimitCategory);
+    }
+
+    std::array<ItemTemplate const*, MAX_GEM_SOCKETS> gemProtos{};
+    uint8 gemCount = 0;
+    for (uint32 enchantSlot = SOCK_ENCHANTMENT_SLOT; enchantSlot < SOCK_ENCHANTMENT_SLOT + MAX_GEM_SOCKETS; ++enchantSlot)
+    {
+        uint32 enchantId = newItem->GetEnchantmentId(EnchantmentSlot(enchantSlot));
+        if (!enchantId)
+            continue;
+
+        SpellItemEnchantmentEntry const* enchantEntry = sSpellItemEnchantmentStore.LookupEntry(enchantId);
+        if (!enchantEntry)
+            continue;
+
+        if (ItemTemplate const* gemProto = sObjectMgr->GetItemTemplate(enchantEntry->GemID))
+            gemProtos[gemCount++] = gemProto;
+    }
+
+    auto new_gem_count = [&gemProtos, gemCount](auto&& pred)
+    {
+        uint32 count = 0;
+        for (uint8 i = 0; i != gemCount; ++i)
+            if (pred(gemProtos[i]))
+                ++count;
+
+        return count;
+    };
+
+    for (uint8 i = 0; i != gemCount; ++i)
+    {
+        ItemTemplate const* gemProto = gemProtos[i];
+        if (!gemProto)
+            continue;
+
+        if (gemProto->HasFlag(ITEM_FLAG_UNIQUE_EQUIPPABLE))
+        {
+            uint32 const gemId = gemProto->ItemId;
+            if (new_gem_count([gemId](ItemTemplate const* checkProto) { return checkProto && checkProto->ItemId == gemId; }) > 1 ||
+                equipped_item_or_gem_count(gemId))
+                return fail(BotEquipUniqueReason::BOT_EQUIP_UNIQUE_GEM, gemId, 0);
+        }
+
+        if (gemProto->ItemLimitCategory)
+        {
+            ItemLimitCategoryEntry const* limitEntry = sItemLimitCategoryStore.LookupEntry(gemProto->ItemLimitCategory);
+            if (!limitEntry)
+                return fail(BotEquipUniqueReason::BOT_EQUIP_UNIQUE_GEM_LIMIT_CATEGORY, gemProto->ItemId, gemProto->ItemLimitCategory);
+
+            uint32 const limitCount = new_gem_count([gemProto](ItemTemplate const* checkProto)
+            {
+                return checkProto && checkProto->ItemLimitCategory == gemProto->ItemLimitCategory;
+            });
+
+            if (limitCount > limitEntry->maxCount || equipped_limit_category_count(gemProto->ItemLimitCategory) + limitCount > limitEntry->maxCount)
+                return fail(BotEquipUniqueReason::BOT_EQUIP_UNIQUE_GEM_LIMIT_CATEGORY, gemProto->ItemId, gemProto->ItemLimitCategory);
+        }
+    }
+
+    return true;
+}
+
+uint32 bot_ai::_getEquipUniqueIgnoreSlotMask(ItemTemplate const* proto, uint8 slot) const
+{
+    if (slot == BOT_SLOT_MAINHAND && proto && proto->InventoryType == INVTYPE_2HWEAPON &&
+        !(_botclass == BOT_CLASS_WARRIOR && me->GetLevel() >= 60 && GetSpec() == BOT_SPEC_WARRIOR_FURY))
+        return 1u << BOT_SLOT_OFFHAND;
+
+    return 0;
+}
+
+void bot_ai::_whisperEquipUniqueFailure(Player const* player, Item const* item, BotEquipUniqueCheckResult const& checkResult) const
+{
+    if (!player || !item)
+        return;
+
+    std::ostringstream msg;
+    msg << LocalizedNpcText(player, BOT_TEXT_FAILED) << ": ";
+    _AddItemLink(player, item, msg, false);
+    msg << " cannot be equipped: ";
+
+    switch (checkResult.reason)
+    {
+    case BotEquipUniqueReason::BOT_EQUIP_UNIQUE_ITEM:
+        msg << "unique-equipped item already equipped.";
+        break;
+    case BotEquipUniqueReason::BOT_EQUIP_UNIQUE_ITEM_LIMIT_CATEGORY:
+        msg << "unique-equipped item limit reached.";
+        break;
+    case BotEquipUniqueReason::BOT_EQUIP_UNIQUE_GEM:
+        msg << "unique-equipped gem ";
+        if (ItemTemplate const* gemProto = sObjectMgr->GetItemTemplate(checkResult.itemId))
+            _AddItemTemplateLink(player, gemProto, msg);
+        else
+            msg << checkResult.itemId;
+        msg << " already equipped.";
+        break;
+    case BotEquipUniqueReason::BOT_EQUIP_UNIQUE_GEM_LIMIT_CATEGORY:
+        msg << "unique-equipped gem limit reached.";
+        break;
+    default:
+        msg << "unique-equipped limit reached.";
+        break;
+    }
+
+    BotWhisper(msg.view(), player);
+}
+
 bool bot_ai::_isItemFitForGeneratedBot([[maybe_unused]] uint8 category, uint8 slot, ItemTemplate const* proto) const
 {
     if (!_canEquip(proto, slot, true))
@@ -17340,6 +17589,16 @@ BotEquipResult bot_ai::_equip(uint8 slot, Item* newItem, ObjectGuid receiver, bo
         //same id
         if (oldItem->GetEntry() == newItemId && !newItem->GetItemRandomPropertyId())
             return BotEquipResult::BOT_EQUIP_RESULT_FAIL_SAME_ID;
+    }
+
+    if (!from_bank && receiver && receiver == master->GetGUID())
+    {
+        BotEquipUniqueCheckResult unique_check;
+        if (!_canEquipUniqueItem(newItem, slot, &unique_check, nullptr, _getEquipUniqueIgnoreSlotMask(proto, slot)))
+        {
+            _whisperEquipUniqueFailure(master, newItem, unique_check);
+            return BotEquipResult::BOT_EQUIP_RESULT_FAIL_UNIQUE_EQUIPPED;
+        }
     }
 
     BotEquipResult unequip_result = _unequip(slot, receiver, store_to_bank, from_bank);

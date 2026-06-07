@@ -654,6 +654,26 @@ private:
     bool _canUseRelic() const;
     bool _canCombineWeapons(ItemTemplate const* mh, ItemTemplate const* oh) const;
     bool _canEquip(ItemTemplate const* newProto, uint8 slot, bool ignoreItemLevel, Item const* newItem = nullptr, bool ignore_combine = false) const;
+    enum class BotEquipUniqueReason : uint8
+    {
+        BOT_EQUIP_UNIQUE_NONE,
+        BOT_EQUIP_UNIQUE_ITEM,
+        BOT_EQUIP_UNIQUE_ITEM_LIMIT_CATEGORY,
+        BOT_EQUIP_UNIQUE_GEM,
+        BOT_EQUIP_UNIQUE_GEM_LIMIT_CATEGORY
+    };
+
+    struct BotEquipUniqueCheckResult
+    {
+        BotEquipUniqueReason reason = BotEquipUniqueReason::BOT_EQUIP_UNIQUE_NONE;
+        uint32 itemId = 0;
+        uint32 limitCategory = 0;
+    };
+
+    bool _canEquipUniqueItem(Item const* newItem, uint8 slot, BotEquipUniqueCheckResult* checkResult = nullptr,
+        std::array<Item const*, BOT_INVENTORY_SIZE> const* equips = nullptr, uint32 ignoreSlotMask = 0) const;
+    uint32 _getEquipUniqueIgnoreSlotMask(ItemTemplate const* proto, uint8 slot) const;
+    void _whisperEquipUniqueFailure(Player const* player, Item const* item, BotEquipUniqueCheckResult const& checkResult) const;
     void _removeEquipment(uint8 slot);
     bool _isItemFitForGeneratedBot(uint8 category, uint8 slot, ItemTemplate const* proto) const;
     [[nodiscard]] BotEquipResult _unequip(uint8 slot, ObjectGuid receiver, bool store_to_bank, bool on_equip_from_bank = false);

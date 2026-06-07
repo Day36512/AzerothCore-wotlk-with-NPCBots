@@ -530,6 +530,7 @@ enum class BotEquipResult : uint8
     BOT_EQUIP_RESULT_FAIL_LINKED_RESET_FAILED   = 9,
     BOT_EQUIP_RESULT_FAIL_CANT_EQUIP            = 10,
     BOT_EQUIP_RESULT_FAIL_ITEM_CONFLICT         = 11,
+    BOT_EQUIP_RESULT_FAIL_UNIQUE_EQUIPPED       = 12,
 };
 
 enum BotStatMods: uint8
