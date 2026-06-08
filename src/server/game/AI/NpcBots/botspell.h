@@ -75,7 +75,7 @@ enum BotSpells : uint32
 //ADVANCED
     //SPELL_SUMMON_FELBLAZE_PREVISUAL     = 46350,//green splash impact head/torso
     //HONORLESS_TARGET                    = 2479,
-    COSMETIC_TELEPORT_EFFECT            = 52096,//visual instant cast omni
+    COSMETIC_TELEPORT_EFFECT            = 836,//visual instant cast self
     COSMETIC_RESURRECTION               = 58854,//visual instant cast self (castable while dead, hidden)
     SUMMON_DEMON_VISUAL                 = 6657,//SUMMON_SERPENT_MESSENGER
     CALL_PET_VISUAL                     = 30416,//QUEST_WOOD_CLEANSE_EFFECT
