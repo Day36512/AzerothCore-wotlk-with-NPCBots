@@ -802,7 +802,7 @@ namespace lfg
                                         if (Player const* leader = ObjectAccessor::FindPlayer(grp->GetLeaderGUID()))
                                         {
                                             ChatHandler ch(leader->GetSession());
-                                            ch.PSendSysMessage("There is a npcbot in your group (owner: %s). Using npcbots in Dungeon Finder is restricted. Contact your administration.", plrg->GetName());
+                                            ch.PSendSysMessage("There is a npcbot in your group (owner: {}). Using npcbots in Dungeon Finder is restricted. Contact your administration.", plrg->GetName());
                                         }
                                     }
 
@@ -1842,17 +1842,31 @@ namespace lfg
         LfgGuidList players;
         GuidUnorderedSet playersToTeleport;
 
-        for (LfgProposalPlayerContainer::const_iterator it = proposal.players.begin(); it != proposal.players.end(); ++it)
-        {
-            ObjectGuid guid = it->first;
-            if (guid == proposal.leader)
-                players.push_front(guid);
-            else
-                players.push_back(guid);
+        // Sort players by role, leader first, then tank, healer and dps
+        std::vector<ObjectGuid> tanks, healers, dps;
 
+        if (proposal.leader && proposal.players.contains(proposal.leader))
+            players.push_back(proposal.leader);
+
+        for (auto const& [guid, player] : proposal.players)
+        {
             if (proposal.isNew || GetGroup(guid) != proposal.group)
                 playersToTeleport.insert(guid);
+
+            if (guid == proposal.leader)
+                continue;
+
+            if (player.role & lfg::PLAYER_ROLE_TANK)
+                tanks.push_back(guid);
+            else if (player.role & lfg::PLAYER_ROLE_HEALER)
+                healers.push_back(guid);
+            else
+                dps.push_back(guid);
         }
+
+        players.insert(players.end(), tanks.begin(), tanks.end());
+        players.insert(players.end(), healers.begin(), healers.end());
+        players.insert(players.end(), dps.begin(), dps.end());
 
         // Set the dungeon difficulty
         LFGDungeonData const* dungeon = GetLFGDungeon(proposal.dungeonId);
@@ -2170,6 +2184,13 @@ namespace lfg
                         itPlayers->second.accept = is_dungeon_bot_lfg_guid ? LFG_ANSWER_AGREE : LfgAnswer(accept);
                     }
                 }
+            }
+
+            //dungeon bots should automatically accept
+            for (auto& [guid, proposal] : proposal.players)
+            {
+                if (guid.IsCreature() && proposal.accept != LFG_ANSWER_AGREE)
+                    proposal.accept = LFG_ANSWER_AGREE;
             }
         }
         //end npcbot

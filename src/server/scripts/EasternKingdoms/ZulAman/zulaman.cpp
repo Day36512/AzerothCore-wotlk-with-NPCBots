@@ -28,6 +28,10 @@
 #include "zulaman.h"
 #include <algorithm>
 
+//npcbot
+#include "GridNotifiers.h"
+//end npcbot
+
 /*######
 ## npc_forest_frog
 ######*/
@@ -920,6 +924,24 @@ class spell_call_of_the_beast : public SpellScript
     }
 };
 
+//npcbot
+// 43360 - Fixate (spell_dbc)
+class spell_fixate : public SpellScript
+{
+    PrepareSpellScript(spell_fixate);
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if(Acore::RaidCheck(GetCaster(), true));
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_fixate::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+    }
+};
+//end npcbot
+
 void AddSC_zulaman()
 {
     RegisterZulAmanCreatureAI(npc_forest_frog);
@@ -933,4 +955,8 @@ void AddSC_zulaman()
     RegisterSpellScript(spell_alert_drums);
     RegisterSpellScript(spell_summon_amanishi_sentries);
     RegisterSpellScript(spell_call_of_the_beast);
+
+    //npcbot
+    RegisterSpellScript(spell_fixate);
+    //end npcbot
 }

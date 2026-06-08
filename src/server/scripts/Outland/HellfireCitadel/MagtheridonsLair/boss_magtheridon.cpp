@@ -83,16 +83,11 @@ enum Groups
     GROUP_MAIN_TANK_SUPPORT = 3
 };
 
-enum Actions
-{
-    ACTION_INCREASE_HELLFIRE_CHANNELER_DEATH_COUNT = 1,
-    ACTION_BANISH_SELF = 2,
-    ACTION_CHANNELER_SET_EMPOWERED = 3,
-    ACTION_CHANNELER_CLEAR_EMPOWERED = 4
-};
-
 namespace
 {
+    static constexpr int32 ACTION_CHANNELER_SET_EMPOWERED = 3;
+    static constexpr int32 ACTION_CHANNELER_CLEAR_EMPOWERED = 4;
+
     static constexpr float MAGTHERIDON_TANK_RESET_X = -21.42f;
     static constexpr float MAGTHERIDON_TANK_RESET_Y = 0.31f;
     static constexpr float MAGTHERIDON_TANK_RESET_Z = -0.40f;
@@ -437,25 +432,26 @@ struct boss_magtheridon : public BossAI
 
     void DoAction(int32 action) override
     {
-        if (action == ACTION_INCREASE_HELLFIRE_CHANNELER_DEATH_COUNT)
+        if (action == ACTION_RELEASE_MAGTHERIDON)
         {
+            if (_magReleased)
+                return;
+
             ++_channelersKilled;
             RefreshChannelerEmpowerments();
 
-            if (_channelersKilled >= 5 && !_magReleased)
+            if (_channelersKilled < 5 && !GetLivingChannelers().empty())
+                return;
+
+            Talk(SAY_EMOTE_FREE);
+            Talk(SAY_FREE);
+            scheduler.CancelGroup(GROUP_EARLY_RELEASE_CHECK);
+            _magReleased = true;
+
+            scheduler.Schedule(3s, [this](TaskContext)
             {
-                Talk(SAY_EMOTE_FREE);
-                Talk(SAY_FREE);
-
-                scheduler.CancelGroup(GROUP_EARLY_RELEASE_CHECK);
-
-                _magReleased = true;
-
-                scheduler.Schedule(3s, [this](TaskContext /*context*/)
-                    {
-                        ScheduleCombatEvents();
-                    });
-            }
+                ScheduleCombatEvents();
+            });
 
             return;
         }
@@ -1242,7 +1238,7 @@ struct npc_hellfire_channeler_magtheridon : public ScriptedAI
 
         if (Creature* magtheridon = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_MAGTHERIDON)))
             if (magtheridon->AI())
-                magtheridon->AI()->DoAction(ACTION_INCREASE_HELLFIRE_CHANNELER_DEATH_COUNT);
+                magtheridon->AI()->DoAction(ACTION_RELEASE_MAGTHERIDON);
     }
 
     void JustSummoned(Creature* summon) override
