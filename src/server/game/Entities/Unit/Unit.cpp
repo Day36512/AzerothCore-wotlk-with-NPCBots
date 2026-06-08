@@ -133,6 +133,63 @@ uint32 ApplyRatedArenaOpponentDamageMultiplier(uint32 damage, float multiplier)
 
     return uint32(std::round(modifiedDamage));
 }
+
+bool IsSpiritHealingReceivedTarget(Unit const* target)
+{
+    if (!target)
+        return false;
+
+    if (target->IsPlayer())
+        return true;
+
+    Creature const* creature = target->ToCreature();
+    return creature && creature->IsNPCBot();
+}
+
+uint32 GetSpiritHealingReceivedBonusBps(Unit const* target)
+{
+    if (!IsSpiritHealingReceivedTarget(target))
+        return 0;
+
+    uint32 level = target->GetLevel();
+    level = std::max<uint32>(1, std::min<uint32>(level, 80));
+
+    float const spiritFloat = target->GetStat(STAT_SPIRIT);
+    if (spiritFloat <= 0.0f)
+        return 0;
+
+    uint32 const rawBonusBps = uint32(spiritFloat);
+    double capPct;
+
+    if (level <= 60)
+    {
+        double const t = double(level - 1) / 59.0;
+        capPct = 1.0 + 7.0 * std::pow(t, 1.25);
+    }
+    else if (level <= 70)
+        capPct = 8.0 + double(level - 60) * 0.10;
+    else
+        capPct = 9.0 + double(level - 70) * 0.10;
+
+    uint32 const capBonusBps = uint32(std::round(capPct * 100.0));
+    return std::min(rawBonusBps, capBonusBps);
+}
+
+uint32 ApplySpiritHealingReceivedBonus(Unit const* target, SpellInfo const* spellProto, uint32 healamount)
+{
+    if (!healamount || !spellProto)
+        return healamount;
+
+    if (spellProto->HasAttribute(SPELL_ATTR6_IGNORE_HEALTH_MODIFIERS) || spellProto->HasAttribute(SPELL_ATTR0_CU_NO_POSITIVE_TAKEN_BONUS))
+        return healamount;
+
+    uint32 const spiritHealingBonusBps = GetSpiritHealingReceivedBonusBps(target);
+    if (!spiritHealingBonusBps)
+        return healamount;
+
+    uint64 const modifiedHeal = uint64(healamount) + (uint64(healamount) * spiritHealingBonusBps) / 10000;
+    return modifiedHeal > std::numeric_limits<uint32>::max() ? std::numeric_limits<uint32>::max() : uint32(modifiedHeal);
+}
 }
 //end npcbot
 
@@ -10238,7 +10295,7 @@ uint32 Unit::SpellHealingBonusTaken(Unit* caster, SpellInfo const* spellProto, u
         if (spellProto->DmgClass == SPELL_DAMAGE_CLASS_NONE)
         {
             healamount = uint32(std::max((float(healamount) * TakenTotalMod), 0.0f));
-            return healamount;
+            return ApplySpiritHealingReceivedBonus(this, spellProto, healamount);
         }
     }
 
@@ -10293,7 +10350,7 @@ uint32 Unit::SpellHealingBonusTaken(Unit* caster, SpellInfo const* spellProto, u
 
     float heal = float(int32(healamount) + TakenTotal) * TakenTotalMod;
 
-    return uint32(std::max(heal, 0.0f));
+    return ApplySpiritHealingReceivedBonus(this, spellProto, uint32(std::max(heal, 0.0f)));
 }
 
 int32 Unit::SpellBaseHealingBonusDone(SpellSchoolMask schoolMask)
