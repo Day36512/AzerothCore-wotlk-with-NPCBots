@@ -16,11 +16,23 @@
  */
 
 #include "CreatureScript.h"
+#include "GameObjectScript.h"
+#include "Group.h"
+#include "Log.h"
+#include "Map.h"
 #include "MoveSplineInit.h"
+#include "MotionMaster.h"
+#include "ObjectAccessor.h"
 #include "ScriptedCreature.h"
 #include "SpellScriptLoader.h"
+#include "ThreatManager.h"
 #include "WaypointMgr.h"
+#include "bot_ai.h"
+#include "botmgr.h"
 #include "the_eye.h"
+#include <algorithm>
+#include <limits>
+#include <vector>
 #include <cmath>
 
 #include "Player.h"
@@ -41,6 +53,11 @@ enum Spells
     SPELL_REBIRTH_DIVE              = 35369,
     SPELL_DIVE_BOMB_VISUAL          = 35367,
     SPELL_DIVE_BOMB                 = 35181,
+    SPELL_ALAR_SHIELDING_PROTECTION = 600445,
+    SPELL_ALAR_SHIELDING_CUBE       = 600446,
+
+    SPELL_ALAR_BOT_TELEPORT_VISUAL  = 51347,
+    SPELL_GREATER_FIRE_PROTECTION   = 17543,
 
     SPELL_MODEL_VISIBILITY          = 24401 // Might not be accurate
 };
@@ -48,10 +65,10 @@ enum Spells
 // @todo: Alar doesnt seem to move to waypoints but instead to the triggers in p1
 const Position alarPoints[9] =
 {
-    {335.638f, 59.4879f, 17.9319f, 4.60f}, //first platform
-    {388.751007f, 31.731199f, 20.263599f, 1.61f},
-    {388.790985f, -33.105900f, 20.263599f, 0.52f},
-    {332.722992f, -61.159f, 17.979099f, 5.71f},
+    {338.65f, 61.57f, 18.07f, 4.60f}, //first platform
+    {393.42f, 34.25f, 20.18f, 1.61f},
+    {391.83f, -34.97f, 20.18f, 0.52f},
+    {340.26f, -63.58f, 18.12f, 5.71f},
     {258.959015f, -38.687099f, 20.262899f, 5.21f}, //pre-nerf only
     {259.2277997, 35.879002f, 20.263f, 4.81f}, //pre-nerf only
     {332.0f, 0.01f, 43.0f, 0.0f}, //quill
@@ -80,7 +97,9 @@ enum Misc
 
 enum GroupAlar
 {
-    GROUP_FLAME_BUFFET          = 1
+    GROUP_FLAME_BUFFET              = 1,
+    GROUP_ALAR_BOT_PLATFORM_SUPPORT = 2,
+    GROUP_ALAR_BOT_EMBER_SUPPORT    = 3
 };
 
 // Xinef: Ruse of the Ashtongue (10946)
@@ -91,6 +110,506 @@ enum qruseoftheAshtongue
 };
 
 const float INNER_CIRCLE_RADIUS = 60.0f;
+
+namespace
+{
+    Position const AlarPlatforms[4] =
+    {
+        { 338.65f,  61.57f, 18.07f, 4.60f },
+        { 393.42f,  34.25f, 20.18f, 1.61f },
+        { 391.83f, -34.97f, 20.18f, 0.52f },
+        { 340.26f, -63.58f, 18.12f, 5.71f }
+    };
+
+    constexpr float ALAR_BOT_SCAN_RANGE = 180.0f;
+    constexpr float ALAR_PLATFORM_RADIUS = 13.0f;
+    constexpr float ALAR_PLATFORM_Z_TOLERANCE = 8.0f;
+    constexpr float ALAR_PLATFORM_TANK_MELEE_RANGE = 9.0f;
+    constexpr float ALAR_MIN_BOT_PLATFORM_OFFSET = 4.0f;
+    constexpr float ALAR_EMBER_PICKUP_DISTANCE = 3.0f;
+    constexpr float ALAR_EMBER_EXPLOSION_CLEAR_DISTANCE = 8.0f;
+    constexpr uint32 ALAR_EMBER_AVOID_HEALTH_PCT = 20;
+    constexpr uint32 ALAR_PLATFORM_TANK_TELEPORT_COOLDOWN_MS = 4000;
+    constexpr uint32 ALAR_SHIELDING_CUBE_BOT_HOLD_MS = 13000;
+    constexpr uint32 ALAR_SHIELDING_CUBE_COOLDOWN_MS = 45000;
+    constexpr float ALAR_PLATFORM_TANK_THREAT = 500000.0f;
+    constexpr float ALAR_EMBER_HANDLER_THREAT = 75000.0f;
+
+    Position const& GetAlarPlatformPosition(uint8 platformIndex)
+    {
+        return AlarPlatforms[std::min<uint8>(platformIndex, 3)];
+    }
+
+    bool IsValidEncounterNPCBot(Creature* creature)
+    {
+        return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI();
+    }
+
+    bool IsEncounterParticipantFor(Creature const* source, Unit* unit, float range = ALAR_BOT_SCAN_RANGE)
+    {
+        if (!source || !unit || !unit->IsInWorld() || !unit->IsAlive() || unit->GetMap() != source->GetMap())
+            return false;
+
+        if (unit->HasUnitState(UNIT_STATE_ISOLATED) || !unit->IsWithinDist(source, range))
+            return false;
+
+        if (unit->IsPlayer())
+            return true;
+
+        return IsValidEncounterNPCBot(unit->ToCreature());
+    }
+
+    std::vector<Unit*> GatherAlarEncounterUnits(Creature const* source, float range = ALAR_BOT_SCAN_RANGE)
+    {
+        std::vector<Unit*> units;
+        GuidSet seen;
+
+        auto addUnit = [&](Unit* unit)
+        {
+            if (!unit || seen.count(unit->GetGUID()) || !IsEncounterParticipantFor(source, unit, range))
+                return;
+
+            seen.insert(unit->GetGUID());
+            units.push_back(unit);
+        };
+
+        if (!source || !source->GetMap())
+            return units;
+
+        Map::PlayerList const& players = source->GetMap()->GetPlayers();
+        for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+        {
+            Player* player = itr->GetSource();
+            if (!player)
+                continue;
+
+            addUnit(player);
+
+            if (Group* group = player->GetGroup())
+                for (Unit* member : BotMgr::GetAllGroupMembers(group))
+                    addUnit(member);
+
+            if (BotMgr* botMgr = player->GetBotMgr())
+                if (BotMap const* botMap = botMgr->GetBotMap())
+                    for (BotMap::value_type const& pair : *botMap)
+                        addUnit(pair.second);
+        }
+
+        return units;
+    }
+
+    std::vector<Creature*> GatherAlarEncounterBots(Creature const* source, float range = ALAR_BOT_SCAN_RANGE)
+    {
+        std::vector<Creature*> bots;
+
+        for (Unit* unit : GatherAlarEncounterUnits(source, range))
+            if (Creature* creature = unit->ToCreature())
+                if (IsValidEncounterNPCBot(creature))
+                    bots.push_back(creature);
+
+        return bots;
+    }
+
+    bool IsPlayerMarkedTank(Player* player)
+    {
+        if (!player)
+            return false;
+
+        Group* group = player->GetGroup();
+        if (!group)
+            return false;
+
+        Group::MemberSlotList const& slots = group->GetMemberSlots();
+        for (Group::member_citerator itr = slots.begin(); itr != slots.end(); ++itr)
+            if (itr->guid == player->GetGUID())
+                return itr->flags & (MEMBER_FLAG_MAINTANK | MEMBER_FLAG_MAINASSIST);
+
+        return false;
+    }
+
+    bool IsAlarNpcBotTank(Creature* bot)
+    {
+        bot_ai* ai = IsValidEncounterNPCBot(bot) ? bot->GetBotAI() : nullptr;
+        return ai && (ai->IsTank() || ai->IsOffTank() || ai->HasRole(BOT_ROLE_TANK));
+    }
+
+    bool IsAlarMeleeBot(Creature* bot)
+    {
+        bot_ai* ai = IsValidEncounterNPCBot(bot) ? bot->GetBotAI() : nullptr;
+        if (!ai)
+            return false;
+
+        if (ai->HasRole(BOT_ROLE_HEAL) || ai->HasRole(BOT_ROLE_RANGED))
+            return false;
+
+        return (MELEE_BOT_CLASSES_MASK & (1u << ai->GetBotClass())) != 0;
+    }
+
+    bool IsAlarEncounterTank(Unit* unit)
+    {
+        if (!unit)
+            return false;
+
+        if (Player* player = unit->ToPlayer())
+            return IsPlayerMarkedTank(player);
+
+        return IsAlarNpcBotTank(unit->ToCreature());
+    }
+
+    bool IsUnitOnAlarPlatform(Unit* unit, uint8 platformIndex)
+    {
+        if (!unit || platformIndex >= 4)
+            return false;
+
+        Position const& platform = GetAlarPlatformPosition(platformIndex);
+        return unit->GetExactDist2d(platform.GetPositionX(), platform.GetPositionY()) <= ALAR_PLATFORM_RADIUS &&
+            std::abs(unit->GetPositionZ() - platform.GetPositionZ()) <= ALAR_PLATFORM_Z_TOLERANCE;
+    }
+
+    bool IsUnitInAlarPlatformTankRange(Creature* alar, Unit* unit, uint8 platformIndex)
+    {
+        if (!alar || !unit || !IsUnitOnAlarPlatform(unit, platformIndex))
+            return false;
+
+        return alar->IsWithinMeleeRange(unit) || unit->GetExactDist2d(alar) <= ALAR_PLATFORM_TANK_MELEE_RANGE;
+    }
+
+    Player* SelectHumanAlarPlatformTank(Creature* alar, uint8 platformIndex)
+    {
+        if (!alar)
+            return nullptr;
+
+        for (Unit* unit : GatherAlarEncounterUnits(alar))
+        {
+            Player* player = unit ? unit->ToPlayer() : nullptr;
+            if (!player)
+                continue;
+
+            if (unit != alar->GetVictim() && !IsPlayerMarkedTank(player))
+                continue;
+
+            if (IsUnitInAlarPlatformTankRange(alar, unit, platformIndex))
+                return player;
+        }
+
+        return nullptr;
+    }
+
+    bool HasValidAlarPlatformTank(Creature* alar, uint8 platformIndex)
+    {
+        if (!alar)
+            return false;
+
+        for (Unit* unit : GatherAlarEncounterUnits(alar))
+        {
+            if (!unit)
+                continue;
+
+            bool const currentHumanVictim = unit->IsPlayer() && unit == alar->GetVictim();
+            if (!currentHumanVictim && !IsAlarEncounterTank(unit))
+                continue;
+
+            if (IsUnitInAlarPlatformTankRange(alar, unit, platformIndex))
+                return true;
+        }
+
+        return false;
+    }
+
+    Creature* SelectAlarPlatformTank(Creature* alar, uint8 platformIndex)
+    {
+        Creature* best = nullptr;
+        float bestScore = std::numeric_limits<float>::max();
+        Position const& platform = GetAlarPlatformPosition(platformIndex);
+
+        for (Creature* bot : GatherAlarEncounterBots(alar))
+        {
+            bot_ai* ai = bot ? bot->GetBotAI() : nullptr;
+            if (!ai || !IsAlarNpcBotTank(bot))
+                continue;
+
+            float score = bot->GetExactDist2d(platform.GetPositionX(), platform.GetPositionY());
+            if (ai->IsTank())
+                score -= 40.0f;
+            if (ai->IsOffTank())
+                score -= 20.0f;
+            if (bot == alar->GetVictim())
+                score -= 15.0f;
+            if (IsUnitOnAlarPlatform(bot, platformIndex))
+                score -= 10.0f;
+
+            if (!best || score < bestScore)
+            {
+                best = bot;
+                bestScore = score;
+            }
+        }
+
+        return best;
+    }
+
+    void ApplyAlarFireProtection(Creature* bot)
+    {
+        if (!IsValidEncounterNPCBot(bot) || bot->HasAura(SPELL_GREATER_FIRE_PROTECTION))
+            return;
+
+        bot->CastSpell(bot, SPELL_GREATER_FIRE_PROTECTION, true);
+    }
+
+    uint32 ApplyAlarFireProtectionToBots(Creature* source, char const* reason)
+    {
+        uint32 applied = 0;
+
+        for (Creature* bot : GatherAlarEncounterBots(source))
+        {
+            if (bot->HasAura(SPELL_GREATER_FIRE_PROTECTION))
+                continue;
+
+            ApplyAlarFireProtection(bot);
+            ++applied;
+        }
+
+        if (applied)
+            LOG_DEBUG("scripts", "Al'ar NPCBot: applied Greater Fire Protection ({}) to {} bot(s)", reason ? reason : "encounter", applied);
+
+        return applied;
+    }
+
+    Position GetAlarPlatformBotDestination(Creature* alar, uint8 platformIndex)
+    {
+        Position destination = GetAlarPlatformPosition(platformIndex);
+
+        if (!alar)
+            return destination;
+
+        if (destination.GetExactDist2d(alar->GetPositionX(), alar->GetPositionY()) < ALAR_MIN_BOT_PLATFORM_OFFSET)
+        {
+            float const angle = alar->GetAngle(&destination);
+            destination.Relocate(
+                alar->GetPositionX() + std::cos(angle) * ALAR_MIN_BOT_PLATFORM_OFFSET,
+                alar->GetPositionY() + std::sin(angle) * ALAR_MIN_BOT_PLATFORM_OFFSET,
+                destination.GetPositionZ());
+        }
+
+        destination.SetOrientation(destination.GetAngle(alar));
+        return destination;
+    }
+
+    Position GetAlarEmberBotDestination(Creature* bot, Creature* ember, bool avoidExplosion)
+    {
+        Position destination = ember ? ember->GetPosition() : Position();
+        if (!ember)
+            return destination;
+
+        float const distance = avoidExplosion ? ALAR_EMBER_EXPLOSION_CLEAR_DISTANCE : ALAR_EMBER_PICKUP_DISTANCE;
+        float angle = bot ? ember->GetAngle(bot) : ember->GetOrientation();
+
+        float x = ember->GetPositionX() + std::cos(angle) * distance;
+        float y = ember->GetPositionY() + std::sin(angle) * distance;
+        float z = ember->GetPositionZ();
+
+        if (bot && !bot->CanFly())
+            bot->UpdateAllowedPositionZ(x, y, z);
+
+        destination.Relocate(x, y, z);
+        destination.SetOrientation(destination.GetAngle(ember));
+        return destination;
+    }
+
+    void TeleportBotWithAlarVisual(Creature* bot, Position const& destination)
+    {
+        if (!IsValidEncounterNPCBot(bot))
+            return;
+
+        bot->CastSpell(bot, SPELL_ALAR_BOT_TELEPORT_VISUAL, true);
+        bot->InterruptNonMeleeSpells(false);
+        bot->AttackStop();
+        bot->BotStopMovement();
+        bot->NearTeleportTo(destination.GetPositionX(), destination.GetPositionY(), destination.GetPositionZ(), destination.GetOrientation(), false);
+    }
+
+    void ForceAlarBotEngage(Creature* bot, Creature* target, float threat)
+    {
+        bot_ai* ai = IsValidEncounterNPCBot(bot) ? bot->GetBotAI() : nullptr;
+        if (!ai || !target || !target->IsAlive())
+            return;
+
+        ai->RemoveBotCommandState(BOT_COMMAND_STAY | BOT_COMMAND_FOLLOW | BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION | BOT_COMMAND_ATTACK);
+        ai->SetBotCommandState(BOT_COMMAND_COMBATRESET);
+        bot->SetInCombatWith(target);
+        target->SetInCombatWith(bot);
+        target->GetThreatMgr().AddThreat(bot, threat, nullptr, true, true);
+        bot->Attack(target, !ai->HasRole(BOT_ROLE_RANGED));
+        bot->SetInFront(target);
+    }
+
+    void LowerOtherAlarTankBotThreat(Creature* alar, Creature* activeTank)
+    {
+        if (!alar || !activeTank)
+            return;
+
+        for (Creature* bot : GatherAlarEncounterBots(alar))
+        {
+            if (bot == activeTank || !IsAlarNpcBotTank(bot))
+                continue;
+
+            alar->GetThreatMgr().ModifyThreatByPercent(bot, -75);
+        }
+    }
+
+    Creature* SelectAlarEmberHandler(Creature* ember)
+    {
+        Creature* best = nullptr;
+        float bestScore = std::numeric_limits<float>::max();
+
+        for (Creature* bot : GatherAlarEncounterBots(ember))
+        {
+            bot_ai* ai = bot ? bot->GetBotAI() : nullptr;
+            if (!ai || !IsAlarMeleeBot(bot))
+                continue;
+
+            float score = bot->GetDistance(ember);
+            if (ai->HasRole(BOT_ROLE_DPS))
+                score -= 30.0f;
+            if (ai->IsTank() || ai->IsOffTank())
+                score += 15.0f;
+            if (bot == ember->GetVictim())
+                score -= 20.0f;
+
+            if (!best || score < bestScore)
+            {
+                best = bot;
+                bestScore = score;
+            }
+        }
+
+        return best;
+    }
+
+    void SendMeleeBotToAlarEmber(Creature* bot, Creature* ember)
+    {
+        if (!IsValidEncounterNPCBot(bot) || !ember || !ember->IsAlive())
+            return;
+
+        bool const avoidExplosion = ember->HealthBelowPct(ALAR_EMBER_AVOID_HEALTH_PCT);
+        ApplyAlarFireProtection(bot);
+        TeleportBotWithAlarVisual(bot, GetAlarEmberBotDestination(bot, ember, avoidExplosion));
+
+        if (!avoidExplosion)
+            ForceAlarBotEngage(bot, ember, ALAR_EMBER_HANDLER_THREAT);
+
+        if (ember->AI())
+            ember->AI()->AttackStart(bot);
+
+        LOG_DEBUG("scripts", "Al'ar NPCBot: ember handler {} ({}) sent to Ember {} at {:.2f} {:.2f} {:.2f}",
+            bot->GetName(), bot->GetEntry(), ember->GetGUID().GetCounter(), ember->GetPositionX(), ember->GetPositionY(), ember->GetPositionZ());
+    }
+
+    void MoveMeleeBotsAwayFromDyingAlarEmber(Creature* ember)
+    {
+        if (!ember)
+            return;
+
+        for (Creature* bot : GatherAlarEncounterBots(ember))
+        {
+            if (!IsAlarMeleeBot(bot) || bot->GetDistance(ember) > ALAR_EMBER_EXPLOSION_CLEAR_DISTANCE)
+                continue;
+
+            ApplyAlarFireProtection(bot);
+            TeleportBotWithAlarVisual(bot, GetAlarEmberBotDestination(bot, ember, true));
+            bot->AttackStop();
+            bot->GetBotAI()->RemoveBotCommandState(BOT_COMMAND_ATTACK);
+
+            LOG_DEBUG("scripts", "Al'ar NPCBot: moved melee bot {} ({}) away from dying Ember {}", bot->GetName(), bot->GetEntry(), ember->GetGUID().GetCounter());
+        }
+    }
+
+    void AddAlarShieldingCubeBot(std::vector<Creature*>& bots, GuidSet& seen, Player* clicker, Creature* bot)
+    {
+        if (!clicker || !IsValidEncounterNPCBot(bot) || !bot->IsAlive() || !bot->IsInWorld() || bot->GetMap() != clicker->GetMap())
+            return;
+
+        if (seen.count(bot->GetGUID()))
+            return;
+
+        seen.insert(bot->GetGUID());
+        bots.push_back(bot);
+    }
+
+    void AddAlarShieldingCubeOwnerBots(std::vector<Creature*>& bots, GuidSet& seen, Player* clicker, Player* owner)
+    {
+        if (!owner)
+            return;
+
+        if (BotMgr* botMgr = owner->GetBotMgr())
+            if (BotMap const* botMap = botMgr->GetBotMap())
+                for (BotMap::value_type const& pair : *botMap)
+                    AddAlarShieldingCubeBot(bots, seen, clicker, pair.second);
+    }
+
+    std::vector<Creature*> GatherAlarShieldingCubeBots(Player* clicker)
+    {
+        std::vector<Creature*> bots;
+        GuidSet seen;
+
+        if (!clicker)
+            return bots;
+
+        if (Group* group = clicker->GetGroup())
+        {
+            for (Unit* member : BotMgr::GetAllGroupMembers(group))
+            {
+                if (Player* player = member ? member->ToPlayer() : nullptr)
+                    AddAlarShieldingCubeOwnerBots(bots, seen, clicker, player);
+                else if (Creature* bot = member ? member->ToCreature() : nullptr)
+                    AddAlarShieldingCubeBot(bots, seen, clicker, bot);
+            }
+        }
+        else
+        {
+            AddAlarShieldingCubeOwnerBots(bots, seen, clicker, clicker);
+        }
+
+        return bots;
+    }
+
+    void ReleaseAlarShieldingCubeBot(Creature* bot)
+    {
+        if (!IsValidEncounterNPCBot(bot))
+            return;
+
+        bot->SetStandState(UNIT_STAND_STATE_STAND);
+
+        if (bot_ai* ai = bot->GetBotAI())
+        {
+            ai->RemoveBotCommandState(BOT_COMMAND_STAY | BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION | BOT_COMMAND_ATTACK | BOT_COMMAND_COMBATRESET);
+            ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+        }
+    }
+
+    void HoldAlarShieldingCubeBot(Creature* bot, Player* clicker)
+    {
+        if (!IsValidEncounterNPCBot(bot) || !clicker)
+            return;
+
+        Position destination = clicker->GetPosition();
+        destination.SetOrientation(clicker->GetOrientation());
+
+        TeleportBotWithAlarVisual(bot, destination);
+        bot->SetStandState(UNIT_STAND_STATE_STAND);
+
+        if (bot_ai* ai = bot->GetBotAI())
+        {
+            ai->RemoveBotCommandState(BOT_COMMAND_FOLLOW | BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION | BOT_COMMAND_ATTACK | BOT_COMMAND_COMBATRESET);
+            ai->SetBotCommandState(BOT_COMMAND_STAY);
+        }
+
+        bot->m_Events.AddEventAtOffset([bot]
+        {
+            ReleaseAlarShieldingCubeBot(bot);
+        }, Milliseconds(ALAR_SHIELDING_CUBE_BOT_HOLD_MS));
+    }
+}
 
 struct boss_alar : public BossAI
 {
@@ -113,6 +632,8 @@ struct boss_alar : public BossAI
         _platformRoll = 0;
         _noQuillTimes = 0;
         _platformMoveRepeatTimer = 16s;
+        _currentPlatform = 0;
+        _platformTankTeleportCooldown = 0;
         me->SetModelVisible(true);
         me->SetReactState(REACT_AGGRESSIVE);
         ConstructWaypointsAndMove();
@@ -141,12 +662,14 @@ struct boss_alar : public BossAI
             }
             else
             {
+                uint8 const destinationPlatform = _platform;
                 if (_noQuillTimes++ > 0)
                 {
                     me->SetOrientation(alarPoints[_platform].GetOrientation());
                     SpawnPhoenixes(1, me);
                 }
                 me->GetMotionMaster()->MovePoint(POINT_PLATFORM, alarPoints[_platform], FORCED_MOVEMENT_NONE, 0.f, false, true);
+                ScheduleAlarPlatformSupport(destinationPlatform);
                 _platform = (_platform+1)%4;
                 _platformMoveRepeatTimer = 30s;
             }
@@ -194,6 +717,7 @@ struct boss_alar : public BossAI
             if (!_hasPretendedToDie)
             {
                 _hasPretendedToDie = true;
+                scheduler.CancelGroup(GROUP_ALAR_BOT_PLATFORM_SUPPORT);
                 DoCastSelf(SPELL_EMBER_BLAST, true);
                 PretendToDie(me);
                 _transitionScheduler.Schedule(1s, [this](TaskContext)
@@ -215,6 +739,7 @@ struct boss_alar : public BossAI
                     _noMelee = false;
                     me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                     _platform = POINT_MIDDLE;
+                    _currentPlatform = POINT_MIDDLE;
                     me->ResumeChasingVictim();
                     ScheduleAbilities();
                 });
@@ -265,6 +790,14 @@ struct boss_alar : public BossAI
         ScheduleMainSpellAttack(0s);
     }
 
+    void JustSummoned(Creature* summon) override
+    {
+        BossAI::JustSummoned(summon);
+
+        if (summon && summon->GetEntry() == NPC_EMBER_OF_ALAR)
+            HandleAlarEmberSpawn(summon);
+    }
+
     void SpawnPhoenixes(uint8 count, Unit* targetToSpawnAt)
     {
         if (targetToSpawnAt)
@@ -280,6 +813,7 @@ struct boss_alar : public BossAI
     void DoDiveBomb()
     {
         _noMelee = true;
+        ApplyAlarFireProtectionToBots(me, "Dive Bomb");
         scheduler.Schedule(2s, [this](TaskContext)
         {
             if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 110.0f, true))
@@ -317,6 +851,8 @@ struct boss_alar : public BossAI
         {
             case POINT_QUILL:
                 scheduler.CancelGroup(GROUP_FLAME_BUFFET);
+                scheduler.CancelGroup(GROUP_ALAR_BOT_PLATFORM_SUPPORT);
+                ApplyAlarFireProtectionToBots(me, "Flame Quills");
                 scheduler.Schedule(1s, [this](TaskContext)
                 {
                     DoCastSelf(SPELL_FLAME_QUILLS);
@@ -357,6 +893,11 @@ struct boss_alar : public BossAI
     void UpdateAI(uint32 diff) override
     {
         _transitionScheduler.Update(diff);
+
+        if (_platformTankTeleportCooldown > diff)
+            _platformTankTeleportCooldown -= diff;
+        else
+            _platformTankTeleportCooldown = 0;
 
         scheduler.Update(diff);
 
@@ -400,6 +941,94 @@ struct boss_alar : public BossAI
         return finalPosition;
     }
 
+    void ScheduleAlarPlatformSupport(uint8 platformIndex)
+    {
+        _currentPlatform = platformIndex;
+        scheduler.CancelGroup(GROUP_ALAR_BOT_PLATFORM_SUPPORT);
+
+        LOG_DEBUG("scripts", "Al'ar NPCBot: phase 1 platform transition to {} ({:.2f} {:.2f} {:.2f})",
+            uint32(platformIndex + 1),
+            GetAlarPlatformPosition(platformIndex).GetPositionX(),
+            GetAlarPlatformPosition(platformIndex).GetPositionY(),
+            GetAlarPlatformPosition(platformIndex).GetPositionZ());
+
+        scheduler.Schedule(2500ms, GROUP_ALAR_BOT_PLATFORM_SUPPORT, [this, platformIndex](TaskContext context)
+        {
+            if (!me->IsInCombat() || _hasPretendedToDie || _platform >= POINT_MIDDLE || _currentPlatform != platformIndex)
+                return;
+
+            HandleAlarPlatformTankSupport(platformIndex);
+            context.Repeat(2s);
+        });
+    }
+
+    void HandleAlarPlatformTankSupport(uint8 platformIndex)
+    {
+        if (platformIndex >= 4)
+            return;
+
+        if (SelectHumanAlarPlatformTank(me, platformIndex))
+            return;
+
+        if (HasValidAlarPlatformTank(me, platformIndex))
+            return;
+
+        if (_platformTankTeleportCooldown)
+            return;
+
+        Creature* tank = SelectAlarPlatformTank(me, platformIndex);
+        if (!tank)
+            return;
+
+        TeleportBotToAlarPlatform(tank, platformIndex);
+    }
+
+    void TeleportBotToAlarPlatform(Creature* bot, uint8 platformIndex)
+    {
+        if (!IsValidEncounterNPCBot(bot) || platformIndex >= 4)
+            return;
+
+        Position destination = GetAlarPlatformBotDestination(me, platformIndex);
+        ApplyAlarFireProtection(bot);
+        TeleportBotWithAlarVisual(bot, destination);
+        ForceAlarBotEngage(bot, me, ALAR_PLATFORM_TANK_THREAT);
+        LowerOtherAlarTankBotThreat(me, bot);
+
+        _platformTankTeleportCooldown = ALAR_PLATFORM_TANK_TELEPORT_COOLDOWN_MS;
+
+        LOG_DEBUG("scripts", "Al'ar NPCBot: teleported tank bot {} ({}) to platform {} at {:.2f} {:.2f} {:.2f}",
+            bot->GetName(), bot->GetEntry(), uint32(platformIndex + 1),
+            destination.GetPositionX(), destination.GetPositionY(), destination.GetPositionZ());
+    }
+
+    void HandleAlarEmberSpawn(Creature* ember)
+    {
+        Creature* handler = SelectAlarEmberHandler(ember);
+        if (!handler)
+        {
+            LOG_DEBUG("scripts", "Al'ar NPCBot: no melee bot handler available for Ember {}", ember ? ember->GetGUID().GetCounter() : 0);
+            return;
+        }
+
+        SendMeleeBotToAlarEmber(handler, ember);
+
+        ObjectGuid const emberGuid = ember->GetGUID();
+        scheduler.Schedule(1s, GROUP_ALAR_BOT_EMBER_SUPPORT, [this, emberGuid](TaskContext context)
+        {
+            Creature* ember = ObjectAccessor::GetCreature(*me, emberGuid);
+            if (!ember || !ember->IsAlive())
+                return;
+
+            if (ember->HealthBelowPct(ALAR_EMBER_AVOID_HEALTH_PCT))
+            {
+                MoveMeleeBotsAwayFromDyingAlarEmber(ember);
+                return;
+            }
+
+            context.Repeat(1s);
+        });
+    }
+
 private:
     bool _hasPretendedToDie;
     bool _canAttackCooldown;
@@ -407,8 +1036,10 @@ private:
     bool _spawnPhoenixes;
     bool _noMelee;
     uint8 _platform;
+    uint8 _currentPlatform;
     uint8 _platformRoll;
     uint8 _noQuillTimes;
+    uint32 _platformTankTeleportCooldown;
     std::chrono::seconds _platformMoveRepeatTimer;
     TaskScheduler _transitionScheduler;
 };
@@ -450,6 +1081,29 @@ class spell_alar_flame_quills : public AuraScript
     }
 };
 
+class spell_alar_quill_missile : public SpellScript
+{
+    PrepareSpellScript(spell_alar_quill_missile);
+
+    void ReduceShieldedTargetDamage()
+    {
+        Unit* target = GetHitUnit();
+        if (!target || (!target->IsPlayer() && !target->IsNPCBot()) || !target->HasAura(SPELL_ALAR_SHIELDING_PROTECTION))
+            return;
+
+        int32 damage = GetHitDamage();
+        if (damage <= 0)
+            return;
+
+        SetHitDamage(std::max<int32>(1, damage * 5 / 100));
+    }
+
+    void Register() override
+    {
+        OnHit += SpellHitFn(spell_alar_quill_missile::ReduceShieldedTargetDamage);
+    }
+};
+
 class spell_alar_ember_blast : public SpellScript
 {
     PrepareSpellScript(spell_alar_ember_blast);
@@ -484,10 +1138,47 @@ class spell_alar_dive_bomb : public AuraScript
     }
 };
 
+class go_alar_shielding_cube : public GameObjectScript
+{
+public:
+    go_alar_shielding_cube() : GameObjectScript("go_alar_shielding_cube") { }
+
+    bool OnGossipHello(Player* player, GameObject* go) override
+    {
+        if (!player || !go)
+            return true;
+
+        if (go->HasGameObjectFlag(GO_FLAG_NOT_SELECTABLE))
+            return true;
+
+        go->SetGameObjectFlag(GO_FLAG_NOT_SELECTABLE);
+        go->m_Events.AddEventAtOffset([go]
+        {
+            if (go->IsInWorld())
+                go->RemoveGameObjectFlag(GO_FLAG_NOT_SELECTABLE);
+        }, Milliseconds(ALAR_SHIELDING_CUBE_COOLDOWN_MS));
+
+        player->CastSpell(player, SPELL_ALAR_SHIELDING_CUBE, true);
+
+        uint32 movedBots = 0;
+        for (Creature* bot : GatherAlarShieldingCubeBots(player))
+        {
+            HoldAlarShieldingCubeBot(bot, player);
+            ++movedBots;
+        }
+
+        LOG_DEBUG("scripts", "Al'ar Shielding Cube: {} clicked cube, gathered {} NPCBot(s), and disabled cube for {} ms", player->GetName(), movedBots, ALAR_SHIELDING_CUBE_COOLDOWN_MS);
+
+        return true;
+    }
+};
+
 void AddSC_boss_alar()
 {
     RegisterTheEyeAI(boss_alar);
     RegisterSpellScript(spell_alar_flame_quills);
+    RegisterSpellScript(spell_alar_quill_missile);
     RegisterSpellScript(spell_alar_ember_blast);
     RegisterSpellScript(spell_alar_dive_bomb);
+    new go_alar_shielding_cube();
 }

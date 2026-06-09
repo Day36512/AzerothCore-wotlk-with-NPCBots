@@ -152,6 +152,16 @@ void WorldSession::HandleUseItemOpcode(WorldPacket& recvPacket)
     InventoryResult msg = pUser->CanUseItem(pItem);
     if (msg != EQUIP_ERR_OK)
     {
+        if (msg == EQUIP_ERR_YOU_ARE_DEAD)
+        {
+            SpellCastTargets targets;
+            targets.Read(recvPacket, pUser);
+            HandleClientCastFlags(recvPacket, castFlags, targets);
+
+            if (sScriptMgr->OnItemUse(pUser, pItem, targets))
+                return;
+        }
+
         pUser->SendEquipError(msg, pItem, nullptr);
         return;
     }

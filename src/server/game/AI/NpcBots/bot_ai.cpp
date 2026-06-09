@@ -5028,6 +5028,100 @@ std::pair<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool& res
             }
         }
 
+        // The Eye - Al'ar. Melee DPS bots prioritize healthy Embers before
+        // drifting back to the boss, while low-health Embers are left to the
+        // encounter helper that moves melee away from the death blast.
+        if (me->GetMapId() == MAP_TEMPEST_KEEP && me->IsInCombat() && HasRole(BOT_ROLE_DPS) && !ranged && !IsTank() &&
+            !(HasRole(BOT_ROLE_HEAL) && IsCasting()))
+        {
+            static constexpr uint32 NPC_EMBER_OF_ALAR = 19551;
+            static constexpr uint32 ALAR_EMBER_AVOID_HEALTH_PCT = 20;
+            static constexpr float ALAR_EMBER_PRIORITY_RANGE = 180.0f;
+            static constexpr float ALAR_EMBER_BOT_THREAT = 75000.0f;
+
+            auto isAttackableAlarEmber = [this, byspell](Creature* c) -> bool
+            {
+                if (!c || !c->IsAlive())
+                    return false;
+
+                if (c->GetEntry() != NPC_EMBER_OF_ALAR)
+                    return false;
+
+                if (c->HealthBelowPct(ALAR_EMBER_AVOID_HEALTH_PCT))
+                    return false;
+
+                if (c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE))
+                    return false;
+
+                if (!c->IsVisible() || !c->isTargetableForAttack(false))
+                    return false;
+
+                if (!(CanSeeEveryone() || (me->CanSeeOrDetect(c) && c->InSamePhase(me))))
+                    return false;
+
+                if (!me->IsWithinLOSInMap(c))
+                    return false;
+
+                if (!me->IsValidAttackTarget(c))
+                    return false;
+
+                return CanBotAttack(c, byspell);
+            };
+
+            auto ensureAlarEmberThreat = [this](Creature* ember)
+            {
+                if (!ember || !ember->CanHaveThreatList())
+                    return;
+
+                me->SetInCombatWith(ember);
+                ember->SetInCombatWith(me);
+
+                if (ember->GetThreatMgr().GetThreat(me) <= 0.0f)
+                    ember->GetThreatMgr().AddThreat(me, ALAR_EMBER_BOT_THREAT, nullptr, true, true);
+            };
+
+            Creature* current = mytar ? mytar->ToCreature() : nullptr;
+            if (isAttackableAlarEmber(current))
+            {
+                ensureAlarEmberThreat(current);
+                return { current, nullptr };
+            }
+
+            std::list<Creature*> embers;
+            me->GetCreatureListWithEntryInGrid(embers, NPC_EMBER_OF_ALAR, ALAR_EMBER_PRIORITY_RANGE);
+
+            Creature* bestEmber = nullptr;
+            float bestHealthPct = 101.0f;
+            float bestDistance = std::numeric_limits<float>::max();
+
+            for (Creature* ember : embers)
+            {
+                if (!isAttackableAlarEmber(ember))
+                    continue;
+
+                float healthPct = ember->GetHealthPct();
+                float distance = me->GetDistance(ember);
+
+                if (!bestEmber ||
+                    healthPct < bestHealthPct ||
+                    (healthPct == bestHealthPct && distance < bestDistance))
+                {
+                    bestEmber = ember;
+                    bestHealthPct = healthPct;
+                    bestDistance = distance;
+                }
+            }
+
+            if (bestEmber)
+            {
+                if (mytar && mytar != bestEmber)
+                    reset = true;
+
+                ensureAlarEmberThreat(bestEmber);
+                return { bestEmber, nullptr };
+            }
+        }
+
         // Magtheridon's Lair (Map 544) — Ranged DPS prioritize Hellfire Channelers.
         // This keeps ranged/caster bots burning the seal team instead of tunneling Magtheridon
         // or drifting onto incidental targets during the opener.
@@ -8106,6 +8200,34 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
                 continue;
 
             spots.emplace_back(*globule, 16.0f + globule->GetCombatReach() + DEFAULT_COMBAT_REACH);
+        }
+    }
+    // Tempest Keep - Al'ar Flame Patch
+    else if (unit->GetMapId() == MAP_TEMPEST_KEEP)
+    {
+        static constexpr uint32 NPC_ALAR_FLAME_PATCH = 20602;
+        static constexpr uint32 SPELL_ALAR_FLAME_PATCH = 35380;
+        static constexpr float ALAR_FLAME_PATCH_SCAN_RANGE = 60.0f;
+        static constexpr float ALAR_FLAME_PATCH_FALLBACK_RADIUS = 10.0f;
+
+        std::list<Creature*> flamePatches;
+        Bcore::AllCreaturesOfEntryInRange flamePatchCheck(unit, NPC_ALAR_FLAME_PATCH, ALAR_FLAME_PATCH_SCAN_RANGE);
+        Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> flamePatchSearcher(unit, flamePatches, flamePatchCheck);
+        Cell::VisitObjects(unit, flamePatchSearcher, ALAR_FLAME_PATCH_SCAN_RANGE);
+
+        spellInfo = sSpellMgr->GetSpellInfo(SPELL_ALAR_FLAME_PATCH);
+        float baseRadius = spellInfo ? std::max(ALAR_FLAME_PATCH_FALLBACK_RADIUS, spellInfo->Effects[0].CalcRadius()) : ALAR_FLAME_PATCH_FALLBACK_RADIUS;
+
+        for (Creature const* flamePatch : flamePatches)
+        {
+            if (!flamePatch || !flamePatch->IsAlive())
+                continue;
+
+            float radius = baseRadius
+                + flamePatch->GetObjectScale() * 2.0f
+                + DEFAULT_COMBAT_REACH * 1.5f;
+
+            spots.emplace_back(*flamePatch, radius);
         }
     }
     // Dinkle Zul'Gurub
