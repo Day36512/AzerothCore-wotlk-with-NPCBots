@@ -8202,13 +8202,16 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
             spots.emplace_back(*globule, 16.0f + globule->GetCombatReach() + DEFAULT_COMBAT_REACH);
         }
     }
-    // Tempest Keep - Al'ar Flame Patch
+    // Tempest Keep - Al'ar Flame Patch / Void Reaver Arcane Orb
     else if (unit->GetMapId() == MAP_TEMPEST_KEEP)
     {
         static constexpr uint32 NPC_ALAR_FLAME_PATCH = 20602;
         static constexpr uint32 SPELL_ALAR_FLAME_PATCH = 35380;
         static constexpr float ALAR_FLAME_PATCH_SCAN_RANGE = 60.0f;
         static constexpr float ALAR_FLAME_PATCH_FALLBACK_RADIUS = 10.0f;
+        static constexpr uint32 NPC_VOID_REAVER_ARCANE_ORB_TARGET = 19577;
+        static constexpr float VOID_REAVER_ARCANE_ORB_SCAN_RANGE = 80.0f;
+        static constexpr float VOID_REAVER_ARCANE_ORB_RADIUS = 18.0f;
 
         std::list<Creature*> flamePatches;
         Bcore::AllCreaturesOfEntryInRange flamePatchCheck(unit, NPC_ALAR_FLAME_PATCH, ALAR_FLAME_PATCH_SCAN_RANGE);
@@ -8228,6 +8231,19 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
                 + DEFAULT_COMBAT_REACH * 1.5f;
 
             spots.emplace_back(*flamePatch, radius);
+        }
+
+        std::list<Creature*> arcaneOrbTargets;
+        Bcore::AllCreaturesOfEntryInRange arcaneOrbTargetCheck(unit, NPC_VOID_REAVER_ARCANE_ORB_TARGET, VOID_REAVER_ARCANE_ORB_SCAN_RANGE);
+        Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> arcaneOrbTargetSearcher(unit, arcaneOrbTargets, arcaneOrbTargetCheck);
+        Cell::VisitObjects(unit, arcaneOrbTargetSearcher, VOID_REAVER_ARCANE_ORB_SCAN_RANGE);
+
+        for (Creature const* arcaneOrbTarget : arcaneOrbTargets)
+        {
+            if (!arcaneOrbTarget || !arcaneOrbTarget->IsAlive())
+                continue;
+
+            spots.emplace_back(*arcaneOrbTarget, VOID_REAVER_ARCANE_ORB_RADIUS + arcaneOrbTarget->GetCombatReach() + DEFAULT_COMBAT_REACH);
         }
     }
     // Dinkle Zul'Gurub
