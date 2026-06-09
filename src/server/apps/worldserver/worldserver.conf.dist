@@ -1562,6 +1562,14 @@ CustomAuctionCommand.Enable = 1
 CustomAuctionCommand.GMOnly = 0
 
 #
+#    CustomRepairCommand.Enable
+#        Description: Enable the .repair custom command.
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled)
+
+CustomRepairCommand.Enable = 1
+
+#
 #    Die.Command.Mode
 #        Description: Do not trigger things like loot from .die command.
 #        Default:     1 - (Enabled)
@@ -4943,6 +4951,121 @@ LeatherworkingDrums.DisableAboveLevel70 = 0
 #        Default:     0 - (Disabled)
 
 Glyph.ExtraSlots.RequiredItemQuality = 0
+
+###################################################################################################
+# Bonus Loot Rolls - Elder Charms of Good Fortune
+#
+# Enables a Mists-style bonus roll for eligible raid bosses. When a boss dies,
+# nearby eligible raid members with the configured charm item receive a temporary
+# opportunity to spend one charm for an extra roll against that boss' creature
+# loot table. A successful roll awards a usable, spec-filtered boss item when
+# possible. A failed roll awards consolation gold.
+###################################################################################################
+
+#    BonusLoot.Enable
+#        Description: Master switch for the bonus loot roll system.
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled)
+
+BonusLoot.Enable = 1
+
+#    BonusLoot.PromptOnKill
+#        Description: Send a bonus-roll notification when an eligible boss dies and the
+#                     player has an active charm. Players can use the charm item directly
+#                     while the opportunity is active, or through a compatible client addon.
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled)
+
+BonusLoot.PromptOnKill = 1
+
+#    BonusLoot.RaidBossOnly
+#        Description: Restrict eligible kills to world bosses or dungeon bosses inside
+#                     raid maps. When disabled, any world boss or dungeon boss with a
+#                     creature loot table can create a bonus roll opportunity.
+#        Default:     1 - (Raid bosses/world bosses only)
+#                     0 - (Any dungeon boss/world boss)
+
+BonusLoot.RaidBossOnly = 1
+
+#    BonusLoot.RequireRaidGroup
+#        Description: Require the kill recipient group to be a raid group before bonus
+#                     roll opportunities are granted.
+#        Default:     1 - (Raid group required)
+#                     0 - (Solo/party kills can also qualify)
+
+BonusLoot.RequireRaidGroup = 1
+
+#    BonusLoot.Debug
+#        Description: Send extra BonusLoot debug messages to players when no usable
+#                     item candidates are found.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+
+BonusLoot.Debug = 0
+
+#    BonusLoot.ElderCharmItemId
+#        Description: Item entry consumed for a bonus roll.
+#        Default:     643641
+
+BonusLoot.ElderCharmItemId = 643641
+
+#    BonusLoot.SuccessChancePct
+#        Description: Percent chance for a charm roll to award an item instead of gold.
+#                     Values are clamped from 0 to 100.
+#        Default:     15.0
+
+BonusLoot.SuccessChancePct = 15.0
+
+#    BonusLoot.EligibilitySeconds
+#        Description: Seconds after a qualifying boss kill that players may spend a charm.
+#                     Values are clamped from 1 to 600.
+#        Default:     60
+
+BonusLoot.EligibilitySeconds = 60
+
+#    BonusLoot.MaxLootAttempts
+#        Description: Maximum times to sample the boss loot table while looking for a
+#                     usable bonus item. Higher values improve chances of finding a
+#                     spec-appropriate item on large loot tables. Values are clamped
+#                     from 1 to 50.
+#        Default:     12
+
+BonusLoot.MaxLootAttempts = 12
+
+#    BonusLoot.FallbackGoldMinCopper
+#    BonusLoot.FallbackGoldMaxCopper
+#        Description: Consolation gold range, in copper, awarded when the roll does not
+#                     produce an item or no valid item candidate is found. If min is
+#                     greater than max, the server swaps them at load time.
+#        Default:     100000 - 250000 (10g - 25g)
+
+BonusLoot.FallbackGoldMinCopper = 100000
+BonusLoot.FallbackGoldMaxCopper = 250000
+
+#    BonusLoot.MinItemQuality
+#        Description: Minimum item quality allowed for bonus-roll item rewards.
+#                     0 Poor, 1 Common, 2 Uncommon, 3 Rare, 4 Epic, 5 Legendary,
+#                     6 Artifact, 7 Heirloom. Values are clamped from 0 to 7.
+#        Default:     3 - Rare
+
+BonusLoot.MinItemQuality = 3
+
+#    BonusLoot.MoltenCoreLegendaryBonusItems
+#        Description: Add Molten Core legendary boss items to the bonus-roll candidate
+#                     pool even when normal usability filters would exclude them.
+#                     Baron Geddon can award left Bindings and Talisman of Binding Shard;
+#                     Garr can award right Bindings.
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled)
+
+BonusLoot.MoltenCoreLegendaryBonusItems = 1
+
+#    BonusLoot.MailSenderEntry
+#        Description: Creature entry used as the sender when a bonus item must be mailed
+#                     because the player's bags are full.
+#        Default:     34337
+
+BonusLoot.MailSenderEntry = 34337
 
 #
 ###################################################################################################

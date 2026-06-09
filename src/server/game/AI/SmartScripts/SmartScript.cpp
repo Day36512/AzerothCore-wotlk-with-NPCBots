@@ -4254,8 +4254,22 @@ void SmartScript::ProcessEvent(SmartScriptHolder& e, Unit* unit, uint32 var0, ui
                 if (!me || !me->IsEngaged() || !me->GetVictim())
                     return;
 
-                if (me->IsInRange(me->GetVictim(), (float)e.event.minMaxRepeat.rangeMin, (float)e.event.minMaxRepeat.rangeMax))
-                    ProcessTimedAction(e, e.event.minMaxRepeat.repeatMin, e.event.minMaxRepeat.repeatMax, me->GetVictim());
+                Unit* victim = me->GetVictim();
+                if (me->IsInRange(victim, (float)e.event.minMaxRepeat.rangeMin, (float)e.event.minMaxRepeat.rangeMax))
+                {
+                    bool const stopCombatMovement = e.GetActionType() == SMART_ACTION_ALLOW_COMBAT_MOVEMENT && !e.action.combatMove.move;
+                    if (stopCombatMovement && IsSmart() && !me->IsWithinLOSInMap(victim, VMAP::ModelIgnoreFlags::M2))
+                    {
+                        // Custom change: original code ran range-based stop movement
+                        // as soon as distance matched. If spell LOS is blocked, keep
+                        // chasing and do not consume no-repeat stop events yet.
+                        CAST_AI(SmartAI, me->AI())->SetCombatMovement(true, true);
+                        RecalcTimer(e, 1200, 1200);
+                        break;
+                    }
+
+                    ProcessTimedAction(e, e.event.minMaxRepeat.repeatMin, e.event.minMaxRepeat.repeatMax, victim);
+                }
                 else
                     RecalcTimer(e, 1200, 1200); // make it predictable
 

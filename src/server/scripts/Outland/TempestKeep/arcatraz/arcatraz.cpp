@@ -543,7 +543,7 @@ public:
                     events.ScheduleEvent(EVENT_WARDEN_INTRO25, 8s);
                     break;
                 case EVENT_WARDEN_INTRO25:
-                    if (Creature* cr = me->SummonCreature(NPC_HARBINGER_SKYRISS, 445.763f, -191.639f, 44.64f, 1.60f, TEMPSUMMON_MANUAL_DESPAWN))
+                    if (Creature* cr = me->SummonCreature(NPC_HARBINGER_SKYRISS, 445.85f, -181.30f, 43.77f, 1.60f, TEMPSUMMON_MANUAL_DESPAWN))
                     {
                         cr->SetImmuneToAll(true);
                         cr->CastSpell(cr, SPELL_TELEPORT_VISUAL, true);
