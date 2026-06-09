@@ -5122,6 +5122,160 @@ std::pair<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool& res
             }
         }
 
+        // The Eye - High Astromancer Solarian. Tanks pick up Agents; DPS prioritizes
+        // Priests for fast interrupts/burns, then helps clean up Agents.
+        if (me->GetMapId() == MAP_TEMPEST_KEEP && me->IsInCombat() &&
+            !HasBotCommandState(BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION) &&
+            !(HasRole(BOT_ROLE_HEAL) && IsCasting()))
+        {
+            static constexpr uint32 NPC_HIGH_ASTROMANCER_SOLARIAN = 18805;
+            static constexpr uint32 NPC_SOLARIUM_AGENT = 18925;
+            static constexpr uint32 NPC_SOLARIUM_PRIEST = 18806;
+            static constexpr float SOLARIAN_ADD_PRIORITY_RANGE = 120.0f;
+            static constexpr float SOLARIAN_ADD_TANK_THREAT = 75000.0f;
+            static constexpr float SOLARIAN_PRIEST_DPS_THREAT = 15000.0f;
+            static constexpr float SOLARIAN_AGENT_DPS_THREAT = 3000.0f;
+
+            auto isSolarianActiveNearby = [this]() -> bool
+            {
+                std::list<Creature*> solarians;
+                me->GetCreatureListWithEntryInGrid(solarians, NPC_HIGH_ASTROMANCER_SOLARIAN, SOLARIAN_ADD_PRIORITY_RANGE);
+
+                for (Creature* solarian : solarians)
+                    if (solarian && solarian->IsAlive() && solarian->IsInCombat())
+                        return true;
+
+                return false;
+            };
+
+            auto isAttackableSolarianAdd = [this, byspell](Creature* add, uint32 entry) -> bool
+            {
+                if (!add || !add->IsAlive() || add->GetEntry() != entry)
+                    return false;
+
+                if (add->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE))
+                    return false;
+
+                if (!add->IsVisible() || !add->isTargetableForAttack(false))
+                    return false;
+
+                if (!(CanSeeEveryone() || (me->CanSeeOrDetect(add) && add->InSamePhase(me))))
+                    return false;
+
+                if (!me->IsWithinLOSInMap(add))
+                    return false;
+
+                if (!me->IsValidAttackTarget(add))
+                    return false;
+
+                return CanBotAttack(add, byspell);
+            };
+
+            auto ensureSolarianAddThreat = [this](Creature* add, float amount)
+            {
+                if (!add || !add->CanHaveThreatList())
+                    return;
+
+                me->SetInCombatWith(add);
+                add->SetInCombatWith(me);
+
+                if (add->GetThreatMgr().GetThreat(me) <= 0.0f)
+                    add->GetThreatMgr().AddThreat(me, amount, nullptr, true, true);
+            };
+
+            bool const isTankRole = IsTank() || IsOffTank() || HasRole(BOT_ROLE_TANK) || HasRole(BOT_ROLE_TANK_OFF);
+            bool const isDpsPriorityRole = HasRole(BOT_ROLE_DPS) && !isTankRole && !HasRole(BOT_ROLE_HEAL);
+
+            if ((isTankRole || isDpsPriorityRole) && isSolarianActiveNearby())
+            {
+                auto selectSolarianAdd = [&](uint32 entry, bool tankPickup) -> Creature*
+                {
+                    std::list<Creature*> adds;
+                    me->GetCreatureListWithEntryInGrid(adds, entry, SOLARIAN_ADD_PRIORITY_RANGE);
+
+                    Creature* best = nullptr;
+                    float bestScore = std::numeric_limits<float>::max();
+
+                    for (Creature* add : adds)
+                    {
+                        if (!isAttackableSolarianAdd(add, entry))
+                            continue;
+
+                        float score = me->GetDistance(add);
+                        score += add->GetHealthPct() * 0.25f;
+
+                        if (tankPickup)
+                        {
+                            Unit* victim = add->GetVictim();
+                            if (!victim || victim == me)
+                                score -= 2500.0f;
+                            else if (!IsTank(victim))
+                                score -= 1500.0f;
+                        }
+
+                        if (!best || score < bestScore)
+                        {
+                            best = add;
+                            bestScore = score;
+                        }
+                    }
+
+                    return best;
+                };
+
+                Creature* current = mytar ? mytar->ToCreature() : nullptr;
+                Creature* target = nullptr;
+                float threat = 0.0f;
+
+                if (isTankRole)
+                {
+                    if (isAttackableSolarianAdd(current, NPC_SOLARIUM_AGENT))
+                    {
+                        target = current;
+                        threat = SOLARIAN_ADD_TANK_THREAT;
+                    }
+                    else if ((target = selectSolarianAdd(NPC_SOLARIUM_AGENT, true)))
+                    {
+                        threat = SOLARIAN_ADD_TANK_THREAT;
+                    }
+                    else if (isAttackableSolarianAdd(current, NPC_SOLARIUM_PRIEST))
+                    {
+                        target = current;
+                        threat = SOLARIAN_ADD_TANK_THREAT;
+                    }
+                    else if ((target = selectSolarianAdd(NPC_SOLARIUM_PRIEST, true)))
+                    {
+                        threat = SOLARIAN_ADD_TANK_THREAT;
+                    }
+                }
+                else if (isDpsPriorityRole)
+                {
+                    if ((target = selectSolarianAdd(NPC_SOLARIUM_PRIEST, false)))
+                    {
+                        threat = SOLARIAN_PRIEST_DPS_THREAT;
+                    }
+                    else if (isAttackableSolarianAdd(current, NPC_SOLARIUM_AGENT))
+                    {
+                        target = current;
+                        threat = SOLARIAN_AGENT_DPS_THREAT;
+                    }
+                    else if ((target = selectSolarianAdd(NPC_SOLARIUM_AGENT, false)))
+                    {
+                        threat = SOLARIAN_AGENT_DPS_THREAT;
+                    }
+                }
+
+                if (target)
+                {
+                    if (mytar && mytar != target)
+                        reset = true;
+
+                    ensureSolarianAddThreat(target, threat);
+                    return { target, nullptr };
+                }
+            }
+        }
+
         // Magtheridon's Lair (Map 544) — Ranged DPS prioritize Hellfire Channelers.
         // This keeps ranged/caster bots burning the seal team instead of tunneling Magtheridon
         // or drifting onto incidental targets during the opener.
