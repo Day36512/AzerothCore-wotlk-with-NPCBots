@@ -16,7 +16,11 @@
  */
 
 #include "CreatureScript.h"
+#include "Group.h"
+#include "LFG.h"
+#include "Player.h"
 #include "ScriptedCreature.h"
+#include "botcommon.h"
 #include "shadow_labyrinth.h"
 
 using namespace std::chrono_literals;
@@ -52,8 +56,9 @@ enum Npc
     NPC_VOID_PORTAL = 19224
 };
 
-static constexpr float VOID_TRAVELER_WALK_SPEED_RATE = 0.80f;
-static constexpr float VOID_TRAVELER_RUN_SPEED_RATE = 0.32f;
+static constexpr float VORPIL_BANISH_MAX_RANGE = 30.0f;
+static constexpr float VOID_TRAVELER_WALK_SPEED_RATE = 0.45f;
+static constexpr float VOID_TRAVELER_RUN_SPEED_RATE = 0.18f;
 
 float VorpilPosition[3] = { -253.548f, -263.646f, 17.0864f };
 
@@ -72,6 +77,101 @@ struct boss_grandmaster_vorpil : public BossAI
     boss_grandmaster_vorpil(Creature* creature) : BossAI(creature, DATA_GRANDMASTER_VORPIL), sayIntro(false) {}
 
     bool sayIntro, sayHelp;
+
+    bool IsAssignedTank(Unit const* target) const
+    {
+        Group const* group = nullptr;
+
+        if (Player const* player = target ? target->ToPlayer() : nullptr)
+        {
+            group = player->GetGroup();
+        }
+        else if (Creature const* creature = target ? target->ToCreature() : nullptr)
+        {
+            if (creature->IsNPCBot())
+            {
+                group = creature->GetBotGroup();
+            }
+        }
+
+        if (!group)
+        {
+            return false;
+        }
+
+        for (Group::MemberSlot const& slot : group->GetMemberSlots())
+        {
+            if (slot.guid != target->GetGUID())
+            {
+                continue;
+            }
+
+            return (slot.flags & MEMBER_FLAG_MAINTANK) || (slot.roles & lfg::PLAYER_ROLE_TANK);
+        }
+
+        return false;
+    }
+
+    bool IsBotTank(Unit const* target) const
+    {
+        Creature const* creature = target ? target->ToCreature() : nullptr;
+        return creature && creature->IsNPCBot() && (creature->GetBotRoles() & (BOT_ROLE_TANK | BOT_ROLE_TANK_OFF));
+    }
+
+    bool IsBanishTarget(Unit const* target) const
+    {
+        if (!target || !target->IsAlive())
+        {
+            return false;
+        }
+
+        if (!target->IsPlayer() && !target->IsNPCBot())
+        {
+            return false;
+        }
+
+        if (target->IsPlayer() && target->ToPlayer()->IsGameMaster())
+        {
+            return false;
+        }
+
+        if (target == me->GetVictim() || target == me->GetThreatMgr().GetLastVictim())
+        {
+            return false;
+        }
+
+        if (IsAssignedTank(target) || IsBotTank(target))
+        {
+            return false;
+        }
+
+        if (!me->IsWithinCombatRange(target, VORPIL_BANISH_MAX_RANGE))
+        {
+            return false;
+        }
+
+        if (target->HasAura(SPELL_BANISH))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    void DoBanish()
+    {
+        if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, [this](Unit* target)
+            {
+                return IsBanishTarget(target);
+            }))
+        {
+            SpellCastResult const result = DoCast(target, SPELL_BANISH);
+            if (result == SPELL_FAILED_BAD_TARGETS && target->IsNPCBot())
+            {
+                me->AddAura(SPELL_BANISH, target);
+            }
+        }
+    }
 
     void Reset() override
     {
@@ -182,7 +282,7 @@ struct boss_grandmaster_vorpil : public BossAI
                 {
                     scheduler.Schedule(17s, 28s, [this](TaskContext context)
                         {
-                            DoCastRandomTarget(SPELL_BANISH, 0, 30.0f, false);
+                            DoBanish();
                             context.Repeat();
                         });
                 }

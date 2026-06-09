@@ -77,6 +77,7 @@ enum PlayerHook
     PLAYERHOOK_ON_UPDATE_FACTION,
     PLAYERHOOK_ON_ADD_TO_BATTLEGROUND,
     PLAYERHOOK_ON_QUEUE_RANDOM_DUNGEON,
+    PLAYERHOOK_ON_SELECT_LFG_REWARD_QUEST,
     PLAYERHOOK_ON_REMOVE_FROM_BATTLEGROUND,
     PLAYERHOOK_ON_ACHI_COMPLETE,
     PLAYERHOOK_ON_BEFORE_ACHI_COMPLETE,
@@ -366,6 +367,9 @@ public:
 
     // Called when a player queues a Random Dungeon using the RDF (Random Dungeon Finder)
     virtual void OnPlayerQueueRandomDungeon(Player* /*player*/, uint32 & /*rDungeonId*/) { }
+
+    // Called after the LFG reward quest is chosen, before the quest is rewarded and shown in SMSG_LFG_PLAYER_REWARD
+    virtual void OnPlayerSelectLfgRewardQuest(Player* /*player*/, uint32 /*rDungeonId*/, bool /*done*/, uint32 /*baseQuestId*/, uint32& /*rewardQuestId*/) { }
 
     // Called when a player is removed from battleground
     virtual void OnPlayerRemoveFromBattleground(Player* /*player*/, Battleground* /*bg*/) { }

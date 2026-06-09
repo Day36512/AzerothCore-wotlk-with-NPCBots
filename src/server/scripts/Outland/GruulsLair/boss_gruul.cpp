@@ -86,7 +86,7 @@ namespace GruulBotDirector
     constexpr float ARRIVED_DISTANCE_2D = 2.25f;
     constexpr float MAX_DIRECTED_MOVE_DISTANCE = 95.0f;
     constexpr uint32 SPREAD_TICK_INTERVAL_MS = 500;
-    constexpr uint32 PRE_SLAM_SPREAD_LEAD_MS = 8000;
+    constexpr uint32 PRE_SLAM_SPREAD_LEAD_MS = 5000;
     constexpr uint32 GROUND_SLAM_TO_SHATTER_MS = 9700;
     constexpr float TWO_PI = 6.28318530717958647692f;
 
@@ -433,11 +433,11 @@ struct boss_gruul : public BossAI
         _JustEngagedWith();
         Talk(SAY_AGGRO);
 
-        scheduler.Schedule(30300ms, [this](TaskContext context)
+        scheduler.Schedule(15150ms, [this](TaskContext context)
         {
             Talk(EMOTE_GROW);
             DoCastSelf(SPELL_GROWTH);
-            context.Repeat(30300ms);
+            context.Repeat(15150ms);
         }).Schedule(_caveInTimer, [this](TaskContext context)
         {
             DoCastRandomTarget(SPELL_CAVE_IN);

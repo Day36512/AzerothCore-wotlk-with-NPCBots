@@ -282,6 +282,11 @@ void ScriptMgr::OnPlayerQueueRandomDungeon(Player* player, uint32 & rDungeonId)
     CALL_ENABLED_HOOKS(PlayerScript, PLAYERHOOK_ON_QUEUE_RANDOM_DUNGEON, script->OnPlayerQueueRandomDungeon(player, rDungeonId));
 }
 
+void ScriptMgr::OnPlayerSelectLfgRewardQuest(Player* player, uint32 rDungeonId, bool done, uint32 baseQuestId, uint32& rewardQuestId)
+{
+    CALL_ENABLED_HOOKS(PlayerScript, PLAYERHOOK_ON_SELECT_LFG_REWARD_QUEST, script->OnPlayerSelectLfgRewardQuest(player, rDungeonId, done, baseQuestId, rewardQuestId));
+}
+
 void ScriptMgr::OnPlayerRemoveFromBattleground(Player* player, Battleground* bg)
 {
     CALL_ENABLED_HOOKS(PlayerScript, PLAYERHOOK_ON_REMOVE_FROM_BATTLEGROUND, script->OnPlayerRemoveFromBattleground(player, bg));

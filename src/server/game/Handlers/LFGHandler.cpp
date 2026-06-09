@@ -177,12 +177,22 @@ void WorldSession::HandleLfgPlayerLockInfoRequestOpcode(WorldPacket& /*recvData*
         bool done = false;
         if (reward)
         {
-            quest = sObjectMgr->GetQuestTemplate(reward->firstQuest);
-            if (quest)
+            Quest const* baseQuest = sObjectMgr->GetQuestTemplate(reward->firstQuest);
+            if (baseQuest)
             {
-                done = !GetPlayer()->CanRewardQuest(quest, false);
+                done = !GetPlayer()->CanRewardQuest(baseQuest, false);
                 if (done)
-                    quest = sObjectMgr->GetQuestTemplate(reward->otherQuest);
+                    baseQuest = sObjectMgr->GetQuestTemplate(reward->otherQuest);
+
+                if (baseQuest)
+                {
+                    uint32 rewardQuestId = baseQuest->GetQuestId();
+                    sScriptMgr->OnPlayerSelectLfgRewardQuest(GetPlayer(), *it, done, baseQuest->GetQuestId(), rewardQuestId);
+
+                    quest = sObjectMgr->GetQuestTemplate(rewardQuestId);
+                    if (!quest)
+                        quest = baseQuest;
+                }
             }
         }
 

@@ -46,25 +46,46 @@ enum Misc
 
 struct boss_ambassador_hellmaw : public BossAI
 {
-    boss_ambassador_hellmaw(Creature* creature) : BossAI(creature, TYPE_HELLMAW) { }
+    boss_ambassador_hellmaw(Creature* creature) : BossAI(creature, TYPE_HELLMAW), isBanished(false) { }
 
     bool isBanished;
+
+    bool ShouldBeBanished() const
+    {
+        return instance->GetPersistentData(TYPE_RITUALISTS) != DONE;
+    }
+
+    void ApplyBanishedState()
+    {
+        isBanished = true;
+        scheduler.CancelAll();
+
+        me->AttackStop();
+        me->CombatStop(true);
+        me->SetReactState(REACT_PASSIVE);
+        me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
+        me->SetImmuneToAll(true);
+
+        if (!me->HasAura(SPELL_BANISH))
+        {
+            me->AddAura(SPELL_BANISH, me);
+        }
+    }
+
+    void ReleaseBanishedState()
+    {
+        me->RemoveAurasDueToSpell(SPELL_BANISH);
+        isBanished = false;
+        me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
+        me->SetImmuneToAll(false);
+        me->SetReactState(REACT_AGGRESSIVE);
+    }
 
     void InitializeAI() override
     {
         Reset();
 
-        if (instance->GetPersistentData(TYPE_RITUALISTS) != DONE)
-        {
-            isBanished = true;
-            me->SetImmuneToAll(true);
-
-            me->m_Events.AddEventAtOffset([this]()
-            {
-                DoCastSelf(SPELL_BANISH, true);
-            }, 500ms);
-        }
-        else
+        if (!ShouldBeBanished())
         {
             me->GetMotionMaster()->MoveWaypoint(PATH_ID_START, false);
         }
@@ -73,8 +94,15 @@ struct boss_ambassador_hellmaw : public BossAI
     void Reset() override
     {
         _Reset();
-        isBanished = false;
-        me->SetImmuneToAll(false);
+
+        if (ShouldBeBanished())
+        {
+            ApplyBanishedState();
+        }
+        else
+        {
+            ReleaseBanishedState();
+        }
     }
 
     void DoAction(int32 param) override
@@ -83,11 +111,9 @@ struct boss_ambassador_hellmaw : public BossAI
         {
             return;
         }
-        me->RemoveAurasDueToSpell(SPELL_BANISH);
+        ReleaseBanishedState();
         Talk(SAY_INTRO);
         DoPlaySoundToSet(me, SOUND_INTRO);
-        isBanished = false;
-        me->SetImmuneToAll(false);
         me->GetMotionMaster()->MoveWaypoint(PATH_ID_START, false);
     }
 

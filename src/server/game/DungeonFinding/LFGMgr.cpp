@@ -2664,26 +2664,44 @@ namespace lfg
                 continue;
 
             bool done = false;
-            Quest const* quest = sObjectMgr->GetQuestTemplate(reward->firstQuest);
-            if (!quest)
+            Quest const* baseQuest = sObjectMgr->GetQuestTemplate(reward->firstQuest);
+            if (!baseQuest)
                 continue;
 
             // if we can take the quest, means that we haven't done this kind of "run", IE: First Heroic Random of Day.
-            if (player->CanRewardQuest(quest, false))
-                player->RewardQuest(quest, 0, nullptr, false, true);
-            else
+            if (!player->CanRewardQuest(baseQuest, false))
             {
                 done = true;
-                quest = sObjectMgr->GetQuestTemplate(reward->otherQuest);
-                if (!quest)
+                baseQuest = sObjectMgr->GetQuestTemplate(reward->otherQuest);
+                if (!baseQuest)
                     continue;
-                // we give reward without informing client (retail does this)
-                player->RewardQuest(quest, 0, nullptr, false, true);
+            }
+
+            uint32 rewardQuestId = baseQuest->GetQuestId();
+            sScriptMgr->OnPlayerSelectLfgRewardQuest(player, rDungeonId, done, baseQuest->GetQuestId(), rewardQuestId);
+
+            Quest const* rewardQuest = sObjectMgr->GetQuestTemplate(rewardQuestId);
+            if (!rewardQuest)
+            {
+                LOG_WARN("lfg", "LFGMgr::FinishDungeon: [{}] script selected missing reward quest {} for base quest {}; using base quest.",
+                    player->GetGUID().ToString(), rewardQuestId, baseQuest->GetQuestId());
+                rewardQuest = baseQuest;
+            }
+
+            // We give reward without informing client (retail does this). The LFG reward packet below shows the same quest.
+            player->RewardQuest(rewardQuest, 0, nullptr, false, true);
+
+            if (rewardQuest != baseQuest)
+            {
+                if (baseQuest->IsDaily() || baseQuest->IsDFQuest())
+                    player->SetDailyQuestStatus(baseQuest->GetQuestId());
+
+                player->SetRewardedQuest(baseQuest->GetQuestId());
             }
 
             // Give rewards
             LOG_DEBUG("lfg", "LFGMgr::FinishDungeon: [{}] done dungeon {}, {} previously done.", player->GetGUID().ToString(), GetDungeon(gguid), done ? " " : " not");
-            LfgPlayerRewardData data = LfgPlayerRewardData(dungeon->Entry(), GetDungeon(gguid, false), done, quest);
+            LfgPlayerRewardData data = LfgPlayerRewardData(dungeon->Entry(), GetDungeon(gguid, false), done, rewardQuest);
             player->GetSession()->SendLfgPlayerReward(data);
         }
     }

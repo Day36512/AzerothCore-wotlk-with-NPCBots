@@ -1546,6 +1546,22 @@ AllowPlayerCommands = 1
 Command.LookupMaxResults = 0
 
 #
+#    CustomAuctionCommand.Enable
+#        Description: Enable the .ah custom auction house command.
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled)
+
+CustomAuctionCommand.Enable = 1
+
+#
+#    CustomAuctionCommand.GMOnly
+#        Description: Restrict the .ah custom auction house command to GM accounts.
+#        Default:     0 - (Disabled, all players can use .ah when CustomAuctionCommand.Enable = 1)
+#                     1 - (Enabled, only GM accounts can use .ah)
+
+CustomAuctionCommand.GMOnly = 0
+
+#
 #    Die.Command.Mode
 #        Description: Do not trigger things like loot from .die command.
 #        Default:     1 - (Enabled)

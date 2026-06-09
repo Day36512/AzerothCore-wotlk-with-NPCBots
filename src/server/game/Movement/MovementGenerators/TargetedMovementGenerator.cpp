@@ -320,7 +320,10 @@ bool ChaseMovementGenerator<T>::DoUpdate(T* owner, uint32 time_diff)
             float x, y, z;
             target->GetPosition(x, y, z);
             bool withinRange = owner->IsInDist(target, maxRange);
-            bool withinLOS = owner->IsWithinLOS(x, y, z);
+            // Custom change: original code used owner->IsWithinLOS(x, y, z)
+            // against target coordinates. Use map LOS against the target object so
+            // caster-range chase does not stop behind collision with no spell LOS.
+            bool withinLOS = owner->IsWithinLOSInMap(target);
             bool moveToward = !(withinRange && withinLOS);
 
             // make a new path if we have to...
@@ -350,11 +353,13 @@ bool ChaseMovementGenerator<T>::DoUpdate(T* owner, uint32 time_diff)
 
             bool shortenPath;
 
-            // if we want to move toward the target and there's no fixed angle...
+            // if we want to move toward a visible target and there's no fixed angle...
             if (moveToward && !angle)
             {
-                // ...we'll pathfind to the center, then shorten the path
-                shortenPath = true;
+                // Custom change: original code always used shortenPath = true here.
+                // Only shorten to ranged distance when LOS is already clear; otherwise
+                // chase deeper along the path until the target becomes visible again.
+                shortenPath = withinLOS;
             }
             else
             {
@@ -379,7 +384,13 @@ bool ChaseMovementGenerator<T>::DoUpdate(T* owner, uint32 time_diff)
                 }
             }
 
-            DispatchSplineToPosition(owner, x, y, z, walk, shortenPath, maxTarget, forceDest, true);
+            // Custom change: original code ignored the dispatch result. Track the
+            // accepted direction and reset cached target position on failure so a
+            // stationary blocked target can be retried next tick.
+            if (DispatchSplineToPosition(owner, x, y, z, walk, shortenPath, maxTarget, forceDest, true))
+                _movingTowards = moveToward;
+            else
+                _lastTargetPosition.reset();
         }
     }
 
