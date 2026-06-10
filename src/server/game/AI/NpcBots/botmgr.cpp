@@ -448,6 +448,8 @@ void BotMgr::Update(uint32 diff)
 
     if (partyCombat)
         bot_ai::CalculateAoeSpots(_owner, _aoespots);
+    else
+        _aoespots.clear();
 
     _update_lock = true;
 
@@ -457,6 +459,8 @@ void BotMgr::Update(uint32 diff)
 
         if (ai->IAmFree())
             continue;
+
+        ai->SetAoeSpots(partyCombat ? &_aoespots : nullptr);
 
         if (!bot->IsInWorld() || (bot->IsSummon() && !bot->IsInMap(_owner)))
         {

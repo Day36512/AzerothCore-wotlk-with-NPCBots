@@ -344,6 +344,8 @@ public:
     uint8 GetSpec() const;
 
     AoeSpotsVec const& GetAoeSpots() const;
+    void SetAoeSpots(AoeSpotsVec const* sharedSpots);
+    void RefreshAoeSpots(AoeSpotsVec const* sharedSpots = nullptr);
     static void CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots);
     AoeSafeSpotsVec CalculateAoeSafeSpots(Unit* target, float maxdist) const;
 

@@ -8210,7 +8210,26 @@ bool bot_ai::ProcessImmediateNonAttackTarget()
 //POSITION
 AoeSpotsVec const& bot_ai::GetAoeSpots() const
 {
-    return IAmFree() ? _aoeSpots : master->GetBotMgr()->GetAoeSpots();
+    return _aoeSpots;
+}
+
+void bot_ai::SetAoeSpots(AoeSpotsVec const* sharedSpots)
+{
+    _aoeSpots.clear();
+
+    if (sharedSpots && !sharedSpots->empty())
+        _aoeSpots.assign(sharedSpots->begin(), sharedSpots->end());
+}
+
+void bot_ai::RefreshAoeSpots(AoeSpotsVec const* sharedSpots)
+{
+    SetAoeSpots(sharedSpots);
+
+    AoeSpotsVec unitSpots;
+    CalculateAoeSpots(me, unitSpots);
+
+    if (!unitSpots.empty())
+        _aoeSpots.insert(_aoeSpots.end(), unitSpots.begin(), unitSpots.end());
 }
 
 void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
@@ -23341,7 +23360,9 @@ bool bot_ai::GlobalUpdate(uint32 diff)
             if (Unit* victim = CanBotAttackOnVehicle() ? me->GetVictim() : mover->GetTarget() ? ObjectAccessor::GetUnit(*mover, mover->GetTarget()) : nullptr)
             {
                 if (IAmFree())
-                    CalculateAoeSpots(me, _aoeSpots);
+                    RefreshAoeSpots();
+                else
+                    RefreshAoeSpots(&master->GetBotMgr()->GetAoeSpots());
 
                 //BOT_LOG_ERROR("scripts", "GetInPos prepare by %s", me->GetName().c_str());
                 if (!IAmFree() && master->GetBotMgr()->GetBotAttackRangeMode() == BOT_ATTACK_RANGE_EXACT &&
