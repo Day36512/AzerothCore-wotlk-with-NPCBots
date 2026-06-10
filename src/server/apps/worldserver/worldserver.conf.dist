@@ -5081,6 +5081,16 @@ BonusLoot.MinItemQuality = 3
 
 BonusLoot.MoltenCoreLegendaryBonusItems = 1
 
+#    BonusLoot.LegendaryCandidateWeight
+#        Description: Final reward-selection weight multiplier for legendary bonus-roll
+#                     candidates after boss loot has been sampled and filtered.
+#                     Normal non-legendary candidates have weight 1.0. A value of
+#                     0.05 makes each legendary candidate count as 5% of a normal
+#                     candidate. Values are clamped from 0.0 to 1.0.
+#        Default:     0.05
+
+BonusLoot.LegendaryCandidateWeight = 0.05
+
 #    BonusLoot.MailSenderEntry
 #        Description: Creature entry used as the sender when a bonus item must be mailed
 #                     because the player's bags are full.

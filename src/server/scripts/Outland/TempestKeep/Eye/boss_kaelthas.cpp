@@ -91,6 +91,7 @@ enum KTSpells
 
     // _phase 4 spells
     SPELL_FIREBALL                      = 36805,
+    SPELL_FIREBALL_VOLLEY               = 600450,
     SPELL_ARCANE_DISRUPTION             = 36834,
     SPELL_PHOENIX                       = 36723,
     SPELL_MIND_CONTROL                  = 36797,
@@ -246,7 +247,8 @@ enum KTSpellGroups
     GROUP_SHOCK_BARRIER                 = 2,
     GROUP_NETHER_BEAM                   = 3,
     GROUP_FIRE_BOMB                     = 4,
-    GROUP_BOT_FIRE_BOMB_DIRECTOR        = 5
+    GROUP_BOT_FIRE_BOMB_DIRECTOR        = 5,
+    GROUP_FINAL_FROST_BLAST             = 6
 };
 
 const Position triggersPos[6] =
@@ -287,14 +289,23 @@ namespace
     constexpr uint32 KAEL_DOMINION_TICK_MS = 1000;
     constexpr uint8 KAEL_DOMINION_TICK_COUNT = 5;
     constexpr uint32 KAEL_DOMINION_DAMAGE_PCT = 8;
-    constexpr uint32 KAEL_FROST_BLAST_DAMAGE_PCT = 18;
+    constexpr uint32 KAEL_FROST_BLAST_DAMAGE_PCT = 10;
     constexpr uint32 KAEL_FIRE_BOMB_ACTIVE_MS = 11000;
     constexpr uint32 KAEL_FIRE_BOMB_DESPAWN_MS = 15000;
-    constexpr uint32 KAEL_FIRE_BOMB_COUNT = 95;
-    constexpr float KAEL_FIRE_BOMB_AREA_X = 135.0f;
-    constexpr float KAEL_FIRE_BOMB_AREA_Y = 110.0f;
+    constexpr uint32 KAEL_FIRE_BOMB_COUNT = 180;
+    constexpr uint32 KAEL_FIRE_BOMB_THROW_INTERVAL_MS = 28;
+    constexpr uint32 KAEL_FINAL_FIRE_BOMB_FIRST_DELAY_MS = 2000;
+    constexpr uint32 KAEL_FINAL_FIRE_BOMB_REPEAT_MS = 40000;
+    constexpr uint32 KAEL_FINAL_FROST_BLAST_BEFORE_FIRE_BOMB_MS = 8000;
+    constexpr uint32 KAEL_FINAL_FLAME_STRIKE_FIRST_DELAY_MS = 18000;
+    constexpr uint32 KAEL_FINAL_FLAME_STRIKE_REPEAT_MIN_MS = 25000;
+    constexpr uint32 KAEL_FINAL_FLAME_STRIKE_REPEAT_MAX_MS = 35000;
+    constexpr uint32 KAEL_FINAL_FIREBALL_VOLLEY_FIRST_DELAY_MS = 25000;
+    constexpr uint32 KAEL_FINAL_FIREBALL_VOLLEY_REPEAT_MS = 35000;
+    constexpr float KAEL_FIRE_BOMB_AREA_X = 155.0f;
+    constexpr float KAEL_FIRE_BOMB_AREA_Y = 130.0f;
     constexpr float KAEL_FIRE_BOMB_SAFE_MARGIN = 8.0f;
-    constexpr float KAEL_FIRE_BOMB_DANGER_RADIUS = 7.0f;
+    constexpr float KAEL_FIRE_BOMB_DANGER_RADIUS = 10.0f;
     constexpr float KAEL_FIRE_BOMB_CANDIDATE_STEP = 5.0f;
     constexpr float KAEL_FIRE_BOMB_BOT_MOVE_RANGE = 170.0f;
 
@@ -1431,19 +1442,23 @@ struct boss_kaelthas : public BossAI
             {
                 DoCastVictim(SPELL_FIREBALL);
             }, 2400ms, 7500ms);
-            ScheduleTimedEvent(10s, [&]
+            ScheduleTimedEvent(Milliseconds(KAEL_FINAL_FLAME_STRIKE_FIRST_DELAY_MS), [&]
             {
                 DoCastRandomTarget(SPELL_FLAME_STRIKE, 0, 100.0f);
-            }, 30250ms, 50650ms);
+            }, Milliseconds(KAEL_FINAL_FLAME_STRIKE_REPEAT_MIN_MS), Milliseconds(KAEL_FINAL_FLAME_STRIKE_REPEAT_MAX_MS));
+            ScheduleTimedEvent(Milliseconds(KAEL_FINAL_FIREBALL_VOLLEY_FIRST_DELAY_MS), [&]
+            {
+                DoCastAOE(SPELL_FIREBALL_VOLLEY);
+            }, Milliseconds(KAEL_FINAL_FIREBALL_VOLLEY_REPEAT_MS));
             ScheduleTimedEvent(50s, [&]
             {
                 Talk(SAY_SUMMON_PHOENIX);
                 DoCastSelf(SPELL_PHOENIX);
             }, 61450ms, 96550ms);
-            ScheduleTimedEvent(5s, [&]
+            ScheduleTimedEvent(Milliseconds(KAEL_FINAL_FIRE_BOMB_FIRST_DELAY_MS), [&]
             {
                 StartKaelFireBombs();
-            }, 70s);
+            }, Milliseconds(KAEL_FINAL_FIRE_BOMB_REPEAT_MS));
             if (me->GetVictim())
             {
                 me->SetTarget(me->GetVictim()->GetGUID());
@@ -1769,15 +1784,9 @@ struct boss_kaelthas : public BossAI
         }, 35450ms, 41550ms);
         ScheduleTimedEvent(20s, 23s, [&]
         {
-            if (Unit* target = SelectKaelRandomFrostBlastTarget(me))
-            {
-                me->CastSpell(target, SPELL_FROST_BLAST_CUSTOM, false);
+            CastKaelFrostBlast();
 
-                if (Creature* targetBot = DBMFTABotCallouts::AsNPCBotCreature(target))
-                    DBMFTABotCallouts::AnnounceCustomForModule(targetBot, SPELL_FROST_BLAST_CUSTOM, "DBM-TheEye", "KaelThas", "Frost Blast on me, heal me!", DBMFTABotCallouts::GetCooldownMs());
-            }
-
-            scheduler.Schedule(3s, [this](TaskContext)
+            scheduler.Schedule(12s, [this](TaskContext)
             {
                 DoCastSelf(SPELL_ARCANE_DISRUPTION);
             });
@@ -1796,6 +1805,26 @@ struct boss_kaelthas : public BossAI
                 scheduler.CancelGroup(GROUP_PYROBLAST);
             });
         }, 50s);
+    }
+
+    void CastKaelFrostBlast()
+    {
+        if (Unit* target = SelectKaelRandomFrostBlastTarget(me))
+        {
+            me->CastSpell(target, SPELL_FROST_BLAST_CUSTOM, false);
+
+            if (Creature* targetBot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                DBMFTABotCallouts::AnnounceCustomForModule(targetBot, SPELL_FROST_BLAST_CUSTOM, "DBM-TheEye", "KaelThas", "Frost Blast on me, heal me!", DBMFTABotCallouts::GetCooldownMs());
+        }
+    }
+
+    void ScheduleFinalFrostBlastBeforeNextFireBomb()
+    {
+        scheduler.CancelGroup(GROUP_FINAL_FROST_BLAST);
+        scheduler.Schedule(Milliseconds(KAEL_FINAL_FIRE_BOMB_REPEAT_MS - KAEL_FINAL_FROST_BLAST_BEFORE_FIRE_BOMB_MS), GROUP_FINAL_FROST_BLAST, [this](TaskContext)
+        {
+            CastKaelFrostBlast();
+        });
     }
 
     std::vector<Creature*> GetActiveKaelFireBombs()
@@ -1830,7 +1859,7 @@ struct boss_kaelthas : public BossAI
 
     void ThrowKaelFireBombs()
     {
-        std::chrono::milliseconds bombTimer = 100ms;
+        std::chrono::milliseconds bombTimer = std::chrono::milliseconds(KAEL_FIRE_BOMB_THROW_INTERVAL_MS);
 
         summons.DoForAllSummons([this, &bombTimer](WorldObject* summon)
         {
@@ -1847,7 +1876,7 @@ struct boss_kaelthas : public BossAI
                 }, bombTimer);
             }
 
-            bombTimer += 100ms;
+            bombTimer += std::chrono::milliseconds(KAEL_FIRE_BOMB_THROW_INTERVAL_MS);
         });
     }
 
@@ -1953,12 +1982,14 @@ struct boss_kaelthas : public BossAI
     {
         scheduler.CancelGroup(GROUP_FIRE_BOMB);
         scheduler.DelayAll(Milliseconds(KAEL_FIRE_BOMB_ACTIVE_MS + 2000));
+        ScheduleFinalFrostBlastBeforeNextFireBomb();
         me->setAttackTimer(BASE_ATTACK, KAEL_FIRE_BOMB_ACTIVE_MS + 2000);
         me->AttackStop();
         me->CastStop();
         me->SetTarget();
         me->GetMotionMaster()->Clear();
         me->StopMoving();
+        me->Yell("The fires of the Sunwell will consume you!", LANG_UNIVERSAL);
         DoCastSelf(SPELL_FIRE_BOMB_CHANNEL);
 
         SpawnKaelFireBombs();
@@ -2326,18 +2357,16 @@ class spell_kaelthas_custom_frost_blast : public SpellScript
         return ValidateSpellInfo({ SPELL_FROST_BLAST_CUSTOM });
     }
 
-    void FilterTargets(std::list<WorldObject*>& targets)
+    void FilterTarget(WorldObject*& target)
     {
-        targets.remove_if([](WorldObject const* target)
-        {
-            Unit const* unit = target ? target->ToUnit() : nullptr;
-            return !unit || unit->HasAura(SPELL_FROST_BLAST_CUSTOM);
-        });
+        Unit const* unit = target ? target->ToUnit() : nullptr;
+        if (!unit || unit->HasAura(SPELL_FROST_BLAST_CUSTOM) || IsKaelFrostBlastTankTarget(GetCaster() ? GetCaster()->ToCreature() : nullptr, const_cast<Unit*>(unit)))
+            target = nullptr;
     }
 
     void Register() override
     {
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_kaelthas_custom_frost_blast::FilterTargets, EFFECT_ALL, TARGET_UNIT_DEST_AREA_ENEMY);
+        OnObjectTargetSelect += SpellObjectTargetSelectFn(spell_kaelthas_custom_frost_blast::FilterTarget, EFFECT_ALL, TARGET_UNIT_TARGET_ENEMY);
     }
 };
 

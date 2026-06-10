@@ -1420,14 +1420,36 @@ void WorldSession::HandleSocketOpcode(WorldPackets::Item::SocketGems& packet)
     for (int i = 0; i < MAX_GEM_SOCKETS; ++i)
     {
         if (GemEnchants[i])
-        {
             itemTarget->SetEnchantment(EnchantmentSlot(SOCK_ENCHANTMENT_SLOT + i), GemEnchants[i], 0, 0, _player->GetGUID());
-            if (Item* guidItem = _player->GetItemByGuid(packet.GemGuids[i]))
+    }
+
+    // Stackable gems can provide multiple sockets from one source item GUID.
+    // Consume each source stack once by its total socket use count.
+    for (int i = 0; i < MAX_GEM_SOCKETS; ++i)
+    {
+        if (!GemEnchants[i] || !packet.GemGuids[i])
+            continue;
+
+        bool alreadyConsumed = false;
+        for (int j = 0; j < i; ++j)
+        {
+            if (GemEnchants[j] && packet.GemGuids[j] == packet.GemGuids[i])
             {
-                uint32 count = 1;
-                _player->DestroyItemCount(guidItem, count, true);
+                alreadyConsumed = true;
+                break;
             }
         }
+
+        if (alreadyConsumed)
+            continue;
+
+        uint32 count = 0;
+        for (int j = i; j < MAX_GEM_SOCKETS; ++j)
+            if (GemEnchants[j] && packet.GemGuids[j] == packet.GemGuids[i])
+                ++count;
+
+        if (Item* guidItem = _player->GetItemByGuid(packet.GemGuids[i]))
+            _player->DestroyItemCount(guidItem, count, true);
     }
 
     for (uint32 enchant_slot = SOCK_ENCHANTMENT_SLOT; enchant_slot < SOCK_ENCHANTMENT_SLOT + MAX_GEM_SOCKETS; ++enchant_slot)
