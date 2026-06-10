@@ -44,7 +44,8 @@ enum CreatureIds
 {
     NPC_RISEN_GUARDIAN          = 11598,
     NPC_DARKMASTER_GANDLING     = 1853,
-    NPC_KIRTONOS                = 10506
+    NPC_KIRTONOS                = 10506,
+    NPC_RATTLEGORE              = 11622
 };
 
 enum GameobjectIds

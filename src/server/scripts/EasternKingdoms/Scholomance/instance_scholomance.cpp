@@ -19,14 +19,44 @@
 #include "GameObjectAI.h"
 #include "InstanceMapScript.h"
 #include "InstanceScript.h"
+#include "ObjectMgr.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "SpellAuras.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
+#include "botmgr.h"
 #include "scholomance.h"
+#include <unordered_set>
+#include <vector>
 
 Position KirtonosSpawn = Position(315.028, 70.5385, 102.15, 0.385971);
+
+namespace ScholomanceStasis
+{
+    constexpr uint32 SPELL_STASIS = 300334;
+    constexpr uint32 VISIBILITY_CHECK_INTERVAL_MS = 1 * IN_MILLISECONDS;
+    constexpr uint32 AURA_REFRESH_INTERVAL_MS = 10 * IN_MILLISECONDS;
+
+    bool IsEligibleCreature(Creature const* creature)
+    {
+        if (!creature)
+            return false;
+
+        if (creature->IsNPCBotOrPet() || creature->IsPet() || creature->IsTotem() || creature->IsSummon())
+            return false;
+
+        if (creature->IsTrigger() || creature->IsCritter() || creature->GetCreatureType() == CREATURE_TYPE_NON_COMBAT_PET)
+            return false;
+
+        return true;
+    }
+
+    bool IsValidObserver(Unit const* unit, Map const* map)
+    {
+        return unit && unit->IsInWorld() && unit->GetMap() == map;
+    }
+}
 
 class instance_scholomance : public InstanceMapScript
 {
@@ -45,6 +75,8 @@ public:
             _miniBosses = 0;
             _kirtonosState = 0;
             _rasHuman      = 0;
+            _stasisVisibilityCheckTimer = ScholomanceStasis::VISIBILITY_CHECK_INTERVAL_MS;
+            _stasisAuraRefreshTimer = ScholomanceStasis::AURA_REFRESH_INTERVAL_MS;
         }
 
         void OnCreatureCreate(Creature* cr) override
@@ -54,6 +86,19 @@ public:
                 case NPC_DARKMASTER_GANDLING:
                     GandlingGUID = cr->GetGUID();
                     break;
+                case NPC_RATTLEGORE:
+                    RattlegoreGUID = cr->GetGUID();
+                    if (!cr->IsAlive())
+                        DisableStasisForRattlegoreDeath(true);
+                    break;
+            }
+
+            if (ScholomanceStasis::IsEligibleCreature(cr))
+            {
+                if (_rattlegoreDead)
+                    RemoveScriptStasis(cr);
+                else
+                    _stasisCreatureGuids.insert(cr->GetGUID());
             }
         }
 
@@ -218,16 +263,204 @@ public:
 
         void ReadSaveDataMore(std::istringstream& data) override
         {
+            uint32 rattlegoreDead = 0;
+
             data >> _kirtonosState;
             data >> _miniBosses;
+
+            if (data >> rattlegoreDead)
+                _rattlegoreDead = rattlegoreDead != 0;
+            else
+                _rattlegoreDead = false;
         }
 
         void WriteSaveDataMore(std::ostringstream& data) override
         {
-            data << _kirtonosState << ' ' << _miniBosses;
+            data << _kirtonosState << ' ' << _miniBosses << ' ' << uint32(_rattlegoreDead);
+        }
+
+        void Update(uint32 diff) override
+        {
+            if (_rattlegoreDead)
+                return;
+
+            _stasisVisibilityCheckTimer += diff;
+            _stasisAuraRefreshTimer += diff;
+
+            if (_stasisVisibilityCheckTimer < ScholomanceStasis::VISIBILITY_CHECK_INTERVAL_MS)
+                return;
+
+            if (IsRattlegoreDead())
+            {
+                DisableStasisForRattlegoreDeath(true);
+                return;
+            }
+
+            bool const refreshStasisAura = _stasisAuraRefreshTimer >= ScholomanceStasis::AURA_REFRESH_INTERVAL_MS;
+            UpdateStasis(refreshStasisAura);
+
+            _stasisVisibilityCheckTimer = 0;
+
+            if (refreshStasisAura)
+                _stasisAuraRefreshTimer = 0;
+        }
+
+        void OnUnitDeath(Unit* unit) override
+        {
+            if (unit && unit->GetEntry() == NPC_RATTLEGORE)
+                DisableStasisForRattlegoreDeath(true);
         }
 
     protected:
+        bool IsRattlegoreDead() const
+        {
+            if (_rattlegoreDead)
+                return true;
+
+            if (Creature* rattlegore = instance->GetCreature(RattlegoreGUID))
+                return !rattlegore->IsAlive();
+
+            if (HasRattlegoreRespawnState())
+                return true;
+
+            return false;
+        }
+
+        bool HasRattlegoreRespawnState() const
+        {
+            for (auto const& [spawnId, respawnTime] : instance->GetCreatureRespawnTimes())
+            {
+                if (!respawnTime)
+                    continue;
+
+                CreatureData const* data = sObjectMgr->GetCreatureData(spawnId);
+                if (!data || data->mapid != MAP_SCHOLOMANCE)
+                    continue;
+
+                if (data->id1 == NPC_RATTLEGORE || data->id2 == NPC_RATTLEGORE || data->id3 == NPC_RATTLEGORE)
+                    return true;
+            }
+
+            return false;
+        }
+
+        void RemoveScriptStasis(Creature* creature)
+        {
+            if (creature && creature->HasAura(ScholomanceStasis::SPELL_STASIS))
+                creature->RemoveAurasDueToSpell(ScholomanceStasis::SPELL_STASIS);
+
+            if (creature)
+                _stasisAppliedGuids.erase(creature->GetGUID());
+        }
+
+        void DisableStasisForRattlegoreDeath(bool saveState = false)
+        {
+            bool const wasDead = _rattlegoreDead;
+            _rattlegoreDead = true;
+
+            for (ObjectGuid const& guid : _stasisCreatureGuids)
+                if (Creature* creature = instance->GetCreature(guid))
+                    RemoveScriptStasis(creature);
+
+            _stasisAppliedGuids.clear();
+            _stasisManualRemoveGuids.clear();
+
+            if (saveState && !wasDead)
+                SaveToDB();
+        }
+
+        void CollectObservers(std::vector<Unit*>& observers) const
+        {
+            observers.clear();
+
+            Map::PlayerList const& players = instance->GetPlayers();
+            for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+            {
+                Player* player = itr->GetSource();
+                if (!ScholomanceStasis::IsValidObserver(player, instance))
+                    continue;
+
+                observers.push_back(player);
+
+                if (BotMgr* botMgr = player->GetBotMgr())
+                    if (BotMap const* botMap = botMgr->GetBotMap())
+                        for (BotMap::value_type const& pair : *botMap)
+                            if (ScholomanceStasis::IsValidObserver(pair.second, instance))
+                                observers.push_back(pair.second);
+            }
+        }
+
+        bool HasObserverInLineOfSight(Creature const* creature, std::vector<Unit*> const& observers) const
+        {
+            if (!creature || observers.empty())
+                return false;
+
+            float const visibilityRange = instance->GetVisibilityRange();
+
+            for (Unit const* observer : observers)
+            {
+                if (!observer || !observer->IsWithinDistInMap(creature, visibilityRange))
+                    continue;
+
+                if (observer->IsWithinLOSInMap(creature))
+                    return true;
+            }
+
+            return false;
+        }
+
+        void UpdateStasis(bool refreshStasisAura)
+        {
+            std::vector<Unit*> observers;
+            CollectObservers(observers);
+
+            for (ObjectGuid const& guid : _stasisCreatureGuids)
+            {
+                Creature* creature = instance->GetCreature(guid);
+                if (!creature || !creature->IsInWorld())
+                    continue;
+
+                if (!ScholomanceStasis::IsEligibleCreature(creature) || !creature->IsAlive())
+                {
+                    RemoveScriptStasis(creature);
+                    continue;
+                }
+
+                if (HasObserverInLineOfSight(creature, observers))
+                {
+                    RemoveScriptStasis(creature);
+
+                    continue;
+                }
+
+                if (_stasisManualRemoveGuids.find(guid) != _stasisManualRemoveGuids.end())
+                    continue;
+
+                bool const hasStasisAura = creature->HasAura(ScholomanceStasis::SPELL_STASIS);
+                bool const scriptExpectedAura = _stasisAppliedGuids.find(guid) != _stasisAppliedGuids.end();
+
+                if (!hasStasisAura && scriptExpectedAura && !refreshStasisAura)
+                {
+                    _stasisManualRemoveGuids.insert(guid);
+                    _stasisAppliedGuids.erase(guid);
+                    continue;
+                }
+
+                if (hasStasisAura)
+                {
+                    _stasisAppliedGuids.insert(guid);
+                    if (!refreshStasisAura)
+                        continue;
+                }
+
+                if (refreshStasisAura || !hasStasisAura)
+                {
+                    creature->CastSpell(creature, ScholomanceStasis::SPELL_STASIS, true);
+                    _stasisAppliedGuids.insert(guid);
+                }
+            }
+        }
+
         ObjectGuid GateKirtonosGUID;
         ObjectGuid GateMiliciaGUID;
         ObjectGuid GateTheolenGUID;
@@ -239,10 +472,17 @@ public:
 
         ObjectGuid GandlingGatesGUID[7]; // 6 is the entrance
         ObjectGuid GandlingGUID; // boss
+        ObjectGuid RattlegoreGUID;
 
         uint32 _kirtonosState;
         uint32 _miniBosses;
         uint32 _rasHuman;
+        uint32 _stasisVisibilityCheckTimer;
+        uint32 _stasisAuraRefreshTimer;
+        bool _rattlegoreDead = false;
+        std::unordered_set<ObjectGuid> _stasisCreatureGuids;
+        std::unordered_set<ObjectGuid> _stasisAppliedGuids;
+        std::unordered_set<ObjectGuid> _stasisManualRemoveGuids;
     };
 };
 

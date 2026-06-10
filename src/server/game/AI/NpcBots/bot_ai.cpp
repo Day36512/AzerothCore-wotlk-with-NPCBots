@@ -23841,25 +23841,32 @@ void bot_ai::Evade()
                 {
                     uint32 const millDelay = urand(4000, 6000);
                     uint32 const sameNodeTeleportDelay = BotCfg::GetWandererSameNodeTeleportDelayMs();
-
-                    if (sameNodeTeleportDelay &&
+                    bool const sameNodeWorldWanderer =
                         BotMgr::IsWanderingWorldBot(me) &&
                         me->FindMap() &&
-                        !me->FindMap()->IsBattlegroundOrArena())
+                        !me->FindMap()->IsBattlegroundOrArena();
+                    uint32 sameNodeZoneId = 0;
+                    WanderNode const* sameZoneAlternateNode = nullptr;
+
+                    if (sameNodeWorldWanderer)
+                    {
+                        if (BotCfg::WanderingBotsStayInAssignedZone())
+                            sameNodeZoneId = GetWandererAssignedZoneId();
+
+                        if (!sameNodeZoneId && _travel_node_cur)
+                            sameNodeZoneId = _travel_node_cur->GetZoneId();
+
+                        if (sameNodeZoneId)
+                            sameZoneAlternateNode = GetRandomWanderNodeInZone(sameNodeZoneId, false, true);
+                    }
+
+                    if (sameNodeTeleportDelay && sameNodeWorldWanderer)
                     {
                         _wandererSameNodeTimer += millDelay;
 
                         if (_wandererSameNodeTimer >= sameNodeTeleportDelay)
                         {
-                            uint32 teleportZoneId = 0;
-
-                            if (BotCfg::WanderingBotsStayInAssignedZone())
-                                teleportZoneId = GetWandererAssignedZoneId();
-
-                            if (!teleportZoneId && _travel_node_cur)
-                                teleportZoneId = _travel_node_cur->GetZoneId();
-
-                            if (WanderNode const* teleportNode = GetRandomWanderNodeInZone(teleportZoneId, false, true))
+                            if (WanderNode const* teleportNode = sameZoneAlternateNode)
                             {
                                 BOT_LOG_TRACE("npcbots",
                                     "Bot {} id {} class {} level {} has milled at node {} ('{}') for {}ms, teleporting within zone {} to node {} ('{}').",
@@ -23870,7 +23877,7 @@ void bot_ai::Evade()
                                     _travel_node_cur->GetWPId(),
                                     _travel_node_cur->GetName().c_str(),
                                     _wandererSameNodeTimer,
-                                    teleportZoneId,
+                                    sameNodeZoneId,
                                     teleportNode->GetWPId(),
                                     teleportNode->GetName().c_str());
 
@@ -23887,11 +23894,44 @@ void bot_ai::Evade()
                     }
 
                     // same node: mill about briefly
-                    float cangle = Position::NormalizeOrientation(me->GetRelativeAngle(nextNode) + frand(float(-M_PI_2), float(M_PI_2)));
-                    float cdist = nextNode->HasFlag(BotWPFlags::BOTWP_FLAG_INTERACTION_MILL_RADIUS) ? frand(INTERACTION_DISTANCE * 0.25f, INTERACTION_DISTANCE) : frand(8.0f, 15.0f);
-                    Position cnpos = me->GetFirstCollisionPosition(cdist, cangle);
+                    Position cnpos;
+                    bool zoneLockedRoam = false;
+
+                    if (BotCfg::WanderingBotsStayInAssignedZone() && sameNodeWorldWanderer && sameNodeZoneId)
+                    {
+                        for (uint8 i = 0; i < 24; ++i)
+                        {
+                            float const cangle = frand(0.f, float(M_PI) * 2.f);
+                            float const cdist = frand(18.0f, 38.0f);
+                            Position candidate = me->GetFirstCollisionPosition(cdist, cangle);
+
+                            if (me->GetExactDist2d(candidate) <= 15.5f)
+                                continue;
+
+                            if (candidate.GetPositionZ() <= INVALID_HEIGHT)
+                                continue;
+
+                            if (!me->IsWithinLOS(candidate.GetPositionX(), candidate.GetPositionY(), candidate.GetPositionZ()))
+                                continue;
+
+                            if (me->GetMap()->GetZoneId(me->GetPhaseMask(), candidate.GetPositionX(), candidate.GetPositionY(), candidate.GetPositionZ()) != sameNodeZoneId)
+                                continue;
+
+                            cnpos.Relocate(candidate);
+                            zoneLockedRoam = true;
+                            break;
+                        }
+                    }
+
+                    if (!zoneLockedRoam)
+                    {
+                        float cangle = Position::NormalizeOrientation(me->GetRelativeAngle(nextNode) + frand(float(-M_PI_2), float(M_PI_2)));
+                        float cdist = nextNode->HasFlag(BotWPFlags::BOTWP_FLAG_INTERACTION_MILL_RADIUS) ? frand(INTERACTION_DISTANCE * 0.25f, INTERACTION_DISTANCE) : frand(8.0f, 15.0f);
+                        cnpos = me->GetFirstCollisionPosition(cdist, cangle);
+                    }
+
                     homepos.Relocate(cnpos);
-                    evadeDelayTimer = millDelay;
+                    evadeDelayTimer = zoneLockedRoam ? urand(1000, 2500) : millDelay;
                 }
                 else
                 {
