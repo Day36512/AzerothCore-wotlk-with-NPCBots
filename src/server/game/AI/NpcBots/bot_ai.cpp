@@ -2238,7 +2238,12 @@ void bot_ai::BuffAndHealGroup(uint32 diff)
         if (HasRole(BOT_ROLE_HEAL))
         {
             static constexpr uint32 FROST_BLAST_AURA = 27808;
+            static constexpr uint32 DINKLE_FROST_BLAST_AURA = 600449;
             std::list<Unit*> frostTargets;
+            auto hasFrostBlastAura = [&](Unit const* target) -> bool
+            {
+                return target && (target->HasAura(FROST_BLAST_AURA) || target->HasAura(DINKLE_FROST_BLAST_AURA));
+            };
 
             for (GroupReference const* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
             {
@@ -2256,7 +2261,7 @@ void bot_ai::BuffAndHealGroup(uint32 diff)
                 if (me->GetDistance(tPlayer) > 40.0f)
                     continue;
 
-                if (tPlayer->HasAura(FROST_BLAST_AURA))
+                if (hasFrostBlastAura(tPlayer))
                     frostTargets.push_back(tPlayer);
 
                 if (Unit* veh = tPlayer->GetVehicleBase())
@@ -2265,7 +2270,7 @@ void bot_ai::BuffAndHealGroup(uint32 diff)
                         veh->ToCreature()->GetCreatureTemplate()->type == CREATURE_TYPE_MECHANICAL) &&
                         !veh->HasUnitState(UNIT_STATE_ISOLATED) &&
                         me->GetDistance(veh) < 40.0f &&
-                        veh->HasAura(FROST_BLAST_AURA))
+                        hasFrostBlastAura(veh))
                     {
                         frostTargets.push_back(veh);
                     }
@@ -2300,7 +2305,7 @@ void bot_ai::BuffAndHealGroup(uint32 diff)
                                 !bot->HasUnitState(UNIT_STATE_ISOLATED) &&
                                 !bot->ToCreature()->IsTempBot() &&
                                 me->GetDistance(bot) <= 40.0f &&
-                                bot->HasAura(FROST_BLAST_AURA))
+                                hasFrostBlastAura(bot))
                             {
                                 frostTargets.push_back(bot);
                             }
@@ -2313,7 +2318,7 @@ void bot_ai::BuffAndHealGroup(uint32 diff)
                                     pet->IsAlive() &&
                                     !pet->HasUnitState(UNIT_STATE_ISOLATED) &&
                                     me->GetDistance(pet) <= 40.0f &&
-                                    pet->HasAura(FROST_BLAST_AURA))
+                                    hasFrostBlastAura(pet))
                                 {
                                     frostTargets.push_back(pet);
                                 }
@@ -2329,7 +2334,7 @@ void bot_ai::BuffAndHealGroup(uint32 diff)
                                         veh->ToCreature()->GetCreatureTemplate()->type == CREATURE_TYPE_MECHANICAL) &&
                                     !veh->HasUnitState(UNIT_STATE_ISOLATED) &&
                                     me->GetDistance(veh) < 40.0f &&
-                                    veh->HasAura(FROST_BLAST_AURA))
+                                    hasFrostBlastAura(veh))
                                 {
                                     frostTargets.push_back(veh);
                                 }
@@ -2355,7 +2360,7 @@ void bot_ai::BuffAndHealGroup(uint32 diff)
                         continue;
                     }
 
-                    if (u->HasAura(FROST_BLAST_AURA))
+                    if (hasFrostBlastAura(u))
                         frostTargets.push_back(u);
                 }
             }
@@ -5026,6 +5031,150 @@ std::pair<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool& res
 
                 return { bestTotem, nullptr };
             }
+        }
+
+        // The Eye - Kael'thas. Shock Barrier burn is the top priority; if the
+        // barrier is already gone, a Pyroblast cast can be handled by normal
+        // interrupt logic after bots swap back to Kael.
+        if (me->GetMapId() == MAP_TEMPEST_KEEP && me->IsInCombat() && HasRole(BOT_ROLE_DPS) && !IsTank() &&
+            !HasBotCommandState(BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION) &&
+            !(HasRole(BOT_ROLE_HEAL) && IsCasting()))
+        {
+            static constexpr uint32 NPC_KAELTHAS_SUNSTRIDER = 19622;
+            static constexpr uint32 NPC_KAEL_PHOENIX = 21362;
+            static constexpr uint32 NPC_KAEL_PHOENIX_EGG = 21364;
+            static constexpr uint32 NPC_KAEL_WEAPON_MIN = 21268;
+            static constexpr uint32 NPC_KAEL_WEAPON_MAX = 21274;
+            static constexpr uint32 SPELL_KAEL_SHOCK_BARRIER = 36815;
+            static constexpr uint32 SPELL_KAEL_PYROBLAST = 36819;
+            static constexpr float KAEL_PRIORITY_RANGE = 180.0f;
+            static constexpr float KAEL_BARRIER_THREAT = 1000.0f;
+            static constexpr float KAEL_ADD_THREAT = 50000.0f;
+            static constexpr float KAEL_WEAPON_THREAT = 15000.0f;
+
+            auto isAttackableKaelTarget = [this, byspell](Creature* c) -> bool
+            {
+                if (!c || !c->IsAlive())
+                    return false;
+
+                if (c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE))
+                    return false;
+
+                if (!c->IsVisible() || !c->isTargetableForAttack(false))
+                    return false;
+
+                if (!(CanSeeEveryone() || (me->CanSeeOrDetect(c) && c->InSamePhase(me))))
+                    return false;
+
+                if (!me->IsWithinLOSInMap(c))
+                    return false;
+
+                if (!me->IsValidAttackTarget(c))
+                    return false;
+
+                return CanBotAttack(c, byspell);
+            };
+
+            auto isKaelCastingPyroblast = [](Creature* kael) -> bool
+            {
+                if (!kael)
+                    return false;
+
+                for (uint8 i = CURRENT_FIRST_NON_MELEE_SPELL; i < CURRENT_MAX_SPELL; ++i)
+                {
+                    if (Spell* spell = kael->GetCurrentSpell(CurrentSpellTypes(i)))
+                        if (SpellInfo const* spellInfo = spell->GetSpellInfo())
+                            if (spellInfo->Id == SPELL_KAEL_PYROBLAST)
+                                return true;
+                }
+
+                return false;
+            };
+
+            auto ensureThreat = [this](Creature* target, float threat)
+            {
+                if (!target || !target->CanHaveThreatList())
+                    return;
+
+                me->SetInCombatWith(target);
+                target->SetInCombatWith(me);
+
+                if (target->GetThreatMgr().GetThreat(me, true) <= 0.0f)
+                    target->GetThreatMgr().AddThreat(me, threat, nullptr, true, true);
+            };
+
+            auto finishPriorityTarget = [this, mytar, &reset, &ensureThreat](Creature* target, float threat) -> std::pair<Unit*, Unit*>
+            {
+                if (mytar && mytar != target)
+                    reset = true;
+
+                ensureThreat(target, threat);
+                return { target, nullptr };
+            };
+
+            auto selectBestCreature = [this, &isAttackableKaelTarget](auto const& entryMatches) -> Creature*
+            {
+                std::list<Creature*> creatures;
+                auto creatureCheck = [&](Creature* c) -> bool
+                {
+                    return isAttackableKaelTarget(c) && entryMatches(c->GetEntry());
+                };
+                Bcore::CreatureListSearcher searcher(me, creatures, creatureCheck);
+                Cell::VisitObjects(me, searcher, KAEL_PRIORITY_RANGE);
+
+                Creature* best = nullptr;
+                float bestHealthPct = 101.0f;
+                float bestDistance = std::numeric_limits<float>::max();
+
+                for (Creature* creature : creatures)
+                {
+                    float healthPct = creature->GetHealthPct();
+                    float distance = me->GetDistance(creature);
+
+                    if (!best ||
+                        healthPct < bestHealthPct ||
+                        (healthPct == bestHealthPct && distance < bestDistance))
+                    {
+                        best = creature;
+                        bestHealthPct = healthPct;
+                        bestDistance = distance;
+                    }
+                }
+
+                return best;
+            };
+
+            Creature* current = mytar ? mytar->ToCreature() : nullptr;
+            if (isAttackableKaelTarget(current) && current->GetEntry() == NPC_KAELTHAS_SUNSTRIDER &&
+                (current->HasAura(SPELL_KAEL_SHOCK_BARRIER) || (!current->HasAura(SPELL_KAEL_SHOCK_BARRIER) && isKaelCastingPyroblast(current))))
+                return finishPriorityTarget(current, KAEL_BARRIER_THREAT);
+
+            if (Creature* kael = selectBestCreature([](uint32 entry) { return entry == NPC_KAELTHAS_SUNSTRIDER; }))
+            {
+                if (kael->HasAura(SPELL_KAEL_SHOCK_BARRIER))
+                    return finishPriorityTarget(kael, KAEL_BARRIER_THREAT);
+
+                if (isKaelCastingPyroblast(kael))
+                    return finishPriorityTarget(kael, KAEL_BARRIER_THREAT);
+            }
+
+            if (isAttackableKaelTarget(current) && current->GetEntry() == NPC_KAEL_PHOENIX_EGG)
+                return finishPriorityTarget(current, KAEL_ADD_THREAT);
+
+            if (Creature* egg = selectBestCreature([](uint32 entry) { return entry == NPC_KAEL_PHOENIX_EGG; }))
+                return finishPriorityTarget(egg, KAEL_ADD_THREAT);
+
+            if (isAttackableKaelTarget(current) && current->GetEntry() == NPC_KAEL_PHOENIX)
+                return finishPriorityTarget(current, KAEL_ADD_THREAT);
+
+            if (Creature* phoenix = selectBestCreature([](uint32 entry) { return entry == NPC_KAEL_PHOENIX; }))
+                return finishPriorityTarget(phoenix, KAEL_ADD_THREAT);
+
+            if (isAttackableKaelTarget(current) && current->GetEntry() >= NPC_KAEL_WEAPON_MIN && current->GetEntry() <= NPC_KAEL_WEAPON_MAX)
+                return finishPriorityTarget(current, KAEL_WEAPON_THREAT);
+
+            if (Creature* weapon = selectBestCreature([](uint32 entry) { return entry >= NPC_KAEL_WEAPON_MIN && entry <= NPC_KAEL_WEAPON_MAX; }))
+                return finishPriorityTarget(weapon, KAEL_WEAPON_THREAT);
         }
 
         // The Eye - Al'ar. Melee DPS bots prioritize healthy Embers before
@@ -8356,7 +8505,7 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
             spots.emplace_back(*globule, 16.0f + globule->GetCombatReach() + DEFAULT_COMBAT_REACH);
         }
     }
-    // Tempest Keep - Al'ar Flame Patch / Void Reaver Arcane Orb
+    // Tempest Keep - Al'ar Flame Patch / Void Reaver Arcane Orb / Kael'thas hazards
     else if (unit->GetMapId() == MAP_TEMPEST_KEEP)
     {
         static constexpr uint32 NPC_ALAR_FLAME_PATCH = 20602;
@@ -8366,6 +8515,36 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
         static constexpr uint32 NPC_VOID_REAVER_ARCANE_ORB_TARGET = 19577;
         static constexpr float VOID_REAVER_ARCANE_ORB_SCAN_RANGE = 80.0f;
         static constexpr float VOID_REAVER_ARCANE_ORB_RADIUS = 18.0f;
+        static constexpr uint32 NPC_KAEL_FIRE_BOMB = 23920;
+        static constexpr uint32 SPELL_KAEL_FIRE_BOMB_DAMAGE = 42630;
+        static constexpr float KAEL_FIRE_BOMB_SCAN_RANGE = 180.0f;
+        static constexpr uint32 NPC_KAEL_FLAME_STRIKE_TRIGGER = 21369;
+        static constexpr uint32 SPELL_KAEL_FLAME_STRIKE_DAMAGE = 36731;
+        static constexpr float KAEL_FLAME_STRIKE_SCAN_RANGE = 120.0f;
+        static constexpr float KAEL_FLAME_STRIKE_FALLBACK_RADIUS = 12.0f;
+        static constexpr uint32 NPC_KAEL_DEVASTATION = 21269;
+        static constexpr uint32 NPC_KAEL_CAPERNIAN = 20062;
+        static constexpr uint32 SPELL_KAEL_DEVASTATION_WHIRLWIND = 36981;
+        static constexpr float KAEL_DEVASTATION_SCAN_RANGE = 80.0f;
+        static constexpr float KAEL_DEVASTATION_WHIRLWIND_RADIUS = 16.0f;
+        static constexpr float KAEL_CAPERNIAN_SCAN_RANGE = 120.0f;
+        static constexpr float KAEL_CAPERNIAN_MELEE_RADIUS = 14.0f;
+
+        auto isCastingSpell = [](Creature const* creature, uint32 spellId) -> bool
+        {
+            if (!creature)
+                return false;
+
+            for (uint8 i = CURRENT_FIRST_NON_MELEE_SPELL; i < CURRENT_MAX_SPELL; ++i)
+            {
+                if (Spell* spell = const_cast<Creature*>(creature)->GetCurrentSpell(CurrentSpellTypes(i)))
+                    if (SpellInfo const* spellInfo = spell->GetSpellInfo())
+                        if (spellInfo->Id == spellId)
+                            return true;
+            }
+
+            return false;
+        };
 
         std::list<Creature*> flamePatches;
         Bcore::AllCreaturesOfEntryInRange flamePatchCheck(unit, NPC_ALAR_FLAME_PATCH, ALAR_FLAME_PATCH_SCAN_RANGE);
@@ -8398,6 +8577,82 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
                 continue;
 
             spots.emplace_back(*arcaneOrbTarget, VOID_REAVER_ARCANE_ORB_RADIUS + arcaneOrbTarget->GetCombatReach() + DEFAULT_COMBAT_REACH);
+        }
+
+        std::list<Creature*> kaelFireBombs;
+        Bcore::AllCreaturesOfEntryInRange kaelFireBombCheck(unit, NPC_KAEL_FIRE_BOMB, KAEL_FIRE_BOMB_SCAN_RANGE);
+        Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> kaelFireBombSearcher(unit, kaelFireBombs, kaelFireBombCheck);
+        Cell::VisitObjects(unit, kaelFireBombSearcher, KAEL_FIRE_BOMB_SCAN_RANGE);
+
+        if (!kaelFireBombs.empty())
+        {
+            spellInfo = sSpellMgr->GetSpellInfo(SPELL_KAEL_FIRE_BOMB_DAMAGE);
+            float kaelFireBombRadius = spellInfo ? spellInfo->Effects[0].CalcRadius() + DEFAULT_COMBAT_REACH * 1.2f : 7.0f + DEFAULT_COMBAT_REACH * 1.2f;
+            for (Creature const* kaelFireBomb : kaelFireBombs)
+                if (kaelFireBomb && kaelFireBomb->IsAlive())
+                    spots.emplace_back(*kaelFireBomb, kaelFireBombRadius);
+        }
+
+        std::list<Creature*> flameStrikeTriggers;
+        Bcore::AllCreaturesOfEntryInRange flameStrikeTriggerCheck(unit, NPC_KAEL_FLAME_STRIKE_TRIGGER, KAEL_FLAME_STRIKE_SCAN_RANGE);
+        Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> flameStrikeTriggerSearcher(unit, flameStrikeTriggers, flameStrikeTriggerCheck);
+        Cell::VisitObjects(unit, flameStrikeTriggerSearcher, KAEL_FLAME_STRIKE_SCAN_RANGE);
+
+        spellInfo = sSpellMgr->GetSpellInfo(SPELL_KAEL_FLAME_STRIKE_DAMAGE);
+        float flameStrikeRadius = spellInfo ? std::max(KAEL_FLAME_STRIKE_FALLBACK_RADIUS, spellInfo->Effects[0].CalcRadius()) : KAEL_FLAME_STRIKE_FALLBACK_RADIUS;
+
+        for (Creature const* flameStrikeTrigger : flameStrikeTriggers)
+        {
+            if (!flameStrikeTrigger || !flameStrikeTrigger->IsAlive())
+                continue;
+
+            spots.emplace_back(*flameStrikeTrigger, flameStrikeRadius + flameStrikeTrigger->GetCombatReach() + DEFAULT_COMBAT_REACH);
+        }
+
+        std::list<Creature*> devastations;
+        Bcore::AllCreaturesOfEntryInRange devastationCheck(unit, NPC_KAEL_DEVASTATION, KAEL_DEVASTATION_SCAN_RANGE);
+        Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> devastationSearcher(unit, devastations, devastationCheck);
+        Cell::VisitObjects(unit, devastationSearcher, KAEL_DEVASTATION_SCAN_RANGE);
+
+        for (Creature const* devastation : devastations)
+        {
+            if (!devastation || !devastation->IsAlive() || !devastation->IsInCombat())
+                continue;
+
+            if (!devastation->HasAura(SPELL_KAEL_DEVASTATION_WHIRLWIND) && !isCastingSpell(devastation, SPELL_KAEL_DEVASTATION_WHIRLWIND))
+                continue;
+
+            spots.emplace_back(*devastation, KAEL_DEVASTATION_WHIRLWIND_RADIUS + devastation->GetCombatReach() + DEFAULT_COMBAT_REACH);
+        }
+
+        bot_ai const* unitBotAI = nullptr;
+        if (unit->IsNPCBot())
+            if (Creature const* botCreature = unit->ToCreature())
+                unitBotAI = const_cast<Creature*>(botCreature)->GetBotAI();
+
+        bool const meleeNonTankBot = unitBotAI &&
+            unitBotAI->HasRole(BOT_ROLE_DPS) &&
+            !unitBotAI->HasRole(BOT_ROLE_RANGED) &&
+            !unitBotAI->IsTank() &&
+            !unitBotAI->IsOffTank();
+
+        if (meleeNonTankBot)
+        {
+            std::list<Creature*> capernians;
+            Bcore::AllCreaturesOfEntryInRange capernianCheck(unit, NPC_KAEL_CAPERNIAN, KAEL_CAPERNIAN_SCAN_RANGE);
+            Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> capernianSearcher(unit, capernians, capernianCheck);
+            Cell::VisitObjects(unit, capernianSearcher, KAEL_CAPERNIAN_SCAN_RANGE);
+
+            for (Creature const* capernian : capernians)
+            {
+                if (!capernian || !capernian->IsAlive() || !capernian->IsInCombat())
+                    continue;
+
+                if (capernian->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
+                    continue;
+
+                spots.emplace_back(*capernian, KAEL_CAPERNIAN_MELEE_RADIUS + capernian->GetCombatReach() + DEFAULT_COMBAT_REACH);
+            }
         }
     }
     // Dinkle Zul'Gurub

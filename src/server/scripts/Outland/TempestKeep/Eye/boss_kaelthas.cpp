@@ -15,13 +15,36 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Cell.h"
+#include "CellImpl.h"
 #include "CreatureScript.h"
 #include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
+#include "Group.h"
+#include "Log.h"
+#include "Map.h"
+#include "ObjectAccessor.h"
+#include "Player.h"
 #include "ScriptedCreature.h"
+#include "Spell.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "WorldPacket.h"
+#include "bot_ai.h"
+#include "botmgr.h"
 #include "the_eye.h"
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <string>
+#include <vector>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceCustomForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& message, uint32 cooldownMs = 5000);
+}
 
 enum KTYells
 {
@@ -68,10 +91,15 @@ enum KTSpells
     SPELL_ARCANE_DISRUPTION             = 36834,
     SPELL_PHOENIX                       = 36723,
     SPELL_MIND_CONTROL                  = 36797,
+    SPELL_FROST_BLAST_CUSTOM            = 600449,
+    SPELL_FROST_BLAST_DAMAGE            = 29879,
     SPELL_SHOCK_BARRIER                 = 36815,
     SPELL_PYROBLAST                     = 36819,
     SPELL_FLAME_STRIKE                  = 36735,
     SPELL_FLAME_STRIKE_DAMAGE           = 36731,
+    SPELL_FIRE_BOMB_CHANNEL             = 42621,
+    SPELL_FIRE_BOMB_THROW               = 42628,
+    SPELL_FIRE_BOMB_DAMAGE              = 42630,
 
     // transition scene spells
     SPELL_NETHERBEAM_AURA1              = 36364,
@@ -109,6 +137,7 @@ enum KTSpells
     SPELL_NETHER_BEAM_DAMAGE            = 35873,
 
     SPELL_REMOTE_TOY_STUN               = 37029,
+    SPELL_REMOTE_TOY_RESPONSE           = 36480,
     SPELL_REMOVE_ENCHANTED_WEAPONS      = 39497,
 
     // Advisors
@@ -154,6 +183,9 @@ enum KTMisc
 
     NPC_WORLD_TRIGGER                   = 19871,
     NPC_NETHER_VAPOR                    = 21002,
+    NPC_PHOENIX                         = 21362,
+    NPC_PHOENIX_EGG                     = 21364,
+    NPC_FIRE_BOMB                       = 23920,
     NPC_NETHERSTRAND_LONGBOW            = 21268,
     NPC_STAFF_OF_DISINTEGRATION         = 21274,
 };
@@ -204,7 +236,9 @@ enum KTSpellGroups
     GROUP_PROGRESS_PHASE                = 0,
     GROUP_PYROBLAST                     = 1,
     GROUP_SHOCK_BARRIER                 = 2,
-    GROUP_NETHER_BEAM                   = 3
+    GROUP_NETHER_BEAM                   = 3,
+    GROUP_FIRE_BOMB                     = 4,
+    GROUP_BOT_FIRE_BOMB_DIRECTOR        = 5
 };
 
 const Position triggersPos[6] =
@@ -216,6 +250,542 @@ const Position triggersPos[6] =
     {843.44f, -7.87f, 67.14f, 0.0f},
     {843.35f, 6.35f, 67.14f, 0.0f}
 };
+
+constexpr uint8 KAEL_THALADRED_KITE_POINT_COUNT = 4;
+
+Position const KaelThaladredKitePoints[KAEL_THALADRED_KITE_POINT_COUNT] =
+{
+    // TODO: Fill these with user-provided Thaladred kite points.
+    { 662.68f, -36.82f, 46.78f, 0.0f }, // Kite point 1
+    { 653.21f, 27.38f, 46.78f, 0.0f }, // Kite point 2
+    { 786.85f, 41.96f, 46.78f, 0.0f }, // Kite point 3
+    { 785.87f, -46.04f, 46.78f, 0.0f }  // Kite point 4
+};
+
+namespace
+{
+    constexpr float KAEL_ENCOUNTER_RANGE = 170.0f;
+    constexpr float KAEL_REMOTE_TOY_RESPONSE_RANGE = 100.0f;
+    constexpr float KAEL_THALADRED_DANGER_DISTANCE = 18.0f;
+    constexpr uint32 KAEL_REMOTE_TOY_RESPONSE_LOCK_MS = 4000;
+    constexpr uint32 KAEL_THALADRED_MOVE_LOCK_MS = 4500;
+    constexpr uint32 KAEL_THALADRED_KITE_RELEASE_MS = 10500;
+    constexpr uint32 KAEL_DOMINION_TICK_MS = 1000;
+    constexpr uint8 KAEL_DOMINION_TICK_COUNT = 5;
+    constexpr uint32 KAEL_DOMINION_DAMAGE_PCT = 8;
+    constexpr uint32 KAEL_FROST_BLAST_DAMAGE_PCT = 18;
+    constexpr uint32 KAEL_FIRE_BOMB_ACTIVE_MS = 11000;
+    constexpr uint32 KAEL_FIRE_BOMB_DESPAWN_MS = 15000;
+    constexpr uint32 KAEL_FIRE_BOMB_COUNT = 95;
+    constexpr float KAEL_FIRE_BOMB_AREA_X = 135.0f;
+    constexpr float KAEL_FIRE_BOMB_AREA_Y = 110.0f;
+    constexpr float KAEL_FIRE_BOMB_SAFE_MARGIN = 8.0f;
+    constexpr float KAEL_FIRE_BOMB_DANGER_RADIUS = 7.0f;
+    constexpr float KAEL_FIRE_BOMB_CANDIDATE_STEP = 5.0f;
+    constexpr float KAEL_FIRE_BOMB_BOT_MOVE_RANGE = 170.0f;
+
+    GuidSet KaelAllAdvisorsTelonicusGuids;
+    GuidSet KaelRemoteToyResponseLocks;
+    GuidSet KaelThaladredMoveLocks;
+
+    bool IsValidKaelEncounterBot(Creature const* creature)
+    {
+        return creature && creature->IsNPCBot() && creature->GetBotAI() && creature->IsAlive() && creature->IsInWorld() &&
+            !creature->IsTempBot() && !creature->IsFreeBot();
+    }
+
+    bool IsValidKaelEncounterUnit(Unit const* unit)
+    {
+        if (!unit || !unit->IsAlive() || !unit->IsInWorld() || unit->HasUnitState(UNIT_STATE_ISOLATED))
+            return false;
+
+        if (Player const* player = unit->ToPlayer())
+            return !player->IsGameMaster();
+
+        return IsValidKaelEncounterBot(unit->ToCreature());
+    }
+
+    bool IsKaelEncounterParticipantFor(Creature const* source, Unit* unit, float range = KAEL_ENCOUNTER_RANGE)
+    {
+        if (!source || !IsValidKaelEncounterUnit(unit) || unit == source)
+            return false;
+
+        if (!unit->IsInMap(source) || !unit->InSamePhase(source) || !source->IsWithinDistInMap(unit, range))
+            return false;
+
+        if (!source->CanSeeOrDetect(unit) || !source->IsWithinLOSInMap(unit))
+            return false;
+
+        if (source->GetVictim() == unit || unit->IsInCombatWith(source))
+            return true;
+
+        if (source->CanHaveThreatList() && source->GetThreatMgr().GetThreat(unit, true) > 0.0f)
+            return true;
+
+        return source->IsInCombat() && unit->IsInCombat();
+    }
+
+    void AddKaelEncounterTarget(Creature const* source, std::vector<Unit*>& targets, GuidSet& seen, Unit* unit, float range)
+    {
+        if (!IsKaelEncounterParticipantFor(source, unit, range))
+            return;
+
+        if (!seen.insert(unit->GetGUID()).second)
+            return;
+
+        targets.push_back(unit);
+    }
+
+    void AddKaelOwnedBots(Creature const* source, std::vector<Unit*>& targets, GuidSet& seen, Player* owner, float range)
+    {
+        if (!owner)
+            return;
+
+        if (BotMgr* botMgr = owner->GetBotMgr())
+            if (BotMap const* botMap = botMgr->GetBotMap())
+                for (BotMap::value_type const& pair : *botMap)
+                    AddKaelEncounterTarget(source, targets, seen, pair.second, range);
+    }
+
+    void AddKaelThreatTargets(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, float range)
+    {
+        if (!source || !source->CanHaveThreatList())
+            return;
+
+        for (ThreatReference const* ref : source->GetThreatMgr().GetSortedThreatList())
+        {
+            if (!ref || !ref->IsAvailable())
+                continue;
+
+            AddKaelEncounterTarget(source, targets, seen, ref->GetVictim(), range);
+        }
+    }
+
+    std::vector<Unit*> GatherKaelEncounterTargets(Creature* source, float range = KAEL_ENCOUNTER_RANGE)
+    {
+        std::vector<Unit*> targets;
+        GuidSet seen;
+
+        if (!source || !source->GetMap())
+            return targets;
+
+        AddKaelThreatTargets(source, targets, seen, range);
+
+        Map::PlayerList const& players = source->GetMap()->GetPlayers();
+        for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+        {
+            Player* player = itr->GetSource();
+            if (!player)
+                continue;
+
+            AddKaelEncounterTarget(source, targets, seen, player, range);
+
+            if (Group* group = player->GetGroup())
+            {
+                for (Unit* member : BotMgr::GetAllGroupMembers(group))
+                {
+                    AddKaelEncounterTarget(source, targets, seen, member, range);
+
+                    if (Player* memberPlayer = member ? member->ToPlayer() : nullptr)
+                        AddKaelOwnedBots(source, targets, seen, memberPlayer, range);
+                }
+            }
+
+            AddKaelOwnedBots(source, targets, seen, player, range);
+        }
+
+        return targets;
+    }
+
+    std::vector<Creature*> GatherKaelEncounterBots(Creature* source, float range = KAEL_ENCOUNTER_RANGE)
+    {
+        std::vector<Creature*> bots;
+
+        for (Unit* unit : GatherKaelEncounterTargets(source, range))
+            if (Creature* creature = unit->ToCreature())
+                if (IsValidKaelEncounterBot(creature))
+                    bots.push_back(creature);
+
+        return bots;
+    }
+
+    bool HasKaelEncounterBots(Creature* source)
+    {
+        std::vector<Creature*> bots = GatherKaelEncounterBots(source);
+        return !bots.empty();
+    }
+
+    Unit* SelectKaelRandomEncounterTarget(Creature* source, bool includeBots = true, float range = KAEL_ENCOUNTER_RANGE)
+    {
+        std::vector<Unit*> targets = GatherKaelEncounterTargets(source, range);
+        if (!includeBots)
+        {
+            targets.erase(std::remove_if(targets.begin(), targets.end(), [](Unit const* unit)
+            {
+                return unit && unit->IsNPCBot();
+            }), targets.end());
+        }
+
+        if (targets.empty())
+            return nullptr;
+
+        return targets[urand(0, uint32(targets.size() - 1))];
+    }
+
+    bool IsKaelFrostBlastTankTarget(Creature* source, Unit* unit)
+    {
+        if (!source || !unit)
+            return true;
+
+        if (source->GetVictim() == unit)
+            return true;
+
+        if (Creature* bot = unit->ToCreature())
+        {
+            bot_ai* ai = bot->IsNPCBot() ? bot->GetBotAI() : nullptr;
+            return ai && (ai->IsTank() || ai->IsOffTank() || ai->HasRole(BOT_ROLE_TANK | BOT_ROLE_TANK_OFF));
+        }
+
+        if (Player* player = unit->ToPlayer())
+        {
+            if (player->HasTankSpec())
+                return true;
+
+            if (Group* group = player->GetGroup())
+            {
+                Group::MemberSlotList const& slots = group->GetMemberSlots();
+                for (Group::member_citerator itr = slots.begin(); itr != slots.end(); ++itr)
+                    if (itr->guid == player->GetGUID())
+                        return (itr->flags & (MEMBER_FLAG_MAINTANK | MEMBER_FLAG_MAINASSIST)) != 0;
+            }
+        }
+
+        return false;
+    }
+
+    Unit* SelectKaelRandomFrostBlastTarget(Creature* source, bool includeBots = true, float range = KAEL_ENCOUNTER_RANGE)
+    {
+        std::vector<Unit*> targets = GatherKaelEncounterTargets(source, range);
+        if (!includeBots)
+        {
+            targets.erase(std::remove_if(targets.begin(), targets.end(), [](Unit const* unit)
+            {
+                return unit && unit->IsNPCBot();
+            }), targets.end());
+        }
+
+        targets.erase(std::remove_if(targets.begin(), targets.end(), [source](Unit* unit)
+        {
+            return IsKaelFrostBlastTankTarget(source, unit);
+        }), targets.end());
+
+        if (targets.empty())
+            return nullptr;
+
+        return targets[urand(0, uint32(targets.size() - 1))];
+    }
+
+    void MarkKaelAllAdvisorsRemoteToyActive(InstanceScript* instance, bool active)
+    {
+        if (!instance)
+            return;
+
+        if (Creature* telonicus = instance->GetCreature(DATA_TELONICUS))
+        {
+            if (active)
+                KaelAllAdvisorsTelonicusGuids.insert(telonicus->GetGUID());
+            else
+                KaelAllAdvisorsTelonicusGuids.erase(telonicus->GetGUID());
+        }
+    }
+
+    bool IsKaelAllAdvisorsRemoteToyActive(Unit* target)
+    {
+        if (!target)
+            return false;
+
+        Creature* telonicus = target->FindNearestCreature(NPC_TELONICUS, KAEL_ENCOUNTER_RANGE, true);
+        return telonicus && KaelAllAdvisorsTelonicusGuids.count(telonicus->GetGUID()) != 0;
+    }
+
+    bool IsKaelCasterBotForRemoteToy(Creature* bot, Unit* target)
+    {
+        bot_ai* ai = IsValidKaelEncounterBot(bot) ? bot->GetBotAI() : nullptr;
+        if (!ai || !target || bot == target)
+            return false;
+
+        if (bot->HasUnitState(UNIT_STATE_CASTING | UNIT_STATE_LOST_CONTROL | UNIT_STATE_ISOLATED))
+            return false;
+
+        if (ai->HasBotCommandState(BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION))
+            return false;
+
+        if (ai->IsTank() || (!ai->HasRole(BOT_ROLE_RANGED) && !ai->HasRole(BOT_ROLE_HEAL)))
+            return false;
+
+        return bot->IsWithinDistInMap(target, KAEL_REMOTE_TOY_RESPONSE_RANGE) && bot->IsWithinLOSInMap(target);
+    }
+
+    Creature* SelectKaelRemoteToyResponder(Unit* target)
+    {
+        if (!target)
+            return nullptr;
+
+        Creature* source = target->FindNearestCreature(NPC_TELONICUS, KAEL_ENCOUNTER_RANGE, true);
+        if (!source)
+            source = target->FindNearestCreature(NPC_KAELTHAS, KAEL_ENCOUNTER_RANGE, true);
+
+        if (!source)
+            return nullptr;
+
+        std::vector<Creature*> candidates;
+        for (Creature* bot : GatherKaelEncounterBots(source, KAEL_REMOTE_TOY_RESPONSE_RANGE))
+            if (IsKaelCasterBotForRemoteToy(bot, target))
+                candidates.push_back(bot);
+
+        if (candidates.empty())
+            return nullptr;
+
+        return candidates[urand(0, uint32(candidates.size() - 1))];
+    }
+
+    void TriggerKaelRemoteToyBotResponse(Unit* target)
+    {
+        if (!target || !target->IsAlive() || !target->HasAura(SPELL_REMOTE_TOY))
+            return;
+
+        if (!IsKaelAllAdvisorsRemoteToyActive(target))
+            return;
+
+        ObjectGuid const targetGuid = target->GetGUID();
+        if (!KaelRemoteToyResponseLocks.insert(targetGuid).second)
+            return;
+
+        target->m_Events.AddEventAtOffset([targetGuid]
+        {
+            KaelRemoteToyResponseLocks.erase(targetGuid);
+        }, Milliseconds(KAEL_REMOTE_TOY_RESPONSE_LOCK_MS));
+
+        Creature* responder = SelectKaelRemoteToyResponder(target);
+        if (!responder)
+        {
+            LOG_DEBUG("scripts", "Kael'thas NPCBot: no caster bot found to answer Remote Toy on {}", target->GetName());
+            return;
+        }
+
+        responder->CastSpell(target, SPELL_REMOTE_TOY_RESPONSE, true);
+        LOG_DEBUG("scripts", "Kael'thas NPCBot: caster bot {} answered Remote Toy on {}", responder->GetName(), target->GetName());
+
+        if (Creature* targetBot = DBMFTABotCallouts::AsNPCBotCreature(target))
+            DBMFTABotCallouts::AnnounceCustomForModule(targetBot, SPELL_REMOTE_TOY, "DBM-TheEye", "KaelThas", "Remote Toy on me!", DBMFTABotCallouts::GetCooldownMs());
+    }
+
+    void ApplySunKingsDominionDamage(Creature* kael, Unit* target)
+    {
+        if (!kael || !target || !target->IsAlive())
+            return;
+
+        if (Creature* targetBot = DBMFTABotCallouts::AsNPCBotCreature(target))
+            DBMFTABotCallouts::AnnounceCustomForModule(targetBot, SPELL_MIND_CONTROL, "DBM-TheEye", "KaelThas", "Sun King's Dominion on me!", DBMFTABotCallouts::GetCooldownMs());
+
+        ObjectGuid const casterGuid = kael->GetGUID();
+        ObjectGuid const targetGuid = target->GetGUID();
+
+        for (uint8 i = 1; i <= KAEL_DOMINION_TICK_COUNT; ++i)
+        {
+            target->m_Events.AddEventAtOffset([casterGuid, targetGuid, target]
+            {
+                Unit* currentTarget = ObjectAccessor::GetUnit(*target, targetGuid);
+                Unit* caster = ObjectAccessor::GetUnit(*target, casterGuid);
+                if (!currentTarget || !caster || !currentTarget->IsAlive() || !caster->IsInWorld())
+                    return;
+
+                Unit::DealDamage(caster, currentTarget, std::max<uint32>(1, currentTarget->CountPctFromMaxHealth(KAEL_DOMINION_DAMAGE_PCT)));
+            }, Milliseconds(KAEL_DOMINION_TICK_MS * i));
+        }
+    }
+
+    void CastSunKingsDominion(Creature* kael, uint32 maxTargets)
+    {
+        if (!kael || !maxTargets)
+            return;
+
+        std::vector<Unit*> targets = GatherKaelEncounterTargets(kael, KAEL_ENCOUNTER_RANGE);
+        if (Unit* victim = kael->GetVictim())
+        {
+            targets.erase(std::remove(targets.begin(), targets.end(), victim), targets.end());
+        }
+
+        while (targets.size() > maxTargets)
+            targets.erase(targets.begin() + urand(0, uint32(targets.size() - 1)));
+
+        for (Unit* target : targets)
+            ApplySunKingsDominionDamage(kael, target);
+    }
+
+    bool IsFilledThaladredKitePoint(Position const& position)
+    {
+        return std::abs(position.GetPositionX()) > 0.1f || std::abs(position.GetPositionY()) > 0.1f || std::abs(position.GetPositionZ()) > 0.1f;
+    }
+
+    bool SelectThaladredKitePoint(Creature* thaladred, Creature* bot, Position& destination)
+    {
+        if (!thaladred || !bot)
+            return false;
+
+        Position const* bestPoint = nullptr;
+        float bestThaladredDistance = -1.0f;
+        float bestBotDistance = std::numeric_limits<float>::max();
+
+        for (Position const& point : KaelThaladredKitePoints)
+        {
+            if (!IsFilledThaladredKitePoint(point))
+                continue;
+
+            float const thaladredDistance = thaladred->GetExactDist2d(point.GetPositionX(), point.GetPositionY());
+            float const botDistance = bot->GetExactDist2d(point.GetPositionX(), point.GetPositionY());
+
+            if (!bestPoint || thaladredDistance > bestThaladredDistance ||
+                (thaladredDistance == bestThaladredDistance && botDistance < bestBotDistance))
+            {
+                bestPoint = &point;
+                bestThaladredDistance = thaladredDistance;
+                bestBotDistance = botDistance;
+            }
+        }
+
+        if (!bestPoint)
+            return false;
+
+        destination = *bestPoint;
+        return true;
+    }
+
+    void MoveThaladredFixatedBotToKitePoint(Creature* thaladred, Unit* target)
+    {
+        Creature* bot = target ? target->ToCreature() : nullptr;
+        bot_ai* ai = IsValidKaelEncounterBot(bot) ? bot->GetBotAI() : nullptr;
+        if (!thaladred || !ai)
+            return;
+
+        if (KaelThaladredMoveLocks.count(bot->GetGUID()) != 0)
+            return;
+
+        Position destination;
+        if (!SelectThaladredKitePoint(thaladred, bot, destination))
+            return;
+
+        KaelThaladredMoveLocks.insert(bot->GetGUID());
+        ObjectGuid const botGuid = bot->GetGUID();
+        bot->m_Events.AddEventAtOffset([botGuid]
+        {
+            KaelThaladredMoveLocks.erase(botGuid);
+        }, Milliseconds(KAEL_THALADRED_MOVE_LOCK_MS));
+
+        bot->m_Events.AddEventAtOffset([bot]
+        {
+            bot_ai* ai = IsValidKaelEncounterBot(bot) ? bot->GetBotAI() : nullptr;
+            if (!ai)
+                return;
+
+            if (Creature* thaladred = bot->FindNearestCreature(NPC_THALADRED, KAEL_ENCOUNTER_RANGE, true))
+                if (thaladred->GetVictim() == bot)
+                    return;
+
+            ai->RemoveBotCommandState(BOT_COMMAND_STAY | BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION | BOT_COMMAND_COMBATRESET);
+            ai->SetBotCommandState(BOT_COMMAND_ATTACK);
+        }, Milliseconds(KAEL_THALADRED_KITE_RELEASE_MS));
+
+        bot->InterruptNonMeleeSpells(false);
+        bot->AttackStop();
+        bot->BotStopMovement();
+        ai->RemoveBotCommandState(BOT_COMMAND_FOLLOW | BOT_COMMAND_ATTACK);
+        ai->SetBotCommandState(BOT_COMMAND_STAY);
+        ai->MoveToSendPosition(destination);
+
+        DBMFTABotCallouts::AnnounceCustomForModule(bot, SPELL_PSYCHIC_BLOW, "DBM-TheEye", "KaelThas", "Thaladred fixated me!", DBMFTABotCallouts::GetCooldownMs());
+        LOG_DEBUG("scripts", "Kael'thas NPCBot: moved Thaladred target {} to kite point {:.2f} {:.2f} {:.2f}",
+            bot->GetName(), destination.GetPositionX(), destination.GetPositionY(), destination.GetPositionZ());
+    }
+
+    void MoveThaladredVictimIfTooClose(Creature* thaladred)
+    {
+        if (!thaladred)
+            return;
+
+        Unit* victim = thaladred->GetVictim();
+        if (!victim || thaladred->GetExactDist2d(victim) > KAEL_THALADRED_DANGER_DISTANCE)
+            return;
+
+        MoveThaladredFixatedBotToKitePoint(thaladred, victim);
+    }
+
+    bool IsKaelBotCastingUninterruptible(Creature* bot)
+    {
+        if (!bot)
+            return false;
+
+        if (Spell* spell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+            if (SpellInfo const* spellInfo = spell->GetSpellInfo())
+                if (!(spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_INTERRUPT))
+                    return true;
+
+        if (Spell* spell = bot->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
+            if (SpellInfo const* spellInfo = spell->GetSpellInfo())
+                if (!(spellInfo->ChannelInterruptFlags & CHANNEL_INTERRUPT_FLAG_INTERRUPT))
+                    return true;
+
+        return false;
+    }
+
+    void MoveKaelBotToPosition(Creature* bot, Position const& destination)
+    {
+        bot_ai* ai = IsValidKaelEncounterBot(bot) ? bot->GetBotAI() : nullptr;
+        if (!ai)
+            return;
+
+        float x = destination.GetPositionX();
+        float y = destination.GetPositionY();
+        float z = destination.GetPositionZ();
+
+        if (!bot->CanFly())
+            bot->UpdateAllowedPositionZ(x, y, z);
+
+        Position finalPosition;
+        finalPosition.Relocate(x, y, z, destination.GetOrientation());
+        ai->MoveToSendPosition(finalPosition);
+    }
+
+    Position GetKaelFireBombCenter(Creature const* kael)
+    {
+        Position center = kael ? kael->GetHomePosition() : Position();
+        center.SetOrientation(0.0f);
+        return center;
+    }
+
+    bool IsWithinKaelFireBombArea(Position const& center, Position const& position)
+    {
+        if (std::fabs(position.GetPositionX() - center.GetPositionX()) > KAEL_FIRE_BOMB_AREA_X * 0.5f - KAEL_FIRE_BOMB_SAFE_MARGIN)
+            return false;
+
+        if (std::fabs(position.GetPositionY() - center.GetPositionY()) > KAEL_FIRE_BOMB_AREA_Y * 0.5f - KAEL_FIRE_BOMB_SAFE_MARGIN)
+            return false;
+
+        return true;
+    }
+
+    bool IsSafeFromKaelFireBombs(Position const& center, Position const& position, std::vector<Creature*> const& bombs)
+    {
+        if (!IsWithinKaelFireBombArea(center, position))
+            return false;
+
+        for (Creature* bomb : bombs)
+            if (bomb && bomb->IsInWorld() && bomb->GetExactDist2d(position.GetPositionX(), position.GetPositionY()) < KAEL_FIRE_BOMB_DANGER_RADIUS)
+                return false;
+
+        return true;
+    }
+}
 
 struct boss_kaelthas : public BossAI
 {
@@ -255,6 +825,9 @@ struct boss_kaelthas : public BossAI
         _phase = PHASE_NONE;
         _transitionSceneReached = false;
         _advisorsAlive = 4;
+        MarkKaelAllAdvisorsRemoteToyActive(instance, false);
+        StopKaelFireBombAvoidance();
+        me->RemoveAurasDueToSpell(SPELL_FIRE_BOMB_CHANNEL);
 
         me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_HOVER, true); // hover effect 36550 - Floating Drowned
         me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
@@ -266,7 +839,7 @@ struct boss_kaelthas : public BossAI
 
     void AttackStart(Unit* who) override
     {
-        if (_phase == PHASE_FINAL /* check is scheduled&& !events.HasTimeUntilEvent(EVENT_GRAVITY_LAPSE_END)*/)
+        if (_phase == PHASE_FINAL)
             BossAI::AttackStart(who);
     }
 
@@ -297,6 +870,11 @@ struct boss_kaelthas : public BossAI
         summons.Summon(summon);
         if (summon->GetEntry() == NPC_NETHER_VAPOR)
             summon->GetMotionMaster()->MoveRandom(20.0f);
+        if (summon->GetEntry() == NPC_FIRE_BOMB)
+        {
+            summon->SetReactState(REACT_PASSIVE);
+            summon->SetUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
+        }
         if (summon->GetEntry() >= NPC_NETHERSTRAND_LONGBOW && summon->GetEntry() <= NPC_STAFF_OF_DISINTEGRATION)
             summon->SetReactState(REACT_PASSIVE);
     }
@@ -372,37 +950,8 @@ struct boss_kaelthas : public BossAI
             }, 61450ms, 96550ms);
             ScheduleTimedEvent(5s, [&]
             {
-                scheduler.DelayAll(30s);
-                me->setAttackTimer(BASE_ATTACK, 30000);
-                DoCastSelf(SPELL_GRAVITY_LAPSE);
-                DoCastSelf(SPELL_SUMMON_NETHER_VAPOR);
-                scheduler.Schedule(4s, GROUP_NETHER_BEAM, [this](TaskContext context)
-                {
-                    DoCastSelf(SPELL_NETHER_BEAM);
-                    context.Repeat(4s);
-                }).Schedule(0s, GROUP_SHOCK_BARRIER, [this](TaskContext context)
-                {
-                    DoCastSelf(SPELL_SHOCK_BARRIER);
-                    context.Repeat(10s);
-                }).Schedule(20500ms, GROUP_SHOCK_BARRIER, [this](TaskContext)
-                {
-                    scheduler.CancelGroup(GROUP_SHOCK_BARRIER);
-                }).Schedule(32s, [this](TaskContext)
-                {
-                    summons.DespawnEntry(NPC_NETHER_VAPOR);
-                    scheduler.CancelGroup(GROUP_NETHER_BEAM);
-
-                    if (Unit* victim = me->GetVictim())
-                    {
-                        me->SetTarget(victim->GetGUID());
-                        me->GetMotionMaster()->MoveChase(victim);
-                    }
-                });
-                me->SetTarget();
-                me->GetMotionMaster()->Clear();
-                me->StopMoving();
-                Talk(SAY_GRAVITYLAPSE);
-            }, 90s);
+                StartKaelFireBombs();
+            }, 70s);
             if (me->GetVictim())
             {
                 me->SetTarget(me->GetVictim()->GetGUID());
@@ -580,7 +1129,7 @@ struct boss_kaelthas : public BossAI
             {
                 advisor->SetReactState(REACT_AGGRESSIVE);
                 advisor->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-                if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0))
+                if (Unit* target = SelectKaelRandomEncounterTarget(me))
                     advisor->AI()->AttackStart(target);
                 advisor->SetInCombatWithZone();
                 advisor->AI()->Talk(SAY_ADVISOR_AGGRO);
@@ -608,7 +1157,7 @@ struct boss_kaelthas : public BossAI
                     {
                         summonedCreature->SetReactState(REACT_AGGRESSIVE);
                         summonedCreature->SetInCombatWithZone();
-                        if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0))
+                        if (Unit* target = SelectKaelRandomEncounterTarget(me))
                         {
                             summonedCreature->AI()->AttackStart(target);
                         }
@@ -626,6 +1175,7 @@ struct boss_kaelthas : public BossAI
         ScheduleUniqueTimedEvent(6s, [&]{
             DoCastSelf(SPELL_RESURRECTION);
             _phase = PHASE_ALL_ADVISORS;
+            MarkKaelAllAdvisorsRemoteToyActive(instance, true);
         }, EVENT_PREFIGHT_PHASE6_02);
         scheduler.Schedule(192s, GROUP_PROGRESS_PHASE, [this](TaskContext)
         {
@@ -637,10 +1187,11 @@ struct boss_kaelthas : public BossAI
     {
         scheduler.CancelAll();
         Talk(SAY_PHASE4_INTRO2);
+        MarkKaelAllAdvisorsRemoteToyActive(instance, false);
         _phase = PHASE_FINAL;
         DoResetThreatList();
         me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_DISABLE_MOVE);
-        if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0))
+        if (Unit* target = SelectKaelRandomEncounterTarget(me))
         {
             AttackStart(target);
         }
@@ -670,9 +1221,14 @@ struct boss_kaelthas : public BossAI
         }, 35450ms, 41550ms);
         ScheduleTimedEvent(20s, 23s, [&]
         {
-            if (roll_chance_i(50))
-                Talk(SAY_MINDCONTROL);
-            me->CastCustomSpell(SPELL_MIND_CONTROL, SPELLVALUE_MAX_TARGETS, 3, me, false);
+            if (Unit* target = SelectKaelRandomFrostBlastTarget(me))
+            {
+                me->CastSpell(target, SPELL_FROST_BLAST_CUSTOM, false);
+
+                if (Creature* targetBot = DBMFTABotCallouts::AsNPCBotCreature(target))
+                    DBMFTABotCallouts::AnnounceCustomForModule(targetBot, SPELL_FROST_BLAST_CUSTOM, "DBM-TheEye", "KaelThas", "Frost Blast on me, heal me!", DBMFTABotCallouts::GetCooldownMs());
+            }
+
             scheduler.Schedule(3s, [this](TaskContext)
             {
                 DoCastSelf(SPELL_ARCANE_DISRUPTION);
@@ -694,6 +1250,187 @@ struct boss_kaelthas : public BossAI
         }, 50s);
     }
 
+    std::vector<Creature*> GetActiveKaelFireBombs()
+    {
+        std::vector<Creature*> bombs;
+        summons.DoForAllSummons([&](WorldObject* summon)
+        {
+            if (summon->GetEntry() != NPC_FIRE_BOMB)
+                return;
+
+            Creature* bomb = summon->ToCreature();
+            if (bomb && bomb->IsInWorld())
+                bombs.push_back(bomb);
+        });
+
+        return bombs;
+    }
+
+    void SpawnKaelFireBombs()
+    {
+        Position const center = GetKaelFireBombCenter(me);
+
+        for (uint32 i = 0; i < KAEL_FIRE_BOMB_COUNT; ++i)
+        {
+            float x = center.GetPositionX() + float(irand(int32(-KAEL_FIRE_BOMB_AREA_X * 0.5f), int32(KAEL_FIRE_BOMB_AREA_X * 0.5f)));
+            float y = center.GetPositionY() + float(irand(int32(-KAEL_FIRE_BOMB_AREA_Y * 0.5f), int32(KAEL_FIRE_BOMB_AREA_Y * 0.5f)));
+            float z = center.GetPositionZ();
+            me->UpdateAllowedPositionZ(x, y, z);
+            me->SummonCreature(NPC_FIRE_BOMB, x, y, z, 0.0f, TEMPSUMMON_TIMED_DESPAWN, KAEL_FIRE_BOMB_DESPAWN_MS);
+        }
+    }
+
+    void ThrowKaelFireBombs()
+    {
+        std::chrono::milliseconds bombTimer = 100ms;
+
+        summons.DoForAllSummons([this, &bombTimer](WorldObject* summon)
+        {
+            if (summon->GetEntry() != NPC_FIRE_BOMB)
+                return;
+
+            if (Creature* bomb = summon->ToCreature())
+            {
+                bomb->m_Events.AddEventAtOffset([this, bomb]
+                {
+                    bomb->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
+                    DoCast(bomb, SPELL_FIRE_BOMB_THROW, true);
+                    bomb->SetUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
+                }, bombTimer);
+            }
+
+            bombTimer += 100ms;
+        });
+    }
+
+    void DetonateKaelFireBombs()
+    {
+        summons.DoForAllSummons([&](WorldObject* summon)
+        {
+            if (summon->GetEntry() != NPC_FIRE_BOMB)
+                return;
+
+            if (Creature* bomb = summon->ToCreature())
+            {
+                bomb->AI()->DoCastSelf(SPELL_FIRE_BOMB_DAMAGE, true);
+                bomb->RemoveAllAuras();
+            }
+        });
+    }
+
+    void StartKaelFireBombAvoidance()
+    {
+        _botFireBombDirectorActive = true;
+        scheduler.CancelGroup(GROUP_BOT_FIRE_BOMB_DIRECTOR);
+        scheduler.Schedule(500ms, GROUP_BOT_FIRE_BOMB_DIRECTOR, [this](TaskContext context)
+        {
+            MoveBotsToSafeKaelFireBombPositions();
+            context.Repeat(500ms);
+        });
+    }
+
+    void StopKaelFireBombAvoidance()
+    {
+        _botFireBombDirectorActive = false;
+        scheduler.CancelGroup(GROUP_BOT_FIRE_BOMB_DIRECTOR);
+        _botFireBombLocks.clear();
+    }
+
+    void MoveBotsToSafeKaelFireBombPositions()
+    {
+        if (!_botFireBombDirectorActive)
+            return;
+
+        std::vector<Creature*> bombs = GetActiveKaelFireBombs();
+        if (bombs.empty())
+            return;
+
+        Position const center = GetKaelFireBombCenter(me);
+        std::vector<Position> candidates;
+        for (float dx = -KAEL_FIRE_BOMB_AREA_X * 0.5f + KAEL_FIRE_BOMB_SAFE_MARGIN; dx <= KAEL_FIRE_BOMB_AREA_X * 0.5f - KAEL_FIRE_BOMB_SAFE_MARGIN; dx += KAEL_FIRE_BOMB_CANDIDATE_STEP)
+        {
+            for (float dy = -KAEL_FIRE_BOMB_AREA_Y * 0.5f + KAEL_FIRE_BOMB_SAFE_MARGIN; dy <= KAEL_FIRE_BOMB_AREA_Y * 0.5f - KAEL_FIRE_BOMB_SAFE_MARGIN; dy += KAEL_FIRE_BOMB_CANDIDATE_STEP)
+            {
+                float x = center.GetPositionX() + dx;
+                float y = center.GetPositionY() + dy;
+                float z = center.GetPositionZ();
+                me->UpdateAllowedPositionZ(x, y, z);
+
+                Position candidate;
+                candidate.Relocate(x, y, z, 0.0f);
+                if (IsSafeFromKaelFireBombs(center, candidate, bombs))
+                    candidates.push_back(candidate);
+            }
+        }
+
+        if (candidates.empty())
+            return;
+
+        for (Creature* bot : GatherKaelEncounterBots(me, KAEL_FIRE_BOMB_BOT_MOVE_RANGE))
+        {
+            if (!bot || bot->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_LOST_CONTROL | UNIT_STATE_ISOLATED))
+                continue;
+
+            if (IsKaelBotCastingUninterruptible(bot))
+                continue;
+
+            Position current;
+            current.Relocate(bot);
+            if (IsSafeFromKaelFireBombs(center, current, bombs))
+                continue;
+
+            Position const* best = nullptr;
+            float bestScore = std::numeric_limits<float>::max();
+            for (Position const& candidate : candidates)
+            {
+                float score = bot->GetExactDist2d(candidate.GetPositionX(), candidate.GetPositionY());
+                if (score < bestScore)
+                {
+                    best = &candidate;
+                    bestScore = score;
+                }
+            }
+
+            if (!best || bot->GetExactDist2d(best->GetPositionX(), best->GetPositionY()) <= 2.0f)
+                continue;
+
+            bot->InterruptNonMeleeSpells(false);
+            MoveKaelBotToPosition(bot, *best);
+            _botFireBombLocks.insert(bot->GetGUID());
+            DBMFTABotCallouts::AnnounceCustomForModule(bot, SPELL_FIRE_BOMB_DAMAGE, "DBM-TheEye", "KaelThas", "Fire Bombs near me!", DBMFTABotCallouts::GetCooldownMs());
+        }
+    }
+
+    void StartKaelFireBombs()
+    {
+        scheduler.CancelGroup(GROUP_FIRE_BOMB);
+        scheduler.DelayAll(Milliseconds(KAEL_FIRE_BOMB_ACTIVE_MS + 2000));
+        me->setAttackTimer(BASE_ATTACK, KAEL_FIRE_BOMB_ACTIVE_MS + 2000);
+        me->AttackStop();
+        me->CastStop();
+        me->SetTarget();
+        me->GetMotionMaster()->Clear();
+        me->StopMoving();
+        DoCastSelf(SPELL_FIRE_BOMB_CHANNEL);
+
+        SpawnKaelFireBombs();
+        StartKaelFireBombAvoidance();
+        ThrowKaelFireBombs();
+
+        scheduler.Schedule(Milliseconds(KAEL_FIRE_BOMB_ACTIVE_MS), GROUP_FIRE_BOMB, [this](TaskContext)
+        {
+            DetonateKaelFireBombs();
+            StopKaelFireBombAvoidance();
+            me->RemoveAurasDueToSpell(SPELL_FIRE_BOMB_CHANNEL);
+
+            if (Unit* victim = me->GetVictim())
+            {
+                me->SetTarget(victim->GetGUID());
+                me->GetMotionMaster()->MoveChase(victim);
+            }
+        });
+    }
+
     void UpdateAI(uint32 diff) override
     {
         scheduler.Update(diff);
@@ -711,12 +1448,16 @@ struct boss_kaelthas : public BossAI
     void JustDied(Unit* killer) override
     {
         BossAI::JustDied(killer);
+        MarkKaelAllAdvisorsRemoteToyActive(instance, false);
+        StopKaelFireBombAvoidance();
         DoCastAOE(SPELL_REMOVE_ENCHANTED_WEAPONS, true);
     }
 private:
     uint32 _phase;
     uint8 _advisorsAlive;
     bool _transitionSceneReached = false;
+    bool _botFireBombDirectorActive = false;
+    GuidSet _botFireBombLocks;
 };
 
 struct advisor_baseAI : public ScriptedAI
@@ -776,7 +1517,7 @@ struct advisor_baseAI : public ScriptedAI
                 DoResetThreatList();
                 me->SetInCombatWithZone();
                 me->SetReactState(REACT_AGGRESSIVE);
-                if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0))
+                if (Unit* target = SelectKaelRandomEncounterTarget(me))
                 {
                     AttackStart(target);
                 }
@@ -887,10 +1628,11 @@ struct npc_thaladred : public advisor_baseAI
         ScheduleTimedEvent(100ms, [&]
         {
             DoResetThreatList();
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 0.0f, true))
+            if (Unit* target = SelectKaelRandomEncounterTarget(me))
             {
                 me->AddThreat(target, 10000000.0f);
                 Talk(EMOTE_THALADRED_FIXATE, target);
+                MoveThaladredFixatedBotToKitePoint(me, target);
             }
         }, 10s);
         ScheduleTimedEvent(4s, 19350ms, [&]
@@ -912,6 +1654,12 @@ struct npc_thaladred : public advisor_baseAI
             }
         }, 3600ms, 15200ms);
     }
+
+    void UpdateAI(uint32 diff) override
+    {
+        advisor_baseAI::UpdateAI(diff);
+        MoveThaladredVictimIfTooClose(me);
+    }
 };
 
 class spell_kaelthas_remote_toy : public AuraScript
@@ -923,6 +1671,8 @@ class spell_kaelthas_remote_toy : public AuraScript
         PreventDefaultAction();
         if (roll_chance_i(66))
             GetUnitOwner()->CastSpell(GetUnitOwner(), SPELL_REMOTE_TOY_STUN, true);
+
+        TriggerKaelRemoteToyBotResponse(GetUnitOwner());
     }
 
     void Register() override
@@ -981,6 +1731,61 @@ class spell_kaelthas_mind_control : public SpellScript
     {
         OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_kaelthas_mind_control::SelectTarget, EFFECT_ALL, TARGET_UNIT_SRC_AREA_ENEMY);
         OnEffectHitTarget += SpellEffectFn(spell_kaelthas_mind_control::HandleEffect, EFFECT_ALL, SPELL_AURA_ANY);
+    }
+};
+
+class spell_kaelthas_custom_frost_blast : public SpellScript
+{
+    PrepareSpellScript(spell_kaelthas_custom_frost_blast);
+
+    bool Validate(SpellInfo const* /*spell*/) override
+    {
+        return ValidateSpellInfo({ SPELL_FROST_BLAST_CUSTOM });
+    }
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if([](WorldObject const* target)
+        {
+            Unit const* unit = target ? target->ToUnit() : nullptr;
+            return !unit || unit->HasAura(SPELL_FROST_BLAST_CUSTOM);
+        });
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_kaelthas_custom_frost_blast::FilterTargets, EFFECT_ALL, TARGET_UNIT_DEST_AREA_ENEMY);
+    }
+};
+
+class spell_kaelthas_custom_frost_blast_aura : public AuraScript
+{
+    PrepareAuraScript(spell_kaelthas_custom_frost_blast_aura);
+
+    bool Validate(SpellInfo const* /*spell*/) override
+    {
+        return ValidateSpellInfo({ SPELL_FROST_BLAST_CUSTOM, SPELL_FROST_BLAST_DAMAGE });
+    }
+
+    void HandlePeriodic(AuraEffect const* aurEff)
+    {
+        PreventDefaultAction();
+
+        Unit* target = GetTarget();
+        Unit* caster = GetCaster();
+        if (!target || !caster)
+            return;
+
+        int32 const damage = std::max<int32>(1, target->CountPctFromMaxHealth(KAEL_FROST_BLAST_DAMAGE_PCT));
+        caster->CastCustomSpell(SPELL_FROST_BLAST_DAMAGE, SPELLVALUE_BASE_POINT0, damage, target, true, nullptr, aurEff);
+
+        if (aurEff->GetTickNumber() == 1)
+            caster->CastSpell(target, SPELL_FROST_BLAST_CUSTOM, true);
+    }
+
+    void Register() override
+    {
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_kaelthas_custom_frost_blast_aura::HandlePeriodic, EFFECT_1, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
     }
 };
 
@@ -1057,6 +1862,13 @@ class spell_kaelthas_gravity_lapse : public SpellScript
     void HandleScriptEffect(SpellEffIndex effIndex)
     {
         PreventHitEffect(effIndex);
+        if (Creature* caster = GetCaster() ? GetCaster()->ToCreature() : nullptr)
+        {
+            // TODO: Replace this placeholder with bot-safe Gravity Lapse flight handling.
+            if (HasKaelEncounterBots(caster))
+                return;
+        }
+
         if (_currentSpellId < SPELL_GRAVITY_LAPSE_TELEPORT1 + 25)
             if (Player* target = GetHitPlayer())
             {
@@ -1081,6 +1893,22 @@ class spell_kaelthas_nether_beam : public SpellScript
     void HandleScriptEffect(SpellEffIndex effIndex)
     {
         PreventHitEffect(effIndex);
+
+        if (Creature* caster = GetCaster() ? GetCaster()->ToCreature() : nullptr)
+        {
+            if (HasKaelEncounterBots(caster))
+            {
+                // TODO: Replace this placeholder with bot-safe Nether Beam movement/targeting once phase-five movement is supported.
+                std::vector<Unit*> targets = GatherKaelEncounterTargets(caster, KAEL_ENCOUNTER_RANGE);
+                while (targets.size() > 5)
+                    targets.erase(targets.begin() + urand(0, uint32(targets.size() - 1)));
+
+                for (Unit* target : targets)
+                    GetCaster()->CastSpell(target, SPELL_NETHER_BEAM_DAMAGE, true);
+
+                return;
+            }
+        }
 
         std::list<Unit*> targetList;
         for (ThreatReference const* ref : GetCaster()->GetThreatMgr().GetUnsortedThreatList())
@@ -1110,6 +1938,13 @@ class spell_kaelthas_summon_nether_vapor : public SpellScript
     void HandleScriptEffect(SpellEffIndex effIndex)
     {
         PreventHitEffect(effIndex);
+        if (Creature* caster = GetCaster() ? GetCaster()->ToCreature() : nullptr)
+        {
+            // TODO: Add bot-safe Nether Vapor handling before enabling these summons in bot raids.
+            if (HasKaelEncounterBots(caster))
+                return;
+        }
+
         for (uint32 i = 0; i < 5; ++i)
             GetCaster()->SummonCreature(NPC_NETHER_VAPOR, GetCaster()->GetPositionX() + 6 * cos(i / 5.0f * 2 * M_PI), GetCaster()->GetPositionY() + 6 * std::sin(i / 5.0f * 2 * M_PI), GetCaster()->GetPositionZ() + 7.0f + i, 0.0f, TEMPSUMMON_TIMED_DESPAWN, 30000);
     }
@@ -1195,6 +2030,8 @@ void AddSC_boss_kaelthas()
     RegisterSpellScript(spell_kaelthas_remote_toy);
     RegisterSpellScript(spell_kaelthas_summon_weapons);
     RegisterSpellScript(spell_kaelthas_mind_control);
+    RegisterSpellScript(spell_kaelthas_custom_frost_blast);
+    RegisterSpellScript(spell_kaelthas_custom_frost_blast_aura);
     RegisterSpellScript(spell_kaelthas_burn);
     RegisterSpellScript(spell_kaelthas_flame_strike);
     RegisterSpellScript(spell_kaelthas_gravity_lapse);
