@@ -36,6 +36,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -82,6 +83,7 @@ enum KTSpells
     SPELL_SUMMON_WEAPONE                = 36962,
     SPELL_SUMMON_WEAPONF                = 36963,
     SPELL_SUMMON_WEAPONG                = 36964,
+    SPELL_DEVASTATION_WHIRLWIND         = 36981,
 
     // _phase 3 spells
     SPELL_RESURRECTION                  = 36450,
@@ -266,10 +268,14 @@ namespace
 {
     constexpr float KAEL_ENCOUNTER_RANGE = 170.0f;
     constexpr float KAEL_REMOTE_TOY_RESPONSE_RANGE = 100.0f;
-    constexpr float KAEL_THALADRED_DANGER_DISTANCE = 18.0f;
+    constexpr float KAEL_THALADRED_WARNING_DISTANCE = 35.0f;
+    constexpr float KAEL_THALADRED_DANGER_DISTANCE = 22.0f;
+    constexpr float KAEL_THALADRED_EMERGENCY_DISTANCE = 14.0f;
+    constexpr float KAEL_THALADRED_ROUTE_ARRIVE_DISTANCE = 8.0f;
+    constexpr float KAEL_THALADRED_OUTER_ROUTE_DISTANCE = 18.0f;
+    constexpr float KAEL_THALADRED_EMERGENCY_ESCAPE_DISTANCE = 18.0f;
     constexpr uint32 KAEL_REMOTE_TOY_RESPONSE_LOCK_MS = 4000;
-    constexpr uint32 KAEL_THALADRED_MOVE_LOCK_MS = 4500;
-    constexpr uint32 KAEL_THALADRED_KITE_RELEASE_MS = 10500;
+    constexpr uint32 KAEL_THALADRED_MOVE_LOCK_MS = 1800;
     constexpr uint32 KAEL_DOMINION_TICK_MS = 1000;
     constexpr uint8 KAEL_DOMINION_TICK_COUNT = 5;
     constexpr uint32 KAEL_DOMINION_DAMAGE_PCT = 8;
@@ -287,6 +293,22 @@ namespace
     GuidSet KaelAllAdvisorsTelonicusGuids;
     GuidSet KaelRemoteToyResponseLocks;
     GuidSet KaelThaladredMoveLocks;
+    std::map<ObjectGuid, ObjectGuid> KaelThaladredFixateTargets;
+
+    struct KaelThaladredKiteState
+    {
+        uint32 OriginalCommandState = 0;
+        uint8 CurrentPoint = 0;
+        int8 Direction = 0;
+        bool Initialized = false;
+        bool HasPoint = false;
+        bool StaySet = false;
+        bool InactionSet = false;
+    };
+
+    std::map<ObjectGuid, KaelThaladredKiteState> KaelThaladredKiteStates;
+
+    bool IsKaelBotCastingUninterruptible(Creature* bot);
 
     bool IsValidKaelEncounterBot(Creature const* creature)
     {
@@ -628,96 +650,538 @@ namespace
         return std::abs(position.GetPositionX()) > 0.1f || std::abs(position.GetPositionY()) > 0.1f || std::abs(position.GetPositionZ()) > 0.1f;
     }
 
-    bool SelectThaladredKitePoint(Creature* thaladred, Creature* bot, Position& destination)
+    float GetDistance2d(Position const& a, Position const& b)
     {
-        if (!thaladred || !bot)
-            return false;
+        float const dx = a.GetPositionX() - b.GetPositionX();
+        float const dy = a.GetPositionY() - b.GetPositionY();
+        return std::sqrt(dx * dx + dy * dy);
+    }
 
-        Position const* bestPoint = nullptr;
-        float bestThaladredDistance = -1.0f;
-        float bestBotDistance = std::numeric_limits<float>::max();
+    Position GetThaladredKiteCenter()
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        uint8 count = 0;
 
         for (Position const& point : KaelThaladredKitePoints)
         {
             if (!IsFilledThaladredKitePoint(point))
                 continue;
 
-            float const thaladredDistance = thaladred->GetExactDist2d(point.GetPositionX(), point.GetPositionY());
-            float const botDistance = bot->GetExactDist2d(point.GetPositionX(), point.GetPositionY());
+            x += point.GetPositionX();
+            y += point.GetPositionY();
+            z += point.GetPositionZ();
+            ++count;
+        }
 
-            if (!bestPoint || thaladredDistance > bestThaladredDistance ||
-                (thaladredDistance == bestThaladredDistance && botDistance < bestBotDistance))
+        Position center;
+        if (count)
+            center.Relocate(x / count, y / count, z / count, 0.0f);
+        return center;
+    }
+
+    float DistanceFromSegment2d(Position const& start, Position const& end, float x, float y)
+    {
+        float const sx = start.GetPositionX();
+        float const sy = start.GetPositionY();
+        float const ex = end.GetPositionX();
+        float const ey = end.GetPositionY();
+        float const vx = ex - sx;
+        float const vy = ey - sy;
+        float const wx = x - sx;
+        float const wy = y - sy;
+        float const lengthSquared = vx * vx + vy * vy;
+
+        float t = 0.0f;
+        if (lengthSquared > 0.01f)
+            t = std::max(0.0f, std::min(1.0f, (wx * vx + wy * vy) / lengthSquared));
+
+        float const px = sx + t * vx;
+        float const py = sy + t * vy;
+        float const dx = x - px;
+        float const dy = y - py;
+        return std::sqrt(dx * dx + dy * dy);
+    }
+
+    float PathPenaltyNearPoint(Position const& start, Position const& end, float x, float y, float radius, float weight)
+    {
+        float const distance = DistanceFromSegment2d(start, end, x, y);
+        if (distance >= radius)
+            return 0.0f;
+
+        return weight * (radius - distance) / radius;
+    }
+
+    bool FindNearestThaladredKitePoint(Position const& position, uint8& index, float& distance)
+    {
+        bool found = false;
+        distance = std::numeric_limits<float>::max();
+
+        for (uint8 i = 0; i < KAEL_THALADRED_KITE_POINT_COUNT; ++i)
+        {
+            Position const& point = KaelThaladredKitePoints[i];
+            if (!IsFilledThaladredKitePoint(point))
+                continue;
+
+            float const pointDistance = GetDistance2d(position, point);
+            if (!found || pointDistance < distance)
             {
-                bestPoint = &point;
-                bestThaladredDistance = thaladredDistance;
-                bestBotDistance = botDistance;
+                found = true;
+                index = i;
+                distance = pointDistance;
             }
         }
 
-        if (!bestPoint)
+        return found;
+    }
+
+    uint8 GetAdjacentThaladredKitePoint(uint8 index, int8 direction)
+    {
+        if (direction >= 0)
+            return (index + 1) % KAEL_THALADRED_KITE_POINT_COUNT;
+
+        return (index + KAEL_THALADRED_KITE_POINT_COUNT - 1) % KAEL_THALADRED_KITE_POINT_COUNT;
+    }
+
+    int8 GetThaladredKiteDirection(uint8 from, uint8 to)
+    {
+        if (GetAdjacentThaladredKitePoint(from, 1) == to)
+            return 1;
+
+        if (GetAdjacentThaladredKitePoint(from, -1) == to)
+            return -1;
+
+        return 0;
+    }
+
+    float ScoreThaladredPath(Creature* thaladred, Creature* bot, Position const& destination)
+    {
+        Position start;
+        start.Relocate(bot);
+
+        float const botPathDistance = bot->GetExactDist2d(destination.GetPositionX(), destination.GetPositionY());
+        float const currentThaladredDistance = thaladred->GetExactDist2d(bot);
+        float const destinationThaladredDistance = thaladred->GetExactDist2d(destination.GetPositionX(), destination.GetPositionY());
+        float score = botPathDistance * 0.25f;
+
+        if (destinationThaladredDistance > currentThaladredDistance)
+            score -= (destinationThaladredDistance - currentThaladredDistance) * 1.75f;
+        else
+            score += (currentThaladredDistance - destinationThaladredDistance) * 4.0f;
+
+        if (destinationThaladredDistance < KAEL_THALADRED_WARNING_DISTANCE)
+            score += (KAEL_THALADRED_WARNING_DISTANCE - destinationThaladredDistance) * 8.0f;
+
+        Position const center = GetThaladredKiteCenter();
+        score += PathPenaltyNearPoint(start, destination, center.GetPositionX(), center.GetPositionY(), 30.0f, 260.0f);
+
+        auto addCreaturePenalty = [&](uint32 entry, float radius, float weight)
+        {
+            Creature* creature = thaladred->FindNearestCreature(entry, KAEL_ENCOUNTER_RANGE, true);
+            if (!creature || creature == thaladred || !creature->IsAlive())
+                return;
+
+            score += PathPenaltyNearPoint(start, destination, creature->GetPositionX(), creature->GetPositionY(), radius, weight);
+        };
+
+        addCreaturePenalty(NPC_KAELTHAS, 24.0f, 280.0f);
+        addCreaturePenalty(NPC_LORD_SANGUINAR, 18.0f, 150.0f);
+        addCreaturePenalty(NPC_CAPERNIAN, 34.0f, 360.0f);
+        addCreaturePenalty(NPC_TELONICUS, 18.0f, 140.0f);
+        addCreaturePenalty(NPC_PHOENIX, 24.0f, 260.0f);
+        addCreaturePenalty(NPC_FIRE_BOMB, 10.0f, 300.0f);
+
+        for (uint32 entry = NPC_NETHERSTRAND_LONGBOW; entry <= NPC_STAFF_OF_DISINTEGRATION; ++entry)
+        {
+            Creature* weapon = thaladred->FindNearestCreature(entry, KAEL_ENCOUNTER_RANGE, true);
+            if (!weapon || !weapon->IsAlive())
+                continue;
+
+            bool const isWhirlwind = weapon->HasAura(SPELL_DEVASTATION_WHIRLWIND);
+            score += PathPenaltyNearPoint(start, destination, weapon->GetPositionX(), weapon->GetPositionY(), isWhirlwind ? 30.0f : 18.0f, isWhirlwind ? 420.0f : 130.0f);
+        }
+
+        for (Unit* unit : GatherKaelEncounterTargets(thaladred, KAEL_ENCOUNTER_RANGE))
+        {
+            if (!unit || unit == bot || unit == thaladred || !unit->IsAlive())
+                continue;
+
+            if (!unit->IsPlayer() && !unit->IsNPCBot())
+                continue;
+
+            score += PathPenaltyNearPoint(start, destination, unit->GetPositionX(), unit->GetPositionY(), 12.0f, 34.0f);
+        }
+
+        return score;
+    }
+
+    bool BuildThaladredEmergencyEscapePosition(Creature* thaladred, Creature* bot, Position& destination)
+    {
+        if (!thaladred || !bot)
             return false;
 
-        destination = *bestPoint;
+        float dx = bot->GetPositionX() - thaladred->GetPositionX();
+        float dy = bot->GetPositionY() - thaladred->GetPositionY();
+        float length = std::sqrt(dx * dx + dy * dy);
+
+        if (length < 0.1f)
+        {
+            Position const center = GetThaladredKiteCenter();
+            dx = bot->GetPositionX() - center.GetPositionX();
+            dy = bot->GetPositionY() - center.GetPositionY();
+            length = std::sqrt(dx * dx + dy * dy);
+        }
+
+        if (length < 0.1f)
+            return false;
+
+        float x = bot->GetPositionX() + dx / length * KAEL_THALADRED_EMERGENCY_ESCAPE_DISTANCE;
+        float y = bot->GetPositionY() + dy / length * KAEL_THALADRED_EMERGENCY_ESCAPE_DISTANCE;
+        float z = bot->GetPositionZ();
+        bot->UpdateAllowedPositionZ(x, y, z);
+        destination.Relocate(x, y, z, bot->GetOrientation());
         return true;
     }
 
-    void MoveThaladredFixatedBotToKitePoint(Creature* thaladred, Unit* target)
+    void TrackThaladredKiteState(Creature* bot)
+    {
+        bot_ai* ai = IsValidKaelEncounterBot(bot) ? bot->GetBotAI() : nullptr;
+        if (!ai)
+            return;
+
+        KaelThaladredKiteState& state = KaelThaladredKiteStates[bot->GetGUID()];
+        if (!state.Initialized)
+        {
+            state.Initialized = true;
+            state.OriginalCommandState = ai->GetBotCommandState();
+            state.StaySet = !(state.OriginalCommandState & BOT_COMMAND_STAY);
+            state.InactionSet = !(state.OriginalCommandState & BOT_COMMAND_INACTION);
+        }
+
+        ai->RemoveBotCommandState(BOT_COMMAND_FOLLOW | BOT_COMMAND_ATTACK | BOT_COMMAND_COMBATRESET);
+        ai->SetBotCommandState(BOT_COMMAND_INACTION);
+        ai->SetBotCommandState(BOT_COMMAND_STAY);
+    }
+
+    void ReleaseThaladredKiteState(Creature* source, ObjectGuid const& botGuid, bool resumeCombat)
+    {
+        std::map<ObjectGuid, KaelThaladredKiteState>::iterator itr = KaelThaladredKiteStates.find(botGuid);
+        if (itr == KaelThaladredKiteStates.end())
+            return;
+
+        Creature* bot = source ? ObjectAccessor::GetCreature(*source, botGuid) : nullptr;
+        if (bot)
+        {
+            if (bot_ai* ai = bot->GetBotAI())
+            {
+                if (itr->second.StaySet)
+                    ai->RemoveBotCommandState(BOT_COMMAND_STAY);
+
+                if (itr->second.InactionSet)
+                    ai->RemoveBotCommandState(BOT_COMMAND_INACTION);
+
+                if (bot->IsAlive() && !ai->IAmFree())
+                {
+                    if (resumeCombat && source && source->GetEntry() == NPC_THALADRED && source->IsAlive() && source->IsEngaged() && bot->IsInMap(source))
+                    {
+                        ai->SetBotCommandState(BOT_COMMAND_ATTACK);
+                        ai->AttackStart(source);
+                    }
+                    else
+                    {
+                        ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+                    }
+                }
+            }
+        }
+
+        KaelThaladredKiteStates.erase(itr);
+        KaelThaladredMoveLocks.erase(botGuid);
+    }
+
+    void ClearThaladredFixate(Creature* thaladred, bool resumeCombat)
+    {
+        if (!thaladred)
+            return;
+
+        std::map<ObjectGuid, ObjectGuid>::iterator itr = KaelThaladredFixateTargets.find(thaladred->GetGUID());
+        if (itr != KaelThaladredFixateTargets.end())
+        {
+            ReleaseThaladredKiteState(thaladred, itr->second, resumeCombat);
+            KaelThaladredFixateTargets.erase(itr);
+        }
+    }
+
+    void ClearAllThaladredKiteStates(Creature* source)
+    {
+        std::vector<ObjectGuid> botGuids;
+        botGuids.reserve(KaelThaladredKiteStates.size());
+        for (std::map<ObjectGuid, KaelThaladredKiteState>::value_type const& pair : KaelThaladredKiteStates)
+            botGuids.push_back(pair.first);
+
+        for (ObjectGuid const& botGuid : botGuids)
+            ReleaseThaladredKiteState(source, botGuid, false);
+
+        KaelThaladredFixateTargets.clear();
+        KaelThaladredMoveLocks.clear();
+    }
+
+    Unit* GetThaladredFixateTarget(Creature* thaladred)
+    {
+        if (!thaladred)
+            return nullptr;
+
+        std::map<ObjectGuid, ObjectGuid>::const_iterator itr = KaelThaladredFixateTargets.find(thaladred->GetGUID());
+        if (itr == KaelThaladredFixateTargets.end() || itr->second.IsEmpty())
+            return nullptr;
+
+        return ObjectAccessor::GetUnit(*thaladred, itr->second);
+    }
+
+    void SetThaladredFixateTarget(Creature* thaladred, Unit* target)
+    {
+        if (!thaladred)
+            return;
+
+        ObjectGuid const thaladredGuid = thaladred->GetGUID();
+        ObjectGuid const targetGuid = target ? target->GetGUID() : ObjectGuid::Empty;
+
+        std::map<ObjectGuid, ObjectGuid>::iterator itr = KaelThaladredFixateTargets.find(thaladredGuid);
+        if (itr != KaelThaladredFixateTargets.end() && itr->second != targetGuid)
+            ReleaseThaladredKiteState(thaladred, itr->second, true);
+
+        if (targetGuid.IsEmpty())
+            KaelThaladredFixateTargets.erase(thaladredGuid);
+        else
+            KaelThaladredFixateTargets[thaladredGuid] = targetGuid;
+    }
+
+    bool SelectThaladredKitePoint(Creature* thaladred, Creature* bot, bool emergency, Position& destination, uint8& selectedPoint)
+    {
+        if (!thaladred || !bot)
+            return false;
+
+        Position current;
+        current.Relocate(bot);
+        uint8 nearestPoint = 0;
+        float nearestDistance = 0.0f;
+        bool const hasNearestPoint = FindNearestThaladredKitePoint(current, nearestPoint, nearestDistance);
+
+        KaelThaladredKiteState& state = KaelThaladredKiteStates[bot->GetGUID()];
+        if (hasNearestPoint && nearestDistance <= KAEL_THALADRED_ROUTE_ARRIVE_DISTANCE)
+        {
+            state.CurrentPoint = nearestPoint;
+            state.HasPoint = true;
+        }
+
+        uint8 candidates[KAEL_THALADRED_KITE_POINT_COUNT];
+        uint8 candidateCount = 0;
+        auto addCandidate = [&](uint8 point)
+        {
+            for (uint8 i = 0; i < candidateCount; ++i)
+                if (candidates[i] == point)
+                    return;
+
+            candidates[candidateCount++] = point;
+        };
+
+        if (!state.HasPoint || nearestDistance > KAEL_THALADRED_OUTER_ROUTE_DISTANCE)
+        {
+            if (hasNearestPoint)
+            {
+                addCandidate(nearestPoint);
+                addCandidate(GetAdjacentThaladredKitePoint(nearestPoint, 1));
+                addCandidate(GetAdjacentThaladredKitePoint(nearestPoint, -1));
+            }
+            else
+            {
+                for (uint8 i = 0; i < KAEL_THALADRED_KITE_POINT_COUNT; ++i)
+                    addCandidate(i);
+            }
+        }
+        else
+        {
+            if (state.Direction == 0)
+            {
+                addCandidate(GetAdjacentThaladredKitePoint(state.CurrentPoint, 1));
+                addCandidate(GetAdjacentThaladredKitePoint(state.CurrentPoint, -1));
+            }
+            else
+            {
+                addCandidate(GetAdjacentThaladredKitePoint(state.CurrentPoint, state.Direction));
+                addCandidate(GetAdjacentThaladredKitePoint(state.CurrentPoint, -state.Direction));
+            }
+        }
+
+        bool found = false;
+        bool selectedEmergencyEscape = false;
+        uint8 bestPoint = 0;
+        Position bestDestination;
+        float bestScore = std::numeric_limits<float>::max();
+
+        for (uint8 i = 0; i < candidateCount; ++i)
+        {
+            uint8 const candidatePoint = candidates[i];
+            Position const& point = KaelThaladredKitePoints[candidatePoint];
+            if (!IsFilledThaladredKitePoint(point))
+                continue;
+
+            float score = ScoreThaladredPath(thaladred, bot, point);
+            if (state.HasPoint)
+            {
+                int8 const direction = GetThaladredKiteDirection(state.CurrentPoint, candidatePoint);
+                if (state.Direction != 0 && direction != 0 && direction != state.Direction)
+                    score += 90.0f;
+            }
+            else if (hasNearestPoint)
+            {
+                score += bot->GetExactDist2d(point.GetPositionX(), point.GetPositionY()) * 1.25f;
+            }
+
+            if (!found || score < bestScore)
+            {
+                found = true;
+                bestPoint = candidatePoint;
+                bestDestination = point;
+                bestScore = score;
+            }
+        }
+
+        if (emergency)
+        {
+            Position escape;
+            if (BuildThaladredEmergencyEscapePosition(thaladred, bot, escape))
+            {
+                float const escapeScore = ScoreThaladredPath(thaladred, bot, escape) - 80.0f;
+                if (!found || escapeScore < bestScore)
+                {
+                    found = true;
+                    selectedEmergencyEscape = true;
+                    bestDestination = escape;
+                    bestScore = escapeScore;
+                }
+            }
+        }
+
+        if (!found)
+            return false;
+
+        destination = bestDestination;
+        if (!selectedEmergencyEscape)
+            selectedPoint = bestPoint;
+        else
+            selectedPoint = KAEL_THALADRED_KITE_POINT_COUNT;
+
+        return true;
+    }
+
+    bool MoveThaladredFixatedBotToKitePoint(Creature* thaladred, Unit* target, bool forceMove = false)
     {
         Creature* bot = target ? target->ToCreature() : nullptr;
         bot_ai* ai = IsValidKaelEncounterBot(bot) ? bot->GetBotAI() : nullptr;
         if (!thaladred || !ai)
-            return;
+            return false;
 
-        if (KaelThaladredMoveLocks.count(bot->GetGUID()) != 0)
-            return;
+        float const thaladredDistance = thaladred->GetExactDist2d(bot);
+        bool const emergency = thaladredDistance <= KAEL_THALADRED_EMERGENCY_DISTANCE;
+        bool const danger = thaladredDistance <= KAEL_THALADRED_DANGER_DISTANCE;
+        bool const canOverrideLock = forceMove || danger || emergency;
+
+        TrackThaladredKiteState(bot);
+
+        if (KaelThaladredMoveLocks.count(bot->GetGUID()) != 0 && !canOverrideLock)
+            return false;
+
+        if (!canOverrideLock && IsKaelBotCastingUninterruptible(bot))
+            return false;
 
         Position destination;
-        if (!SelectThaladredKitePoint(thaladred, bot, destination))
-            return;
+        uint8 selectedPoint = 0;
+        if (!SelectThaladredKitePoint(thaladred, bot, emergency, destination, selectedPoint))
+            return false;
 
-        KaelThaladredMoveLocks.insert(bot->GetGUID());
         ObjectGuid const botGuid = bot->GetGUID();
+        KaelThaladredMoveLocks.insert(botGuid);
         bot->m_Events.AddEventAtOffset([botGuid]
         {
             KaelThaladredMoveLocks.erase(botGuid);
         }, Milliseconds(KAEL_THALADRED_MOVE_LOCK_MS));
 
-        bot->m_Events.AddEventAtOffset([bot]
-        {
-            bot_ai* ai = IsValidKaelEncounterBot(bot) ? bot->GetBotAI() : nullptr;
-            if (!ai)
-                return;
+        if (danger || emergency)
+            bot->InterruptNonMeleeSpells(true);
+        else
+            bot->InterruptNonMeleeSpells(false);
 
-            if (Creature* thaladred = bot->FindNearestCreature(NPC_THALADRED, KAEL_ENCOUNTER_RANGE, true))
-                if (thaladred->GetVictim() == bot)
-                    return;
-
-            ai->RemoveBotCommandState(BOT_COMMAND_STAY | BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION | BOT_COMMAND_COMBATRESET);
-            ai->SetBotCommandState(BOT_COMMAND_ATTACK);
-        }, Milliseconds(KAEL_THALADRED_KITE_RELEASE_MS));
-
-        bot->InterruptNonMeleeSpells(false);
         bot->AttackStop();
         bot->BotStopMovement();
-        ai->RemoveBotCommandState(BOT_COMMAND_FOLLOW | BOT_COMMAND_ATTACK);
+        ai->RemoveBotCommandState(BOT_COMMAND_FOLLOW | BOT_COMMAND_ATTACK | BOT_COMMAND_COMBATRESET);
+        ai->SetBotCommandState(BOT_COMMAND_INACTION);
         ai->SetBotCommandState(BOT_COMMAND_STAY);
         ai->MoveToSendPosition(destination);
 
-        DBMFTABotCallouts::AnnounceCustomForModule(bot, SPELL_PSYCHIC_BLOW, "DBM-TheEye", "KaelThas", "Thaladred fixated me!", DBMFTABotCallouts::GetCooldownMs());
-        LOG_DEBUG("scripts", "Kael'thas NPCBot: moved Thaladred target {} to kite point {:.2f} {:.2f} {:.2f}",
-            bot->GetName(), destination.GetPositionX(), destination.GetPositionY(), destination.GetPositionZ());
+        KaelThaladredKiteState& state = KaelThaladredKiteStates[botGuid];
+        if (selectedPoint < KAEL_THALADRED_KITE_POINT_COUNT)
+        {
+            if (state.HasPoint)
+            {
+                int8 const direction = GetThaladredKiteDirection(state.CurrentPoint, selectedPoint);
+                if (direction != 0)
+                    state.Direction = direction;
+            }
+
+            state.CurrentPoint = selectedPoint;
+            state.HasPoint = true;
+        }
+
+        DBMFTABotCallouts::AnnounceCustomForModule(bot, SPELL_PSYCHIC_BLOW, "DBM-TheEye", "KaelThas", emergency ? "Thaladred is too close, escaping!" : "Thaladred fixated me!", DBMFTABotCallouts::GetCooldownMs());
+        LOG_DEBUG("scripts", "Kael'thas NPCBot: moved Thaladred target {} to kite {} {:.2f} {:.2f} {:.2f} distance {:.1f}",
+            bot->GetName(), selectedPoint < KAEL_THALADRED_KITE_POINT_COUNT ? "point" : "escape", destination.GetPositionX(), destination.GetPositionY(), destination.GetPositionZ(), thaladredDistance);
+        return true;
     }
 
-    void MoveThaladredVictimIfTooClose(Creature* thaladred)
+    void UpdateThaladredFixatedBotKiting(Creature* thaladred, bool forceMove = false)
     {
-        if (!thaladred)
+        if (!thaladred || !thaladred->IsAlive())
+        {
+            ClearThaladredFixate(thaladred, false);
+            return;
+        }
+
+        Unit* target = GetThaladredFixateTarget(thaladred);
+        if (!target || !target->IsAlive())
+        {
+            ClearThaladredFixate(thaladred, false);
+            return;
+        }
+
+        Creature* bot = target->ToCreature();
+        if (!IsValidKaelEncounterBot(bot))
             return;
 
-        Unit* victim = thaladred->GetVictim();
-        if (!victim || thaladred->GetExactDist2d(victim) > KAEL_THALADRED_DANGER_DISTANCE)
-            return;
+        TrackThaladredKiteState(bot);
 
-        MoveThaladredFixatedBotToKitePoint(thaladred, victim);
+        Position current;
+        current.Relocate(bot);
+        uint8 nearestPoint = 0;
+        float nearestDistance = std::numeric_limits<float>::max();
+        bool const hasNearestPoint = FindNearestThaladredKitePoint(current, nearestPoint, nearestDistance);
+        if (hasNearestPoint && nearestDistance <= KAEL_THALADRED_ROUTE_ARRIVE_DISTANCE)
+        {
+            KaelThaladredKiteState& state = KaelThaladredKiteStates[bot->GetGUID()];
+            state.CurrentPoint = nearestPoint;
+            state.HasPoint = true;
+        }
+
+        float const thaladredDistance = thaladred->GetExactDist2d(bot);
+        bool const shouldMove = forceMove ||
+            thaladredDistance <= KAEL_THALADRED_WARNING_DISTANCE ||
+            !hasNearestPoint ||
+            nearestDistance > KAEL_THALADRED_OUTER_ROUTE_DISTANCE ||
+            nearestDistance <= KAEL_THALADRED_ROUTE_ARRIVE_DISTANCE;
+
+        if (shouldMove)
+            MoveThaladredFixatedBotToKitePoint(thaladred, bot, forceMove);
     }
 
     bool IsKaelBotCastingUninterruptible(Creature* bot)
@@ -827,6 +1291,7 @@ struct boss_kaelthas : public BossAI
         _advisorsAlive = 4;
         MarkKaelAllAdvisorsRemoteToyActive(instance, false);
         StopKaelFireBombAvoidance();
+        ClearAllThaladredKiteStates(me);
         me->RemoveAurasDueToSpell(SPELL_FIRE_BOMB_CHANNEL);
 
         me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_HOVER, true); // hover effect 36550 - Floating Drowned
@@ -1188,6 +1653,7 @@ struct boss_kaelthas : public BossAI
         scheduler.CancelAll();
         Talk(SAY_PHASE4_INTRO2);
         MarkKaelAllAdvisorsRemoteToyActive(instance, false);
+        ClearAllThaladredKiteStates(me);
         _phase = PHASE_FINAL;
         DoResetThreatList();
         me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_DISABLE_MOVE);
@@ -1450,6 +1916,7 @@ struct boss_kaelthas : public BossAI
         BossAI::JustDied(killer);
         MarkKaelAllAdvisorsRemoteToyActive(instance, false);
         StopKaelFireBombAvoidance();
+        ClearAllThaladredKiteStates(me);
         DoCastAOE(SPELL_REMOVE_ENCHANTED_WEAPONS, true);
     }
 private:
@@ -1469,6 +1936,9 @@ struct advisor_baseAI : public ScriptedAI
 
     void Reset() override
     {
+        if (me->GetEntry() == NPC_THALADRED)
+            ClearThaladredFixate(me, false);
+
         _preventDeath = true;
         _feigning = false;
         me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
@@ -1495,6 +1965,8 @@ struct advisor_baseAI : public ScriptedAI
                 return;
             scheduler.CancelAll();
             me->AttackStop();
+            if (me->GetEntry() == NPC_THALADRED)
+                ClearThaladredFixate(me, false);
             me->SetUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
             DoCastAOE(SPELL_KAEL_PHASE_TWO, true);
             DoCastSelf(SPELL_PERMANENT_FEIGN_DEATH, true);
@@ -1528,6 +2000,9 @@ struct advisor_baseAI : public ScriptedAI
 
     void JustDied(Unit* /*killer*/) override
     {
+        if (me->GetEntry() == NPC_THALADRED)
+            ClearThaladredFixate(me, false);
+
         Talk(SAY_ADVISOR_DEATH);
         scheduler.CancelAll();
         DoCastAOE(SPELL_KAEL_PHASE_TWO, true);
@@ -1632,7 +2107,8 @@ struct npc_thaladred : public advisor_baseAI
             {
                 me->AddThreat(target, 10000000.0f);
                 Talk(EMOTE_THALADRED_FIXATE, target);
-                MoveThaladredFixatedBotToKitePoint(me, target);
+                SetThaladredFixateTarget(me, target);
+                UpdateThaladredFixatedBotKiting(me, true);
             }
         }, 10s);
         ScheduleTimedEvent(4s, 19350ms, [&]
@@ -1658,7 +2134,7 @@ struct npc_thaladred : public advisor_baseAI
     void UpdateAI(uint32 diff) override
     {
         advisor_baseAI::UpdateAI(diff);
-        MoveThaladredVictimIfTooClose(me);
+        UpdateThaladredFixatedBotKiting(me);
     }
 };
 
