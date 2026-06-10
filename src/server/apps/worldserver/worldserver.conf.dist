@@ -4935,6 +4935,27 @@ InfiniteAmmo.Enabled = 0
 LeatherworkingDrums.DisableAboveLevel70 = 0
 
 #
+#    Kaelthas.AdvisorReviveStagger.Enable
+#        Description: Enables staggered advisor revival during the Kael'thas
+#                     all-advisors phase. This can make the encounter more stable
+#                     for NPCBot-assisted raids by preventing all four advisors
+#                     from becoming active on the same server tick.
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled, immediate revival)
+
+Kaelthas.AdvisorReviveStagger.Enable = 1
+
+#
+#    Kaelthas.AdvisorReviveStagger.DelayMs
+#        Description: Delay in milliseconds between each advisor revival when
+#                     staggered revival is enabled. Set to 0 to preserve
+#                     immediate revival behavior. Values are clamped from
+#                     0 to 30000.
+#        Default:     8000
+
+Kaelthas.AdvisorReviveStagger.DelayMs = 8000
+
+#
 #    Glyph.ExtraSlots.RequiredItemQuality
 #        Description: Minimum item quality required when applying glyph items to the
 #                     ExtraGlyphSlots mastery slots. This does not affect normal

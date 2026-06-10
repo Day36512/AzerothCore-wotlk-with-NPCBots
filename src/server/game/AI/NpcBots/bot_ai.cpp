@@ -8648,7 +8648,7 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
                 if (!capernian || !capernian->IsAlive() || !capernian->IsInCombat())
                     continue;
 
-                if (capernian->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
+                if (capernian->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE))
                     continue;
 
                 spots.emplace_back(*capernian, KAEL_CAPERNIAN_MELEE_RADIUS + capernian->GetCombatReach() + DEFAULT_COMBAT_REACH);

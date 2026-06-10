@@ -17,6 +17,7 @@
 
 #include "Cell.h"
 #include "CellImpl.h"
+#include "Config.h"
 #include "CreatureScript.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
@@ -199,6 +200,10 @@ enum KTPreFightEvents
     EVENT_PREFIGHT_PHASE5_02              = 3,
     EVENT_PREFIGHT_PHASE6_02              = 4,
     EVENT_PREFIGHT_PHASE6_03              = 5,
+    EVENT_KAEL_REVIVE_SANGUINAR           = 6,
+    EVENT_KAEL_REVIVE_TELONICUS           = 7,
+    EVENT_KAEL_REVIVE_CAPERNIAN           = 8,
+    EVENT_KAEL_REVIVE_THALADRED           = 9,
 };
 
 enum KTTransitionScene
@@ -230,7 +235,8 @@ enum KTActions
     ACTION_START_CAPERNIAN              = 2,
     ACTION_START_TELONICUS              = 3,
     ACTION_START_WEAPONS                = 4,
-    ACTION_PROGRESS_PHASE_CHECK         = 5
+    ACTION_PROGRESS_PHASE_CHECK         = 5,
+    ACTION_REVIVE_ADVISOR               = 6
 };
 
 enum KTSpellGroups
@@ -276,6 +282,8 @@ namespace
     constexpr float KAEL_THALADRED_EMERGENCY_ESCAPE_DISTANCE = 18.0f;
     constexpr uint32 KAEL_REMOTE_TOY_RESPONSE_LOCK_MS = 4000;
     constexpr uint32 KAEL_THALADRED_MOVE_LOCK_MS = 1800;
+    constexpr uint32 KAEL_ADVISOR_REVIVE_STAGGER_DEFAULT_DELAY_MS = 8000;
+    constexpr uint32 KAEL_ADVISOR_REVIVE_STAGGER_MAX_DELAY_MS = 30000;
     constexpr uint32 KAEL_DOMINION_TICK_MS = 1000;
     constexpr uint8 KAEL_DOMINION_TICK_COUNT = 5;
     constexpr uint32 KAEL_DOMINION_DAMAGE_PCT = 8;
@@ -309,6 +317,19 @@ namespace
     std::map<ObjectGuid, KaelThaladredKiteState> KaelThaladredKiteStates;
 
     bool IsKaelBotCastingUninterruptible(Creature* bot);
+
+    bool IsKaelAdvisorReviveStaggerEnabled()
+    {
+        return sConfigMgr->GetOption<bool>("Kaelthas.AdvisorReviveStagger.Enable", true);
+    }
+
+    uint32 GetKaelAdvisorReviveStaggerDelayMs()
+    {
+        return std::clamp<uint32>(
+            sConfigMgr->GetOption<uint32>("Kaelthas.AdvisorReviveStagger.DelayMs", KAEL_ADVISOR_REVIVE_STAGGER_DEFAULT_DELAY_MS),
+            0u,
+            KAEL_ADVISOR_REVIVE_STAGGER_MAX_DELAY_MS);
+    }
 
     bool IsValidKaelEncounterBot(Creature const* creature)
     {
@@ -519,6 +540,11 @@ namespace
             else
                 KaelAllAdvisorsTelonicusGuids.erase(telonicus->GetGUID());
         }
+    }
+
+    void ClearKaelRemoteToyResponseLocks()
+    {
+        KaelRemoteToyResponseLocks.clear();
     }
 
     bool IsKaelAllAdvisorsRemoteToyActive(Unit* target)
@@ -1290,6 +1316,7 @@ struct boss_kaelthas : public BossAI
         _transitionSceneReached = false;
         _advisorsAlive = 4;
         MarkKaelAllAdvisorsRemoteToyActive(instance, false);
+        ClearKaelRemoteToyResponseLocks();
         StopKaelFireBombAvoidance();
         ClearAllThaladredKiteStates(me);
         me->RemoveAurasDueToSpell(SPELL_FIRE_BOMB_CHANNEL);
@@ -1632,20 +1659,74 @@ struct boss_kaelthas : public BossAI
         }, EVENT_PREFIGHT_PHASE5_02);
     }
 
+    void ReviveAllAdvisorsAtOnce()
+    {
+        DoCastSelf(SPELL_RESURRECTION);
+    }
+
+    void ReviveAdvisorForAllAdvisorsPhase(uint32 advisorData)
+    {
+        if (_phase != PHASE_ALL_ADVISORS)
+            return;
+
+        if (Creature* advisor = instance->GetCreature(advisorData))
+            advisor->AI()->DoAction(ACTION_REVIVE_ADVISOR);
+    }
+
+    void ScheduleAdvisorRevive(uint32 advisorData, Milliseconds delay, uint32 eventId)
+    {
+        ScheduleUniqueTimedEvent(delay, [this, advisorData]
+        {
+            ReviveAdvisorForAllAdvisorsPhase(advisorData);
+        }, eventId);
+    }
+
+    void ScheduleStaggeredAdvisorRevives(uint32 delayMs)
+    {
+        MarkKaelAllAdvisorsRemoteToyActive(instance, false);
+
+        ScheduleAdvisorRevive(DATA_LORD_SANGUINAR, 0ms, EVENT_KAEL_REVIVE_SANGUINAR);
+        ScheduleAdvisorRevive(DATA_TELONICUS, Milliseconds(delayMs), EVENT_KAEL_REVIVE_TELONICUS);
+        ScheduleAdvisorRevive(DATA_CAPERNIAN, Milliseconds(delayMs * 2u), EVENT_KAEL_REVIVE_CAPERNIAN);
+        ScheduleAdvisorRevive(DATA_THALADRED, Milliseconds(delayMs * 3u), EVENT_KAEL_REVIVE_THALADRED);
+    }
+
+    void ScheduleAllAdvisorsPhaseTimeout(bool staggered, uint32 delayMs)
+    {
+        uint32 const phaseDurationMs = 192000u + (staggered ? delayMs * 3u : 0u);
+        scheduler.Schedule(Milliseconds(phaseDurationMs), GROUP_PROGRESS_PHASE, [this](TaskContext context)
+        {
+            if (_phase != PHASE_ALL_ADVISORS)
+                return;
+
+            if (_advisorsAlive == 0)
+            {
+                PhaseKaelExecute();
+                return;
+            }
+
+            context.Repeat(5s);
+        });
+    }
+
     void PhaseAllAdvisorsExecute()
     {
         _phase = PHASE_TRANSITION;
         scheduler.CancelGroup(GROUP_PROGRESS_PHASE);
+        ClearKaelRemoteToyResponseLocks();
         Talk(SAY_PHASE3_ADVANCE);
-        ScheduleUniqueTimedEvent(6s, [&]{
-            DoCastSelf(SPELL_RESURRECTION);
+        uint32 const staggerDelayMs = GetKaelAdvisorReviveStaggerDelayMs();
+        bool const useStagger = IsKaelAdvisorReviveStaggerEnabled() && staggerDelayMs != 0;
+        ScheduleUniqueTimedEvent(6s, [this, useStagger, staggerDelayMs]{
             _phase = PHASE_ALL_ADVISORS;
-            MarkKaelAllAdvisorsRemoteToyActive(instance, true);
+            _advisorsAlive = 4;
+
+            if (useStagger)
+                ScheduleStaggeredAdvisorRevives(staggerDelayMs);
+            else
+                ReviveAllAdvisorsAtOnce();
         }, EVENT_PREFIGHT_PHASE6_02);
-        scheduler.Schedule(192s, GROUP_PROGRESS_PHASE, [this](TaskContext)
-        {
-            PhaseKaelExecute();
-        });
+        ScheduleAllAdvisorsPhaseTimeout(useStagger, staggerDelayMs);
     }
 
     void PhaseKaelExecute()
@@ -1653,6 +1734,7 @@ struct boss_kaelthas : public BossAI
         scheduler.CancelAll();
         Talk(SAY_PHASE4_INTRO2);
         MarkKaelAllAdvisorsRemoteToyActive(instance, false);
+        ClearKaelRemoteToyResponseLocks();
         ClearAllThaladredKiteStates(me);
         _phase = PHASE_FINAL;
         DoResetThreatList();
@@ -1915,6 +1997,7 @@ struct boss_kaelthas : public BossAI
     {
         BossAI::JustDied(killer);
         MarkKaelAllAdvisorsRemoteToyActive(instance, false);
+        ClearKaelRemoteToyResponseLocks();
         StopKaelFireBombAvoidance();
         ClearAllThaladredKiteStates(me);
         DoCastAOE(SPELL_REMOVE_ENCHANTED_WEAPONS, true);
@@ -1930,7 +2013,7 @@ private:
 struct advisor_baseAI : public ScriptedAI
 
 {
-    advisor_baseAI(Creature* creature) : ScriptedAI(creature) {    }
+    advisor_baseAI(Creature* creature) : ScriptedAI(creature), _preventDeath(true), _feigning(false), _reactivatingAllAdvisors(false) { }
 
     virtual void ScheduleEvents() {}
 
@@ -1941,6 +2024,7 @@ struct advisor_baseAI : public ScriptedAI
 
         _preventDeath = true;
         _feigning = false;
+        _reactivatingAllAdvisors = false;
         me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
         scheduler.CancelAll();
     }
@@ -1967,6 +2051,7 @@ struct advisor_baseAI : public ScriptedAI
             me->AttackStop();
             if (me->GetEntry() == NPC_THALADRED)
                 ClearThaladredFixate(me, false);
+            _reactivatingAllAdvisors = false;
             me->SetUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
             DoCastAOE(SPELL_KAEL_PHASE_TWO, true);
             DoCastSelf(SPELL_PERMANENT_FEIGN_DEATH, true);
@@ -1974,28 +2059,16 @@ struct advisor_baseAI : public ScriptedAI
         }
      }
 
+    void DoAction(int32 action) override
+    {
+        if (action == ACTION_REVIVE_ADVISOR)
+            ReviveForAllAdvisorsPhase();
+    }
+
     void SpellHit(Unit* caster, SpellInfo const* spell) override
     {
-        if (spell->Id == SPELL_RESURRECTION && caster->GetEntry() == NPC_KAELTHAS)
-        {
-            me->RemoveAurasDueToSpell(SPELL_PERMANENT_FEIGN_DEATH);
-            me->SetStandState(UNIT_STAND_STATE_STAND);
-            me->SetFullHealth();
-            scheduler.Schedule(6s, [&](TaskContext /*context*/)
-            {
-                _preventDeath = false;
-                _feigning = false;
-                me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
-                DoResetThreatList();
-                me->SetInCombatWithZone();
-                me->SetReactState(REACT_AGGRESSIVE);
-                if (Unit* target = SelectKaelRandomEncounterTarget(me))
-                {
-                    AttackStart(target);
-                }
-                ScheduleEvents();
-            });
-        }
+        if (spell && caster && spell->Id == SPELL_RESURRECTION && caster->GetEntry() == NPC_KAELTHAS)
+            ReviveForAllAdvisorsPhase();
     }
 
     void JustDied(Unit* /*killer*/) override
@@ -2024,8 +2097,42 @@ struct advisor_baseAI : public ScriptedAI
         DoMeleeAttackIfReady();
     }
 private:
+    void ReviveForAllAdvisorsPhase()
+    {
+        if (_reactivatingAllAdvisors)
+            return;
+
+        _reactivatingAllAdvisors = true;
+        me->RemoveAurasDueToSpell(SPELL_PERMANENT_FEIGN_DEATH);
+        me->SetStandState(UNIT_STAND_STATE_STAND);
+        me->SetFullHealth();
+        scheduler.Schedule(6s, [&](TaskContext /*context*/)
+        {
+            _reactivatingAllAdvisors = false;
+
+            if (!me->IsAlive())
+                return;
+
+            _preventDeath = false;
+            _feigning = false;
+            me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
+            DoResetThreatList();
+            me->SetInCombatWithZone();
+            me->SetReactState(REACT_AGGRESSIVE);
+            if (Unit* target = SelectKaelRandomEncounterTarget(me))
+            {
+                AttackStart(target);
+            }
+            ScheduleEvents();
+
+            if (me->GetEntry() == NPC_TELONICUS)
+                MarkKaelAllAdvisorsRemoteToyActive(me->GetInstanceScript(), true);
+        });
+    }
+
     bool _preventDeath;
     bool _feigning;
+    bool _reactivatingAllAdvisors;
 };
 
 struct npc_lord_sanguinar : public advisor_baseAI
