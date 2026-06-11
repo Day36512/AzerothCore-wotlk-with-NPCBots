@@ -23899,13 +23899,17 @@ void bot_ai::Evade()
 
                     if (BotCfg::WanderingBotsStayInAssignedZone() && sameNodeWorldWanderer && sameNodeZoneId)
                     {
-                        for (uint8 i = 0; i < 24; ++i)
+                        Position bestPos;
+                        float bestScore = -100000.0f;
+
+                        for (uint8 i = 0; i < 40; ++i)
                         {
                             float const cangle = frand(0.f, float(M_PI) * 2.f);
-                            float const cdist = frand(18.0f, 38.0f);
+                            float const cdist = i < 30 ? frand(25.0f, 55.0f) : frand(16.0f, 28.0f);
                             Position candidate = me->GetFirstCollisionPosition(cdist, cangle);
+                            float const distFromMe = me->GetExactDist2d(candidate);
 
-                            if (me->GetExactDist2d(candidate) <= 15.5f)
+                            if (distFromMe <= 14.0f)
                                 continue;
 
                             if (candidate.GetPositionZ() <= INVALID_HEIGHT)
@@ -23917,10 +23921,34 @@ void bot_ai::Evade()
                             if (me->GetMap()->GetZoneId(me->GetPhaseMask(), candidate.GetPositionX(), candidate.GetPositionY(), candidate.GetPositionZ()) != sameNodeZoneId)
                                 continue;
 
-                            cnpos.Relocate(candidate);
-                            zoneLockedRoam = true;
-                            break;
+                            PathGenerator path(me);
+                            if (!path.CalculatePath(candidate.GetPositionX(), candidate.GetPositionY(), candidate.GetPositionZ()) ||
+                                path.GetPathType() == PATHFIND_BLANK ||
+                                (path.GetPathType() & PATHFIND_NOPATH))
+                                continue;
+
+                            float score = distFromMe;
+                            float const distFromLastHome = homepos.GetExactDist2d(candidate);
+
+                            if (distFromMe >= 25.0f)
+                                score += 20.0f;
+
+                            if (distFromLastHome < 18.0f)
+                                score -= 35.0f;
+
+                            if (path.GetPathType() & PATHFIND_INCOMPLETE)
+                                score -= 20.0f;
+
+                            if (!zoneLockedRoam || score > bestScore)
+                            {
+                                bestScore = score;
+                                bestPos.Relocate(candidate);
+                                zoneLockedRoam = true;
+                            }
                         }
+
+                        if (zoneLockedRoam)
+                            cnpos.Relocate(bestPos);
                     }
 
                     if (!zoneLockedRoam)

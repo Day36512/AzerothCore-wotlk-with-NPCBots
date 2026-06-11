@@ -1251,35 +1251,12 @@ void WorldSession::HandleSocketOpcode(WorldPackets::Item::SocketGems& packet)
     for (int i = 0; i < MAX_GEM_SOCKETS; ++i)
         Gems[i] = packet.GemGuids[i] ? _player->GetItemByGuid(packet.GemGuids[i]) : nullptr;
 
-    // Allow stackable gems to use the same source stack in multiple sockets.
-    // Non-stackable gems still cannot reuse one item GUID for several sockets.
     for (int i = 0; i < MAX_GEM_SOCKETS; ++i)
     {
         if (!packet.GemGuids[i])
             continue;
 
         if (!Gems[i])
-            return;
-
-        bool alreadyChecked = false;
-        for (int j = 0; j < i; ++j)
-        {
-            if (packet.GemGuids[j] == packet.GemGuids[i])
-            {
-                alreadyChecked = true;
-                break;
-            }
-        }
-
-        if (alreadyChecked)
-            continue;
-
-        uint32 sameGuidUses = 0;
-        for (int j = 0; j < MAX_GEM_SOCKETS; ++j)
-            if (packet.GemGuids[j] == packet.GemGuids[i])
-                ++sameGuidUses;
-
-        if (sameGuidUses > 1 && (Gems[i]->GetCount() < sameGuidUses || Gems[i]->GetMaxStackCount() < sameGuidUses))
             return;
     }
 
@@ -1323,6 +1300,36 @@ void WorldSession::HandleSocketOpcode(WorldPackets::Item::SocketGems& packet)
     {
         GemEnchants[i] = (GemProps[i]) ? GemProps[i]->spellitemenchantement : 0;
         OldEnchants[i] = itemTarget->GetEnchantmentId(EnchantmentSlot(SOCK_ENCHANTMENT_SLOT + i));
+    }
+
+    // Allow stackable gems to use the same source stack in multiple sockets.
+    // The client can echo an already-socketed gem's source GUID on later socket clicks;
+    // only sockets whose enchant is actually changing should consume from the stack.
+    for (int i = 0; i < MAX_GEM_SOCKETS; ++i)
+    {
+        if (!GemEnchants[i] || !packet.GemGuids[i] || GemEnchants[i] == OldEnchants[i])
+            continue;
+
+        bool alreadyChecked = false;
+        for (int j = 0; j < i; ++j)
+        {
+            if (GemEnchants[j] && GemEnchants[j] != OldEnchants[j] && packet.GemGuids[j] == packet.GemGuids[i])
+            {
+                alreadyChecked = true;
+                break;
+            }
+        }
+
+        if (alreadyChecked)
+            continue;
+
+        uint32 sameGuidUses = 0;
+        for (int j = i; j < MAX_GEM_SOCKETS; ++j)
+            if (GemEnchants[j] && GemEnchants[j] != OldEnchants[j] && packet.GemGuids[j] == packet.GemGuids[i])
+                ++sameGuidUses;
+
+        if (sameGuidUses > 1 && (Gems[i]->GetCount() < sameGuidUses || Gems[i]->GetMaxStackCount() < sameGuidUses))
+            return;
     }
 
     // check unique-equipped conditions
@@ -1424,16 +1431,16 @@ void WorldSession::HandleSocketOpcode(WorldPackets::Item::SocketGems& packet)
     }
 
     // Stackable gems can provide multiple sockets from one source item GUID.
-    // Consume each source stack once by its total socket use count.
+    // Consume each source stack once by its total new socket use count.
     for (int i = 0; i < MAX_GEM_SOCKETS; ++i)
     {
-        if (!GemEnchants[i] || !packet.GemGuids[i])
+        if (!GemEnchants[i] || !packet.GemGuids[i] || GemEnchants[i] == OldEnchants[i])
             continue;
 
         bool alreadyConsumed = false;
         for (int j = 0; j < i; ++j)
         {
-            if (GemEnchants[j] && packet.GemGuids[j] == packet.GemGuids[i])
+            if (GemEnchants[j] && GemEnchants[j] != OldEnchants[j] && packet.GemGuids[j] == packet.GemGuids[i])
             {
                 alreadyConsumed = true;
                 break;
@@ -1445,7 +1452,7 @@ void WorldSession::HandleSocketOpcode(WorldPackets::Item::SocketGems& packet)
 
         uint32 count = 0;
         for (int j = i; j < MAX_GEM_SOCKETS; ++j)
-            if (GemEnchants[j] && packet.GemGuids[j] == packet.GemGuids[i])
+            if (GemEnchants[j] && GemEnchants[j] != OldEnchants[j] && packet.GemGuids[j] == packet.GemGuids[i])
                 ++count;
 
         if (Item* guidItem = _player->GetItemByGuid(packet.GemGuids[i]))
