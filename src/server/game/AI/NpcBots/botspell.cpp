@@ -1804,7 +1804,7 @@ void GenerateBotCustomSpells()
     sinfo->SpellLevel = 10;
     sinfo->BaseLevel = 10;
     sinfo->RangeEntry = sSpellRangeStore.LookupEntry(4); //30 yds
-    sinfo->AttributesEx &= ~SPELL_ATTR1_UNAUTOCASTABLE_BY_PET;
+    sinfo->AttributesEx &= ~SPELL_ATTR1_NO_AUTOCAST_AI;
     //50) END TAUNT (CRYPT LORD)
 
     //51) SOUL BITE
