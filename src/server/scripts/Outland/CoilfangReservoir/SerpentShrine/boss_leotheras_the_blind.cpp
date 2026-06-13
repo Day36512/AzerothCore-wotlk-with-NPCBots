@@ -88,6 +88,7 @@ enum Groups
 namespace
 {
     constexpr char const* CONFIG_DEMON_PHASE_DELAY_MS = "SerpentShrine.Leotheras.DemonPhaseDelayMs";
+    static constexpr ObjectGuid::LowType LEOTHERAS_SPELLBINDER_SPAWN_IDS[] = { 153140, 153141, 153142 };
 
     Milliseconds GetLeotherasDemonPhaseDelay()
     {
@@ -283,11 +284,16 @@ namespace
 
 struct boss_leotheras_the_blind : public BossAI
 {
-    boss_leotheras_the_blind(Creature* creature) : BossAI(creature, DATA_LEOTHERAS_THE_BLIND) { }
+    boss_leotheras_the_blind(Creature* creature) : BossAI(creature, DATA_LEOTHERAS_THE_BLIND),
+        _recentlySpoken(false), _spellbinderResetTimer(0), _spellbinderResetAttempts(0) { }
 
     void Reset() override
     {
         BossAI::Reset();
+        ResetSpellbinders();
+        _spellbinderResetTimer = 1000;
+        _spellbinderResetAttempts = 5;
+        DoCastSelf(SPELL_BANISH, true);
         DoCastSelf(SPELL_CLEAR_CONSUMING_MADNESS, true);
         DoCastSelf(SPELL_DUAL_WIELD, true);
         me->SetReactState(REACT_PASSIVE);
@@ -359,7 +365,7 @@ struct boss_leotheras_the_blind : public BossAI
                     me->SetInCombatWithZone();
                     Talk(SAY_AGGRO);
 
-                    scheduler.Schedule(10min, [this](TaskContext)
+                    scheduler.Schedule(4min, [this](TaskContext)
                     {
                         DoCastSelf(SPELL_BERSERK);
                     });
@@ -427,6 +433,20 @@ struct boss_leotheras_the_blind : public BossAI
 
     void UpdateAI(uint32 diff) override
     {
+        if (_spellbinderResetAttempts)
+        {
+            if (!me->HasAura(SPELL_BANISH) || me->GetReactState() != REACT_PASSIVE)
+                _spellbinderResetAttempts = 0;
+            else if (_spellbinderResetTimer <= diff)
+            {
+                ResetSpellbinders();
+                --_spellbinderResetAttempts;
+                _spellbinderResetTimer = 1000;
+            }
+            else
+                _spellbinderResetTimer -= diff;
+        }
+
         if (!UpdateVictim())
             return;
 
@@ -451,7 +471,71 @@ struct boss_leotheras_the_blind : public BossAI
         }
     }
 private:
+    void ResetSpellbinderState(Creature* spellbinder)
+    {
+        if (!spellbinder || spellbinder->GetEntry() != NPC_GREYHEART_SPELLBINDER || !spellbinder->IsAlive())
+            return;
+
+        spellbinder->CombatStop(true);
+        spellbinder->GetThreatMgr().ResetAllThreat();
+        spellbinder->SetReactState(REACT_AGGRESSIVE);
+        spellbinder->SetStandState(UNIT_STAND_STATE_STAND);
+        spellbinder->GetMotionMaster()->MoveTargetedHome();
+    }
+
+    bool ResetExistingSpellbinder(Map* map, ObjectGuid::LowType spawnId)
+    {
+        bool foundAlive = false;
+        auto bounds = map->GetCreatureBySpawnIdStore().equal_range(spawnId);
+        for (auto itr = bounds.first; itr != bounds.second; ++itr)
+        {
+            Creature* spellbinder = itr->second;
+            if (!spellbinder || spellbinder->GetEntry() != NPC_GREYHEART_SPELLBINDER)
+                continue;
+
+            if (!spellbinder->IsAlive())
+                spellbinder->Respawn(true);
+
+            if (!spellbinder->IsAlive())
+                continue;
+
+            ResetSpellbinderState(spellbinder);
+            foundAlive = true;
+        }
+
+        return foundAlive;
+    }
+
+    void LoadMissingSpellbinder(Map* map, ObjectGuid::LowType spawnId)
+    {
+        Creature* spellbinder = new Creature();
+        if (!spellbinder->LoadCreatureFromDB(spawnId, map, true))
+        {
+            delete spellbinder;
+            return;
+        }
+
+        ResetSpellbinderState(spellbinder);
+    }
+
+    void ResetSpellbinders()
+    {
+        Map* map = me->GetMap();
+        if (!map)
+            return;
+
+        for (ObjectGuid::LowType spawnId : LEOTHERAS_SPELLBINDER_SPAWN_IDS)
+        {
+            map->RemoveCreatureRespawnTime(spawnId);
+
+            if (!ResetExistingSpellbinder(map, spawnId))
+                LoadMissingSpellbinder(map, spawnId);
+        }
+    }
+
     bool _recentlySpoken;
+    uint32 _spellbinderResetTimer;
+    uint8 _spellbinderResetAttempts;
 };
 
 struct npc_inner_demon : public ScriptedAI

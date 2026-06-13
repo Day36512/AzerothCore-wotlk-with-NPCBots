@@ -23,6 +23,7 @@
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "UnitAI.h"
+#include <vector>
 /*
  * Scripts for spells with SPELLFAMILY_PALADIN and SPELLFAMILY_GENERIC spells used by paladin players.
  * Ordered alphabetically using scriptname.
@@ -166,6 +167,41 @@ static bool IsJudgementDamageSpell(SpellInfo const* spellInfo)
     return spellInfo &&
         spellInfo->SpellFamilyName == SPELLFAMILY_PALADIN &&
         (spellInfo->SpellFamilyFlags[0] & 0x800000);
+}
+
+static uint32 GetJudgementDamageSpellForSeal(Aura const* sealAura)
+{
+    if (AuraEffect const* sealJudgement = sealAura->GetEffect(EFFECT_2))
+    {
+        if (sealJudgement->GetAuraType() == SPELL_AURA_DUMMY && sealJudgement->GetAmount() > 0)
+        {
+            uint32 spellId = uint32(sealJudgement->GetAmount());
+            if (sSpellMgr->GetSpellInfo(spellId))
+                return spellId;
+        }
+    }
+
+    return SPELL_PALADIN_JUDGEMENT_DAMAGE;
+}
+
+static std::vector<uint32> GetActiveSealJudgementDamageSpells(Unit const* caster)
+{
+    std::vector<uint32> judgementDamageSpells;
+    ObjectGuid casterGuid = caster->GetGUID();
+
+    for (Unit::AuraApplicationMap::value_type const& pair : caster->GetAppliedAuras())
+    {
+        Aura const* aura = pair.second->GetBase();
+        if (aura->GetCasterGUID() != casterGuid || aura->GetSpellInfo()->GetSpellSpecific() != SPELL_SPECIFIC_SEAL)
+            continue;
+
+        judgementDamageSpells.push_back(GetJudgementDamageSpellForSeal(aura));
+    }
+
+    if (judgementDamageSpells.empty())
+        judgementDamageSpells.push_back(SPELL_PALADIN_JUDGEMENT_DAMAGE);
+
+    return judgementDamageSpells;
 }
 
 static bool HasJudgementsOfTheJust(Unit const* caster)
@@ -1036,51 +1072,46 @@ public:
 
     void HandleScriptEffect(SpellEffIndex /*effIndex*/)
     {
-        uint32 spellId2 = SPELL_PALADIN_JUDGEMENT_DAMAGE;
+        Unit* caster = GetCaster();
+        Unit* target = GetHitUnit();
+        if (!caster || !target)
+            return;
 
-        // some seals have SPELL_AURA_DUMMY in EFFECT_2
-        Unit::AuraEffectList const& auras = GetCaster()->GetAuraEffectsByType(SPELL_AURA_DUMMY);
-        for (Unit::AuraEffectList::const_iterator i = auras.begin(); i != auras.end(); ++i)
-        {
-            if ((*i)->GetSpellInfo()->GetSpellSpecific() == SPELL_SPECIFIC_SEAL && (*i)->GetEffIndex() == EFFECT_2)
-            {
-                if (sSpellMgr->GetSpellInfo((*i)->GetAmount()))
-                {
-                    spellId2 = (*i)->GetAmount();
-                    break;
-                }
-            }
-        }
+        std::vector<uint32> judgementDamageSpells = GetActiveSealJudgementDamageSpells(caster);
 
-        GetCaster()->CastSpell(GetHitUnit(), _spellId, true);
-        GetCaster()->CastSpell(GetHitUnit(), spellId2, true);
+        caster->CastSpell(target, _spellId, true);
+        for (uint32 spellId2 : judgementDamageSpells)
+            caster->CastSpell(target, spellId2, true);
 
         // Tier 5 Holy - 2 Set
-        if (GetCaster()->HasAura(SPELL_IMPROVED_JUDGEMENT))
+        if (caster->HasAura(SPELL_IMPROVED_JUDGEMENT))
         {
-            GetCaster()->CastSpell(GetCaster(), SPELL_IMPROVED_JUDGEMENT_ENERGIZE, true);
+            caster->CastSpell(caster, SPELL_IMPROVED_JUDGEMENT_ENERGIZE, true);
         }
 
         // Judgements of the Just
-        if (HasJudgementsOfTheJust(GetCaster()))
+        if (HasJudgementsOfTheJust(caster))
         {
-            if (GetCaster()->CastSpell(GetHitUnit(), SPELL_JUDGEMENTS_OF_THE_JUST, true))
+            if (caster->CastSpell(target, SPELL_JUDGEMENTS_OF_THE_JUST, true))
             {
-                if (spellId2 == SPELL_JUDGEMENT_OF_VENGEANCE_EFFECT || spellId2 == SPELL_JUDGEMENT_OF_CORRUPTION_EFFECT)
+                for (uint32 spellId2 : judgementDamageSpells)
                 {
-                    // hidden effect only cast when spellcast of judgements of the just is successful
-                    GetCaster()->CastSpell(GetHitUnit(), SealApplication(spellId2), true); // add hidden seal apply effect for vengeance and corruption
+                    if (uint32 sealApplication = SealApplication(spellId2))
+                    {
+                        // hidden effect only cast when spellcast of judgements of the just is successful
+                        caster->CastSpell(target, sealApplication, true); // add hidden seal apply effect for vengeance and corruption
+                    }
                 }
 
                 // JotJ makes Judgements trigger Seal of Command's cleave effect
-                if (AuraEffect const* socEff = GetCaster()->GetAuraEffect(SPELL_PALADIN_SEAL_OF_COMMAND, EFFECT_0))
+                if (AuraEffect const* socEff = caster->GetAuraEffect(SPELL_PALADIN_SEAL_OF_COMMAND, EFFECT_0))
                 {
-                    if (GetHitUnit()->IsAlive())
+                    if (target->IsAlive())
                     {
-                        GetCaster()->CastCustomSpell(
+                        caster->CastCustomSpell(
                             socEff->GetSpellInfo()->Effects[EFFECT_0].TriggerSpell,
                             SPELLVALUE_MAX_TARGETS, 3,
-                            GetHitUnit(), true, nullptr, socEff);
+                            target, true, nullptr, socEff);
                     }
                 }
             }
@@ -1088,11 +1119,11 @@ public:
 
         // Exorcism Refresh Talent Proc
         // If the caster has the custom aura 300315, 33% chance per Judgement to refresh Exorcism CD.
-        if (GetCaster()->HasAura(AURA_EXORCISM_REFRESH))
+        if (caster->HasAura(AURA_EXORCISM_REFRESH))
         {
             if (roll_chance_i(33))
             {
-                if (Player* player = GetCaster()->ToPlayer())
+                if (Player* player = caster->ToPlayer())
                 {
                     if (ResetExorcismCooldown(player))
                     {

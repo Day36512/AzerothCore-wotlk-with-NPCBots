@@ -1548,9 +1548,9 @@ public:
                 //Spell Power: 50% additional crit damage bonus for All spells
                 if ((GetSpec() == BOT_SPEC_MAGE_ARCANE) && lvl >= 55)
                     pctbonus += 0.334f;
-                //Custom Combustion: +20% critical strike damage for fire spells.
+                //Custom Combustion: +15% critical strike damage for fire spells.
                 if ((SPELL_SCHOOL_MASK_FIRE & spellInfo->GetSchoolMask()) && HasCombustionActive())
-                    pctbonus += 0.2f;
+                    pctbonus += 0.15f;
             }
 
             //Spell Impact: 6% bonus damage for Arcne Explosion, Arcane Blast, Scorch, Fireball, Ice Lance and Cone of Cold

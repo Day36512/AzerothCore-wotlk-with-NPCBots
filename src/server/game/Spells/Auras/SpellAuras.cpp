@@ -48,6 +48,73 @@
 // update aura target map every 500 ms instead of every update - reduce amount of grid searcher calls
 static constexpr int32 UPDATE_TARGET_MAP_INTERVAL = 500;
 
+namespace
+{
+    constexpr uint32 SPELL_PALADIN_RET_TWO_SEALS = 600451;
+
+    bool IsPaladinSealAura(Aura const* aura)
+    {
+        return aura && aura->GetSpellInfo()->GetSpellSpecific() == SPELL_SPECIFIC_SEAL;
+    }
+
+    bool IsPreferredSealToKeep(Aura const* candidate, Aura const* current)
+    {
+        if (!current)
+            return true;
+
+        if (candidate->GetApplyTime() != current->GetApplyTime())
+            return candidate->GetApplyTime() > current->GetApplyTime();
+
+        return candidate->GetId() > current->GetId();
+    }
+
+    Aura const* GetRetTwoSealBonusSealToKeep(Unit const* owner, Aura const* newAura)
+    {
+        Aura const* keep = nullptr;
+        for (Unit::AuraMap::value_type const& pair : owner->GetOwnedAuras())
+        {
+            Aura const* aura = pair.second;
+            if (aura == newAura || aura->IsRemoved() || aura->GetCasterGUID() != newAura->GetCasterGUID() || !IsPaladinSealAura(aura))
+                continue;
+
+            if (newAura->GetSpellInfo()->IsRankOf(aura->GetSpellInfo()))
+                continue;
+
+            if (IsPreferredSealToKeep(aura, keep))
+                keep = aura;
+        }
+
+        return keep;
+    }
+
+    bool CanRetTwoSealBonusStack(Aura const* newAura, Aura const* existingAura)
+    {
+        if (!IsPaladinSealAura(newAura) || !IsPaladinSealAura(existingAura))
+            return false;
+
+        if (newAura->GetCasterGUID() != existingAura->GetCasterGUID())
+            return false;
+
+        if (newAura->GetSpellInfo()->IsRankOf(existingAura->GetSpellInfo()))
+            return false;
+
+        Unit const* owner = newAura->GetOwner()->ToUnit();
+        if (!owner || !owner->HasAura(SPELL_PALADIN_RET_TWO_SEALS))
+            return false;
+
+        Aura const* sealToKeep = GetRetTwoSealBonusSealToKeep(owner, newAura);
+        return !sealToKeep || sealToKeep == existingAura;
+    }
+
+    void RemoveRetTwoSealBonusSeals(Unit* target)
+    {
+        target->RemoveAppliedAuras([](AuraApplication const* aurApp)
+        {
+            return IsPaladinSealAura(aurApp->GetBase());
+        });
+    }
+}
+
 AuraApplication::AuraApplication(Unit* target, Unit* caster, Aura* aura, uint8 effMask):
     _target(target), _base(aura), _removeMode(AURA_REMOVE_NONE), _slot(MAX_AURAS),
     _flags(AFLAG_NONE), _effectsToApply(effMask), _needClientUpdate(false), _disableMask(0)
@@ -1232,6 +1299,10 @@ void Aura::HandleAuraSpecificMods(AuraApplication const* aurApp, Unit* caster, b
 {
     Unit* target = aurApp->GetTarget();
     AuraRemoveMode removeMode = aurApp->GetRemoveMode();
+
+    if (!apply && !onReapply && GetId() == SPELL_PALADIN_RET_TWO_SEALS)
+        RemoveRetTwoSealBonusSeals(target);
+
     // handle spell_area table
     SpellAreaForAreaMapBounds saBounds = sSpellMgr->GetSpellAreaForAuraMapBounds(GetId());
     if (saBounds.first != saBounds.second)
@@ -2005,7 +2076,12 @@ bool Aura::CanStackWith(Aura const* existingAura) const
     // check spell specific stack rules
     if (m_spellInfo->IsAuraExclusiveBySpecificWith(existingSpellInfo)
             || (sameCaster && m_spellInfo->IsAuraExclusiveBySpecificPerCasterWith(existingSpellInfo)))
+    {
+        if (CanRetTwoSealBonusStack(this, existingAura))
+            return true;
+
         return false;
+    }
 
     // check spell group stack rules
     switch (sSpellMgr->CheckSpellGroupStackRules(m_spellInfo, existingSpellInfo))

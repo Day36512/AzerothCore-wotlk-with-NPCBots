@@ -3891,9 +3891,9 @@ void bot_ai::SetStats(bool force)
         tempval = _getTotalBotStat(BOT_STAT_MOD_CRIT_MELEE_RATING) + _getTotalBotStat(BOT_STAT_MOD_CRIT_RANGED_RATING) + _getTotalBotStat(BOT_STAT_MOD_CRIT_SPELL_RATING) + _getTotalBotStat(BOT_STAT_MOD_CRIT_RATING);
         tempval += me->GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_RATING, (1u << CR_CRIT_MELEE) | (1u << CR_CRIT_RANGED) | (1u << CR_CRIT_SPELL));
 
-        //Molten Armor: 35% spirit to crit rating (+40% double-glyphed + 15% T9P2 bonus)
+        //Molten Armor: 30% spirit to crit rating (+40% double-glyphed + 15% T9P2 bonus)
         if (_botclass == BOT_CLASS_MAGE && me->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_RATING_FROM_STAT, SPELLFAMILY_MAGE, 0x40000))
-            tempval += _getTotalBotStat(BOT_STAT_MOD_SPIRIT) * (mylevel >= 80 ? 0.9f : mylevel >= 70 ? 0.75f : 0.55f);
+            tempval += _getTotalBotStat(BOT_STAT_MOD_SPIRIT) * (mylevel >= 80 ? 0.85f : mylevel >= 70 ? 0.70f : 0.50f);
         //Firestone: just emulate the rating bonus
         if (_botclass == BOT_CLASS_WARLOCK)
         {
@@ -8506,10 +8506,43 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
             }
         }
     }
-    // Serpentshrine Cavern - Morogrim Tidewalker Water Globules
+    // Serpentshrine Cavern - Fathom-Lord Cyclones / Leotheras Whirlwind / Morogrim Tidewalker Water Globules
     else if (unit->GetMapId() == MAP_COILFANG_SERPENTSHRINE_CAVERN)
     {
+        static constexpr uint32 NPC_KARATHRESS_CYCLONE = 22104;
+        static constexpr float KARATHRESS_CYCLONE_SCAN_RANGE = 100.0f;
+        static constexpr float KARATHRESS_CYCLONE_AVOID_RADIUS = 12.0f;
+        static constexpr uint32 NPC_LEOTHERAS_THE_BLIND = 21215;
+        static constexpr uint32 SPELL_LEOTHERAS_WHIRLWIND = 37640;
+        static constexpr float LEOTHERAS_WHIRLWIND_SCAN_RANGE = 80.0f;
+        static constexpr float LEOTHERAS_WHIRLWIND_AVOID_RADIUS = 22.0f;
         static constexpr uint32 NPC_MOROGRIM_WATER_GLOBULE = 21913;
+
+        std::list<Creature*> cyclones;
+        Bcore::AllCreaturesOfEntryInRange cycloneCheck(unit, NPC_KARATHRESS_CYCLONE, KARATHRESS_CYCLONE_SCAN_RANGE);
+        Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> cycloneSearcher(unit, cyclones, cycloneCheck);
+        Cell::VisitObjects(unit, cycloneSearcher, KARATHRESS_CYCLONE_SCAN_RANGE);
+
+        for (Creature* cyclone : cyclones)
+        {
+            if (!cyclone || !cyclone->IsAlive())
+                continue;
+
+            spots.emplace_back(*cyclone, KARATHRESS_CYCLONE_AVOID_RADIUS + cyclone->GetCombatReach() + DEFAULT_COMBAT_REACH);
+        }
+
+        std::list<Creature*> leotherasList;
+        Bcore::AllCreaturesOfEntryInRange leotherasCheck(unit, NPC_LEOTHERAS_THE_BLIND, LEOTHERAS_WHIRLWIND_SCAN_RANGE);
+        Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> leotherasSearcher(unit, leotherasList, leotherasCheck);
+        Cell::VisitObjects(unit, leotherasSearcher, LEOTHERAS_WHIRLWIND_SCAN_RANGE);
+
+        for (Creature* leotheras : leotherasList)
+        {
+            if (!leotheras || !leotheras->IsAlive() || !leotheras->HasAura(SPELL_LEOTHERAS_WHIRLWIND))
+                continue;
+
+            spots.emplace_back(*leotheras, LEOTHERAS_WHIRLWIND_AVOID_RADIUS + leotheras->GetCombatReach() + DEFAULT_COMBAT_REACH);
+        }
 
         std::list<Creature*> globules;
         Bcore::AllCreaturesOfEntryInRange globuleCheck(unit, NPC_MOROGRIM_WATER_GLOBULE, 160.0f);
