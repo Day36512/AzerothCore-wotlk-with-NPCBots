@@ -29,6 +29,7 @@
 class Transport;
 class StaticTransport;
 class MotionTransport;
+class Group;
 struct TransportCreatureProto;
 
 class MapMgr
@@ -86,6 +87,7 @@ public:
 
     static bool ExistMapAndVMap(uint32 mapid, float x, float y);
     static bool IsValidMAP(uint32 mapid, bool startUp);
+    static bool CanBypassNpcBotLfgMapRestriction(Group const* group);
 
     static bool IsValidMapCoord(uint32 mapid, Position const& pos)
     {

@@ -30,6 +30,7 @@
 #include "LFGMgr.h"
 #include "MapGrid.h"
 #include "MapInstanced.h"
+#include "MapMgr.h"
 #include "Metric.h"
 #include "MiscPackets.h"
 #include "Object.h"
@@ -2011,7 +2012,7 @@ Map::EnterState InstanceMap::CannotEnter(Player* player, bool loginCheck)
     // xinef: dont allow LFG Group to enter other instance that is selected
     if (Group* group = player->GetGroup())
         if (group->isLFGGroup())
-            if (!sLFGMgr->inLfgDungeonMap(group->GetGUID(), GetId(), GetDifficulty()))
+            if (!MapMgr::CanBypassNpcBotLfgMapRestriction(group) && !sLFGMgr->inLfgDungeonMap(group->GetGUID(), GetId(), GetDifficulty()))
             {
                 player->SendTransferAborted(GetId(), TRANSFER_ABORT_MAP_NOT_ALLOWED);
                 return CANNOT_ENTER_UNSPECIFIED_REASON;

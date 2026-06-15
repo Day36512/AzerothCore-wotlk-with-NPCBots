@@ -61,6 +61,21 @@ namespace NpcBotLfgPortalAccess
     }
 }
 
+bool MapMgr::CanBypassNpcBotLfgMapRestriction(Group const* group)
+{
+    if (!group || !group->isLFGGroup())
+        return false;
+
+    if (!NpcBotLfgPortalAccess::GroupHasNpcBotMember(group))
+        return false;
+
+    lfg::LfgState const lfgState = sLFGMgr->GetState(group->GetGUID());
+
+    return lfgState == lfg::LFG_STATE_FINISHED_DUNGEON ||
+        lfgState == lfg::LFG_STATE_NONE ||
+        !sLFGMgr->GetDungeon(group->GetGUID());
+}
+
 MapMgr::MapMgr()
 {
     i_timer[3].SetInterval(sWorld->getIntConfig(CONFIG_INTERVAL_MAPUPDATE));
@@ -211,21 +226,7 @@ Map::EnterState MapMgr::PlayerCannotEnter(uint32 mapid, Player* player, bool log
     // xinef: dont allow LFG Group to enter other instance that is selected
     if (group && group->isLFGGroup())
     {
-        bool bypassLfgPortalRestriction = false;
-
-        if (NpcBotLfgPortalAccess::GroupHasNpcBotMember(group))
-        {
-            lfg::LfgState const lfgState = sLFGMgr->GetState(group->GetGUID());
-
-            if (lfgState == lfg::LFG_STATE_FINISHED_DUNGEON ||
-                lfgState == lfg::LFG_STATE_NONE ||
-                !sLFGMgr->GetDungeon(group->GetGUID()))
-            {
-                bypassLfgPortalRestriction = true;
-            }
-        }
-
-        if (!bypassLfgPortalRestriction && !sLFGMgr->inLfgDungeonMap(group->GetGUID(), mapid, targetDifficulty))
+        if (!CanBypassNpcBotLfgMapRestriction(group) && !sLFGMgr->inLfgDungeonMap(group->GetGUID(), mapid, targetDifficulty))
         {
             player->SendTransferAborted(mapid, TRANSFER_ABORT_MAP_NOT_ALLOWED);
             return Map::CANNOT_ENTER_UNSPECIFIED_REASON;

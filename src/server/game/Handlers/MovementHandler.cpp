@@ -24,6 +24,7 @@
 #include "Corpse.h"
 #include "GameGraveyard.h"
 #include "GameTime.h"
+#include "Group.h"
 #include "InstanceSaveMgr.h"
 #include "Log.h"
 #include "MapMgr.h"
@@ -87,13 +88,18 @@ void WorldSession::HandleMoveWorldportAck()
     }
 
     // relocate the player to the teleport destination
-    Map* newMap = sMapMgr->CreateMap(loc.GetMapId(), GetPlayer());
+    Player* player = GetPlayer();
+    Map* newMap = sMapMgr->CreateMap(loc.GetMapId(), player);
+    Map::EnterState denyReason = newMap ? newMap->CannotEnter(player, false) : Map::CANNOT_ENTER_NO_ENTRY;
     // the CanEnter checks are done in TeleporTo but conditions may change
     // while the player is in transit, for example the map may get full
-    if (!newMap || newMap->CannotEnter(GetPlayer(), false))
+    if (denyReason)
     {
-        LOG_ERROR("network.opcode", "Map {} could not be created for player {}, porting player to homebind", loc.GetMapId(), GetPlayer()->GetGUID().ToString());
-        GetPlayer()->TeleportTo(GetPlayer()->m_homebindMapId, GetPlayer()->m_homebindX, GetPlayer()->m_homebindY, GetPlayer()->m_homebindZ, GetPlayer()->GetOrientation());
+        if (Group* group = player->GetGroup(); group && group->isLFGGroup() && denyReason == Map::CANNOT_ENTER_UNSPECIFIED_REASON)
+            player->GetSession()->SendAreaTriggerMessage("Cannot enter this map at this time. Try leaving and rejoining your group.");
+
+        LOG_ERROR("network.opcode", "Map {} could not be created for player {} (deny reason {}), porting player to homebind", loc.GetMapId(), player->GetGUID().ToString(), uint32(denyReason));
+        player->TeleportTo(player->m_homebindMapId, player->m_homebindX, player->m_homebindY, player->m_homebindZ, player->GetOrientation());
         return;
     }
 
