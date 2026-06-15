@@ -15,14 +15,31 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "CellImpl.h"
 #include "CreatureScript.h"
 #include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "SpellAuraEffects.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
+#include "bot_ai.h"
 #include "hyjal.h"
+
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <list>
+#include <string>
+#include <vector>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceMoveAwayFromMeForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
 
 enum Texts
 {
@@ -60,6 +77,8 @@ enum ArchiSpells
     SPELL_UNLEASH_SOUL_GREEN    = 32057,
     SPELL_UNLEASH_SOUL_RED      = 32053,
     SPELL_FEAR                  = 31970,
+    SPELL_SLOW_FALL             = 130,
+    SPELL_LEVITATE              = 1706,
 };
 
 enum Summons
@@ -92,6 +111,275 @@ Position const nordrassilPosition = { 5503.713f, -3523.436f, 1608.781f, 0.0f };
 float const DOOMFIRE_OFFSET = 15.0f;
 uint8 const WISP_OFFSET = 40;
 uint8 NEAR_POINT = 0;
+
+namespace
+{
+    char const* const DBM_HYJAL_MODULE_FOLDER = "DBM-Hyjal";
+    char const* const DBM_ARCHIMONDE_MODULE_ID = "Archimonde";
+
+    constexpr float ARCHIMONDE_PI = 3.14159265358979323846f;
+    constexpr float AIR_BURST_SAFE_RADIUS = 15.0f;
+    constexpr float AIR_BURST_SCAN_RADIUS = 25.0f;
+    constexpr float AIR_BURST_MOVE_MIN_RADIUS = 17.0f;
+    constexpr float AIR_BURST_MOVE_MAX_RADIUS = 31.0f;
+    constexpr float AIR_BURST_MOVE_RADIUS_STEP = 3.5f;
+    constexpr float AIR_BURST_MOVE_MAX_DIST = 45.0f;
+    constexpr float AIR_BURST_FALL_PROTECTION_SCAN_RADIUS = 60.0f;
+
+    bool IsValidArchimondeNPCBot(Creature const* creature)
+    {
+        return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI() && !creature->IsInEvadeMode();
+    }
+
+    bool IsArchimondePlayerOrBot(Unit const* unit)
+    {
+        if (!unit)
+            return false;
+
+        if (unit->IsPlayer())
+            return true;
+
+        return IsValidArchimondeNPCBot(unit->ToCreature());
+    }
+
+    bool IsValidArchimondeRandomTarget(Unit const* target, Creature const* source, float dist = 0.0f, bool withTank = true)
+    {
+        if (!target || !source || !target->IsInWorld() || !target->IsAlive() || !target->IsInCombat() || target->GetMap() != source->GetMap())
+            return false;
+
+        if (target->HasUnitState(UNIT_STATE_ISOLATED))
+            return false;
+
+        if (!withTank && target == source->GetThreatMgr().GetLastVictim())
+            return false;
+
+        if (dist > 0.0f && !source->IsWithinCombatRange(target, dist))
+            return false;
+
+        if (dist < 0.0f && source->IsWithinCombatRange(target, -dist))
+            return false;
+
+        if (!source->IsValidAttackTarget(target))
+            return false;
+
+        return IsArchimondePlayerOrBot(target);
+    }
+
+    uint8 GetArchimondeSoulChargeClass(Unit* unit)
+    {
+        if (!unit)
+            return CLASS_NONE;
+
+        if (Player* player = unit->ToPlayer())
+            return player->getClass();
+
+        Creature* bot = unit->ToCreature();
+        if (!IsValidArchimondeNPCBot(bot))
+            return CLASS_NONE;
+
+        return bot->GetBotAI()->GetPlayerClass();
+    }
+
+    bool HasArchimondeFallProtection(Unit const* target)
+    {
+        return target && (target->HasAuraType(SPELL_AURA_FEATHER_FALL) || target->HasAuraType(SPELL_AURA_HOVER));
+    }
+
+    Creature* FindArchimondeFallProtectionCaster(Unit* target, uint8 playerClass)
+    {
+        if (!target)
+            return nullptr;
+
+        Creature* bestCaster = nullptr;
+        float bestDistance = std::numeric_limits<float>::max();
+
+        std::list<Unit*> units;
+        Bcore::AnyUnitInObjectRangeCheck check(target, AIR_BURST_FALL_PROTECTION_SCAN_RADIUS);
+        Bcore::UnitListSearcher<Bcore::AnyUnitInObjectRangeCheck> searcher(target, units, check);
+        Cell::VisitObjects(target, searcher, AIR_BURST_FALL_PROTECTION_SCAN_RADIUS);
+
+        for (Unit* unit : units)
+        {
+            Creature* bot = unit ? unit->ToCreature() : nullptr;
+            if (!IsValidArchimondeNPCBot(bot) || !bot->IsAlive() || !bot->IsInCombat() || bot->GetMap() != target->GetMap())
+                continue;
+
+            bot_ai* ai = bot->GetBotAI();
+            if (!ai || ai->GetPlayerClass() != playerClass)
+                continue;
+
+            if (!bot->IsWithinLOSInMap(target))
+                continue;
+
+            float const distance = bot->GetExactDist(target);
+            if (distance < bestDistance)
+            {
+                bestCaster = bot;
+                bestDistance = distance;
+            }
+        }
+
+        return bestCaster;
+    }
+
+    void CastArchimondeAirBurstFallProtection(Unit* target)
+    {
+        if (!target || !target->IsInWorld() || !target->IsAlive() || !IsArchimondePlayerOrBot(target) || HasArchimondeFallProtection(target))
+            return;
+
+        if (Creature* mage = FindArchimondeFallProtectionCaster(target, CLASS_MAGE))
+        {
+            mage->CastSpell(target, SPELL_SLOW_FALL, true);
+            return;
+        }
+
+        if (Creature* priest = FindArchimondeFallProtectionCaster(target, CLASS_PRIEST))
+            priest->CastSpell(target, SPELL_LEVITATE, true);
+    }
+
+    bool IsWithinArchimondeBotAoe(bot_ai const* ai, Position const& position)
+    {
+        if (!ai)
+            return false;
+
+        for (auto const& spot : ai->GetAoeSpots())
+        {
+            float const dx = position.GetPositionX() - spot.first.GetPositionX();
+            float const dy = position.GetPositionY() - spot.first.GetPositionY();
+            if (dx * dx + dy * dy <= spot.second * spot.second)
+                return true;
+        }
+
+        return false;
+    }
+
+    bool TryGetArchimondeAirBurstSafePosition(Creature* bot, Unit* burstTarget, Position& destination)
+    {
+        if (!bot || !burstTarget)
+            return false;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai || ai->IAmFree())
+            return false;
+
+        ai->RefreshAoeSpots();
+
+        float bestScore = -std::numeric_limits<float>::max();
+        Position bestPosition;
+        bool found = false;
+
+        float const baseAngle = std::atan2(bot->GetPositionY() - burstTarget->GetPositionY(), bot->GetPositionX() - burstTarget->GetPositionX());
+        for (float radius = AIR_BURST_MOVE_MIN_RADIUS; radius <= AIR_BURST_MOVE_MAX_RADIUS; radius += AIR_BURST_MOVE_RADIUS_STEP)
+        {
+            for (uint8 step = 0; step < 16; ++step)
+            {
+                float const angle = baseAngle + (2.0f * ARCHIMONDE_PI * float(step) / 16.0f);
+                float x = burstTarget->GetPositionX() + std::cos(angle) * radius;
+                float y = burstTarget->GetPositionY() + std::sin(angle) * radius;
+                float z = burstTarget->GetPositionZ();
+
+                if (!bot->CanFly())
+                    bot->UpdateAllowedPositionZ(x, y, z);
+
+                if (!bot->IsWithinLOS(x, y, z))
+                    continue;
+
+                if (burstTarget->GetExactDist2d(x, y) < AIR_BURST_SAFE_RADIUS)
+                    continue;
+
+                Position candidate;
+                candidate.Relocate(x, y, z, bot->GetAngle(burstTarget));
+
+                if (bot->GetExactDist(candidate) > AIR_BURST_MOVE_MAX_DIST)
+                    continue;
+
+                if (IsWithinArchimondeBotAoe(ai, candidate))
+                    continue;
+
+                float score = burstTarget->GetExactDist2d(x, y);
+                score -= bot->GetExactDist2d(x, y) * 0.08f;
+
+                if (!found || score > bestScore)
+                {
+                    found = true;
+                    bestScore = score;
+                    bestPosition = candidate;
+                }
+            }
+        }
+
+        if (!found)
+            return false;
+
+        destination = bestPosition;
+        return true;
+    }
+
+    void RestoreArchimondeAirBurstBotCommandState(Creature* bot, ObjectGuid botGuid, uint32 originalCommandState)
+    {
+        if (!bot || !bot->IsInWorld() || bot->GetGUID() != botGuid)
+            return;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai)
+            return;
+
+        if (!(originalCommandState & BOT_COMMAND_INACTION))
+            ai->RemoveBotCommandState(BOT_COMMAND_INACTION);
+
+        if (!(originalCommandState & BOT_COMMAND_MASK_NOCAST_ANY))
+            ai->RemoveBotCommandState(BOT_COMMAND_MASK_NOCAST_ANY);
+        else
+            ai->SetBotCommandState(originalCommandState & BOT_COMMAND_MASK_NOCAST_ANY);
+
+        ai->RemoveBotCommandState(BOT_COMMAND_STAY | BOT_COMMAND_FULLSTOP | BOT_COMMAND_ATTACK | BOT_COMMAND_COMBATRESET);
+
+        if (!bot->IsAlive() || ai->IAmFree())
+            return;
+
+        if (originalCommandState & BOT_COMMAND_FULLSTOP)
+            ai->SetBotCommandState(BOT_COMMAND_FULLSTOP);
+        else if (originalCommandState & BOT_COMMAND_STAY)
+            ai->SetBotCommandState(BOT_COMMAND_STAY);
+        else if (originalCommandState & BOT_COMMAND_ATTACK)
+            ai->SetBotCommandState(BOT_COMMAND_ATTACK);
+        else if (originalCommandState & BOT_COMMAND_COMBATRESET)
+            ai->SetBotCommandState(BOT_COMMAND_COMBATRESET);
+        else if (!(originalCommandState & BOT_COMMAND_INACTION))
+            ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+    }
+
+    void MoveArchimondeAirBurstBot(Creature* bot, Unit* burstTarget)
+    {
+        if (!IsValidArchimondeNPCBot(bot) || !burstTarget || bot == burstTarget)
+            return;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai || ai->IAmFree() || bot->GetExactDist2d(burstTarget) >= AIR_BURST_SAFE_RADIUS)
+            return;
+
+        Position destination;
+        if (!TryGetArchimondeAirBurstSafePosition(bot, burstTarget, destination))
+            return;
+
+        uint32 const originalCommandState = ai->GetBotCommandState();
+        ObjectGuid const botGuid = bot->GetGUID();
+
+        if (!(originalCommandState & BOT_COMMAND_INACTION))
+            ai->SetBotCommandState(BOT_COMMAND_INACTION);
+
+        bot->InterruptNonMeleeSpells(false);
+        bot->AttackStop();
+        bot->BotStopMovement();
+        ai->SetBotCommandState(BOT_COMMAND_STAY);
+        ai->BotMovement(BOT_MOVE_POINT, &destination, nullptr, true);
+
+        bot->m_Events.AddEventAtOffset([bot, botGuid, originalCommandState]()
+        {
+            RestoreArchimondeAirBurstBotCommandState(bot, botGuid, originalCommandState);
+        }, 3500ms);
+    }
+}
 
 struct npc_ancient_wisp : public ScriptedAI
 {
@@ -263,8 +551,11 @@ struct boss_archimonde : public BossAI
         Talk(SAY_AGGRO);
         ScheduleTimedEvent(25s, 35s, [&]
         {
-            if (DoCastRandomTarget(SPELL_AIR_BURST, 1) == SPELL_CAST_OK)
+            Unit* target = nullptr;
+            if (DoCastRandomPlayerOrBotTarget(SPELL_AIR_BURST, 1, 0.0f, false, true, &target, false) == SPELL_CAST_OK)
             {
+                AnnounceAirBurstTarget(target);
+                MoveNearbyBotsAwayFromAirBurstTarget(target);
                 scheduler.DelayGroup(GROUP_FEAR, 5s);
                 Talk(SAY_AIR_BURST);
             }
@@ -275,7 +566,7 @@ struct boss_archimonde : public BossAI
         }, 8s);
         ScheduleTimedEvent(25s, 35s, [&]
         {
-            DoCastRandomTarget(SPELL_GRIP_OF_THE_LEGION);
+            DoCastRandomPlayerOrBotTarget(SPELL_GRIP_OF_THE_LEGION);
         }, 5s, 25s);
         ScheduleTimedEvent(5s, [&]
         {
@@ -295,23 +586,8 @@ struct boss_archimonde : public BossAI
         }, 5s);
         ScheduleTimedEvent(5s, [&]
         {
-            bool noPlayersInRange = true;
-            if (Map* map = me->GetMap())
-            {
-                map->DoForAllPlayers([&noPlayersInRange, this](Player* player)
-                {
-                    if (me->IsWithinMeleeRange(player))
-                    {
-                        noPlayersInRange = false;
-                        return false;
-                    }
-                    return true;
-                });
-            }
-            if (noPlayersInRange)
-            {
-                DoCastRandomTarget(SPELL_FINGER_OF_DEATH);
-            }
+            if (!HasPlayerOrBotInMeleeRange())
+                DoCastRandomPlayerOrBotTarget(SPELL_FINGER_OF_DEATH);
         }, 3500ms);
         ScheduleTimedEvent(10min, [&]
         {
@@ -335,35 +611,41 @@ struct boss_archimonde : public BossAI
     {
         if (type == GUID_GAIN_SOUL_CHARGE_PLAYER)
         {
-            if (Player* player = ObjectAccessor::GetPlayer(*me, guid))
+            if (Unit* unit = ObjectAccessor::GetUnit(*me, guid))
             {
-                switch (player->getClass())
+                uint32 spellId = 0;
+                switch (GetArchimondeSoulChargeClass(unit))
                 {
                     case CLASS_MAGE:
                     case CLASS_PRIEST:
                     case CLASS_WARLOCK:
-                        player->CastSpell(me, SPELL_SOUL_CHARGE_RED, true);
+                        spellId = SPELL_SOUL_CHARGE_RED;
                         break;
                     case CLASS_DEATH_KNIGHT:
                     case CLASS_PALADIN:
                     case CLASS_ROGUE:
                     case CLASS_WARRIOR:
-                        player->CastSpell(me, SPELL_SOUL_CHARGE_YELLOW, true);
+                        spellId = SPELL_SOUL_CHARGE_YELLOW;
                         break;
                     case CLASS_DRUID:
                     case CLASS_HUNTER:
                     case CLASS_SHAMAN:
-                        player->CastSpell(me, SPELL_SOUL_CHARGE_GREEN, true);
+                        spellId = SPELL_SOUL_CHARGE_GREEN;
                         break;
                     case CLASS_NONE:
                     default:
                         break;
                 }
 
-                scheduler.Schedule(2s, 10s, [this](TaskContext)
+                if (spellId)
                 {
-                    UnleashSoulCharge();
-                });
+                    unit->CastSpell(me, spellId, true);
+
+                    scheduler.Schedule(2s, 10s, [this](TaskContext)
+                    {
+                        UnleashSoulCharge();
+                    });
+                }
             }
         }
     }
@@ -447,6 +729,86 @@ struct boss_archimonde : public BossAI
         }
     }
 private:
+    Unit* SelectRandomPlayerOrBotTarget(uint32 threatTablePosition = 0, float dist = 0.0f, bool withTank = true)
+    {
+        std::list<Unit*> targets;
+        SelectTargetList(targets, 1, SelectTargetMethod::Random, threatTablePosition, [this, dist, withTank](Unit* target)
+        {
+            return IsValidArchimondeRandomTarget(target, me, dist, withTank);
+        });
+
+        return targets.empty() ? nullptr : targets.front();
+    }
+
+    SpellCastResult DoCastRandomPlayerOrBotTarget(uint32 spellId, uint32 threatTablePosition = 0, float dist = 0.0f, bool triggered = false, bool withTank = true, Unit** selectedTarget = nullptr, bool fallbackToVictim = true)
+    {
+        if (selectedTarget)
+            *selectedTarget = nullptr;
+
+        if (Unit* target = SelectRandomPlayerOrBotTarget(threatTablePosition, dist, withTank))
+        {
+            SpellCastResult result = DoCast(target, spellId, triggered);
+            if (result == SPELL_CAST_OK && selectedTarget)
+                *selectedTarget = target;
+
+            return result;
+        }
+
+        SpellCastResult result = DoCastRandomTarget(spellId, threatTablePosition, dist, true, triggered, withTank);
+        if (result != SPELL_FAILED_BAD_TARGETS)
+            return result;
+
+        if (!fallbackToVictim)
+            return result;
+
+        if (Unit* victim = me->GetVictim())
+        {
+            result = DoCast(victim, spellId, triggered);
+            if (result == SPELL_CAST_OK && selectedTarget)
+                *selectedTarget = victim;
+
+            return result;
+        }
+
+        return result;
+    }
+
+    bool HasPlayerOrBotInMeleeRange() const
+    {
+        std::list<Unit*> units;
+        Bcore::AnyUnitInObjectRangeCheck check(me, 30.0f);
+        Bcore::UnitListSearcher<Bcore::AnyUnitInObjectRangeCheck> searcher(me, units, check);
+        Cell::VisitObjects(me, searcher, 30.0f);
+
+        for (Unit* unit : units)
+        {
+            if (IsValidArchimondeRandomTarget(unit, me) && me->IsWithinMeleeRange(unit))
+                return true;
+        }
+
+        return false;
+    }
+
+    void AnnounceAirBurstTarget(Unit* target)
+    {
+        if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+            DBMFTABotCallouts::AnnounceMoveAwayFromMeForModule(bot, SPELL_AIR_BURST, DBM_HYJAL_MODULE_FOLDER, DBM_ARCHIMONDE_MODULE_ID, "Air Burst", DBMFTABotCallouts::GetCooldownMs());
+    }
+
+    void MoveNearbyBotsAwayFromAirBurstTarget(Unit* target)
+    {
+        if (!target || !target->IsInWorld())
+            return;
+
+        std::list<Unit*> units;
+        Bcore::AnyUnitInObjectRangeCheck check(target, AIR_BURST_SCAN_RADIUS);
+        Bcore::UnitListSearcher<Bcore::AnyUnitInObjectRangeCheck> searcher(target, units, check);
+        Cell::VisitObjects(target, searcher, AIR_BURST_SCAN_RADIUS);
+
+        for (Unit* unit : units)
+            MoveArchimondeAirBurstBot(unit ? unit->ToCreature() : nullptr, target);
+    }
+
     uint8 _wispCount;
     bool _isChanneling;
     bool _enraged;
@@ -466,6 +828,26 @@ class spell_red_sky_effect : public SpellScript
     void Register() override
     {
         OnEffectHitTarget += SpellEffectFn(spell_red_sky_effect::HandleHit, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+    }
+};
+
+class spell_archimonde_air_burst_fall_protection : public SpellScript
+{
+    PrepareSpellScript(spell_archimonde_air_burst_fall_protection);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SPELL_AIR_BURST, SPELL_SLOW_FALL, SPELL_LEVITATE });
+    }
+
+    void HandleAfterHit()
+    {
+        CastArchimondeAirBurstFallProtection(GetHitUnit());
+    }
+
+    void Register() override
+    {
+        AfterHit += SpellHitFn(spell_archimonde_air_burst_fall_protection::HandleAfterHit);
     }
 };
 
@@ -499,6 +881,7 @@ class spell_doomfire : public AuraScript
 void AddSC_boss_archimonde()
 {
     RegisterSpellScript(spell_red_sky_effect);
+    RegisterSpellScript(spell_archimonde_air_burst_fall_protection);
     RegisterSpellScript(spell_doomfire);
     RegisterHyjalAI(boss_archimonde);
     RegisterHyjalAI(npc_ancient_wisp);

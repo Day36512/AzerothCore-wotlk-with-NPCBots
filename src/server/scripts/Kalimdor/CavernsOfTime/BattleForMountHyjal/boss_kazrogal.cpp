@@ -23,13 +23,20 @@
 #include "SpellScriptLoader.h"
 #include "hyjal.h"
 
+#include <list>
+
 enum Spells
 {
     SPELL_MALEVOLENT_CLEAVE = 31436,
     SPELL_WAR_STOMP         = 31480,
     SPELL_CRIPPLE           = 31477,
     SPELL_MARK              = 31447,
-    SPELL_MARK_DAMAGE       = 31463
+    SPELL_MARK_DAMAGE       = 31463,
+    SPELL_SUPER_MANA_POTION = 28499,
+    SPELL_DARK_RUNE         = 27869,
+    SPELL_DEMONIC_RUNE      = 16666,
+    SPELL_DRUMS_RESTORATION = 35478,
+    SPELL_TINNITUS          = 51120
 };
 
 enum Texts
@@ -43,6 +50,53 @@ enum Sounds
 {
     SOUND_ONDEATH       = 11018,
 };
+
+namespace
+{
+    bool IsValidKazrogalNPCBot(Creature const* creature)
+    {
+        return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI() && !creature->IsInEvadeMode();
+    }
+
+    bool IsKazrogalPlayerOrBot(Unit const* unit)
+    {
+        if (!unit)
+            return false;
+
+        if (unit->IsPlayer())
+            return true;
+
+        return IsValidKazrogalNPCBot(unit->ToCreature());
+    }
+
+    bool IsValidKazrogalEncounterTarget(Unit const* target, Creature const* source, float dist = 0.0f, bool withTank = true)
+    {
+        if (!target || !source || !target->IsInWorld() || !target->IsAlive() || !target->IsInCombat() || target->GetMap() != source->GetMap())
+            return false;
+
+        if (target->HasUnitState(UNIT_STATE_ISOLATED))
+            return false;
+
+        if (!withTank && target == source->GetThreatMgr().GetLastVictim())
+            return false;
+
+        if (dist > 0.0f && !source->IsWithinCombatRange(target, dist))
+            return false;
+
+        if (dist < 0.0f && source->IsWithinCombatRange(target, -dist))
+            return false;
+
+        if (!source->IsValidAttackTarget(target))
+            return false;
+
+        return IsKazrogalPlayerOrBot(target);
+    }
+
+    bool IsValidKazrogalMarkTarget(Unit const* target, Creature const* source)
+    {
+        return IsValidKazrogalEncounterTarget(target, source) && target->getPowerType() == POWER_MANA;
+    }
+}
 
 struct boss_kazrogal : public BossAI
 {
@@ -67,7 +121,7 @@ public:
             context.Repeat();
         }).Schedule(12s, 18s, [this](TaskContext context)
         {
-            if (SelectTarget(SelectTargetMethod::Random, 0, 12.f))
+            if (SelectRandomPlayerOrBotTarget(0, 12.f))
             {
                 DoCastAOE(SPELL_WAR_STOMP);
                 context.Repeat(15s, 30s);
@@ -76,7 +130,7 @@ public:
                 context.Repeat(1200ms);
         }).Schedule(15s, [this](TaskContext context)
         {
-            DoCastRandomTarget(SPELL_CRIPPLE, 0, 20.f);
+            DoCastRandomPlayerOrBotTarget(SPELL_CRIPPLE, 0, 20.f);
             context.Repeat(12s, 20s);
         }).Schedule(45s, [this](TaskContext context)
         {
@@ -106,7 +160,7 @@ public:
 
     void KilledUnit(Unit * victim) override
     {
-        if (!_recentlySpoken && victim->IsPlayer() && me->IsAlive())
+        if (!_recentlySpoken && IsKazrogalPlayerOrBot(victim) && me->IsAlive())
         {
             Talk(SAY_ONSLAY);
             _recentlySpoken = true;
@@ -125,6 +179,32 @@ public:
     }
 
 private:
+    Unit* SelectRandomPlayerOrBotTarget(uint32 threatTablePosition = 0, float dist = 0.0f, bool withTank = true)
+    {
+        std::list<Unit*> targets;
+        SelectTargetList(targets, 1, SelectTargetMethod::Random, threatTablePosition, [this, dist, withTank](Unit* target)
+        {
+            return IsValidKazrogalEncounterTarget(target, me, dist, withTank);
+        });
+
+        return targets.empty() ? nullptr : targets.front();
+    }
+
+    SpellCastResult DoCastRandomPlayerOrBotTarget(uint32 spellId, uint32 threatTablePosition = 0, float dist = 0.0f, bool triggered = false, bool withTank = true)
+    {
+        if (Unit* target = SelectRandomPlayerOrBotTarget(threatTablePosition, dist, withTank))
+            return DoCast(target, spellId, triggered);
+
+        SpellCastResult result = DoCastRandomTarget(spellId, threatTablePosition, dist, true, triggered, withTank);
+        if (result != SPELL_FAILED_BAD_TARGETS)
+            return result;
+
+        if (Unit* victim = me->GetVictim())
+            return DoCast(victim, spellId, triggered);
+
+        return result;
+    }
+
     bool _recentlySpoken;
     uint8 _markCounter;
 };
@@ -135,7 +215,13 @@ class spell_mark_of_kazrogal : public SpellScript
 
     void FilterTargets(std::list<WorldObject*>& targets)
     {
-        targets.remove_if(Acore::PowerCheck(POWER_MANA, false));
+        Creature* caster = GetCaster() ? GetCaster()->ToCreature() : nullptr;
+
+        targets.remove_if([caster](WorldObject* object)
+        {
+            Unit* target = object ? object->ToUnit() : nullptr;
+            return !IsValidKazrogalMarkTarget(target, caster);
+        });
     }
 
     void Register() override
@@ -153,9 +239,31 @@ class spell_mark_of_kazrogal_aura : public AuraScript
         return ValidateSpellInfo({ SPELL_MARK_DAMAGE });
     }
 
+    void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Unit* target = GetTarget();
+        Creature* bot = target ? target->ToCreature() : nullptr;
+
+        if (!IsValidKazrogalNPCBot(bot) || !roll_chance_i(50))
+            return;
+
+        uint32 spellIds[4] =
+        {
+            SPELL_SUPER_MANA_POTION,
+            SPELL_DARK_RUNE,
+            SPELL_DEMONIC_RUNE,
+            SPELL_DRUMS_RESTORATION
+        };
+        uint32 spellCount = target->HasAura(SPELL_TINNITUS) ? 3 : 4;
+
+        target->CastSpell(target, spellIds[urand(0, spellCount - 1)], true);
+    }
+
     void OnPeriodic(AuraEffect const* aurEff)
     {
         Unit* target = GetTarget();
+        if (!target)
+            return;
 
         if ((int32)target->GetPower(POWER_MANA) < aurEff->GetBaseAmount())
         {
@@ -167,6 +275,7 @@ class spell_mark_of_kazrogal_aura : public AuraScript
 
     void Register() override
     {
+        AfterEffectApply += AuraEffectApplyFn(spell_mark_of_kazrogal_aura::OnApply, EFFECT_0, SPELL_AURA_PERIODIC_MANA_LEECH, AURA_EFFECT_HANDLE_REAL);
         OnEffectPeriodic += AuraEffectPeriodicFn(spell_mark_of_kazrogal_aura::OnPeriodic, EFFECT_0, SPELL_AURA_PERIODIC_MANA_LEECH);
     }
 };

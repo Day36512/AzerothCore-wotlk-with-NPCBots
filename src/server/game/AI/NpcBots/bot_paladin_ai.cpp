@@ -762,9 +762,11 @@ public:
                 }
             }
 
+            int32 holyShockHealThreshold = _heals[HOLY_SHOCK_1] / 2;
+
             //Holy Shock
             if (IsSpellReady(HOLY_SHOCK_1, diff, false) && !target->IsCharmed() && !target->isPossessed() &&
-                xphploss > _heals[HOLY_SHOCK_1])
+                xphploss > holyShockHealThreshold)
             {
                 me->InterruptNonMeleeSpells(false);
                 if (hp < 30 && IsSpellReady(DIVINE_FAVOR_1, diff, false) && !target->getAttackers().empty())
@@ -779,6 +781,7 @@ public:
 
             Unit const* u = target->GetVictim();
             bool tanking = u && IsTank(target) && u->ToCreature() && u->ToCreature()->isWorldBoss();
+            int32 flashOfLightHealThreshold = _heals[FLASH_OF_LIGHT_1] / 2;
 
             if (IsSpellReady(DIVINE_ILLUMINATION_1, diff, false) && GetManaPCT(me) <= 50 && Rand() < 50 + 50 * tanking)
                 if (doCast(me, GetSpell(DIVINE_ILLUMINATION_1)))
@@ -800,7 +803,7 @@ public:
                     return true;
             }
             //Flash of Light
-            if (IsSpellReady(FLASH_OF_LIGHT_1, diff) && (tanking || xphploss > _heals[FLASH_OF_LIGHT_1]))
+            if (IsSpellReady(FLASH_OF_LIGHT_1, diff) && (tanking || xphploss > flashOfLightHealThreshold))
             {
                 if (doCast(target, GetSpell(FLASH_OF_LIGHT_1)))
                     return true;

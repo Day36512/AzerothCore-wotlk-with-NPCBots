@@ -1254,7 +1254,8 @@ public:
             //maintain HoTs
             Unit const* u = target->GetVictim();
             bool tanking = u && IsTank(target) && u->ToCreature() && u->ToCreature()->isWorldBoss();
-            if (IsSpellReady(REGROWTH_1, diff) && Rand() < 80 && (tanking || xphploss > _heals[REGROWTH_1]) &&
+            int32 regrowthHealThreshold = _heals[REGROWTH_1] / 2;
+            if (IsSpellReady(REGROWTH_1, diff) && Rand() < 80 && (tanking || xphploss > regrowthHealThreshold) &&
                 (xppct <= 45 || !target->GetAuraEffect(SPELL_AURA_PERIODIC_HEAL, SPELLFAMILY_DRUID, 0x40, 0x0, 0x0, me->GetGUID()))
                 /*!HasAuraName(target, REGROWTH_1, me->GetGUID())*/)
             {
@@ -1416,17 +1417,23 @@ public:
                 return true;
 
             uint8 auraEffectMask = 0;
-            uint8 nonAuraEffectMask = 0;
+            bool hasDirectHeal = false;
             for (auto i : NPCBots::index_array<uint8, MAX_SPELL_EFFECTS>)
             {
                 if (spellInfo->Effects[i].IsAura())
                     auraEffectMask |= 1u << i;
                 else if (spellInfo->Effects[i].IsEffect())
-                    nonAuraEffectMask |= 1u << i;
+                {
+                    if (spellInfo->Effects[i].Effect == SPELL_EFFECT_HEAL)
+                        hasDirectHeal = true;
+                }
             }
 
-            if (nonAuraEffectMask)
-                return true;
+            // Regrowth is both a direct heal and a HoT. Spell::CheckCast rejects
+            // direct heals on full-health targets, so do not loop on it as a
+            // pure pre-pull HoT when the cast can never begin.
+            if (hasDirectHeal && target->IsFullHealth())
+                return false;
 
             for (auto i : NPCBots::index_array<uint8, MAX_SPELL_EFFECTS>)
             {
@@ -1555,8 +1562,8 @@ public:
                     if (!hasPrePullHostileNearTank(member))
                         return false;
 
-                    // One HoT per AI update/GCD. Priority is cheap instant coverage first,
-                    // then Regrowth, then Lifebloom stack maintenance.
+                    // One HoT per AI update/GCD. Regrowth is intentionally skipped here:
+                    // it has a direct heal component and fails on full-health pre-pull targets.
                     if (uint32 REJUVENATION = GetSpell(REJUVENATION_1))
                     {
                         if (IsSpellReady(REJUVENATION_1, diff) &&
@@ -1564,16 +1571,6 @@ public:
                             !member->GetAuraEffect(SPELL_AURA_PERIODIC_HEAL, SPELLFAMILY_DRUID, 0x10, 0x0, 0x0, me->GetGUID()))
                         {
                             if (PrepareForDruidHealingCast() && doCast(member, REJUVENATION))
-                                return true;
-                        }
-                    }
-
-                    if (uint32 REGROWTH = GetSpell(REGROWTH_1))
-                    {
-                        if (IsSpellReady(REGROWTH_1, diff) &&
-                            !member->GetAuraEffect(SPELL_AURA_PERIODIC_HEAL, SPELLFAMILY_DRUID, 0x40, 0x0, 0x0, me->GetGUID()))
-                        {
-                            if (PrepareForDruidHealingCast() && doCast(member, REGROWTH))
                                 return true;
                         }
                     }

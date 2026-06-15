@@ -5033,6 +5033,96 @@ std::pair<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool& res
             }
         }
 
+        // Hyjal Summit - Azgalor. DPS bots should burn Lesser Doomguards before
+        // tunneling the boss after a Doom target dies.
+        if (me->GetMapId() == MAP_THE_BATTLE_FOR_MOUNT_HYJAL && me->IsInCombat() && HasRole(BOT_ROLE_DPS) && !IsTank() &&
+            !HasBotCommandState(BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION) &&
+            !(HasRole(BOT_ROLE_HEAL) && IsCasting()))
+        {
+            static constexpr uint32 NPC_AZGALOR_LESSER_DOOMGUARD = 17864;
+            static constexpr float AZGALOR_DOOMGUARD_PRIORITY_RANGE = 120.0f;
+            static constexpr float AZGALOR_DOOMGUARD_BOT_THREAT = 30000.0f;
+
+            auto isAttackableLesserDoomguard = [this, byspell](Creature* c) -> bool
+            {
+                if (!c || !c->IsAlive())
+                    return false;
+
+                if (c->GetEntry() != NPC_AZGALOR_LESSER_DOOMGUARD)
+                    return false;
+
+                if (c->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE))
+                    return false;
+
+                if (!c->IsVisible() || !c->isTargetableForAttack(false))
+                    return false;
+
+                if (!(CanSeeEveryone() || (me->CanSeeOrDetect(c) && c->InSamePhase(me))))
+                    return false;
+
+                if (!me->IsWithinLOSInMap(c))
+                    return false;
+
+                if (!me->IsValidAttackTarget(c))
+                    return false;
+
+                return CanBotAttack(c, byspell);
+            };
+
+            auto ensureDoomguardThreat = [this](Creature* doomguard)
+            {
+                if (!doomguard || !doomguard->CanHaveThreatList())
+                    return;
+
+                me->SetInCombatWith(doomguard);
+                doomguard->SetInCombatWith(me);
+
+                if (doomguard->GetThreatMgr().GetThreat(me, true) <= 0.0f)
+                    doomguard->GetThreatMgr().AddThreat(me, AZGALOR_DOOMGUARD_BOT_THREAT, nullptr, true, true);
+            };
+
+            Creature* current = mytar ? mytar->ToCreature() : nullptr;
+            if (isAttackableLesserDoomguard(current))
+            {
+                ensureDoomguardThreat(current);
+                return { current, nullptr };
+            }
+
+            std::list<Creature*> doomguards;
+            me->GetCreatureListWithEntryInGrid(doomguards, NPC_AZGALOR_LESSER_DOOMGUARD, AZGALOR_DOOMGUARD_PRIORITY_RANGE);
+
+            Creature* bestDoomguard = nullptr;
+            float bestHealthPct = 101.0f;
+            float bestDistance = std::numeric_limits<float>::max();
+
+            for (Creature* doomguard : doomguards)
+            {
+                if (!isAttackableLesserDoomguard(doomguard))
+                    continue;
+
+                float healthPct = doomguard->GetHealthPct();
+                float distance = me->GetDistance(doomguard);
+
+                if (!bestDoomguard ||
+                    healthPct < bestHealthPct ||
+                    (healthPct == bestHealthPct && distance < bestDistance))
+                {
+                    bestDoomguard = doomguard;
+                    bestHealthPct = healthPct;
+                    bestDistance = distance;
+                }
+            }
+
+            if (bestDoomguard)
+            {
+                if (mytar && mytar != bestDoomguard)
+                    reset = true;
+
+                ensureDoomguardThreat(bestDoomguard);
+                return { bestDoomguard, nullptr };
+            }
+        }
+
         // The Eye - Kael'thas. Shock Barrier burn is the top priority; if the
         // barrier is already gone, a Pyroblast cast can be handled by normal
         // interrupt logic after bots swap back to Kael.
@@ -8260,8 +8350,29 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
     if (unit->IsNPCBot() && unit->ToCreature()->IsFreeBot())
         return;
 
-    // Hellfire Ramparts — Liquid Fire puddles + aura carrier avoidance
-    if (unit->GetMapId() == 543) // Hellfire Ramparts
+    // Hyjal Summit - Archimonde Doomfire patches
+    if (unit->GetMapId() == MAP_THE_BATTLE_FOR_MOUNT_HYJAL)
+    {
+        static constexpr uint32 NPC_ARCHIMONDE_DOOMFIRE = 18095;
+        constexpr float DOOMFIRE_SCAN_RANGE = 80.0f;
+        constexpr float DOOMFIRE_AVOID_RADIUS = 20.0f;
+
+        std::list<Creature*> doomfires;
+        Bcore::AllCreaturesOfEntryInRange doomfireCheck(unit, NPC_ARCHIMONDE_DOOMFIRE, DOOMFIRE_SCAN_RANGE);
+        Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> doomfireSearcher(unit, doomfires, doomfireCheck);
+        Cell::VisitObjects(unit, doomfireSearcher, DOOMFIRE_SCAN_RANGE);
+
+        for (Creature const* doomfire : doomfires)
+        {
+            if (!doomfire || !doomfire->IsInWorld() || !doomfire->IsAlive())
+                continue;
+
+            float radius = DOOMFIRE_AVOID_RADIUS + doomfire->GetObjectSize() + DEFAULT_COMBAT_REACH * 2.0f;
+            spots.emplace_back(*doomfire, radius);
+        }
+    }
+    // Hellfire Ramparts - Liquid Fire puddles + aura carrier avoidance
+    else if (unit->GetMapId() == 543) // Hellfire Ramparts
     {
         // GO entries to avoid
         static constexpr uint32 GO_LIQUID_FIRE_1 = 180125;

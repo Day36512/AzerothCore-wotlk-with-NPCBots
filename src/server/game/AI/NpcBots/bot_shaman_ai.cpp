@@ -1782,7 +1782,8 @@ public:
                     return true;
             }
 
-            if (IsSpellReady(LESSER_HEALING_WAVE_1, diff) && xphploss > _heals[LESSER_HEALING_WAVE_1])
+            int32 lesserHealingWaveThreshold = _heals[LESSER_HEALING_WAVE_1] / 2;
+            if (IsSpellReady(LESSER_HEALING_WAVE_1, diff) && xphploss > lesserHealingWaveThreshold)
             {
                 if (doCast(target, GetSpell(LESSER_HEALING_WAVE_1)))
                     return true;

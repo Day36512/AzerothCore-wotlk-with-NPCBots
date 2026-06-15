@@ -19,6 +19,8 @@
 #include "ScriptedCreature.h"
 #include "hyjal.h"
 
+#include <list>
+
 enum Spells
 {
     SPELL_FROST_ARMOR           = 31256,
@@ -66,19 +68,19 @@ public:
         {
             context.SetGroup(GROUP_FROST);
 
-            DoCastRandomTarget(SPELL_ICEBOLT);
+            DoCastRandomPlayerOrBotTarget(SPELL_ICEBOLT);
             context.Repeat(9s, 15s);
         }).Schedule(12s, 17s, [this](TaskContext context)
         {
             context.SetGroup(GROUP_FROST);
 
-            if (DoCastRandomTarget(SPELL_FROST_NOVA, 0, 45.f) == SPELL_CAST_OK)
+            if (DoCastRandomPlayerOrBotTarget(SPELL_FROST_NOVA, 0, 45.f) == SPELL_CAST_OK)
                 Talk(SAY_NOVA);
 
             context.Repeat(25s, 30s);
         }).Schedule(21s, 28s, [this](TaskContext context)
         {
-            if (DoCastRandomTarget(SPELL_DEATH_AND_DECAY, 0, 40.f) == SPELL_CAST_OK)
+            if (DoCastRandomPlayerOrBotTarget(SPELL_DEATH_AND_DECAY, 0, 40.f) == SPELL_CAST_OK)
             {
                 Talk(SAY_DECAY);
                 context.DelayGroup(GROUP_FROST, 15s);
@@ -117,7 +119,7 @@ public:
 
     void KilledUnit(Unit* victim) override
     {
-        if (!_recentlySpoken && victim->IsPlayer() && me->IsAlive())
+        if (!_recentlySpoken && IsPlayerOrValidNPCBot(victim) && me->IsAlive())
         {
             Talk(SAY_ONSLAY);
             _recentlySpoken = true;
@@ -136,6 +138,71 @@ public:
     }
 
 private:
+    static bool IsValidNPCBot(Creature const* creature)
+    {
+        return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI();
+    }
+
+    static bool IsPlayerOrValidNPCBot(Unit const* unit)
+    {
+        if (!unit)
+            return false;
+
+        if (unit->IsPlayer())
+            return true;
+
+        return IsValidNPCBot(unit->ToCreature());
+    }
+
+    bool IsValidRandomPlayerOrBotTarget(Unit const* target, float dist, bool withTank) const
+    {
+        if (!target || !target->IsInWorld() || !target->IsAlive() || !target->IsInCombat() || target->GetMap() != me->GetMap())
+            return false;
+
+        if (target->HasUnitState(UNIT_STATE_ISOLATED))
+            return false;
+
+        if (!withTank && target == me->GetThreatMgr().GetLastVictim())
+            return false;
+
+        if (dist > 0.0f && !me->IsWithinCombatRange(target, dist))
+            return false;
+
+        if (dist < 0.0f && me->IsWithinCombatRange(target, -dist))
+            return false;
+
+        if (!me->IsValidAttackTarget(target))
+            return false;
+
+        return IsPlayerOrValidNPCBot(target);
+    }
+
+    Unit* SelectRandomPlayerOrBotTarget(uint32 threatTablePosition = 0, float dist = 0.0f, bool withTank = true)
+    {
+        std::list<Unit*> targets;
+        SelectTargetList(targets, 1, SelectTargetMethod::Random, threatTablePosition, [this, dist, withTank](Unit* target)
+        {
+            return IsValidRandomPlayerOrBotTarget(target, dist, withTank);
+        });
+
+        return targets.empty() ? nullptr : targets.front();
+    }
+
+    SpellCastResult DoCastRandomPlayerOrBotTarget(uint32 spellId, uint32 threatTablePosition = 0, float dist = 0.0f, bool triggered = false, bool withTank = true)
+    {
+        if (Unit* target = SelectRandomPlayerOrBotTarget(threatTablePosition, dist, withTank))
+            return DoCast(target, spellId, triggered);
+
+        SpellCastResult result = DoCastRandomTarget(spellId, threatTablePosition, dist, true, triggered, withTank);
+        if (result != SPELL_FAILED_BAD_TARGETS)
+            return result;
+
+        if (Unit* victim = me->GetVictim())
+            return DoCast(victim, spellId, triggered);
+
+        return result;
+    }
+
     bool _recentlySpoken;
 };
 

@@ -256,6 +256,10 @@ public:
                         ResetWaves();
                         break;
                 }
+
+                if (creature->IsNPCBot() && GetBossState(DATA_ARCHIMONDE) == IN_PROGRESS)
+                    if (Creature* archimonde = GetCreature(DATA_ARCHIMONDE))
+                        archimonde->AI()->SetGUID(creature->GetGUID(), GUID_GAIN_SOUL_CHARGE_PLAYER);
             }
             else if (unit->IsPlayer() && GetBossState(DATA_ARCHIMONDE) == IN_PROGRESS)
             {

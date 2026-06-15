@@ -22,6 +22,16 @@
 #include "SpellScriptLoader.h"
 #include "hyjal.h"
 
+#include <list>
+#include <string>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceDebuffOnMeForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
+
 enum Spells
 {
     SPELL_RAIN_OF_FIRE          = 31340,
@@ -41,6 +51,51 @@ enum Texts
     SAY_ARCHIMONDE_INTRO    = 8
 };
 
+namespace
+{
+    char const* const DBM_HYJAL_MODULE_FOLDER = "DBM-Hyjal";
+    char const* const DBM_AZGALOR_MODULE_ID = "Azgalor";
+
+    bool IsValidAzgalorNPCBot(Creature const* creature)
+    {
+        return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI() && !creature->IsInEvadeMode();
+    }
+
+    bool IsAzgalorPlayerOrBot(Unit const* unit)
+    {
+        if (!unit)
+            return false;
+
+        if (unit->IsPlayer())
+            return true;
+
+        return IsValidAzgalorNPCBot(unit->ToCreature());
+    }
+
+    bool IsValidAzgalorRandomTarget(Unit const* target, Creature const* source, float dist = 0.0f, bool withTank = true)
+    {
+        if (!target || !source || !target->IsInWorld() || !target->IsAlive() || !target->IsInCombat() || target->GetMap() != source->GetMap())
+            return false;
+
+        if (target->HasUnitState(UNIT_STATE_ISOLATED))
+            return false;
+
+        if (!withTank && target == source->GetThreatMgr().GetLastVictim())
+            return false;
+
+        if (dist > 0.0f && !source->IsWithinCombatRange(target, dist))
+            return false;
+
+        if (dist < 0.0f && source->IsWithinCombatRange(target, -dist))
+            return false;
+
+        if (!source->IsValidAttackTarget(target))
+            return false;
+
+        return IsAzgalorPlayerOrBot(target);
+    }
+}
+
 struct boss_azgalor : public BossAI
 {
 public:
@@ -59,7 +114,7 @@ public:
             context.Repeat(8s, 16s);
         }).Schedule(20s, 25s, [this](TaskContext context)
         {
-            DoCastRandomTarget(SPELL_RAIN_OF_FIRE, 0, 40.f, false);
+            DoCastRandomPlayerOrBotTarget(SPELL_RAIN_OF_FIRE, 0, 40.f);
             context.Repeat(12s, 35s);
         }).Schedule(30s, [this](TaskContext context)
         {
@@ -87,7 +142,7 @@ public:
 
     void KilledUnit(Unit * victim) override
     {
-        if (!_recentlySpoken && victim->IsPlayer() && me->IsAlive())
+        if (!_recentlySpoken && IsAzgalorPlayerOrBot(victim) && me->IsAlive())
         {
             Talk(SAY_ONSLAY);
             _recentlySpoken = true;
@@ -112,6 +167,32 @@ public:
     }
 
 private:
+    Unit* SelectRandomPlayerOrBotTarget(uint32 threatTablePosition = 0, float dist = 0.0f, bool withTank = true)
+    {
+        std::list<Unit*> targets;
+        SelectTargetList(targets, 1, SelectTargetMethod::Random, threatTablePosition, [this, dist, withTank](Unit* target)
+        {
+            return IsValidAzgalorRandomTarget(target, me, dist, withTank);
+        });
+
+        return targets.empty() ? nullptr : targets.front();
+    }
+
+    SpellCastResult DoCastRandomPlayerOrBotTarget(uint32 spellId, uint32 threatTablePosition = 0, float dist = 0.0f, bool triggered = false, bool withTank = true)
+    {
+        if (Unit* target = SelectRandomPlayerOrBotTarget(threatTablePosition, dist, withTank))
+            return DoCast(target, spellId, triggered);
+
+        SpellCastResult result = DoCastRandomTarget(spellId, threatTablePosition, dist, true, triggered, withTank);
+        if (result != SPELL_FAILED_BAD_TARGETS)
+            return result;
+
+        if (Unit* victim = me->GetVictim())
+            return DoCast(victim, spellId, triggered);
+
+        return result;
+    }
+
     bool _recentlySpoken;
 };
 
@@ -121,10 +202,14 @@ class spell_azgalor_doom : public SpellScript
 
     void FilterTargets(std::list<WorldObject*>& targets)
     {
-        if (Unit* victim = GetCaster()->GetVictim())
+        Creature* caster = GetCaster() ? GetCaster()->ToCreature() : nullptr;
+        Unit* victim = GetCaster() ? GetCaster()->GetVictim() : nullptr;
+
+        targets.remove_if([caster, victim](WorldObject* object)
         {
-            targets.remove_if(Acore::ObjectGUIDCheck(victim->GetGUID(), true));
-        }
+            Unit* target = object ? object->ToUnit() : nullptr;
+            return !target || target == victim || !IsValidAzgalorRandomTarget(target, caster);
+        });
     }
 
     void Register() override
@@ -137,9 +222,18 @@ class spell_azgalor_doom_aura : public AuraScript
 {
     PrepareAuraScript(spell_azgalor_doom_aura);
 
+    void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(GetTarget()))
+            DBMFTABotCallouts::AnnounceDebuffOnMeForModule(bot, SPELL_DOOM, DBM_HYJAL_MODULE_FOLDER, DBM_AZGALOR_MODULE_ID, "Doom", DBMFTABotCallouts::GetCooldownMs());
+    }
+
     void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         Unit* target = GetTarget();
+        if (!target)
+            return;
+
         if (GetTargetApplication()->GetRemoveMode() == AURA_REMOVE_BY_DEATH && !IsExpired())
         {
             target->CastSpell(target, GetSpellInfo()->Effects[EFFECT_0].TriggerSpell, true);
@@ -148,6 +242,7 @@ class spell_azgalor_doom_aura : public AuraScript
 
     void Register() override
     {
+        AfterEffectApply += AuraEffectApplyFn(spell_azgalor_doom_aura::OnApply, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
         OnEffectRemove += AuraEffectRemoveFn(spell_azgalor_doom_aura::OnRemove, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
     }
 };

@@ -22,6 +22,16 @@
 #include "SpellScriptLoader.h"
 #include "hyjal.h"
 
+#include <list>
+#include <string>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceMoveAwayFromMeForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
+
 enum Spells
 {
     SPELL_CARRION_SWARM       = 31306,
@@ -44,6 +54,51 @@ enum Texts
     SAY_ONSPAWN         = 5,
 };
 
+namespace
+{
+    char const* const DBM_HYJAL_MODULE_FOLDER = "DBM-Hyjal";
+    char const* const DBM_ANETHERON_MODULE_ID = "Anetheron";
+
+    bool IsValidAnetheronNPCBot(Creature const* creature)
+    {
+        return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI() && !creature->IsInEvadeMode();
+    }
+
+    bool IsAnetheronPlayerOrBot(Unit const* unit)
+    {
+        if (!unit)
+            return false;
+
+        if (unit->IsPlayer())
+            return true;
+
+        return IsValidAnetheronNPCBot(unit->ToCreature());
+    }
+
+    bool IsValidAnetheronRandomTarget(Unit const* target, Creature const* source, float dist = 0.0f, bool withTank = true)
+    {
+        if (!target || !source || !target->IsInWorld() || !target->IsAlive() || !target->IsInCombat() || target->GetMap() != source->GetMap())
+            return false;
+
+        if (target->HasUnitState(UNIT_STATE_ISOLATED))
+            return false;
+
+        if (!withTank && target == source->GetThreatMgr().GetLastVictim())
+            return false;
+
+        if (dist > 0.0f && !source->IsWithinCombatRange(target, dist))
+            return false;
+
+        if (dist < 0.0f && source->IsWithinCombatRange(target, -dist))
+            return false;
+
+        if (!source->IsValidAttackTarget(target))
+            return false;
+
+        return IsAnetheronPlayerOrBot(target);
+    }
+}
+
 struct boss_anetheron : public BossAI
 {
 public:
@@ -58,18 +113,22 @@ public:
 
         scheduler.Schedule(20s, 28s, [this](TaskContext context)
         {
-            if (DoCastRandomTarget(SPELL_CARRION_SWARM, 0, 60.f, false) == SPELL_CAST_OK)
+            if (DoCastRandomPlayerOrBotTarget(SPELL_CARRION_SWARM, 0, 60.f) == SPELL_CAST_OK)
                 Talk(SAY_SWARM);
             context.Repeat(10s, 15s);
         }).Schedule(25s, 32s, [this](TaskContext context)
         {
             Talk(SAY_SLEEP);
-            DoCastRandomTarget(SPELL_SLEEP, 0, 0.0f, true, false, false);
+            DoCastRandomPlayerOrBotTarget(SPELL_SLEEP, 0, 0.0f, false, false);
             context.Repeat(35s, 48s);
         }).Schedule(30s, 48s, [this](TaskContext context)
         {
-            if (DoCastRandomTarget(SPELL_INFERNO) == SPELL_CAST_OK)
+            Unit* target = nullptr;
+            if (DoCastRandomPlayerOrBotTarget(SPELL_INFERNO, 0, 0.0f, false, true, &target) == SPELL_CAST_OK)
+            {
                 Talk(SAY_INFERNO);
+                AnnounceInfernoTarget(target);
+            }
 
             context.Repeat(50s, 55s);
         }).Schedule(10min, [this](TaskContext context)
@@ -114,7 +173,7 @@ public:
 
     void KilledUnit(Unit* victim) override
     {
-        if (!_recentlySpoken && victim->IsPlayer() && me->IsAlive())
+        if (!_recentlySpoken && IsAnetheronPlayerOrBot(victim) && me->IsAlive())
         {
             Talk(SAY_ONSLAY);
             _recentlySpoken = true;
@@ -133,6 +192,53 @@ public:
     }
 
 private:
+    Unit* SelectRandomPlayerOrBotTarget(uint32 threatTablePosition = 0, float dist = 0.0f, bool withTank = true)
+    {
+        std::list<Unit*> targets;
+        SelectTargetList(targets, 1, SelectTargetMethod::Random, threatTablePosition, [this, dist, withTank](Unit* target)
+        {
+            return IsValidAnetheronRandomTarget(target, me, dist, withTank);
+        });
+
+        return targets.empty() ? nullptr : targets.front();
+    }
+
+    SpellCastResult DoCastRandomPlayerOrBotTarget(uint32 spellId, uint32 threatTablePosition = 0, float dist = 0.0f, bool triggered = false, bool withTank = true, Unit** selectedTarget = nullptr)
+    {
+        if (selectedTarget)
+            *selectedTarget = nullptr;
+
+        if (Unit* target = SelectRandomPlayerOrBotTarget(threatTablePosition, dist, withTank))
+        {
+            SpellCastResult result = DoCast(target, spellId, triggered);
+            if (result == SPELL_CAST_OK && selectedTarget)
+                *selectedTarget = target;
+
+            return result;
+        }
+
+        SpellCastResult result = DoCastRandomTarget(spellId, threatTablePosition, dist, true, triggered, withTank);
+        if (result != SPELL_FAILED_BAD_TARGETS)
+            return result;
+
+        if (Unit* victim = me->GetVictim())
+        {
+            result = DoCast(victim, spellId, triggered);
+            if (result == SPELL_CAST_OK && selectedTarget)
+                *selectedTarget = victim;
+
+            return result;
+        }
+
+        return result;
+    }
+
+    void AnnounceInfernoTarget(Unit* target)
+    {
+        if (Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target))
+            DBMFTABotCallouts::AnnounceMoveAwayFromMeForModule(bot, SPELL_INFERNO, DBM_HYJAL_MODULE_FOLDER, DBM_ANETHERON_MODULE_ID, "Inferno", DBMFTABotCallouts::GetCooldownMs());
+    }
+
     bool _recentlySpoken;
 };
 
@@ -144,8 +250,14 @@ class spell_anetheron_sleep : public SpellScript
     {
         if (!targets.empty())
         {
-            if (Unit* victim = GetCaster()->GetVictim())
-                targets.remove_if(Acore::ObjectGUIDCheck(victim->GetGUID(), true));
+            Creature* caster = GetCaster() ? GetCaster()->ToCreature() : nullptr;
+            Unit* victim = GetCaster() ? GetCaster()->GetVictim() : nullptr;
+
+            targets.remove_if([caster, victim](WorldObject* object)
+            {
+                Unit* target = object ? object->ToUnit() : nullptr;
+                return !target || target == victim || !IsValidAnetheronRandomTarget(target, caster);
+            });
 
             Acore::Containers::RandomResize(targets, 3);
         }
