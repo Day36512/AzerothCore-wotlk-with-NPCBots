@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wrath 3.3.5 Item Level Calculator - Reference Data Build v4.6.6</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="hero">
+    <div>
+      <p class="eyebrow">World of Warcraft 3.3.5 / AzerothCore / TrinityCore</p>
+      <h1>Item Level Calculator</h1>
+      <p class="lede">A bidirectional WotLK 3.3.5 itemization workbench that can ingest your own item_template export, use real nearby items as reference points, and then generate stats, armor, weapon damage, reverse estimates, and SQL.</p>
+    </div>
+    <div class="hero-card">
+      <strong>Model profile</strong>
+      <span id="modelProfileLabel">Reference-data 3.3.5 empirical build v4.6.6</span>
+      <small>Formula fallback plus optional full item_template reference data: nearest neighbors, local interpolation, observed DPS/spread/armor, and stat-budget calibration.</small>
+    </div>
+  </header>
+
+  <main class="layout">
+    <nav class="tabs" aria-label="Calculator modes">
+      <button class="tab active" data-tab="forward">Forward builder</button>
+      <button class="tab" data-tab="batch">Batch generator</button>
+      <button class="tab" data-tab="reverse">Reverse estimator</button>
+      <button class="tab" data-tab="compare">Compare item</button>
+      <button class="tab" data-tab="sql">SQL exporter</button>
+      <button class="tab" data-tab="reference">Reference data</button>
+      <button class="tab" data-tab="model">Model notes</button>
+    </nav>
+
+    <section id="forward" class="panel active">
+      <div class="grid two">
+        <section class="card">
+          <h2>1. Item shell</h2>
+          <div class="form-grid">
+            <label>Item level
+              <input id="fItemLevel" type="number" min="1" max="350" value="264" />
+            </label>
+            <label>Quality
+              <select id="fQuality"></select>
+            </label>
+            <label>Inventory slot
+              <select id="fSlot"></select>
+            </label>
+            <label>Item family
+              <select id="fFamily">
+                <option value="armor">Armor / jewelry / shield</option>
+                <option value="weapon">Weapon</option>
+                <option value="trinket">Trinket / proc-heavy</option>
+                <option value="relic">Relic / class item</option>
+              </select>
+            </label>
+            <label>Armor type
+              <select id="fArmorType"></select>
+            </label>
+            <label>Weapon subclass
+              <select id="fWeaponSubclass"></select>
+            </label>
+            <label>Weapon speed (seconds)
+              <input id="fSpeed" type="number" min="0.5" max="5.0" step="0.1" value="2.6" />
+            </label>
+            <label>Bonus armor
+              <input id="fBonusArmor" type="number" min="0" value="0" />
+            </label>
+            <label>Reference mode
+              <select id="fReferenceMode">
+                <option value="prefer" selected>Prefer loaded DB references</option>
+                <option value="formula">Formula fallback only</option>
+              </select>
+            </label>
+            <label>Passive budget used %
+              <input id="fBudgetUsage" type="number" min="1" max="125" step="0.1" value="100" />
+            </label>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>2. Sockets and allocation</h2>
+          <div class="socket-grid">
+            <label>Red sockets <input id="fRedSockets" type="number" min="0" max="3" value="0" /></label>
+            <label>Yellow sockets <input id="fYellowSockets" type="number" min="0" max="3" value="0" /></label>
+            <label>Blue sockets <input id="fBlueSockets" type="number" min="0" max="3" value="0" /></label>
+            <label>Meta sockets <input id="fMetaSockets" type="number" min="0" max="1" value="0" /></label>
+          </div>
+          <div class="form-grid">
+            <label>Gem model
+              <select id="fGemModel">
+                <option value="auto" selected>Auto by item level</option>
+                <option value="uncommon">Uncommon gems</option>
+                <option value="rare">Rare gems</option>
+                <option value="epic">Epic gems</option>
+                <option value="none">Ignore gem value</option>
+              </select>
+            </label>
+          </div>
+          <div class="toolbar">
+            <button id="addForwardStat" type="button">Add stat</button>
+            <button id="loadPresetMelee" type="button">Melee preset</button>
+            <button id="loadPresetCaster" type="button">Caster preset</button>
+            <button id="loadPresetTank" type="button">Tank preset</button>
+            <select id="fPresetStatCount" aria-label="Preset stat count">
+              <option value="2">2-stat presets</option>
+              <option value="3">3-stat presets</option>
+              <option value="4">4-stat presets</option>
+              <option value="5" selected>5-stat presets</option>
+            </select>
+            <select id="fReferenceProfileMode" aria-label="Reference stat profile archetype">
+              <option value="auto" selected>Auto reference profile</option>
+              <option value="any">Any nearby slot profile</option>
+              <option value="melee">Melee DPS profile</option>
+              <option value="hunter">Hunter / ranged profile</option>
+              <option value="caster">Caster DPS profile</option>
+              <option value="healer">Healer profile</option>
+              <option value="tank">Tank profile</option>
+              <option value="pvp">PvP profile</option>
+            </select>
+            <button id="loadReferenceProfile" type="button">Use local DB stat profile</button>
+          </div>
+          <div class="stat-table-wrap">
+            <table class="stat-table" id="forwardStatsTable">
+              <thead><tr><th>Stat</th><th>Budget share %, not stat value</th><th></th></tr></thead>
+              <tbody id="forwardStatsBody"></tbody>
+            </table>
+          </div>
+          <p class="hint">Shares are normalized automatically. These are budget shares, not literal stat values. "Use local DB stat profile" samples nearby real items, converts AP / spell power / stamina / ratings into budget units, and treats non-weapons as subclass None so jewelry does not receive weapon-subclass penalties.</p>
+        </section>
+      </div>
+
+      <div class="toolbar sticky-actions">
+        <button id="calculateForward" class="primary" type="button">Generate item budget</button>
+        <button id="copyForwardJson" type="button">Copy generated JSON</button>
+      </div>
+
+      <section class="card result-card">
+        <h2>Forward result</h2>
+        <div id="forwardResult" class="result muted">Press “Generate item budget.”</div>
+      </section>
+    </section>
+
+    <section id="batch" class="panel">
+      <div class="grid two">
+        <section class="card">
+          <h2>Batch generator</h2>
+          <p class="hint">Uses the current Forward builder shell, sockets, armor type, weapon subclass, and reference mode as the seed. Batch-only controls decide how much variation to add.</p>
+          <div class="form-grid">
+            <label>Quantity
+              <input id="bQuantity" type="number" min="1" max="200" value="12" />
+            </label>
+            <label>Min item level
+              <input id="bMinItemLevel" type="number" min="1" max="350" value="80" />
+            </label>
+            <label>Max item level
+              <input id="bMaxItemLevel" type="number" min="1" max="350" value="85" />
+            </label>
+            <label>Quality pool
+              <select id="bQualityMode">
+                <option value="current" selected>Use Forward quality</option>
+                <option value="2">Uncommon only</option>
+                <option value="3">Rare only</option>
+                <option value="4">Epic only</option>
+                <option value="5">Legendary only</option>
+                <option value="2,3">Uncommon + Rare</option>
+                <option value="3,4">Rare + Epic</option>
+                <option value="2,3,4">Uncommon + Rare + Epic</option>
+              </select>
+            </label>
+            <label>Budget variance %
+              <input id="bBudgetVariance" type="number" min="0" max="25" step="0.5" value="5" />
+            </label>
+            <label>Blueprint
+              <select id="bBlueprint">
+                <option value="current" selected>Use Forward stat rows</option>
+                <option value="auto">Auto for item shell</option>
+                <option value="melee">Melee DPS</option>
+                <option value="hunter">Hunter / ranged</option>
+                <option value="caster">Caster DPS</option>
+                <option value="healer">Healer</option>
+                <option value="tank">Tank</option>
+                <option value="tankDefense">Tank - defense</option>
+                <option value="tankBlock">Tank - block</option>
+                <option value="tankAvoidance">Tank - dodge/parry</option>
+                <option value="tankThreat">Tank - threat</option>
+                <option value="pvp">PvP variant</option>
+                <option value="all">Random compatible blueprint</option>
+              </select>
+            </label>
+            <label>Stat density
+              <select id="bDensityMode">
+                <option value="current" selected>Use Forward row count</option>
+                <option value="reference">Database-driven count</option>
+                <option value="progressive">Progressive Blizzlike count</option>
+                <option value="manual">Manual count</option>
+              </select>
+            </label>
+            <label>Manual stat count
+              <input id="bManualStatCount" type="number" min="1" max="6" value="4" />
+            </label>
+            <label>Distribution
+              <select id="bDistributionMode">
+                <option value="even">Even split</option>
+                <option value="weighted" selected>Role-weighted split</option>
+                <option value="varied">Randomly varied split</option>
+              </select>
+            </label>
+            <label>Max stat deviation %
+              <input id="bSkew" type="number" min="0" max="100" step="1" value="20" />
+            </label>
+            <label>Start entry
+              <input id="bEntryStart" type="number" min="1" value="91000" />
+            </label>
+            <label>Weapon speed
+              <select id="bWeaponSpeedMode">
+                <option value="fixed" selected>Use Forward speed</option>
+                <option value="random">Randomize +/-15%</option>
+              </select>
+            </label>
+          </div>
+          <div class="toolbar">
+            <button id="generateBatch" class="primary" type="button">Generate batch</button>
+            <button id="copyBatchJson" type="button">Copy JSON</button>
+            <button id="copyBatchSql" type="button">Copy SQL</button>
+            <button id="exportBatchCsv" type="button">Export WDBX CSV</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Borrowed generator ideas</h2>
+          <p class="hint">This adds the useful parts of the external random generator without replacing your math: batch/session output, role blueprints, controlled stat-count rules, randomized budget variance, local display ID selection, generated names, material/sheath metadata, required-level estimation, sell price estimation, SQL insert output, and WDBX-style CSV.</p>
+          <p class="hint">Load reference data first for the strongest results. Without it, the batch generator still works, but display IDs, names, sell prices, materials, and required levels fall back to conservative local rules.</p>
+        </section>
+      </div>
+
+      <section class="card result-card">
+        <h2>Batch result</h2>
+        <div id="batchResult" class="result muted">Seed the Forward builder, then generate a batch.</div>
+      </section>
+
+      <section class="card result-card">
+        <h2>Item preview</h2>
+        <div id="batchPreview" class="result muted">Generated items will appear here before you copy SQL or export CSV.</div>
+      </section>
+
+      <section class="card result-card">
+        <h2>Batch SQL</h2>
+        <textarea id="batchSqlOutput" spellcheck="false" placeholder="Generate a batch to create SQL."></textarea>
+      </section>
+    </section>
+
+    <section id="reverse" class="panel">
+      <div class="grid two">
+        <section class="card">
+          <h2>1. Known item metadata</h2>
+          <div class="form-grid">
+            <label>Quality
+              <select id="rQuality"></select>
+            </label>
+            <label>Inventory slot
+              <select id="rSlot"></select>
+            </label>
+            <label>Item family
+              <select id="rFamily">
+                <option value="armor">Armor / jewelry / shield</option>
+                <option value="weapon">Weapon</option>
+                <option value="trinket">Trinket / proc-heavy</option>
+                <option value="relic">Relic / class item</option>
+              </select>
+            </label>
+            <label>Armor type
+              <select id="rArmorType"></select>
+            </label>
+            <label>Weapon subclass
+              <select id="rWeaponSubclass"></select>
+            </label>
+            <label>Known armor, optional
+              <input id="rArmor" type="number" min="0" value="0" />
+            </label>
+            <label>Known min damage, optional
+              <input id="rMinDamage" type="number" min="0" value="0" />
+            </label>
+            <label>Known max damage, optional
+              <input id="rMaxDamage" type="number" min="0" value="0" />
+            </label>
+            <label>Known speed, seconds
+              <input id="rSpeed" type="number" min="0.5" max="5.0" step="0.1" value="2.6" />
+            </label>
+            <label>Tolerance
+              <select id="rTolerance">
+                <option value="tight">Tight</option>
+                <option value="normal" selected>Normal</option>
+                <option value="wide">Wide / outlier-friendly</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>2. Observed sockets and stats</h2>
+          <div class="socket-grid">
+            <label>Red sockets <input id="rRedSockets" type="number" min="0" max="3" value="0" /></label>
+            <label>Yellow sockets <input id="rYellowSockets" type="number" min="0" max="3" value="0" /></label>
+            <label>Blue sockets <input id="rBlueSockets" type="number" min="0" max="3" value="0" /></label>
+            <label>Meta sockets <input id="rMetaSockets" type="number" min="0" max="1" value="0" /></label>
+          </div>
+          <div class="toolbar">
+            <button id="addReverseStat" type="button">Add observed stat</button>
+            <button id="clearReverseStats" type="button">Clear</button>
+          </div>
+          <div class="stat-table-wrap">
+            <table class="stat-table" id="reverseStatsTable">
+              <thead><tr><th>Stat</th><th>Value</th><th></th></tr></thead>
+              <tbody id="reverseStatsBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div class="toolbar sticky-actions">
+        <button id="calculateReverse" class="primary" type="button">Estimate item level</button>
+      </div>
+
+      <section class="card result-card">
+        <h2>Reverse result</h2>
+        <div id="reverseResult" class="result muted">Enter observed stats, then estimate.</div>
+      </section>
+    </section>
+
+    <section id="compare" class="panel">
+      <div class="grid two">
+        <section class="card">
+          <h2>Compare loaded DB item</h2>
+          <p class="hint">Load reference data first, then enter an item entry from that loaded dataset. This audits the item against the calculator model and nearby database neighbors without creating SQL.</p>
+          <div class="form-grid">
+            <label>Item entry
+              <input id="compareEntry" type="number" min="1" value="54578" />
+            </label>
+            <label>Gem model
+              <select id="compareGemModel">
+                <option value="auto" selected>Auto by item level</option>
+                <option value="uncommon">Uncommon gems</option>
+                <option value="rare">Rare gems</option>
+                <option value="epic">Epic gems</option>
+                <option value="none">Ignore gem value</option>
+              </select>
+            </label>
+          </div>
+          <div class="toolbar">
+            <button id="compareItem" class="primary" type="button">Compare item</button>
+            <button id="exportCompareCsv" type="button">Export CSV</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>What This Checks</h2>
+          <p class="hint">Compare mode looks at passive stat budget, formula/reference verdicts, design-confidence flags, normalization candidates, socket cost, estimated gem value, armor, weapon DPS, set/proc/use payload flags, and nearest loaded DB neighbors. It is meant for spotting over-budget custom gear without pretending one number settles item design.</p>
+        </section>
+      </div>
+
+      <section class="card result-card">
+        <h2>Compare result</h2>
+        <div id="compareResult" class="result muted">Load reference data, then compare an item entry.</div>
+      </section>
+    </section>
+
+    <section id="sql" class="panel">
+      <section class="card">
+        <h2>AzerothCore / TrinityCore SQL fragment</h2>
+        <p>This exporter uses the most recent forward result. It writes only the columns you are most likely to want while hand-building an item: item level, stats, sockets, armor, damage, and delay. It deliberately does not touch spell procs, required classes, bonding, source, display ID, or name. That is a feature, not cowardice.</p>
+        <div class="form-grid single-line">
+          <label>Target item entry
+            <input id="sqlEntry" type="number" min="1" value="900000" />
+          </label>
+        </div>
+        <div class="toolbar">
+          <button id="generateSql" class="primary" type="button">Generate SQL from forward result</button>
+          <button id="copySql" type="button">Copy SQL</button>
+        </div>
+        <textarea id="sqlOutput" spellcheck="false" placeholder="Generate a forward result first, then click Generate SQL."></textarea>
+      </section>
+    </section>
+
+
+    <section id="reference" class="panel">
+      <div class="grid two">
+        <section class="card">
+          <h2>1. Load a real 3.3.5 item_template export</h2>
+          <p class="hint">Export your equipable rows from AzerothCore/TrinityCore as CSV or JSON, then load it here. The calculator will use real nearby items first, then fall back to formulas only when the corpus is thin.</p>
+          <label>CSV or JSON file
+            <input id="referenceFile" type="file" accept=".csv,.json,.txt" />
+          </label>
+          <label>Or paste CSV / JSON
+            <textarea id="referencePaste" spellcheck="false" placeholder="Paste item_template export here..."></textarea>
+          </label>
+          <div class="toolbar">
+            <button id="loadReferenceData" class="primary" type="button">Load reference data</button>
+            <button id="clearReferenceData" type="button">Clear loaded data</button>
+          </div>
+          <div id="referenceStatus" class="result muted">No reference dataset loaded yet.</div>
+          <div class="helper-box">
+            <h3>Reference quality controls</h3>
+            <p class="hint">These controls affect reference interpolation, stat-profile sampling, reverse DB neighbors, and compare-item neighbors. Loaded rows stay in memory; the model just ignores rows that fail the active controls.</p>
+            <div class="check-grid">
+              <label><input id="refExcludePvp" type="checkbox" checked /> Exclude PvP/resilience rows</label>
+              <label><input id="refExcludeItemSets" type="checkbox" checked /> Exclude item set rows</label>
+              <label><input id="refExcludeSpellPayloads" type="checkbox" checked /> Exclude spell payload rows</label>
+              <label><input id="refExactSlot" type="checkbox" /> Exact slot only</label>
+              <label><input id="refExactArmorType" type="checkbox" /> Exact armor type only</label>
+            </div>
+          </div>
+          <div class="helper-box">
+            <h3>Local MySQL helper</h3>
+            <p class="hint">Optional: start the localhost helper and load item_template rows directly from your local world database. Credentials stay in the helper config file, not in browser JavaScript.</p>
+            <label>Helper URL
+              <input id="localMysqlHelperUrl" type="text" value="http://127.0.0.1:33544" />
+            </label>
+            <div class="toolbar">
+              <button id="loadLocalMysqlReferenceData" type="button">Load from local MySQL</button>
+            </div>
+            <div id="localMysqlStatus" class="result muted">Helper not queried yet.</div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>2. SQL export query</h2>
+          <p class="hint">Run this against <code>acore_world</code> or your TrinityCore world DB, export the result as CSV with headers, then load it on the left. This intentionally excludes random suffix/property rows and scaling/heirloom-style rows.</p>
+          <textarea id="referenceSql" spellcheck="false"></textarea>
+          <div class="toolbar">
+            <button id="copyReferenceSql" type="button">Copy SQL query</button>
+          </div>
+        </section>
+      </div>
+
+      <section class="card result-card">
+        <h2>Reference model behavior</h2>
+        <p>When loaded, weapon damage comes from nearby real items filtered by quality, inventory slot, subclass, and item level. Armor comes from nearby real armor of the same slot and armor type. Passive stats use the original budget math as a scaffold, then scale the budget by what nearby real items actually spend. Robust estimates trim obvious outliers before they affect the final value.</p>
+        <div id="referenceDiagnostics" class="result muted">Load data to see family counts and available ranges.</div>
+      </section>
+    </section>
+
+    <section id="model" class="panel">
+      <section class="card prose">
+        <h2>Model notes</h2>
+        <p>This build keeps the original calculator’s strongest idea: Wrath itemization is mostly a budget envelope using the exponent log(2)/log(1.5), quality curves, slot coefficients, and stat cost modifiers. The important v4 change is that the calculator can now ingest your actual 3.3.5 item_template export and use real nearby items as reference points before falling back to formulas.</p>
+        <h3>What changed in this build</h3>
+        <ul>
+          <li>Bidirectional workflow: item level to stats, and stats back to likely item level.</li>
+          <li>Separate forward and reverse paths for passive stats, sockets, armor, and weapon damage.</li>
+          <li>v4 reference mode: load a full item_template CSV/JSON export and the forward builder uses nearest-neighbor interpolation for weapon DPS, damage spread, armor, and passive budget scale.</li>
+          <li>v3 correction retained: pre-200 one-hand weapons use observed TBC/Wrath DPS anchors, a lower passive-stat weapon slot coefficient, and TBC narrow-dagger spread for Malchazeen/Emerald Ripper style weapons when no DB is loaded.</li>
+          <li>Dynamic stat modifiers for stamina, spell power, MP5, block value, bonus armor, sockets, and patch-sensitive oddities.</li>
+          <li>Confidence bands and warnings for trinkets, relics, proc-heavy items, late-tier blanket ilvls, and physically weird weapon/armor fits.</li>
+          <li>SQL export for quick AzerothCore item_template patching.</li>
+        </ul>
+        <h3>Important honesty clause</h3>
+        <p>This is now a reference-data build. Without an imported database, it behaves as a calibrated hybrid formula model. With an imported database, it becomes a local corpus-guided generator: it looks at actual nearby items in your export and uses those as the first authority. That means your custom database, not my increasingly embarrassed hard-coded guesses, gets the final vote.</p>
+        <h3>Outlier policy</h3>
+        <p>When the calculator returns an item-level range instead of one exact answer, that is intentional. Item level in Wrath is a budget envelope. ICC 277, Ruby Sanctum, proc trinkets, random-suffix gear, PvP resilience pieces, and handcrafted rewards regularly deviate from tidy formula math. The tool flags those cases instead of hiding the uncertainty.</p>
+      </section>
+    </section>
+  </main>
+
+  <footer>
+    <p>Reference Data Build v4.6.6 for WotLK 3.3.5. Static by default, with an optional localhost MySQL helper.</p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

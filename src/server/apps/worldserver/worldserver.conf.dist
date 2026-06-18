@@ -4935,6 +4935,16 @@ InfiniteAmmo.Enabled = 0
 LeatherworkingDrums.DisableAboveLevel70 = 0
 
 #
+#    Disenchant.DisableWhileMoving
+#        Description: If enabled, Disenchant cannot be cast while the player is moving.
+#                     This is useful when spell data has been changed to allow moving casts,
+#                     but you want a config-controlled stationary cast restriction.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled, block moving casts)
+
+Disenchant.DisableWhileMoving = 0
+
+#
 #    Kaelthas.AdvisorReviveStagger.Enable
 #        Description: Enables staggered advisor revival during the Kael'thas
 #                     all-advisors phase. This can make the encounter more stable

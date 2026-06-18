@@ -17,6 +17,7 @@
 
 #include "hyjal.h"
 #include "CreatureScript.h"
+#include "Item.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "ScriptedGossip.h"
@@ -91,6 +92,34 @@ enum Talk
 };
 
 const float UNHOLY_FRENZY_RANGE = 30.0f;
+
+enum HyjalCustomItems
+{
+    ITEM_HYJAL_HOOKSHOT = 824269
+};
+
+void GiveHookshotToInstancePlayers(Creature* source)
+{
+    if (!source || !source->GetMap())
+        return;
+
+    source->GetMap()->DoForAllPlayers([](Player* player)
+    {
+        if (!player || player->HasItemCount(ITEM_HYJAL_HOOKSHOT, 1, true))
+            return;
+
+        ItemPosCountVec dest;
+        if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, ITEM_HYJAL_HOOKSHOT, 1) != EQUIP_ERR_OK)
+        {
+            if (WorldSession* session = player->GetSession())
+                session->SendAreaTriggerMessage("|cffff2020Bags full|r - could not add your Hookshot.");
+            return;
+        }
+
+        if (Item* item = player->StoreNewItem(dest, ITEM_HYJAL_HOOKSHOT, true))
+            player->SendNewItem(item, 1, true, false);
+    });
+}
 
 class npc_hyjal_jaina : public CreatureScript
 {
@@ -258,6 +287,7 @@ public:
             if (hyjal->GetBossState(DATA_KAZROGAL) != DONE || hyjal->GetBossState(DATA_AZGALOR) != DONE)
             {
                 hyjal->SetData(DATA_RESET_WAVES, 0);
+                GiveHookshotToInstancePlayers(creature);
                 hyjal->SetData(DATA_SPAWN_WAVES, 0);
             }
             else
