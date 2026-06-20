@@ -20,6 +20,7 @@
 #include "ScriptedEscortAI.h"
 #include "SpellScriptLoader.h"
 #include "black_temple.h"
+#include "bot_ai.h"
 #include "Player.h"
 #include "ScriptedGossip.h"
 #include "SpellAuraEffects.h"
@@ -181,6 +182,20 @@ Position const BladesPositions[2] =
     { 678.059998f, 285.220001f }
 };
 
+namespace
+{
+    bool IsOwnedNPCBot(Unit const* target)
+    {
+        Creature const* creature = target ? target->ToCreature() : nullptr;
+        return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && const_cast<Creature*>(creature)->GetBotAI();
+    }
+
+    bool IsPlayerOrOwnedNPCBot(Unit const* target)
+    {
+        return target && (target->IsPlayer() || IsOwnedNPCBot(target));
+    }
+}
+
 class ChargeTargetSelector
 {
 public:
@@ -188,7 +203,7 @@ public:
 
     bool operator()(Unit* unit) const
     {
-        return unit->IsPlayer()
+        return unit && unit->IsPlayer()
             && unit->GetDistance2d(BladesPositions[0].GetPositionX(), BladesPositions[0].GetPositionY()) > 25.0f
             && unit->GetDistance2d(BladesPositions[1].GetPositionX(), BladesPositions[1].GetPositionY()) > 25.0f;
     }
@@ -482,7 +497,7 @@ struct boss_illidan_stormrage : public BossAI
                 }, 32s);
 
                 ScheduleTimedEvent(25s, 30s, [&] {
-                    DoCastRandomTarget(SPELL_PARASITIC_SHADOWFIEND, 0U, 100.f);
+                    DoCastRandomPlayerOrBotTarget(SPELL_PARASITIC_SHADOWFIEND, 0U, 100.f);
                 }, 25s, 30s);
 
                 // Custom from SunwellCore?
@@ -498,7 +513,7 @@ struct boss_illidan_stormrage : public BossAI
                 scheduler.Schedule(0s, [this](TaskContext context)
                 {
                     // Do not repeat if interrupted (Eye Beam is cast)
-                    if (DoCastRandomTarget(SPELL_FIREBALL, 0U, 50000.f, true, false, true) == SPELL_CAST_OK)
+                    if (DoCastRandomPlayerOrBotTarget(SPELL_FIREBALL, 0U, 50000.f) == SPELL_CAST_OK)
                         context.Repeat(2400ms);
                 }).Schedule(25s, 45s, [this](TaskContext /*context*/)
                 {
@@ -553,7 +568,7 @@ struct boss_illidan_stormrage : public BossAI
                 }, 32s);
 
                 ScheduleTimedEvent(25s, 30s, [&] {
-                    DoCastRandomTarget(SPELL_PARASITIC_SHADOWFIEND, 0U, 100.f);
+                    DoCastRandomPlayerOrBotTarget(SPELL_PARASITIC_SHADOWFIEND, 0U, 100.f);
                 }, 25s, 30s);
 
                 ScheduleTimedEvent(25s, [&] {
@@ -689,6 +704,50 @@ struct boss_illidan_stormrage : public BossAI
     }
 
 private:
+    Unit* SelectRandomPlayerOrBotTarget(uint32 threatTablePosition = 0, float dist = 0.0f, bool withTank = true)
+    {
+        std::list<Unit*> targets;
+        SelectTargetList(targets, 1, SelectTargetMethod::Random, threatTablePosition, [this, dist, withTank](Unit* target)
+        {
+            if (!target || !target->IsInWorld() || !target->IsAlive() || !target->IsInCombat())
+                return false;
+
+            if (target->GetMap() != me->GetMap() || !target->InSamePhase(me))
+                return false;
+
+            if (target->HasUnitState(UNIT_STATE_ISOLATED))
+                return false;
+
+            if (!withTank && target == me->GetThreatMgr().GetLastVictim())
+                return false;
+
+            if (dist > 0.0f && !me->IsWithinCombatRange(target, dist))
+                return false;
+
+            if (!me->IsValidAttackTarget(target))
+                return false;
+
+            return IsPlayerOrOwnedNPCBot(target);
+        });
+
+        return targets.empty() ? nullptr : targets.front();
+    }
+
+    SpellCastResult DoCastRandomPlayerOrBotTarget(uint32 spellId, uint32 threatTablePosition = 0, float dist = 0.0f, bool triggered = false, bool withTank = true)
+    {
+        if (Unit* target = SelectRandomPlayerOrBotTarget(threatTablePosition, dist, withTank))
+            return DoCast(target, spellId, triggered);
+
+        SpellCastResult result = DoCastRandomTarget(spellId, threatTablePosition, dist, true, triggered, withTank);
+        if (result != SPELL_FAILED_BAD_TARGETS)
+            return result;
+
+        if (Unit* victim = me->GetVictim())
+            return DoCast(victim, spellId, triggered);
+
+        return result;
+    }
+
     bool _canTalk;
     bool _dying;
     bool _inCutscene;

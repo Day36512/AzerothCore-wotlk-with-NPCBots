@@ -16,12 +16,19 @@
  */
 
 #include "CreatureScript.h"
+#include "Group.h"
+#include "LFG.h"
+#include "Map.h"
 #include "ScriptedCreature.h"
 #include "SpellScriptLoader.h"
 #include "black_temple.h"
+#include "botcommon.h"
+#include "botmgr.h"
 #include "GridNotifiers.h"
+#include "Player.h"
 #include "SpellAuraEffects.h"
 #include "SpellScript.h"
+#include <vector>
 
 enum Says
 {
@@ -62,6 +69,121 @@ enum Misc
     GROUP_ENRAGE                    = 1
 };
 
+namespace
+{
+    bool IsOwnedNPCBot(Unit* target)
+    {
+        Creature* creature = target ? target->ToCreature() : nullptr;
+        return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI();
+    }
+
+    bool IsGroupTankFlagged(Unit* target)
+    {
+        Group const* group = nullptr;
+        if (Player const* player = target ? target->ToPlayer() : nullptr)
+            group = player->GetGroup();
+        else if (Creature const* creature = target ? target->ToCreature() : nullptr)
+            if (creature->IsNPCBot())
+                group = creature->GetBotGroup();
+
+        if (!group)
+            return false;
+
+        for (Group::MemberSlot const& slot : group->GetMemberSlots())
+        {
+            if (slot.guid != target->GetGUID())
+                continue;
+
+            return (slot.flags & (MEMBER_FLAG_MAINTANK | MEMBER_FLAG_MAINASSIST)) || (slot.roles & lfg::PLAYER_ROLE_TANK);
+        }
+
+        return false;
+    }
+
+    bool IsMotherShahrazTankTarget(Unit* source, Unit* target)
+    {
+        if (!source || !target)
+            return false;
+
+        if (source->GetVictim() == target)
+            return true;
+
+        if (Creature* sourceCreature = source->ToCreature())
+            if (sourceCreature->GetThreatMgr().GetCurrentVictim() == target || sourceCreature->GetThreatMgr().GetLastVictim() == target)
+                return true;
+
+        if (Creature const* creature = target->ToCreature())
+            if (creature->IsNPCBot() && (creature->GetBotRoles() & (BOT_ROLE_TANK | BOT_ROLE_TANK_OFF)))
+                return true;
+
+        return IsGroupTankFlagged(target);
+    }
+
+    bool IsMotherShahrazEncounterTarget(Unit* source, Unit* target, float range)
+    {
+        if (!source || !target || !target->IsAlive() || !target->IsInWorld() || !target->IsInCombat())
+            return false;
+
+        if (!target->IsInMap(source) || !target->InSamePhase(source) || !source->IsValidAttackTarget(target))
+            return false;
+
+        if (range > 0.0f && !source->IsWithinDistInMap(target, range))
+            return false;
+
+        if (Player* player = target->ToPlayer())
+            return !player->IsGameMaster();
+
+        return IsOwnedNPCBot(target);
+    }
+
+    void AddOwnedNPCBotTargets(Unit* source, Player* player, float range, std::vector<Unit*>& targets)
+    {
+        if (!source || !player || !player->HaveBot())
+            return;
+
+        BotMgr* botMgr = player->GetBotMgr();
+        if (!botMgr)
+            return;
+
+        for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+        {
+            Creature* bot = pair.second;
+            if (IsMotherShahrazEncounterTarget(source, bot, range))
+                targets.push_back(bot);
+        }
+    }
+
+    std::vector<Unit*> CollectMotherShahrazRaidTargets(Unit* source, float range)
+    {
+        std::vector<Unit*> targets;
+        if (!source || !source->GetMap())
+            return targets;
+
+        for (MapReference const& ref : source->GetMap()->GetPlayers())
+        {
+            Player* player = ref.GetSource();
+            if (!player)
+                continue;
+
+            if (IsMotherShahrazEncounterTarget(source, player, range))
+                targets.push_back(player);
+
+            AddOwnedNPCBotTargets(source, player, range, targets);
+        }
+
+        return targets;
+    }
+
+    Unit* SelectRandomMotherShahrazRaidTarget(Unit* source, float range)
+    {
+        std::vector<Unit*> targets = CollectMotherShahrazRaidTargets(source, range);
+        if (!targets.empty())
+            return targets[urand(0u, uint32(targets.size() - 1))];
+
+        return source && source->GetAI() ? source->GetAI()->SelectTarget(SelectTargetMethod::Random, 0, range) : nullptr;
+    }
+}
+
 struct boss_mother_shahraz : public BossAI
 {
     boss_mother_shahraz(Creature* creature) : BossAI(creature, DATA_MOTHER_SHAHRAZ), _canTalk(true) { }
@@ -96,14 +218,14 @@ struct boss_mother_shahraz : public BossAI
             DoCastSelf(RAND(SPELL_PRISMATIC_AURA_SHADOW, SPELL_PRISMATIC_AURA_FIRE, SPELL_PRISMATIC_AURA_NATURE, SPELL_PRISMATIC_AURA_ARCANE, SPELL_PRISMATIC_AURA_FROST, SPELL_PRISMATIC_AURA_HOLY));
         }, 15s);
 
-        ScheduleTimedEvent(30s, [&] {
+        ScheduleTimedEvent(20s, [&] {
             DoCastAOE(SPELL_SILENCING_SHRIEK);
-        }, 30s);
+        }, 25s);
 
-        ScheduleTimedEvent(50s, [&] {
+        ScheduleTimedEvent(38s, [&] {
             Talk(SAY_SPELL);
             DoCast(SPELL_FATAL_ATTRACTION);
-        }, 1min);
+        }, 45s);
 
         me->m_Events.AddEventAtOffset([&] {
             DoCastSelf(SPELL_ENRAGE, true);
@@ -164,8 +286,9 @@ class spell_mother_shahraz_beam_periodic_aura : public AuraScript
     void Update(AuraEffect const* effect)
     {
         PreventDefaultAction();
-        if (Unit* target = GetUnitOwner()->GetAI()->SelectTarget(SelectTargetMethod::Random, 0))
-            GetUnitOwner()->CastSpell(target, GetSpellInfo()->Effects[effect->GetEffIndex()].TriggerSpell, true);
+        if (Unit* owner = GetUnitOwner())
+            if (Unit* target = SelectRandomMotherShahrazRaidTarget(owner, 120.0f))
+                owner->CastSpell(target, GetSpellInfo()->Effects[effect->GetEffIndex()].TriggerSpell, true);
     }
 
     void Register() override
@@ -294,8 +417,16 @@ class spell_mother_shahraz_fatal_attraction : public SpellScript
 
     void FilterTargets(std::list<WorldObject*>& targets)
     {
+        Unit* caster = GetCaster();
+        targets.remove_if([caster](WorldObject* target)
+        {
+            Unit* unit = target ? target->ToUnit() : nullptr;
+            return !IsMotherShahrazEncounterTarget(caster, unit, 120.0f) ||
+                unit->HasAura(SPELL_SABER_LASH_IMMUNITY) ||
+                IsMotherShahrazTankTarget(caster, unit);
+        });
+
         Acore::Containers::RandomResize(targets, 3);
-        targets.remove_if(Acore::UnitAuraCheck(true, SPELL_SABER_LASH_IMMUNITY));
     }
 
     void SetDest(SpellDestination& dest)

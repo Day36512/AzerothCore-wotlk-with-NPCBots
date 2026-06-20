@@ -16,6 +16,7 @@
  */
 
 #include "CreatureScript.h"
+#include "PassiveAI.h"
 #include "ScriptedCreature.h"
 #include "black_temple.h"
 
@@ -44,6 +45,43 @@ enum Supremus
     GROUP_MOLTEN_PUNCH              = 2,
     GROUP_PHASE_CHANGE              = 3
 };
+
+namespace
+{
+    bool IsPlayerOrNPCBot(Unit* target)
+    {
+        return target && target->IsAlive() && (target->IsPlayer() || target->IsNPCBot());
+    }
+
+    Unit* SelectRandomPlayerOrNPCBotFromThreat(Creature* source, float range)
+    {
+        if (!source)
+            return nullptr;
+
+        std::vector<Unit*> targets;
+        targets.reserve(source->GetThreatMgr().GetThreatListSize());
+
+        for (ThreatReference const* ref : source->GetThreatMgr().GetUnsortedThreatList())
+        {
+            if (!ref || ref->IsOffline())
+                continue;
+
+            Unit* target = ref->GetVictim();
+            if (!IsPlayerOrNPCBot(target))
+                continue;
+
+            if (range > 0.0f && !source->IsWithinDistInMap(target, range))
+                continue;
+
+            targets.push_back(target);
+        }
+
+        if (targets.empty())
+            return nullptr;
+
+        return targets[urand(0u, uint32(targets.size() - 1))];
+    }
+}
 
 struct boss_supremus : public BossAI
 {
@@ -75,7 +113,7 @@ struct boss_supremus : public BossAI
         scheduler.Schedule(20s, [this](TaskContext context)
         {
             context.SetGroup(GROUP_MOLTEN_PUNCH);
-            DoCastSelf(SPELL_MOLTEN_PUNCH);
+            DoCast(SPELL_MOLTEN_PUNCH);
             context.Repeat(15s, 20s);
         });
     }
@@ -129,7 +167,7 @@ struct boss_supremus : public BossAI
             {
                 context.SetGroup(GROUP_ABILITIES);
 
-                if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100, true))
+                if (Unit* target = SelectRandomPlayerOrNPCBotFromThreat(me, 100.0f))
                 {
                     DoResetThreatList();
                     me->AddThreat(target, 5000000.0f);
@@ -182,31 +220,17 @@ struct boss_supremus : public BossAI
     }
 };
 
-struct npc_supremus_punch_invisible_stalker : public ScriptedAI
+struct npc_supremus_punch_invisible_stalker : public NullCreatureAI
 {
-    npc_supremus_punch_invisible_stalker(Creature* creature) : ScriptedAI(creature) { }
+    npc_supremus_punch_invisible_stalker(Creature* creature) : NullCreatureAI(creature) { }
 
     void IsSummonedBy(WorldObject* /*summoner*/) override
     {
-        me->SetInCombatWithZone();
-        if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
-            me->AddThreat(target, 10000.f);
+        float x, y, z;
+        me->GetNearPoint(me, x, y, z, 0.0f, 100.0f, frand(0.0f, 2.0f * float(M_PI)));
+        me->GetMotionMaster()->MovePoint(0, x, y, z);
 
         DoCastSelf(SPELL_MOLTEN_FLAME, true);
-
-        scheduler.Schedule(6s, 10s, [this](TaskContext /*context*/)
-        {
-            me->CombatStop();
-            me->SetReactState(REACT_PASSIVE);
-        });
-    }
-
-    void UpdateAI(uint32 diff) override
-    {
-        scheduler.Update(diff);
-
-        if (!UpdateVictim())
-            return;
     }
 };
 

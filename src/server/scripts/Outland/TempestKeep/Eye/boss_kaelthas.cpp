@@ -300,8 +300,14 @@ namespace
     constexpr uint32 KAEL_FINAL_FLAME_STRIKE_FIRST_DELAY_MS = 18000;
     constexpr uint32 KAEL_FINAL_FLAME_STRIKE_REPEAT_MIN_MS = 25000;
     constexpr uint32 KAEL_FINAL_FLAME_STRIKE_REPEAT_MAX_MS = 35000;
-    constexpr uint32 KAEL_FINAL_FIREBALL_VOLLEY_FIRST_DELAY_MS = 25000;
-    constexpr uint32 KAEL_FINAL_FIREBALL_VOLLEY_REPEAT_MS = 35000;
+    constexpr uint32 KAEL_FINAL_FIREBALL_VOLLEY_FIRST_DELAY_MS = 15000;
+    constexpr uint32 KAEL_FINAL_FIREBALL_VOLLEY_REPEAT_MS = 15000;
+    constexpr uint32 KAEL_PHASE4_PHOENIX_FIRST_DELAY_MS = 50000;
+    constexpr uint32 KAEL_PHASE4_PHOENIX_REPEAT_MIN_MS = 48000;
+    constexpr uint32 KAEL_PHASE4_PHOENIX_REPEAT_MAX_MS = 56000;
+    constexpr uint32 KAEL_PHASE5_PHOENIX_FIRST_DELAY_MS = 75000;
+    constexpr uint32 KAEL_PHASE5_PHOENIX_REPEAT_MIN_MS = 75000;
+    constexpr uint32 KAEL_PHASE5_PHOENIX_REPEAT_MAX_MS = 105000;
     constexpr float KAEL_FIRE_BOMB_AREA_X = 155.0f;
     constexpr float KAEL_FIRE_BOMB_AREA_Y = 130.0f;
     constexpr float KAEL_FIRE_BOMB_SAFE_MARGIN = 8.0f;
@@ -1450,11 +1456,11 @@ struct boss_kaelthas : public BossAI
             {
                 DoCastAOE(SPELL_FIREBALL_VOLLEY);
             }, Milliseconds(KAEL_FINAL_FIREBALL_VOLLEY_REPEAT_MS));
-            ScheduleTimedEvent(50s, [&]
+            ScheduleTimedEvent(Milliseconds(KAEL_PHASE5_PHOENIX_FIRST_DELAY_MS), [&]
             {
                 Talk(SAY_SUMMON_PHOENIX);
                 DoCastSelf(SPELL_PHOENIX);
-            }, 61450ms, 96550ms);
+            }, Milliseconds(KAEL_PHASE5_PHOENIX_REPEAT_MIN_MS), Milliseconds(KAEL_PHASE5_PHOENIX_REPEAT_MAX_MS));
             ScheduleTimedEvent(Milliseconds(KAEL_FINAL_FIRE_BOMB_FIRST_DELAY_MS), [&]
             {
                 StartKaelFireBombs();
@@ -1467,6 +1473,27 @@ struct boss_kaelthas : public BossAI
         }
     }
 
+    void DespawnPhoenixesAndEggs()
+    {
+        summons.DespawnEntry(NPC_PHOENIX);
+        summons.DespawnEntry(NPC_PHOENIX_EGG);
+
+        auto despawnEntry = [this](uint32 entry)
+        {
+            std::list<Creature*> creatures;
+            Bcore::AllCreaturesOfEntryInRange check(me, entry, KAEL_ENCOUNTER_RANGE);
+            Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> searcher(me, creatures, check);
+            Cell::VisitObjects(me, searcher, KAEL_ENCOUNTER_RANGE);
+
+            for (Creature* creature : creatures)
+                if (creature && creature->IsInWorld())
+                    creature->DespawnOrUnsummon();
+        };
+
+        despawnEntry(NPC_PHOENIX);
+        despawnEntry(NPC_PHOENIX_EGG);
+    }
+
     void ExecuteMiddleEvent()
     {
         me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
@@ -1475,6 +1502,7 @@ struct boss_kaelthas : public BossAI
         me->SetTarget();
         me->SetFacingTo(M_PI);
         me->SetWalk(true);
+        DespawnPhoenixesAndEggs();
         Talk(SAY_PHASE5_NUTS);
         ScheduleUniqueTimedEvent(2500ms, [&]
         {
@@ -1777,11 +1805,11 @@ struct boss_kaelthas : public BossAI
         {
             DoCastRandomTarget(SPELL_FLAME_STRIKE, 0, 100.0f);
         }, 30250ms, 50650ms);
-        ScheduleTimedEvent(50s, [&]
+        ScheduleTimedEvent(Milliseconds(KAEL_PHASE4_PHOENIX_FIRST_DELAY_MS), [&]
         {
             Talk(SAY_SUMMON_PHOENIX);
             DoCastSelf(SPELL_PHOENIX);
-        }, 35450ms, 41550ms);
+        }, Milliseconds(KAEL_PHASE4_PHOENIX_REPEAT_MIN_MS), Milliseconds(KAEL_PHASE4_PHOENIX_REPEAT_MAX_MS));
         ScheduleTimedEvent(20s, 23s, [&]
         {
             CastKaelFrostBlast();
@@ -1910,7 +1938,21 @@ struct boss_kaelthas : public BossAI
     {
         _botFireBombDirectorActive = false;
         scheduler.CancelGroup(GROUP_BOT_FIRE_BOMB_DIRECTOR);
+        ResumeFireBombMovedBots();
         _botFireBombLocks.clear();
+    }
+
+    void ResumeFireBombMovedBots()
+    {
+        for (ObjectGuid const& botGuid : _botFireBombLocks)
+        {
+            Creature* bot = ObjectAccessor::GetCreature(*me, botGuid);
+            bot_ai* ai = IsValidKaelEncounterBot(bot) ? bot->GetBotAI() : nullptr;
+            if (!ai || ai->IAmFree() || !bot->IsAlive())
+                continue;
+
+            ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+        }
     }
 
     void MoveBotsToSafeKaelFireBombPositions()

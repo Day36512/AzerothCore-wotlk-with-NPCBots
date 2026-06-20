@@ -16,6 +16,8 @@
  */
 
 #include "CreatureScript.h"
+#include "Map.h"
+#include "ObjectAccessor.h"
 #include "ScriptedCreature.h"
 #include "SpellScriptLoader.h"
 #include "black_temple.h"
@@ -23,6 +25,10 @@
 #include "SpellAuraEffects.h"
 #include "SpellMgr.h"
 #include "SpellScript.h"
+#include "bot_ai.h"
+#include "botmgr.h"
+#include <algorithm>
+#include <vector>
 
 enum Says
 {
@@ -101,6 +107,72 @@ enum Misc
     EVENT_KILL_TALK                     = 100
 };
 
+namespace
+{
+    bool IsOwnedNPCBot(Unit const* target)
+    {
+        Creature const* creature = target ? target->ToCreature() : nullptr;
+        return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && const_cast<Creature*>(creature)->GetBotAI();
+    }
+
+    bool IsCouncilMechanicTarget(Creature const* caster, Unit* target, float range)
+    {
+        if (!caster || !target || !target->IsInWorld() || !target->IsAlive())
+            return false;
+
+        if (caster->GetMap() != target->FindMap() || !target->InSamePhase(caster))
+            return false;
+
+        if (!target->IsPlayer() && !IsOwnedNPCBot(target))
+            return false;
+
+        if (target->HasUnitState(UNIT_STATE_ISOLATED))
+            return false;
+
+        if (range > 0.0f && caster->GetDistance(target) > range)
+            return false;
+
+        return caster->IsValidAttackTarget(target);
+    }
+
+    void AddCouncilMechanicTarget(std::vector<Unit*>& targets, Creature const* caster, Unit* target, float range)
+    {
+        if (!IsCouncilMechanicTarget(caster, target, range))
+            return;
+
+        if (std::ranges::find(targets, target) == targets.end())
+            targets.push_back(target);
+    }
+
+    Unit* SelectCouncilMechanicTarget(Creature* caster, float range)
+    {
+        if (!caster || !caster->GetMap())
+            return nullptr;
+
+        std::vector<Unit*> targets;
+        Map::PlayerList const& players = caster->GetMap()->GetPlayers();
+        for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+        {
+            Player* player = itr->GetSource();
+            if (!player)
+                continue;
+
+            AddCouncilMechanicTarget(targets, caster, player, range);
+
+            if (!player->HaveBot())
+                continue;
+
+            for (auto const& [_, bot] : *player->GetBotMgr()->GetBotMap())
+                AddCouncilMechanicTarget(targets, caster, bot, range);
+        }
+
+        if (targets.empty())
+            return nullptr;
+
+        return targets[urand(0, uint32(targets.size() - 1))];
+    }
+}
+
 class VerasEnvenom : public BasicEvent
 {
 public:
@@ -108,13 +180,24 @@ public:
 
     bool Execute(uint64 /*eventTime*/, uint32 /*updateTime*/) override
     {
-        if (Player* target = ObjectAccessor::GetPlayer(_owner, _targetGUID))
+        if (Unit* target = ObjectAccessor::GetUnit(_owner, _targetGUID))
         {
-            // @todo: wtf? this is wrong but I cba looking into it.
-            target->GetObjectVisibilityContainer().LinkWorldObjectVisibility(&_owner);
-            _owner.CastSpell(target, SPELL_ENVENOM, true);
-            target->RemoveAurasDueToSpell(SPELL_DEADLY_POISON);
-            target->GetObjectVisibilityContainer().UnlinkWorldObjectVisibility(&_owner);
+            if (!target->IsAlive() || _owner.GetMap() != target->FindMap())
+                return true;
+
+            if (Player* player = target->ToPlayer())
+            {
+                // @todo: wtf? this is wrong but I cba looking into it.
+                player->GetObjectVisibilityContainer().LinkWorldObjectVisibility(&_owner);
+                _owner.CastSpell(player, SPELL_ENVENOM, true);
+                player->RemoveAurasDueToSpell(SPELL_DEADLY_POISON);
+                player->GetObjectVisibilityContainer().UnlinkWorldObjectVisibility(&_owner);
+            }
+            else
+            {
+                _owner.CastSpell(target, SPELL_ENVENOM, true);
+                target->RemoveAurasDueToSpell(SPELL_DEADLY_POISON);
+            }
         }
         return true;
     }
@@ -346,7 +429,7 @@ struct boss_gathios_the_shatterer : public boss_illidari_council_memberAI
             break;
         case EVENT_SPELL_HAMMER_OF_JUSTICE:
             if (Unit* target = me->GetVictim())
-                if (target->IsPlayer() && me->IsInRange(target, 10.0f, 40.0f, true))
+                if ((target->IsPlayer() || IsOwnedNPCBot(target)) && me->IsInRange(target, 10.0f, 40.0f, true))
                 {
                     me->CastSpell(target, SPELL_HAMMER_OF_JUSTICE);
                     events.ScheduleEvent(EVENT_SPELL_HAMMER_OF_JUSTICE, 20s);
@@ -398,7 +481,8 @@ struct boss_high_nethermancer_zerevor : public boss_illidari_council_memberAI
         {
             if (roll_chance_i(50))
                 Talk(SAY_COUNCIL_SPECIAL);
-            DoCastRandomTarget(SPELL_FLAMESTRIKE, 0, 100.0f);
+            if (Unit* target = SelectCouncilMechanicTarget(me, 100.0f))
+                me->CastSpell(target, SPELL_FLAMESTRIKE);
         }, 40s);
 
         ScheduleTimedEvent(15s, [&]
@@ -408,7 +492,8 @@ struct boss_high_nethermancer_zerevor : public boss_illidari_council_memberAI
 
         ScheduleTimedEvent(5s, [&]
         {
-            DoCastRandomTarget(SPELL_BLIZZARD, 0, 100.0f);
+            if (Unit* target = SelectCouncilMechanicTarget(me, 100.0f))
+                me->CastSpell(target, SPELL_BLIZZARD);
         }, 40s);
 
         ScheduleTimedEvent(10s, [&]
@@ -524,7 +609,7 @@ struct boss_lady_malande : public boss_illidari_council_memberAI
             events.ScheduleEvent(EVENT_SPELL_REFLECTIVE_SHIELD, 40s);
             break;
         case EVENT_SPELL_DIVINE_WRATH:
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f))
+            if (Unit* target = SelectCouncilMechanicTarget(me, 100.0f))
                 me->CastSpell(target, SPELL_DIVINE_WRATH);
             events.ScheduleEvent(EVENT_SPELL_DIVINE_WRATH, 20s);
             break;
@@ -768,7 +853,8 @@ class spell_illidari_council_deadly_strike_aura : public AuraScript
     void Update(AuraEffect const* effect)
     {
         PreventDefaultAction();
-        if (Unit* target = GetUnitOwner()->GetAI()->SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
+        Creature* owner = GetUnitOwner() ? GetUnitOwner()->ToCreature() : nullptr;
+        if (Unit* target = SelectCouncilMechanicTarget(owner, 100.0f))
         {
             GetUnitOwner()->CastSpell(target, GetSpellInfo()->Effects[effect->GetEffIndex()].TriggerSpell, true);
             GetUnitOwner()->m_Events.AddEventAtOffset(new VerasEnvenom(*GetUnitOwner(), target->GetGUID()), randtime(1500ms, 3500ms));

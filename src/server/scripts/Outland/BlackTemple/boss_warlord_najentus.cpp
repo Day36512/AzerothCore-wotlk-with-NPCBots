@@ -19,8 +19,11 @@
 #include "ScriptedCreature.h"
 #include "SpellScriptLoader.h"
 #include "black_temple.h"
+#include "bot_ai.h"
 #include "Player.h"
 #include "SpellScript.h"
+
+#include <vector>
 
 enum Yells
 {
@@ -54,6 +57,66 @@ enum Misc
 {
     ITEM_NAJENTUS_SPINE             = 32408
 };
+
+namespace
+{
+    bool IsPlayerOrNPCBot(Unit* target)
+    {
+        if (!target || !target->IsAlive())
+            return false;
+
+        if (target->IsPlayer())
+            return true;
+
+        if (Creature* creature = target->ToCreature())
+            return creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI();
+
+        return false;
+    }
+
+    Unit* SelectRandomPlayerOrNPCBotFromThreat(Creature* source, float range)
+    {
+        if (!source)
+            return nullptr;
+
+        std::vector<Unit*> targets;
+        targets.reserve(source->GetThreatMgr().GetThreatListSize());
+
+        for (ThreatReference const* ref : source->GetThreatMgr().GetUnsortedThreatList())
+        {
+            if (!ref || ref->IsOffline())
+                continue;
+
+            Unit* target = ref->GetVictim();
+            if (!IsPlayerOrNPCBot(target))
+                continue;
+
+            if (!source->IsValidAttackTarget(target))
+                continue;
+
+            if (range > 0.0f && !source->IsWithinDistInMap(target, range))
+                continue;
+
+            targets.push_back(target);
+        }
+
+        if (targets.empty())
+            return nullptr;
+
+        return targets[urand(0u, uint32(targets.size() - 1))];
+    }
+
+    void NotifyImpaledBot(Unit* target)
+    {
+        Creature* bot = target ? target->ToCreature() : nullptr;
+        if (!bot || !bot->IsNPCBot())
+            return;
+
+        bot->Yell("Impaled! Pull the Naj'entus Spine!", LANG_UNIVERSAL);
+        if (Player* owner = bot->GetBotOwner())
+            bot->Whisper("I'm impaled by Naj'entus. Pull the spine and use it on the shield!", LANG_UNIVERSAL, owner);
+    }
+}
 
 struct boss_najentus : public BossAI
 {
@@ -91,19 +154,20 @@ struct boss_najentus : public BossAI
 
         ScheduleTimedEvent(21s, [&]
         {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 0.0f, false, false))
+            if (Unit* target = SelectRandomPlayerOrNPCBotFromThreat(me, 100.0f))
             {
                 DoCast(target, SPELL_IMPALING_SPINE);
                 target->CastSpell(target, SPELL_SUMMON_IMPALING_SPINE, true);
+                NotifyImpaledBot(target);
                 Talk(SAY_NEEDLE);
             }
         }, 20s, 20s);
 
-        ScheduleTimedEvent(1min, [&]
+        ScheduleTimedEvent(45s, [&]
         {
             DoCastSelf(SPELL_TIDAL_SHIELD);
             scheduler.DelayAll(10s);
-        }, 1min, 1min);
+        }, 45s, 45s);
     }
 
     void KilledUnit(Unit* victim) override

@@ -19,7 +19,10 @@
 #include "ScriptedCreature.h"
 #include "SpellScriptLoader.h"
 #include "black_temple.h"
+#include "bot_ai.h"
+#include "Player.h"
 #include "SpellScript.h"
+#include <vector>
 
 enum Says
 {
@@ -64,6 +67,60 @@ enum Misc
     GROUP_DELAY                     = 1
 };
 
+namespace
+{
+    bool IsPlayerOrNPCBot(Unit* target)
+    {
+        if (!target || !target->IsAlive())
+            return false;
+
+        if (target->IsPlayer())
+            return true;
+
+        if (Creature* creature = target->ToCreature())
+            return creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI();
+
+        return false;
+    }
+
+    Unit* SelectRandomPlayerOrNPCBotFromThreat(Creature* source, float range, bool withTank)
+    {
+        if (!source)
+            return nullptr;
+
+        Unit* currentTank = withTank ? nullptr : source->GetVictim();
+        Unit* lastTank = withTank ? nullptr : source->GetThreatMgr().GetLastVictim();
+        std::vector<Unit*> targets;
+        targets.reserve(source->GetThreatMgr().GetThreatListSize());
+
+        for (ThreatReference const* ref : source->GetThreatMgr().GetUnsortedThreatList())
+        {
+            if (!ref || ref->IsOffline())
+                continue;
+
+            Unit* target = ref->GetVictim();
+            if (!IsPlayerOrNPCBot(target))
+                continue;
+
+            if (!withTank && (target == currentTank || target == lastTank))
+                continue;
+
+            if (!source->IsValidAttackTarget(target))
+                continue;
+
+            if (range > 0.0f && !source->IsWithinCombatRange(target, range))
+                continue;
+
+            targets.push_back(target);
+        }
+
+        if (targets.empty())
+            return nullptr;
+
+        return targets[urand(0u, uint32(targets.size() - 1))];
+    }
+}
+
 struct boss_gurtogg_bloodboil : public BossAI
 {
     boss_gurtogg_bloodboil(Creature* creature) : BossAI(creature, DATA_GURTOGG_BLOODBOIL), _recentlySpoken(false) { }
@@ -99,7 +156,7 @@ struct boss_gurtogg_bloodboil : public BossAI
         }, 15s);
 
         ScheduleTimedEvent(1min, [&] {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 40.0f, true, false))
+            if (Unit* target = SelectRandomPlayerOrNPCBotFromThreat(me, 40.0f, false))
             {
                 me->RemoveAurasByType(SPELL_AURA_MOD_TAUNT);
                 me->RemoveAurasDueToSpell(SPELL_ACIDIC_WOUND);
@@ -183,6 +240,11 @@ class spell_gurtogg_bloodboil : public SpellScript
     {
         if (targets.empty())
             return;
+
+        targets.remove_if([](WorldObject* target)
+        {
+            return !target || !target->ToUnit() || !IsPlayerOrNPCBot(target->ToUnit());
+        });
 
         targets.sort(Acore::ObjectDistanceOrderPred(GetCaster(), false));
         if (targets.size() > GetSpellValue()->MaxAffectedTargets)

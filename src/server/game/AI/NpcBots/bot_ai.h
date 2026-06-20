@@ -48,6 +48,13 @@ class WanderNode;
 
 using AoeSafeSpotsVec = std::vector<Position>;
 
+enum class BotEncounterHeroismState : uint8
+{
+    NotControlled,
+    Delay,
+    Ready
+};
+
 class bot_ai : public CreatureAI
 {
 public:
@@ -432,6 +439,11 @@ protected:
 
     void RefreshAura(uint32 spellId, int8 count = 1, Unit* target = nullptr) const;
     bool CheckAttackTarget();
+    bool TryGurtoggTankSwap(uint32 diff);
+    bool TryReliquarySupport(uint32 diff);
+    bool TryIllidariCouncilSupport(uint32 diff);
+    BotEncounterHeroismState GetIllidanPhaseTwoHeroismState() const;
+    bool TryCastIllidanPhaseTwoDrumsOfWar() const;
     void MoveBehind(Unit const* target) const;
 
     void OnStartAttack(Unit const* u);

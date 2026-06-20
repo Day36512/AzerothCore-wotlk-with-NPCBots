@@ -374,10 +374,21 @@ public:
         void CheckBloodlust(uint32 diff)
         {
             if (BloodlustCheckTimer > diff || (!me->IsInCombat() && !master->IsInCombat()) ||
-                me->GetDistance(master) > 18 || Rand() > 35)
+                me->GetDistance(master) > 18)
                 return;
 
-            BloodlustCheckTimer = 3000;
+            BotEncounterHeroismState const illidanHeroismState = GetIllidanPhaseTwoHeroismState();
+            if (illidanHeroismState == BotEncounterHeroismState::Delay)
+            {
+                BloodlustCheckTimer = 1000;
+                return;
+            }
+
+            bool const illidanHeroismReady = illidanHeroismState == BotEncounterHeroismState::Ready;
+            if (!illidanHeroismReady && Rand() > 35)
+                return;
+
+            BloodlustCheckTimer = illidanHeroismReady ? 1000 : 3000;
 
             uint32 BLOODLUST = (me->GetRaceMask() & sRaceMgr->GetAllianceRaceMask()) ? HEROISM_1 : BLOODLUST_1;
             if (!IsSpellReady(BLOODLUST, diff))
@@ -397,15 +408,17 @@ public:
             bool const isDungeon = me->GetMap()->IsDungeon();
 
             bool shouldBloodlust = false;
+            if (illidanHeroismReady)
+                shouldBloodlust = true;
 
-            if (isRaid)
+            if (!shouldBloodlust && isRaid)
             {
                 // Raid bosses are already marked as boss/worldboss-level creatures. Do not
                 // use health-size heuristics here, because raid trash can be inflated enough
                 // to look "important" while still being a terrible lust target.
                 shouldBloodlust = cre && (cre->IsDungeonBoss() || cre->isWorldBoss());
             }
-            else if (isDungeon)
+            else if (!shouldBloodlust && isDungeon)
             {
                 // In 5-man dungeons, health/pressure heuristics are still useful. Some custom
                 // dungeon bosses or beefy pulls may not report as raid-style bosses, so keep
@@ -415,7 +428,7 @@ public:
                     u->GetHealth() > me->GetMaxHealth() * 10 ||
                     me->getAttackers().size() + master->getAttackers().size() >= 8;
             }
-            else
+            else if (!shouldBloodlust)
             {
                 // World/BG/wandering behavior: allow lust for players, worldboss/dungeon-boss
                 // flags, unusually durable targets, or huge pressure pulls.
@@ -442,7 +455,12 @@ public:
 
             me->InterruptNonMeleeSpells(true);
             if (doCast(me, BLOODLUST))
+            {
+                if (illidanHeroismReady)
+                    TryCastIllidanPhaseTwoDrumsOfWar();
+
                 return;
+            }
         }
 
         void CheckTotems(uint32 diff)

@@ -4966,6 +4966,49 @@ Kaelthas.AdvisorReviveStagger.Enable = 1
 Kaelthas.AdvisorReviveStagger.DelayMs = 8000
 
 #
+#    BlackTemple.ShadeOfAkama.NPCBotScaling.Enable
+#        Description: Enables conservative NPCBot-aware add pressure in Shade of Akama.
+#                     When owned NPCBots are nearby, generator repeat intervals are
+#                     reduced and each generator may keep a few more Ashtongue adds
+#                     active. This does not change boss health or encounter phase flow.
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled)
+
+BlackTemple.ShadeOfAkama.NPCBotScaling.Enable = 1
+
+#
+#    BlackTemple.ShadeOfAkama.NPCBotScaling.BotStep
+#        Description: Number of nearby owned NPCBots required for one scaling step.
+#                     Higher values make scaling softer. Values are clamped from 1 to 40.
+#        Default:     5
+
+BlackTemple.ShadeOfAkama.NPCBotScaling.BotStep = 5
+
+#
+#    BlackTemple.ShadeOfAkama.NPCBotScaling.IntervalReductionPerStepPct
+#    BlackTemple.ShadeOfAkama.NPCBotScaling.MaxIntervalReductionPct
+#        Description: Repeated generator spawn timers are reduced by the per-step
+#                     percent, capped by MaxIntervalReductionPct. First spawn timings
+#                     are unchanged.
+#        Default:     5  - (IntervalReductionPerStepPct)
+#                     25 - (MaxIntervalReductionPct)
+
+BlackTemple.ShadeOfAkama.NPCBotScaling.IntervalReductionPerStepPct = 5
+BlackTemple.ShadeOfAkama.NPCBotScaling.MaxIntervalReductionPct = 25
+
+#
+#    BlackTemple.ShadeOfAkama.NPCBotScaling.ExtraSpawnsPerStep
+#    BlackTemple.ShadeOfAkama.NPCBotScaling.MaxExtraSpawnsPerGenerator
+#        Description: Adds a small amount of extra active-add room per generator as
+#                     NPCBot count rises. This increases Ashtongue pressure without
+#                     inflating Shade or Akama health.
+#        Default:     1 - (ExtraSpawnsPerStep)
+#                     6 - (MaxExtraSpawnsPerGenerator)
+
+BlackTemple.ShadeOfAkama.NPCBotScaling.ExtraSpawnsPerStep = 1
+BlackTemple.ShadeOfAkama.NPCBotScaling.MaxExtraSpawnsPerGenerator = 6
+
+#
 #    Glyph.ExtraSlots.RequiredItemQuality
 #        Description: Minimum item quality required when applying glyph items to the
 #                     ExtraGlyphSlots mastery slots. This does not affect normal

@@ -20,9 +20,27 @@
 #include "Spell.h"
 #include "SpellScriptLoader.h"
 #include "black_temple.h"
+#include "bot_ai.h"
 #include "Player.h"
 #include "SpellAuraEffects.h"
 #include "SpellScript.h"
+
+namespace
+{
+    bool IsReliquaryPlayerOrNPCBotTarget(Unit* target)
+    {
+        if (!target || !target->IsAlive())
+            return false;
+
+        if (target->IsPlayer())
+            return true;
+
+        if (Creature* creature = target->ToCreature())
+            return creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI();
+
+        return false;
+    }
+}
 
 enum Says
 {
@@ -600,6 +618,14 @@ class spell_reliquary_of_souls_fixate : public SpellScript
 
     void FilterTargets(std::list<WorldObject*>& targets)
     {
+        if (targets.empty())
+            return;
+
+        targets.remove_if([](WorldObject* target)
+        {
+            return !target || !target->ToUnit() || !IsReliquaryPlayerOrNPCBotTarget(target->ToUnit());
+        });
+
         if (targets.empty())
             return;
 

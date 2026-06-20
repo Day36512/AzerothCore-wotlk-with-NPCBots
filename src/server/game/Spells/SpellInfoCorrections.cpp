@@ -4450,6 +4450,13 @@ void SpellMgr::LoadSpellInfoCorrections()
         spellInfo->AttributesEx |= SPELL_ATTR1_NO_REFLECTION;
     });
 
+    // Verdict of the Void: allow the custom death detonation to use the victim's corpse position.
+    ApplySpellFix({ 600456 }, [](SpellInfo* spellInfo)
+    {
+        spellInfo->Effects[EFFECT_0].TargetA = SpellImplicitTargetInfo(TARGET_DEST_DEST);
+        spellInfo->Effects[EFFECT_0].TargetB = SpellImplicitTargetInfo(TARGET_UNIT_DEST_AREA_ENEMY);
+    });
+
     // Turn the Tables
     ApplySpellFix({ 51627, 51628, 51629 }, [](SpellInfo* spellInfo)
     {

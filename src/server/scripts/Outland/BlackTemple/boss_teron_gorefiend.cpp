@@ -16,6 +16,7 @@
  */
 
 #include "CreatureScript.h"
+#include "Map.h"
 #include "ScriptedCreature.h"
 #include "SpellScriptLoader.h"
 #include "black_temple.h"
@@ -24,6 +25,8 @@
 #include "SpellAuraEffects.h"
 #include "SpellAuras.h"
 #include "SpellScript.h"
+#include "botmgr.h"
+#include <vector>
 
 enum Says
 {
@@ -52,6 +55,7 @@ enum Spells
     SPELL_SPIRITUAL_VENGEANCE       = 40268,
     SPELL_BRIEF_STUN                = 41421,
     SPELL_BERSERK                   = 45078,
+    SPELL_SOULSTONE_RESURRECTION    = 47883,
 
     SPELL_SPIRIT_LANCE              = 40157,
     SPELL_SPIRIT_CHAINS             = 40175,
@@ -60,18 +64,246 @@ enum Spells
 
 enum Misc
 {
-    SET_DATA_INTRO                  = 1
+    SET_DATA_INTRO                  = 1,
+    ACTION_SMALL_RAID_WIPE_CHECK    = 1,
+    EVENT_RESET_RECENTLY_SPOKEN     = 1,
+    EVENT_SMALL_RAID_WIPE_CHECK     = 2,
+    SMALL_RAID_REAL_PLAYER_LIMIT    = 2
 };
 
-struct ShadowOfDeathSelector
+constexpr float TERON_BOT_WIPE_KILL_RANGE = 180.0f;
+constexpr auto TERON_SMALL_RAID_WIPE_CHECK_DELAY = 8s;
+constexpr char const* TERON_SMALL_RAID_WIPE_YELL = "No living soul remains to defy me. Your failure is complete!";
+
+struct TeronRealPlayerState
 {
-    Unit const* _tank;
-    ShadowOfDeathSelector(Unit const* tank) : _tank(tank) {}
-    bool operator()(Unit const* target) const
-    {
-        return target && !target->HasAura(SPELL_SHADOW_OF_DEATH) && !target->HasAura(SPELL_POSSESS_SPIRIT_IMMUNE) && target != _tank;
-    }
+    uint32 total = 0;
+    uint32 living = 0;
+    uint32 activeVengefulSpirit = 0;
 };
+
+bool IsTeronEncounterPlayer(Creature const* teron, Player const* player);
+
+bool IsShadowOfDeathEligibleTarget(Creature* teron, Unit* target, Unit const* tank, bool allowTank)
+{
+    if (!teron || !target || !target->IsAlive())
+        return false;
+
+    if (!allowTank && target == tank)
+        return false;
+
+    if (target->HasAura(SPELL_SHADOW_OF_DEATH) || target->HasAura(SPELL_POSSESS_SPIRIT_IMMUNE))
+        return false;
+
+    if (!target->IsInMap(teron) || !target->InSamePhase(teron))
+        return false;
+
+    return teron->IsValidAttackTarget(target);
+}
+
+Unit* SelectRandomShadowOfDeathTarget(std::vector<Unit*>& targets)
+{
+    if (targets.empty())
+        return nullptr;
+
+    return targets[urand(0u, uint32(targets.size() - 1))];
+}
+
+Unit* SelectShadowOfDeathTarget(Creature* teron)
+{
+    if (!teron)
+        return nullptr;
+
+    Unit const* tank = teron->GetThreatMgr().GetCurrentVictim();
+    std::vector<Unit*> playerTargets;
+    std::vector<Unit*> tankPlayerTargets;
+    std::vector<Unit*> botTargets;
+
+    playerTargets.reserve(teron->GetThreatMgr().GetThreatListSize());
+    tankPlayerTargets.reserve(1);
+    botTargets.reserve(teron->GetThreatMgr().GetThreatListSize());
+
+    for (ThreatReference const* ref : teron->GetThreatMgr().GetUnsortedThreatList())
+    {
+        if (!ref || ref->IsOffline())
+            continue;
+
+        Unit* target = ref->GetVictim();
+        if (!target)
+            continue;
+
+        if (Player* player = target->ToPlayer())
+        {
+            if (!IsTeronEncounterPlayer(teron, player))
+                continue;
+
+            if (IsShadowOfDeathEligibleTarget(teron, target, tank, false))
+                playerTargets.push_back(target);
+            else if (target == tank && IsShadowOfDeathEligibleTarget(teron, target, tank, true))
+                tankPlayerTargets.push_back(target);
+
+            continue;
+        }
+
+        Creature* creature = target->ToCreature();
+        if (!creature || !creature->IsNPCBot() || creature->IsTempBot() || creature->IsFreeBot())
+            continue;
+
+        if (IsShadowOfDeathEligibleTarget(teron, target, tank, false))
+            botTargets.push_back(target);
+    }
+
+    if (Unit* target = SelectRandomShadowOfDeathTarget(playerTargets))
+        return target;
+
+    if (Unit* target = SelectRandomShadowOfDeathTarget(tankPlayerTargets))
+        return target;
+
+    return SelectRandomShadowOfDeathTarget(botTargets);
+}
+
+bool IsTeronEncounterPlayer(Creature const* teron, Player const* player)
+{
+    return teron && player && player->IsInWorld() && player->IsInMap(teron) && player->InSamePhase(teron);
+}
+
+bool IsTeronPlayerActiveAsVengefulSpirit(Player const* player)
+{
+    return player && (player->HasAura(SPELL_SPIRITUAL_VENGEANCE) || player->HasAura(SPELL_POSSESS_SPIRIT_IMMUNE));
+}
+
+bool HasSoulstoneResurrection(Player const* player)
+{
+    return player &&
+        (player->HasAura(20707) ||
+            player->HasAura(20762) ||
+            player->HasAura(20763) ||
+            player->HasAura(20764) ||
+            player->HasAura(20765) ||
+            player->HasAura(27239) ||
+            player->HasAura(SPELL_SOULSTONE_RESURRECTION));
+}
+
+Creature* GetTeronGorefiend(Unit* source)
+{
+    if (!source)
+        return nullptr;
+
+    if (Creature* creature = source->ToCreature())
+        if (creature->GetEntry() == NPC_TERON_GOREFIEND)
+            return creature;
+
+    InstanceScript* instance = source->GetInstanceScript();
+    return instance ? instance->GetCreature(DATA_TERON_GOREFIEND) : nullptr;
+}
+
+TeronRealPlayerState GetTeronRealPlayerState(Creature const* teron)
+{
+    TeronRealPlayerState state;
+    if (!teron || !teron->GetMap())
+        return state;
+
+    for (MapReference const& ref : teron->GetMap()->GetPlayers())
+    {
+        Player* player = ref.GetSource();
+        if (!IsTeronEncounterPlayer(teron, player))
+            continue;
+
+        ++state.total;
+
+        if (IsTeronPlayerActiveAsVengefulSpirit(player))
+            ++state.activeVengefulSpirit;
+        else if (player->IsAlive())
+            ++state.living;
+    }
+
+    return state;
+}
+
+void ApplySmallRaidSoulstoneForShadowOfDeath(Unit* caster, Unit* target)
+{
+    Player* player = target ? target->ToPlayer() : nullptr;
+    Creature* teron = GetTeronGorefiend(caster);
+    if (!player || !teron || !IsTeronEncounterPlayer(teron, player))
+        return;
+
+    if (GetTeronRealPlayerState(teron).total > SMALL_RAID_REAL_PLAYER_LIMIT)
+        return;
+
+    if (HasSoulstoneResurrection(player))
+        return;
+
+    teron->CastSpell(player, SPELL_SOULSTONE_RESURRECTION, true);
+}
+
+void KillTeronEncounterBotUnit(Creature* teron, Unit* unit, GuidSet& killed)
+{
+    if (!teron || !unit || !unit->IsAlive())
+        return;
+
+    if (!unit->IsNPCBot() && !unit->IsNPCBotPet())
+        return;
+
+    if (!unit->IsInMap(teron) || !unit->InSamePhase(teron) || !teron->IsWithinDistInMap(unit, TERON_BOT_WIPE_KILL_RANGE))
+        return;
+
+    if (!killed.insert(unit->GetGUID()).second)
+        return;
+
+    Unit::Kill(teron, unit);
+}
+
+void KillTeronEncounterBotAndPet(Creature* teron, Creature* bot, GuidSet& killed)
+{
+    if (!bot)
+        return;
+
+    KillTeronEncounterBotUnit(teron, bot, killed);
+
+    if (bot->IsNPCBot())
+        KillTeronEncounterBotUnit(teron, bot->GetBotsPet(), killed);
+}
+
+void KillTeronEncounterBots(Creature* teron)
+{
+    if (!teron || !teron->GetMap())
+        return;
+
+    GuidSet killed;
+
+    for (MapReference const& ref : teron->GetMap()->GetPlayers())
+    {
+        Player* player = ref.GetSource();
+        if (!player || !player->HaveBot())
+            continue;
+
+        BotMgr* botMgr = player->GetBotMgr();
+        if (!botMgr)
+            continue;
+
+        for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+            KillTeronEncounterBotAndPet(teron, pair.second, killed);
+    }
+}
+
+bool ForceTeronWipeIfNoRealPlayersRemain(Creature* teron)
+{
+    if (!teron || !teron->IsAlive())
+        return false;
+
+    InstanceScript* instance = teron->GetInstanceScript();
+    if (!instance || instance->GetBossState(DATA_TERON_GOREFIEND) != IN_PROGRESS)
+        return false;
+
+    TeronRealPlayerState const state = GetTeronRealPlayerState(teron);
+    if (state.living || state.activeVengefulSpirit)
+        return false;
+
+    teron->Yell(TERON_SMALL_RAID_WIPE_YELL, LANG_UNIVERSAL);
+    KillTeronEncounterBots(teron);
+    teron->AI()->EnterEvadeMode(CreatureAI::EVADE_REASON_NO_HOSTILES);
+    return true;
+}
 
 struct boss_teron_gorefiend : public BossAI
 {
@@ -79,12 +311,14 @@ struct boss_teron_gorefiend : public BossAI
     {
         _recentlySpoken = false;
         _intro = false;
+        _smallRaidWipeResetting = false;
     }
 
     void Reset() override
     {
         BossAI::Reset();
         DoCastSelf(SPELL_SHADOW_OF_DEATH_REMOVE, true);
+        _smallRaidWipeResetting = false;
     }
 
     void JustEngagedWith(Unit* who) override
@@ -115,7 +349,7 @@ struct boss_teron_gorefiend : public BossAI
 
         ScheduleTimedEvent(10s, [&]
         {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, ShadowOfDeathSelector(me->GetThreatMgr().GetCurrentVictim())))
+            if (Unit* target = SelectShadowOfDeathTarget(me))
                 me->CastSpell(target, SPELL_SHADOW_OF_DEATH, false);
         }, 30s, 50s);
 
@@ -137,8 +371,19 @@ struct boss_teron_gorefiend : public BossAI
             ScheduleUniqueTimedEvent(6s, [&]
             {
                 _recentlySpoken = false;
-            }, 1);
+            }, EVENT_RESET_RECENTLY_SPOKEN);
         }
+    }
+
+    void DoAction(int32 action) override
+    {
+        if (action != ACTION_SMALL_RAID_WIPE_CHECK || _smallRaidWipeResetting)
+            return;
+
+        ScheduleUniqueTimedEvent(TERON_SMALL_RAID_WIPE_CHECK_DELAY, [this]
+        {
+            _smallRaidWipeResetting = ForceTeronWipeIfNoRealPlayersRemain(me);
+        }, EVENT_SMALL_RAID_WIPE_CHECK);
     }
 
     void SetData(uint32 type, uint32 id) override
@@ -177,6 +422,7 @@ struct boss_teron_gorefiend : public BossAI
     private:
         bool _recentlySpoken;
         bool _intro;
+        bool _smallRaidWipeResetting;
 };
 
 struct npc_vengeful_spirit : public NullCreatureAI
@@ -193,6 +439,11 @@ struct npc_vengeful_spirit : public NullCreatureAI
 class spell_teron_gorefiend_shadow_of_death : public AuraScript
 {
     PrepareAuraScript(spell_teron_gorefiend_shadow_of_death);
+
+    void HandleEffectApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        ApplySmallRaidSoulstoneForShadowOfDeath(GetCaster(), GetTarget());
+    }
 
     void Absorb(AuraEffect* /*aurEff*/, DamageInfo&   /*dmgInfo*/, uint32&   /*absorbAmount*/)
     {
@@ -212,10 +463,14 @@ class spell_teron_gorefiend_shadow_of_death : public AuraScript
         GetTarget()->CastSpell(GetTarget(), SPELL_SUMMON_SKELETON2, true);
         GetTarget()->CastSpell(GetTarget(), SPELL_SUMMON_SKELETON3, true);
         GetTarget()->CastSpell(GetTarget(), SPELL_SUMMON_SKELETON4, true);
+
+        if (Creature* teron = GetTeronGorefiend(GetTarget()))
+            teron->AI()->DoAction(ACTION_SMALL_RAID_WIPE_CHECK);
     }
 
     void Register() override
     {
+        AfterEffectApply += AuraEffectApplyFn(spell_teron_gorefiend_shadow_of_death::HandleEffectApply, EFFECT_0, SPELL_AURA_SCHOOL_ABSORB, AURA_EFFECT_HANDLE_REAL);
         OnEffectAbsorb += AuraEffectAbsorbFn(spell_teron_gorefiend_shadow_of_death::Absorb, EFFECT_0);
         AfterEffectRemove += AuraEffectRemoveFn(spell_teron_gorefiend_shadow_of_death::HandleEffectRemove, EFFECT_0, SPELL_AURA_SCHOOL_ABSORB, AURA_EFFECT_HANDLE_REAL);
     }
@@ -251,7 +506,12 @@ class spell_teron_gorefiend_spiritual_vengeance : public AuraScript
 
     void HandleEffectRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
-        Unit::Kill(nullptr, GetTarget());
+        Unit* target = GetTarget();
+        Creature* teron = GetTeronGorefiend(target);
+        Unit::Kill(nullptr, target);
+
+        if (teron)
+            teron->AI()->DoAction(ACTION_SMALL_RAID_WIPE_CHECK);
     }
 
     void Register() override

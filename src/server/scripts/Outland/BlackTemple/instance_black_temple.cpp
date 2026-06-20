@@ -108,6 +108,7 @@ public:
             LoadSummonData(summonData);
 
             ashtongueGUIDs.clear();
+            reliquarySoulFragmentGUIDs.clear();
         }
 
         void OnCreatureCreate(Creature* creature) override
@@ -117,7 +118,14 @@ public:
                 case NPC_ANGERED_SOUL_FRAGMENT:
                 case NPC_HUNGERING_SOUL_FRAGMENT:
                 case NPC_SUFFERING_SOUL_FRAGMENT:
+                    if (GetBossState(DATA_RELIQUARY_OF_SOULS) == DONE)
+                    {
+                        DespawnReliquarySoulFragment(creature);
+                        break;
+                    }
+
                     creature->SetCorpseDelay(5);
+                    reliquarySoulFragmentGUIDs.insert(creature->GetGUID());
                     break;
                 case NPC_ASHTONGUE_BATTLELORD:
                 case NPC_ASHTONGUE_MYSTIC:
@@ -174,6 +182,9 @@ public:
                     case DATA_TERON_GOREFIEND:
                     case DATA_GURTOGG_BLOODBOIL:
                     case DATA_RELIQUARY_OF_SOULS:
+                        if (type == DATA_RELIQUARY_OF_SOULS)
+                            DespawnReliquarySoulFragments();
+
                         if (AllBossesDone({ DATA_SHADE_OF_AKAMA, DATA_TERON_GOREFIEND, DATA_GURTOGG_BLOODBOIL, DATA_RELIQUARY_OF_SOULS }))
                             if (Creature* trigger = GetCreature(DATA_BLACK_TEMPLE_TRIGGER))
                                 trigger->AI()->Talk(EMOTE_LOWER_TEMPLE_DEFEATED);
@@ -190,7 +201,25 @@ public:
         }
 
     protected:
+        static void DespawnReliquarySoulFragment(Creature* creature)
+        {
+            if (!creature || creature->IsDuringRemoveFromWorld())
+                return;
+
+            creature->SetCorpseDelay(0);
+            creature->CombatStop(true);
+            creature->DespawnOrUnsummon(0ms, Seconds(7 * DAY));
+        }
+
+        void DespawnReliquarySoulFragments()
+        {
+            for (ObjectGuid const& guid : reliquarySoulFragmentGUIDs)
+                if (Creature* fragment = instance->GetCreature(guid))
+                    DespawnReliquarySoulFragment(fragment);
+        }
+
         GuidSet ashtongueGUIDs;
+        GuidSet reliquarySoulFragmentGUIDs;
     };
 
     InstanceScript* GetInstanceScript(InstanceMap* map) const override

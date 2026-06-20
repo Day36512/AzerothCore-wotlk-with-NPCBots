@@ -15,15 +15,21 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Config.h"
 #include "CreatureScript.h"
+#include "Map.h"
 #include "ScriptedCreature.h"
 #include "SpellScriptLoader.h"
 #include "black_temple.h"
+#include "botmgr.h"
 #include "PassiveAI.h"
+#include "Player.h"
 #include "ScriptedGossip.h"
 #include "SpellAuras.h"
 #include "SpellInfo.h"
 #include "SpellScript.h"
+
+#include <algorithm>
 
 enum Says
 {
@@ -93,6 +99,90 @@ enum Misc
 Position AkamaEngage = { 517.4877f, 400.79926f, 112.77704f };
 Position AkamaOutro = { 469.0867f,  401.0793f,  118.52704f, 0.087266460061073303f };
 Position ShadeEngage = { 512.48773f, 400.8283f, 112.77704f };
+
+namespace
+{
+    constexpr float SHADE_AKAMA_BOT_SCAN_RANGE = 120.0f;
+
+    struct ShadeAkamaSpawnScaling
+    {
+        uint32 spawnLimit = COUNTER_SPAWNS_MAX;
+        uint32 intervalReductionPct = 0;
+    };
+
+    bool IsCountedShadeAkamaBot(Creature* bot, WorldObject const* source, float range)
+    {
+        return bot &&
+            bot->IsNPCBot() &&
+            !bot->IsTempBot() &&
+            !bot->IsFreeBot() &&
+            bot->GetBotAI() &&
+            bot->IsInWorld() &&
+            bot->IsAlive() &&
+            source &&
+            bot->GetMap() == source->GetMap() &&
+            source->IsWithinDistInMap(bot, range);
+    }
+
+    uint32 CountNearbyOwnedShadeAkamaBots(WorldObject const* source, float range)
+    {
+        Map* map = source ? source->GetMap() : nullptr;
+        if (!map)
+            return 0;
+
+        uint32 count = 0;
+        Map::PlayerList const& players = map->GetPlayers();
+        for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+        {
+            Player* player = itr->GetSource();
+            if (!player || !player->HaveBot())
+                continue;
+
+            BotMgr* botMgr = player->GetBotMgr();
+            if (!botMgr)
+                continue;
+
+            for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+                if (IsCountedShadeAkamaBot(pair.second, source, range))
+                    ++count;
+        }
+
+        return count;
+    }
+
+    Milliseconds ScaleShadeAkamaRepeatInterval(Milliseconds base, uint32 reductionPct)
+    {
+        uint32 const clampedReductionPct = std::min<uint32>(reductionPct, 75);
+        int64 const scaledMs = (base.count() * int64(100 - clampedReductionPct)) / 100;
+        return Milliseconds(std::max<int64>(1000, scaledMs));
+    }
+
+    ShadeAkamaSpawnScaling GetShadeAkamaSpawnScaling(WorldObject const* source)
+    {
+        ShadeAkamaSpawnScaling scaling;
+
+        if (!sConfigMgr->GetOption<bool>("BlackTemple.ShadeOfAkama.NPCBotScaling.Enable", true))
+            return scaling;
+
+        uint32 const botCount = CountNearbyOwnedShadeAkamaBots(source, SHADE_AKAMA_BOT_SCAN_RANGE);
+        if (!botCount)
+            return scaling;
+
+        uint32 const botStep = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("BlackTemple.ShadeOfAkama.NPCBotScaling.BotStep", 5), 1, 40);
+        uint32 const steps = botCount / botStep;
+        if (!steps)
+            return scaling;
+
+        uint32 const reductionPerStepPct = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("BlackTemple.ShadeOfAkama.NPCBotScaling.IntervalReductionPerStepPct", 5), 0, 50);
+        uint32 const maxReductionPct = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("BlackTemple.ShadeOfAkama.NPCBotScaling.MaxIntervalReductionPct", 25), 0, 50);
+        uint32 const extraSpawnsPerStep = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("BlackTemple.ShadeOfAkama.NPCBotScaling.ExtraSpawnsPerStep", 1), 0, 10);
+        uint32 const maxExtraSpawns = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("BlackTemple.ShadeOfAkama.NPCBotScaling.MaxExtraSpawnsPerGenerator", 6), 0, 20);
+
+        scaling.intervalReductionPct = std::min<uint32>(steps * reductionPerStepPct, maxReductionPct);
+        scaling.spawnLimit = COUNTER_SPAWNS_MAX + std::min<uint32>(steps * extraSpawnsPerStep, maxExtraSpawns);
+        return scaling;
+    }
+}
 
 struct boss_shade_of_akama : public BossAI
 {
@@ -403,36 +493,47 @@ struct npc_creature_generator_akama : public ScriptedAI
             scheduler.CancelAll();
             break;
         case ACTION_GENERATOR_START:
+        {
+            ShadeAkamaSpawnScaling const scaling = GetShadeAkamaSpawnScaling(me);
+            uint32 const spawnLimit = scaling.spawnLimit;
+            Milliseconds const waveMin = ScaleShadeAkamaRepeatInterval(50s, scaling.intervalReductionPct);
+            Milliseconds const waveMax = ScaleShadeAkamaRepeatInterval(60s, scaling.intervalReductionPct);
+            Milliseconds const defenderMin = ScaleShadeAkamaRepeatInterval(30s, scaling.intervalReductionPct);
+            Milliseconds const defenderMax = ScaleShadeAkamaRepeatInterval(40s, scaling.intervalReductionPct);
+            Milliseconds const sorcererMin = ScaleShadeAkamaRepeatInterval(30s, scaling.intervalReductionPct);
+            Milliseconds const sorcererMax = ScaleShadeAkamaRepeatInterval(35s, scaling.intervalReductionPct);
+
             if (me->GetPositionY() > 400.0f)    // Right Side
             {
-                ScheduleTimedEvent(10s, [&]
+                ScheduleTimedEvent(10s, [this, spawnLimit]
                 {
-                    if (spawnCounter <= COUNTER_SPAWNS_MAX)
+                    if (spawnCounter <= spawnLimit)
                         DoCastSelf(SPELL_ASHTONGUE_WAVE_B);
-                }, 50s, 60s);
+                }, waveMin, waveMax);
 
-                ScheduleTimedEvent(2s, 5s, [&]
+                ScheduleTimedEvent(2s, 5s, [this, spawnLimit]
                 {
-                    if (spawnCounter <= COUNTER_SPAWNS_MAX)
+                    if (spawnCounter <= spawnLimit)
                         DoCastSelf(SPELL_SUMMON_ASHTONGUE_DEFENDER);
-                }, 30s, 40s);
+                }, defenderMin, defenderMax);
             }
 
             if (me->GetPositionY() < 400.0f)    // Left Side
             {
-                ScheduleTimedEvent(3s, [&]
+                ScheduleTimedEvent(3s, [this, spawnLimit]
                 {
-                    if (spawnCounter <= COUNTER_SPAWNS_MAX)
+                    if (spawnCounter <= spawnLimit)
                         DoCastSelf(SPELL_ASHTONGUE_WAVE_B);
-                }, 50s, 60s);
+                }, waveMin, waveMax);
 
-                ScheduleTimedEvent(2s, 5s, [&]
+                ScheduleTimedEvent(2s, 5s, [this, spawnLimit]
                 {
-                    if (spawnCounter <= COUNTER_SPAWNS_MAX)
+                    if (spawnCounter <= spawnLimit)
                         DoCastSelf(SPELL_SUMMON_ASHTONGUE_SORCERER);
-                }, 30s, 35s);
+                }, sorcererMin, sorcererMax);
             }
             break;
+        }
         case ACTION_GENERATOR_DESPAWN_ALL:
             summons.DespawnAll();
             scheduler.CancelAll();
