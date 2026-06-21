@@ -3849,7 +3849,7 @@ public:
         }
 
         WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_CREATURE_BY_ID);
-        //"SELECT guid FROM creature WHERE id1 = ? OR id2 = ? OR id3 = ?", CONNECTION_SYNCH
+        //"SELECT guid FROM creature WHERE id = ? UNION SELECT spawnId AS guid FROM creature_multispawn WHERE entry = ?", CONNECTION_SYNCH
         //stmt->setUInt32(0, id);
         stmt->SetArguments(id, id, id);
         PreparedQueryResult res2 = WorldDatabase.Query(stmt);
