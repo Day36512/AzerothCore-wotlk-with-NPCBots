@@ -134,21 +134,26 @@ uint32 ApplyRatedArenaOpponentDamageMultiplier(uint32 damage, float multiplier)
     return uint32(std::round(modifiedDamage));
 }
 
-bool IsDamageFromCasterAuraAffectingSpell(AuraEffect const* aurEff, Unit const* caster, SpellInfo const* spellInfo)
+bool IsDamageFromCasterAuraAffectingSpell(AuraEffect const* aurEff, Unit const* caster, SpellInfo const* spellInfo, SpellSchoolMask damageSchoolMask)
 {
-    if (!aurEff || !caster || !spellInfo || aurEff->GetCasterGUID() != caster->GetGUID())
+    if (!aurEff || !caster || aurEff->GetCasterGUID() != caster->GetGUID())
         return false;
 
     SpellInfo const* auraSpellInfo = aurEff->GetSpellInfo();
     if (!auraSpellInfo)
         return false;
 
+    uint32 const auraSchoolMask = uint32(aurEff->GetMiscValue());
+    if (auraSchoolMask && !(auraSchoolMask & uint32(damageSchoolMask)))
+        return false;
+
     // For this aura, a blank spell class mask means the debuff is a generic
     // damage-from-this-caster modifier instead of being limited by spell family.
+    // This includes melee/ranged swings that do not have a spellInfo.
     if (!aurEff->HasSpellClassMask())
         return true;
 
-    return aurEff->IsAffectedOnSpell(spellInfo);
+    return spellInfo && aurEff->IsAffectedOnSpell(spellInfo);
 }
 
 bool IsSpiritHealingReceivedTarget(Unit const* target)
@@ -163,33 +168,44 @@ bool IsSpiritHealingReceivedTarget(Unit const* target)
     return creature && creature->IsNPCBot();
 }
 
+double GetSpiritHealingReceivedRatingDivisor(uint32 level)
+{
+    level = std::max<uint32>(1, std::min<uint32>(level, 80));
+
+    double constexpr MinSpiritPerOnePct = 18.0;
+    double constexpr MaxSpiritPerOnePct = 180.0;
+    double constexpr RatingCurveExponent = 1.50;
+
+    double const levelProgress = double(level - 1) / 79.0;
+    return MinSpiritPerOnePct + (MaxSpiritPerOnePct - MinSpiritPerOnePct) * std::pow(levelProgress, RatingCurveExponent);
+}
+
+double ApplySpiritHealingReceivedSoftCap(double rawBonusPct)
+{
+    double constexpr SoftStartPct = 15.0;
+    double constexpr CapPct = 50.0;
+    double constexpr DiminishScalePct = 25.0;
+
+    if (rawBonusPct <= SoftStartPct)
+        return rawBonusPct;
+
+    double constexpr SoftRangePct = CapPct - SoftStartPct;
+    double const excessPct = rawBonusPct - SoftStartPct;
+    return std::min(CapPct, SoftStartPct + (SoftRangePct * excessPct) / (excessPct + DiminishScalePct));
+}
+
 uint32 GetSpiritHealingReceivedBonusBps(Unit const* target)
 {
     if (!IsSpiritHealingReceivedTarget(target))
         return 0;
 
-    uint32 level = target->GetLevel();
-    level = std::max<uint32>(1, std::min<uint32>(level, 80));
-
     float const spiritFloat = target->GetStat(STAT_SPIRIT);
     if (spiritFloat <= 0.0f)
         return 0;
 
-    uint32 const rawBonusBps = uint32(spiritFloat);
-    double capPct;
-
-    if (level <= 60)
-    {
-        double const t = double(level - 1) / 59.0;
-        capPct = 1.0 + 7.0 * std::pow(t, 1.25);
-    }
-    else if (level <= 70)
-        capPct = 8.0 + double(level - 60) * 0.10;
-    else
-        capPct = 9.0 + double(level - 70) * 0.10;
-
-    uint32 const capBonusBps = uint32(std::round(capPct * 100.0));
-    return std::min(rawBonusBps, capBonusBps);
+    double const rawBonusPct = double(spiritFloat) / GetSpiritHealingReceivedRatingDivisor(target->GetLevel());
+    double const bonusPct = ApplySpiritHealingReceivedSoftCap(rawBonusPct);
+    return uint32(std::round(bonusPct * 100.0));
 }
 
 uint32 ApplySpiritHealingReceivedBonus(Unit const* target, SpellInfo const* spellProto, uint32 healamount)
@@ -9473,7 +9489,7 @@ uint32 Unit::SpellDamageBonusTaken(Unit* caster, SpellInfo const* spellProto, ui
     {
         TakenTotalMod *= GetTotalAuraMultiplier(SPELL_AURA_MOD_DAMAGE_FROM_CASTER, [caster, spellProto](AuraEffect const* aurEff) -> bool
         {
-            return IsDamageFromCasterAuraAffectingSpell(aurEff, caster, spellProto);
+            return IsDamageFromCasterAuraAffectingSpell(aurEff, caster, spellProto, spellProto->GetSchoolMask());
         });
     }
 
@@ -10979,15 +10995,19 @@ uint32 Unit::MeleeDamageBonusTaken(Unit* attacker, uint32 pdamage, WeaponAttackT
         TakenTotalMod *= BotMgr::GetBotDamageTakenMod(ToCreature(), false);
     //end npcbot
 
+    // From caster spells. Blank class masks apply to all damage from this caster,
+    // while masked effects still require a matching spell.
+    if (attacker)
+    {
+        TakenTotalMod *= GetTotalAuraMultiplier(SPELL_AURA_MOD_DAMAGE_FROM_CASTER, [attacker, spellProto, damageSchoolMask](AuraEffect const* aurEff)
+        {
+            return IsDamageFromCasterAuraAffectingSpell(aurEff, attacker, spellProto, damageSchoolMask);
+        });
+    }
+
     // .. taken pct (special attacks)
     if (spellProto)
     {
-        // From caster spells
-        TakenTotalMod *= GetTotalAuraMultiplier(SPELL_AURA_MOD_DAMAGE_FROM_CASTER, [attacker, spellProto](AuraEffect const* aurEff)
-        {
-            return IsDamageFromCasterAuraAffectingSpell(aurEff, attacker, spellProto);
-        });
-
         // Mod damage from spell mechanic
         uint64 mechanicMask = spellProto->GetAllEffectsMechanicMask();
 
