@@ -134,6 +134,23 @@ uint32 ApplyRatedArenaOpponentDamageMultiplier(uint32 damage, float multiplier)
     return uint32(std::round(modifiedDamage));
 }
 
+bool IsDamageFromCasterAuraAffectingSpell(AuraEffect const* aurEff, Unit const* caster, SpellInfo const* spellInfo)
+{
+    if (!aurEff || !caster || !spellInfo || aurEff->GetCasterGUID() != caster->GetGUID())
+        return false;
+
+    SpellInfo const* auraSpellInfo = aurEff->GetSpellInfo();
+    if (!auraSpellInfo)
+        return false;
+
+    // For this aura, a blank spell class mask means the debuff is a generic
+    // damage-from-this-caster modifier instead of being limited by spell family.
+    if (!aurEff->HasSpellClassMask())
+        return true;
+
+    return aurEff->IsAffectedOnSpell(spellInfo);
+}
+
 bool IsSpiritHealingReceivedTarget(Unit const* target)
 {
     if (!target)
@@ -9456,9 +9473,7 @@ uint32 Unit::SpellDamageBonusTaken(Unit* caster, SpellInfo const* spellProto, ui
     {
         TakenTotalMod *= GetTotalAuraMultiplier(SPELL_AURA_MOD_DAMAGE_FROM_CASTER, [caster, spellProto](AuraEffect const* aurEff) -> bool
         {
-            if (aurEff->GetCasterGUID() == caster->GetGUID() && aurEff->IsAffectedOnSpell(spellProto))
-                return true;
-            return false;
+            return IsDamageFromCasterAuraAffectingSpell(aurEff, caster, spellProto);
         });
     }
 
@@ -10970,7 +10985,7 @@ uint32 Unit::MeleeDamageBonusTaken(Unit* attacker, uint32 pdamage, WeaponAttackT
         // From caster spells
         TakenTotalMod *= GetTotalAuraMultiplier(SPELL_AURA_MOD_DAMAGE_FROM_CASTER, [attacker, spellProto](AuraEffect const* aurEff)
         {
-            return attacker->GetGUID() == aurEff->GetCasterGUID() && aurEff->IsAffectedOnSpell(spellProto);
+            return IsDamageFromCasterAuraAffectingSpell(aurEff, attacker, spellProto);
         });
 
         // Mod damage from spell mechanic

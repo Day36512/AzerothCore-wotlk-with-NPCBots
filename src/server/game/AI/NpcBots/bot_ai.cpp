@@ -8059,6 +8059,8 @@ void bot_ai::SetStats(bool force)
     static constexpr uint32 botHasteFromStatRatingMask = (1u << CR_HASTE_MELEE) | (1u << CR_HASTE_RANGED) | (1u << CR_HASTE_SPELL);
     static constexpr uint32 botCritFromStatRatingMask = (1u << CR_CRIT_MELEE) | (1u << CR_CRIT_RANGED) | (1u << CR_CRIT_SPELL);
     static constexpr uint32 botDefenseFromStatRatingMask = (1u << CR_DEFENSE_SKILL);
+    static constexpr uint32 botExpertiseFromStatRatingMask = (1u << CR_EXPERTISE);
+    static constexpr uint32 botBlockFromStatRatingMask = (1u << CR_BLOCK);
 
     auto getSupportedRatingFromStatAuraBonus = [this](uint32 targetRatingMask) -> float
     {
@@ -8081,7 +8083,7 @@ void bot_ai::SetStats(bool force)
                     sourceStatValue = _getTotalBotStat(BOT_STAT_MOD_SPIRIT);
                     break;
                 case STAT_STRENGTH:
-                    supported = (auraRatingMask & (botHasteFromStatRatingMask | botCritFromStatRatingMask | botDefenseFromStatRatingMask)) != 0;
+                    supported = (auraRatingMask & (botHasteFromStatRatingMask | botCritFromStatRatingMask | botDefenseFromStatRatingMask | botExpertiseFromStatRatingMask | botBlockFromStatRatingMask)) != 0;
                     sourceStatValue = _getTotalBotStat(BOT_STAT_MOD_STRENGTH);
                     break;
                 case STAT_INTELLECT:
@@ -8263,6 +8265,7 @@ void bot_ai::SetStats(bool force)
     //~8.0 ER = 1 expertise at 80
     tempval = _getTotalBotStat(BOT_STAT_MOD_EXPERTISE_RATING);
     tempval += me->GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_RATING, (1u << CR_EXPERTISE));
+    tempval += getSupportedRatingFromStatAuraBonus(botExpertiseFromStatRatingMask);
     value += tempval * _getRatingMultiplier(CR_EXPERTISE);
 
     //class-specific
@@ -8557,6 +8560,7 @@ void bot_ai::SetStats(bool force)
         //16.5 BR = 1% block at 80
         tempval = _getTotalBotStat(BOT_STAT_MOD_BLOCK_RATING);
         tempval += me->GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_RATING, (1u << CR_BLOCK));
+        tempval += getSupportedRatingFromStatAuraBonus(botBlockFromStatRatingMask);
         value += tempval * _getRatingMultiplier(CR_BLOCK);
         //125 DR = 1% block/parry/dodge at 80
         value += defbonus * 0.04f;
