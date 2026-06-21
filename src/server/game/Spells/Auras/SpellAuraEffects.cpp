@@ -41,6 +41,7 @@
 #include "WorldPacket.h"
 
 //npcbot
+#include "bot_ai.h"
 #include "botconfig.h"
 #include "botmgr.h"
 //end npcbot
@@ -4949,6 +4950,17 @@ void AuraEffect::HandleModRatingFromStat(AuraApplication const* aurApp, uint8 mo
         return;
 
     Unit* target = aurApp->GetTarget();
+
+    // NPCBots are CreatureAI-based, so they need their own stat pass to pick up
+    // active stat-to-rating auras.
+    if (target->IsNPCBot())
+    {
+        if (Creature* bot = target->ToCreature())
+            if (bot_ai* ai = bot->GetBotAI())
+                ai->SetShouldUpdateStats();
+
+        return;
+    }
 
     if (!target->IsPlayer())
         return;

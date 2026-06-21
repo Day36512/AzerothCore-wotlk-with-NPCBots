@@ -2999,12 +2999,11 @@ namespace
         static constexpr uint32 SPELL_DEMON_TRANSFORM_2 = 40398;
         static constexpr uint32 SPELL_DEMON_TRANSFORM_3 = 40510;
         static constexpr uint32 SPELL_DEMON_FORM = 40506;
+        static constexpr uint32 SPELL_AURA_OF_DREAD = 41142;
         static constexpr uint32 SPELL_FLAME_BURST_EFFECT = 41131;
         static constexpr uint32 SPELL_AGONIZING_FLAMES = 40932;
         static constexpr uint32 SPELL_CAGED_DEBUFF = 40695;
         static constexpr uint32 SPELL_SHADOW_PRISON = 40647;
-        static constexpr uint32 SPELL_PARASITIC_SHADOWFIEND = 41917;
-        static constexpr uint32 SPELL_PARASITIC_SHADOWFIEND_TRIGGER = 41914;
         static constexpr uint32 SPELL_MAJOR_FIRE_PROTECTION_POTION = 28511;
         static constexpr uint32 SPELL_FROZEN_RUNE = 29432;
         static constexpr uint32 SPELL_NIGHTMARE_SEED = 28726;
@@ -3013,12 +3012,29 @@ namespace
 
         static constexpr float ENCOUNTER_SCAN_RANGE = 180.0f;
         static constexpr float ADD_PRIORITY_RANGE = 90.0f;
-        static constexpr float PARASITE_SAFE_DISTANCE = 35.0f;
         static constexpr float DEMON_SAFE_DISTANCE = 28.0f;
         static constexpr float HUMAN_HEALER_DISTANCE = 18.0f;
         static constexpr float HUMAN_RANGED_DISTANCE = 25.0f;
         static constexpr float HUMAN_MELEE_DISTANCE = 6.5f;
         static constexpr float FLAME_TANK_STABLE_DISTANCE = 24.0f;
+        static constexpr float FLAME_TANK_MIN_THREAT = 2500000.0f;
+        static constexpr float FLAME_DPS_MIN_THREAT = 25000.0f;
+        static constexpr float EYE_BEAM_PATH_AVOID_RADIUS = 17.0f;
+        static constexpr float EYE_BEAM_CURRENT_AVOID_RADIUS = 22.0f;
+        static constexpr float EYE_BEAM_REPOSITION_RADIUS = 22.0f;
+        static constexpr float EYE_BEAM_SPOT_STEP = 7.5f;
+        static constexpr float EYE_BEAM_ESCAPE_PADDING = 4.0f;
+        static constexpr uint64 EYE_BEAM_TARGET_CACHE_MS = 250;
+        static constexpr float DREAD_AURA_AVOID_RADIUS = 15.0f;
+        static constexpr float DREAD_AURA_SAFE_POSITION_RADIUS = 18.0f;
+        static constexpr float FLAME_BURST_MIN_SPACING = 7.0f;
+        static constexpr float FLAME_BURST_RING_STEP = 8.0f;
+        static constexpr float FLAME_BURST_BASE_RADIUS = 20.0f;
+        static constexpr float DEMON_PERIMETER_HALF_EXTENT = 24.0f;
+        static constexpr float DEMON_PERIMETER_MIN_SPACING = 16.0f;
+        static constexpr uint32 DEMON_PERIMETER_MIN_SLOTS = 8;
+        static constexpr uint64 DEMON_PERIMETER_CACHE_MS = 250;
+        static constexpr uint64 CONSUMABLE_ILLIDAN_LOOKUP_CACHE_MS = 750;
 
         enum class Phase : uint8
         {
@@ -3050,6 +3066,8 @@ namespace
             Phase phase = Phase::None;
             uint32 protectionMask = 0;
             uint32 survivalMask = 0;
+            ObjectGuid illidanGuid = ObjectGuid::Empty;
+            uint64 nextIllidanLookupMs = 0;
         };
 
         std::unordered_map<ObjectGuid::LowType, ConsumableCastState> ConsumableCasts;
@@ -3067,6 +3085,7 @@ namespace
         };
 
         static const Position ILLIDAN_LANDING_POSITION = { 676.648f, 304.761f, 354.189f, 0.0f };
+        static const Position ILLIDAN_ROOM_CENTER = { 675.960f, 304.950f, 353.190f, 0.0f };
         static const Position ILLIDAN_E_GLAIVE_WAITING_POSITION = { 677.656f, 294.066f, 353.192f, 0.0f };
         static const Position ILLIDAN_W_GLAIVE_WAITING_POSITION = { 676.102f, 316.305f, 353.192f, 0.0f };
 
@@ -3098,6 +3117,66 @@ namespace
             Position{ 678.809f, 329.968f, 354.387f, 0.0f },
             Position{ 690.889f, 324.277f, 354.204f, 0.0f }
         };
+
+        struct EyeBeamPath
+        {
+            Position Start;
+            Position End;
+        };
+
+        struct EyeBeamDangerArea
+        {
+            Position Start;
+            Position End;
+            float Width = 0.0f;
+        };
+
+        struct EyeBeamTargetCache
+        {
+            uint64 expiresMs = 0;
+            std::vector<ObjectGuid> targetGuids;
+        };
+
+        struct DemonPerimeterAssignment
+        {
+            ObjectGuid BotGuid = ObjectGuid::Empty;
+            Position Destination;
+        };
+
+        struct DemonPerimeterCache
+        {
+            uint64 expiresMs = 0;
+            uint32 instanceId = 0;
+            ObjectGuid illidanGuid = ObjectGuid::Empty;
+            std::vector<DemonPerimeterAssignment> assignments;
+        };
+
+        static const std::array<EyeBeamPath, 4> EYE_BEAM_PATHS =
+        {
+            EyeBeamPath{ Position{ 639.970f, 301.630f, 354.000f, 0.0f }, Position{ 706.220f, 273.260f, 354.000f, 0.0f } },
+            EyeBeamPath{ Position{ 658.830f, 265.100f, 354.000f, 0.0f }, Position{ 717.550f, 328.330f, 354.000f, 0.0f } },
+            EyeBeamPath{ Position{ 656.860f, 344.070f, 354.000f, 0.0f }, Position{ 718.060f, 286.080f, 354.000f, 0.0f } },
+            EyeBeamPath{ Position{ 640.700f, 310.470f, 354.000f, 0.0f }, Position{ 705.920f, 337.140f, 354.000f, 0.0f } }
+        };
+
+        std::unordered_map<uint64, EyeBeamTargetCache> EyeBeamTargetCaches;
+        std::unordered_map<uint64, DemonPerimeterCache> DemonPerimeterCaches;
+
+        uint64 GetIllidanCacheKey(Unit const* unit)
+        {
+            if (!unit)
+                return 0;
+
+            return (uint64(unit->GetMapId()) << 32) | uint64(unit->GetInstanceId());
+        }
+
+        uint64 GetIllidanGroupCacheKey(Unit const* unit, Player const* master)
+        {
+            uint64 key = GetIllidanCacheKey(unit);
+            ObjectGuid groupOrOwnerGuid = master && master->GetGroup() ? master->GetGroup()->GetGUID() :
+                master ? master->GetGUID() : ObjectGuid::Empty;
+            return key ^ (uint64(groupOrOwnerGuid.GetCounter()) << 1);
+        }
 
         bool IsIllidanEntry(uint32 entry)
         {
@@ -3137,15 +3216,29 @@ namespace
             return flame && flame->IsAlive() && flame->IsInCombat() && flame->GetEntry() == NPC_FLAME_OF_AZZINOTH;
         }
 
-        bool HasParasiticShadowfiend(Unit const* unit)
+        bool HasFlameBurst(Unit const* unit)
         {
-            return unit && (unit->HasAura(SPELL_PARASITIC_SHADOWFIEND) || unit->HasAura(SPELL_PARASITIC_SHADOWFIEND_TRIGGER));
+            return unit && unit->HasAura(SPELL_FLAME_BURST_EFFECT);
+        }
+
+        bool HasAgonizingFlames(Unit const* unit)
+        {
+            return unit && unit->HasAura(SPELL_AGONIZING_FLAMES);
+        }
+
+        bool HasSplashSpreadAura(Unit const* unit)
+        {
+            return HasAgonizingFlames(unit) || HasFlameBurst(unit);
         }
 
         bool HasSpreadAura(Unit const* unit)
         {
-            return HasParasiticShadowfiend(unit) ||
-                (unit && (unit->HasAura(SPELL_DARK_BARRAGE) || unit->HasAura(SPELL_AGONIZING_FLAMES) || unit->HasAura(SPELL_FLAME_BURST_EFFECT)));
+            return unit && (unit->HasAura(SPELL_DARK_BARRAGE) || HasSplashSpreadAura(unit));
+        }
+
+        bool HasAuraOfDread(Creature const* illidan)
+        {
+            return illidan && (illidan->HasAura(SPELL_AURA_OF_DREAD) || illidan->HasAura(SPELL_DEMON_FORM));
         }
 
         Creature* FindIllidan(Unit const* source)
@@ -3226,6 +3319,186 @@ namespace
             return mutableTarget->GetThreatMgr().GetLastVictim();
         }
 
+        bool IsEastFlame(Creature const* flame)
+        {
+            return flame && flame->GetExactDist2d(ILLIDAN_E_GLAIVE_WAITING_POSITION) <= flame->GetExactDist2d(ILLIDAN_W_GLAIVE_WAITING_POSITION);
+        }
+
+        float GetDistanceToLineSegment2d(float x, float y, Position const& start, Position const& end, float* closestXOut = nullptr, float* closestYOut = nullptr, float* projectionOut = nullptr)
+        {
+            float const ax = start.GetPositionX();
+            float const ay = start.GetPositionY();
+            float const bx = end.GetPositionX();
+            float const by = end.GetPositionY();
+            float const dx = bx - ax;
+            float const dy = by - ay;
+            float const lengthSq = dx * dx + dy * dy;
+
+            float t = lengthSq > 0.01f ? ((x - ax) * dx + (y - ay) * dy) / lengthSq : 0.0f;
+            if (t < 0.0f)
+                t = 0.0f;
+            else if (t > 1.0f)
+                t = 1.0f;
+
+            float const closestX = ax + dx * t;
+            float const closestY = ay + dy * t;
+            float const offX = x - closestX;
+            float const offY = y - closestY;
+
+            if (closestXOut)
+                *closestXOut = closestX;
+            if (closestYOut)
+                *closestYOut = closestY;
+            if (projectionOut)
+                *projectionOut = t;
+
+            return std::sqrt(offX * offX + offY * offY);
+        }
+
+        float GetDistanceToEyeBeamPath2d(float x, float y, EyeBeamPath const& path)
+        {
+            return GetDistanceToLineSegment2d(x, y, path.Start, path.End);
+        }
+
+        uint8 GetNearestEyeBeamPathIndex(Position const& pos)
+        {
+            uint8 bestIndex = 0;
+            float bestDistance = std::numeric_limits<float>::max();
+            for (uint8 i = 0; i < EYE_BEAM_PATHS.size(); ++i)
+            {
+                float const distance = GetDistanceToEyeBeamPath2d(pos.GetPositionX(), pos.GetPositionY(), EYE_BEAM_PATHS[i]);
+                if (distance < bestDistance)
+                {
+                    bestIndex = i;
+                    bestDistance = distance;
+                }
+            }
+
+            return bestIndex;
+        }
+
+        std::vector<Creature*> GetActiveEyeBeamTargets(Unit const* unit)
+        {
+            std::vector<Creature*> triggers;
+            if (!unit || unit->GetMapId() != MAP_BLACK_TEMPLE || !unit->GetMap())
+                return triggers;
+
+            uint64 const key = GetIllidanCacheKey(unit);
+            uint64 const nowMs = uint64(GameTime::GetGameTimeMS().count());
+            EyeBeamTargetCache& cache = EyeBeamTargetCaches[key];
+
+            if (nowMs >= cache.expiresMs)
+            {
+                cache.expiresMs = nowMs + EYE_BEAM_TARGET_CACHE_MS;
+                cache.targetGuids.clear();
+
+                std::list<Creature*> candidates;
+                Bcore::AllCreaturesOfEntryInRange check(unit, NPC_ILLIDAN_DB_TARGET, ENCOUNTER_SCAN_RANGE);
+                Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> searcher(unit, candidates, check);
+                Cell::VisitObjects(unit, searcher, ENCOUNTER_SCAN_RANGE);
+
+                for (Creature* candidate : candidates)
+                    if (candidate && candidate->IsInWorld() && candidate->IsAlive())
+                        cache.targetGuids.push_back(candidate->GetGUID());
+            }
+
+            for (ObjectGuid const& guid : cache.targetGuids)
+                if (Unit* target = ObjectAccessor::GetUnit(*unit, guid))
+                    if (Creature* trigger = target->ToCreature())
+                        if (trigger->IsInWorld() && trigger->IsAlive())
+                            triggers.push_back(trigger);
+
+            return triggers;
+        }
+
+        bool TryBuildEyeBeamDangerArea(Creature const* trigger, EyeBeamDangerArea& area)
+        {
+            if (!trigger || !trigger->IsInWorld() || !trigger->IsAlive())
+                return false;
+
+            Position start;
+            start.Relocate(trigger->GetPositionX(), trigger->GetPositionY(), trigger->GetPositionZ(), 0.0f);
+
+            float destX = 0.0f;
+            float destY = 0.0f;
+            float destZ = 0.0f;
+            bool const hasDestination = const_cast<Creature*>(trigger)->GetMotionMaster()->GetDestination(destX, destY, destZ);
+
+            Position end;
+            if (hasDestination)
+                end.Relocate(destX, destY, destZ, 0.0f);
+            else
+                end.Relocate(EYE_BEAM_PATHS[GetNearestEyeBeamPathIndex(start)].End);
+
+            if (start.GetExactDist2d(end.GetPositionX(), end.GetPositionY()) < 0.1f)
+                return false;
+
+            area = { start, end, EYE_BEAM_PATH_AVOID_RADIUS };
+            return true;
+        }
+
+        bool IsNearActiveEyeBeamPath(Unit const* unit, float radius = EYE_BEAM_REPOSITION_RADIUS)
+        {
+            if (!unit)
+                return false;
+
+            std::vector<Creature*> triggers = GetActiveEyeBeamTargets(unit);
+            for (Creature const* trigger : triggers)
+            {
+                if (unit->GetExactDist2d(trigger) <= EYE_BEAM_CURRENT_AVOID_RADIUS)
+                    return true;
+
+                EyeBeamDangerArea area;
+                if (TryBuildEyeBeamDangerArea(trigger, area) &&
+                    GetDistanceToLineSegment2d(unit->GetPositionX(), unit->GetPositionY(), area.Start, area.End) <= radius)
+                    return true;
+
+                uint8 const pathIndex = GetNearestEyeBeamPathIndex(*trigger);
+                if (GetDistanceToEyeBeamPath2d(unit->GetPositionX(), unit->GetPositionY(), EYE_BEAM_PATHS[pathIndex]) <= radius)
+                    return true;
+            }
+
+            return false;
+        }
+
+        void AddEyeBeamPathAvoidanceSpots(Unit const* unit, AoeSpotsVec& spots)
+        {
+            std::vector<Creature*> triggers = GetActiveEyeBeamTargets(unit);
+            if (triggers.empty())
+                return;
+
+            std::array<bool, 4> addedPaths = { false, false, false, false };
+            for (Creature const* trigger : triggers)
+            {
+                spots.emplace_back(*trigger, EYE_BEAM_CURRENT_AVOID_RADIUS);
+
+                uint8 const pathIndex = GetNearestEyeBeamPathIndex(*trigger);
+                if (addedPaths[pathIndex])
+                    continue;
+
+                addedPaths[pathIndex] = true;
+                EyeBeamDangerArea area;
+                if (!TryBuildEyeBeamDangerArea(trigger, area))
+                    area = { EYE_BEAM_PATHS[pathIndex].Start, EYE_BEAM_PATHS[pathIndex].End, EYE_BEAM_PATH_AVOID_RADIUS };
+
+                float const dx = area.End.GetPositionX() - area.Start.GetPositionX();
+                float const dy = area.End.GetPositionY() - area.Start.GetPositionY();
+                float const dz = area.End.GetPositionZ() - area.Start.GetPositionZ();
+                float const length = std::sqrt(dx * dx + dy * dy);
+
+                for (float distance = 0.0f; distance <= length + EYE_BEAM_SPOT_STEP; distance += EYE_BEAM_SPOT_STEP)
+                {
+                    float t = length > 0.01f ? distance / length : 0.0f;
+                    if (t > 1.0f)
+                        t = 1.0f;
+
+                    Position spot;
+                    spot.Relocate(area.Start.GetPositionX() + dx * t, area.Start.GetPositionY() + dy * t, area.Start.GetPositionZ() + dz * t, 0.0f);
+                    spots.emplace_back(spot, area.Width);
+                }
+            }
+        }
+
         Phase GetPhase(Creature const* illidan)
         {
             if (!IsActiveIllidan(illidan) || illidan->HasAura(SPELL_SHADOW_PRISON))
@@ -3288,10 +3561,40 @@ namespace
             return cast;
         }
 
-        void ClearConsumableCastState(Creature const* bot)
+        void ResetConsumableCastFlags(ConsumableCastState& state)
         {
-            if (bot)
-                ConsumableCasts.erase(bot->GetGUID().GetCounter());
+            state.phase = Phase::None;
+            state.protectionMask = 0;
+            state.survivalMask = 0;
+            state.illidanGuid.Clear();
+        }
+
+        Creature* GetCachedIllidanForConsumables(Creature* bot, ConsumableCastState& state, bool& lookupPerformed)
+        {
+            lookupPerformed = false;
+            if (!bot)
+                return nullptr;
+
+            if (!state.illidanGuid.IsEmpty())
+            {
+                if (Unit* unit = ObjectAccessor::GetUnit(*bot, state.illidanGuid))
+                    if (Creature* illidan = unit->ToCreature())
+                        if (IsConsumableIllidan(illidan) && bot->IsWithinDistInMap(illidan, ENCOUNTER_SCAN_RANGE))
+                            return illidan;
+
+                state.illidanGuid.Clear();
+            }
+
+            uint64 const nowMs = uint64(GameTime::GetGameTimeMS().count());
+            if (nowMs < state.nextIllidanLookupMs)
+                return nullptr;
+
+            lookupPerformed = true;
+            state.nextIllidanLookupMs = nowMs + CONSUMABLE_ILLIDAN_LOOKUP_CACHE_MS;
+
+            Creature* illidan = FindIllidanForConsumables(bot);
+            state.illidanGuid = illidan ? illidan->GetGUID() : ObjectGuid::Empty;
+            return illidan;
         }
 
         void TryUseEncounterConsumables(bot_ai const* ai, Creature* bot)
@@ -3299,22 +3602,24 @@ namespace
             if (!ai || !bot || !bot->IsAlive() || ai->IAmFree() || bot->GetMapId() != MAP_BLACK_TEMPLE)
                 return;
 
-            Creature* illidan = FindIllidanForConsumables(bot);
+            ObjectGuid::LowType const guid = bot->GetGUID().GetCounter();
+            uint32 const instanceId = bot->GetInstanceId();
+            ConsumableCastState& state = ConsumableCasts[guid];
+            if (state.instanceId != instanceId)
+                state = ConsumableCastState{ instanceId, Phase::None, 0, 0 };
+
+            bool lookupPerformed = false;
+            Creature* illidan = GetCachedIllidanForConsumables(bot, state, lookupPerformed);
             if (!illidan)
             {
-                ClearConsumableCastState(bot);
+                if (lookupPerformed)
+                    ResetConsumableCastFlags(state);
                 return;
             }
 
             Phase const phase = GetConsumablePhase(illidan);
             if (phase == Phase::None)
                 return;
-
-            ObjectGuid::LowType const guid = bot->GetGUID().GetCounter();
-            uint32 const instanceId = bot->GetInstanceId();
-            ConsumableCastState& state = ConsumableCasts[guid];
-            if (state.instanceId != instanceId)
-                state = ConsumableCastState{ instanceId, Phase::None, 0, 0 };
 
             if (state.phase != phase)
             {
@@ -3385,6 +3690,19 @@ namespace
                 target->GetThreatMgr().AddThreat(bot, threat, nullptr, true, true);
         }
 
+        void EnsureMinimumThreat(Creature* bot, Creature* target, float threat)
+        {
+            if (!bot || !target || !target->CanHaveThreatList())
+                return;
+
+            bot->SetInCombatWith(target);
+            target->SetInCombatWith(bot);
+
+            float const currentThreat = target->GetThreatMgr().GetThreat(bot, true);
+            if (currentThreat < threat)
+                target->GetThreatMgr().AddThreat(bot, threat - currentThreat, nullptr, true, true);
+        }
+
         Creature* SelectBestTarget(Creature* bot, uint32 entry, float range, std::function<bool(Creature*)> const& predicate)
         {
             if (!bot)
@@ -3411,7 +3729,101 @@ namespace
             return best;
         }
 
-        Creature* SelectPriorityTarget(bot_ai const* ai, Creature* bot, Player* /*master*/, bool byspell, bool ranged, Creature* current, bool& reset)
+        uint8 GetTankSlot(Creature const* bot, Player const* master)
+        {
+            if (master && master->GetBotMgr())
+                return uint8(master->GetBotMgr()->GetNpcBotSlotByRole(BOT_ROLE_TANK | BOT_ROLE_TANK_OFF, bot));
+
+            return uint8(bot ? bot->GetGUID().GetCounter() % 2 : 0);
+        }
+
+        uint8 GetFlameTankPositionSlot(Creature const* bot, Player const* master)
+        {
+            return uint8(GetTankSlot(bot, master) / 2);
+        }
+
+        bool PrefersEastFlame(Creature const* bot, Player const* master)
+        {
+            return (GetTankSlot(bot, master) % 2) == 0;
+        }
+
+        Creature* SelectAssignedFlameTarget(Creature* bot, Player* master, std::function<bool(Creature*)> const& predicate)
+        {
+            if (!bot)
+                return nullptr;
+
+            std::list<Creature*> flames;
+            bot->GetCreatureListWithEntryInGrid(flames, NPC_FLAME_OF_AZZINOTH, ENCOUNTER_SCAN_RANGE);
+
+            bool const preferEast = PrefersEastFlame(bot, master);
+            Creature* preferred = nullptr;
+            Creature* fallback = nullptr;
+            float preferredScore = std::numeric_limits<float>::max();
+            float fallbackScore = std::numeric_limits<float>::max();
+
+            for (Creature* flame : flames)
+            {
+                if (!predicate(flame))
+                    continue;
+
+                float const score = bot->GetDistance(flame);
+                if (IsEastFlame(flame) == preferEast)
+                {
+                    if (!preferred || score < preferredScore)
+                    {
+                        preferred = flame;
+                        preferredScore = score;
+                    }
+                }
+                else if (!fallback || score < fallbackScore)
+                {
+                    fallback = flame;
+                    fallbackScore = score;
+                }
+            }
+
+            return preferred ? preferred : fallback;
+        }
+
+        Creature const* SelectAssignedActiveFlameForPosition(Creature const* bot, Player const* master)
+        {
+            if (!bot)
+                return nullptr;
+
+            std::list<Creature*> flames;
+            bot->GetCreatureListWithEntryInGrid(flames, NPC_FLAME_OF_AZZINOTH, ENCOUNTER_SCAN_RANGE);
+
+            bool const preferEast = PrefersEastFlame(bot, master);
+            Creature const* preferred = nullptr;
+            Creature const* fallback = nullptr;
+            float preferredScore = std::numeric_limits<float>::max();
+            float fallbackScore = std::numeric_limits<float>::max();
+
+            for (Creature const* flame : flames)
+            {
+                if (!IsActiveFlame(flame))
+                    continue;
+
+                float const score = bot->GetDistance(flame);
+                if (IsEastFlame(flame) == preferEast)
+                {
+                    if (!preferred || score < preferredScore)
+                    {
+                        preferred = flame;
+                        preferredScore = score;
+                    }
+                }
+                else if (!fallback || score < fallbackScore)
+                {
+                    fallback = flame;
+                    fallbackScore = score;
+                }
+            }
+
+            return preferred ? preferred : fallback;
+        }
+
+        Creature* SelectPriorityTarget(bot_ai const* ai, Creature* bot, Player* master, bool byspell, bool ranged, Creature* current, bool& reset)
         {
             if (!ai || !bot || !bot->IsInCombat())
                 return nullptr;
@@ -3439,7 +3851,7 @@ namespace
                 if (current && current != target)
                     reset = true;
 
-                EnsureThreat(bot, target, threat);
+                EnsureMinimumThreat(bot, target, threat);
                 return target;
             };
 
@@ -3464,11 +3876,17 @@ namespace
 
             if (flyingPhase && (dpsRole || tankRole))
             {
+                if (tankRole)
+                {
+                    if (Creature* assignedFlame = SelectAssignedFlameTarget(bot, master, attackable))
+                        return finishTarget(assignedFlame, FLAME_TANK_MIN_THREAT);
+                }
+
                 if (current && current->GetEntry() == NPC_FLAME_OF_AZZINOTH && attackable(current))
-                    return finishTarget(current, tankRole ? 180000.0f : 25000.0f);
+                    return finishTarget(current, FLAME_DPS_MIN_THREAT);
 
                 if (Creature* flame = SelectBestTarget(bot, NPC_FLAME_OF_AZZINOTH, ENCOUNTER_SCAN_RANGE, attackable))
-                    return finishTarget(flame, tankRole ? 180000.0f : 25000.0f);
+                    return finishTarget(flame, FLAME_DPS_MIN_THREAT);
             }
 
             return nullptr;
@@ -3511,6 +3929,111 @@ namespace
             return true;
         }
 
+        bool TryEyeBeamEscapeCandidate(Creature const* bot, Player const* master, EyeBeamDangerArea const& area, float x, float y, Position& destination)
+        {
+            if (!bot)
+                return false;
+
+            float z = bot->GetPositionZ();
+            Creature* mutableBot = const_cast<Creature*>(bot);
+            if (!mutableBot->CanFly())
+                mutableBot->UpdateAllowedPositionZ(x, y, z);
+
+            if (!bot->IsWithinLOS(x, y, z))
+                return false;
+
+            if (master && master->GetExactDist2d(x, y) > ENCOUNTER_SCAN_RANGE * 0.55f)
+                return false;
+
+            if (GetDistanceToLineSegment2d(x, y, area.Start, area.End) <= area.Width + EYE_BEAM_ESCAPE_PADDING)
+                return false;
+
+            destination.Relocate(x, y, z, bot->GetOrientation());
+            return true;
+        }
+
+        bool TryGetEyeBeamEscapePosition(Creature const* bot, Player const* master, Position& destination)
+        {
+            if (!bot)
+                return false;
+
+            EyeBeamDangerArea bestArea;
+            float bestDistance = std::numeric_limits<float>::max();
+            bool found = false;
+
+            for (Creature const* trigger : GetActiveEyeBeamTargets(bot))
+            {
+                EyeBeamDangerArea area;
+                if (!TryBuildEyeBeamDangerArea(trigger, area))
+                    continue;
+
+                float const lineDistance = GetDistanceToLineSegment2d(bot->GetPositionX(), bot->GetPositionY(), area.Start, area.End);
+                float const triggerDistance = bot->GetExactDist2d(trigger);
+                if (lineDistance > EYE_BEAM_REPOSITION_RADIUS && triggerDistance > EYE_BEAM_CURRENT_AVOID_RADIUS)
+                    continue;
+
+                float const score = std::min(lineDistance, triggerDistance);
+                if (!found || score < bestDistance)
+                {
+                    found = true;
+                    bestDistance = score;
+                    bestArea = area;
+                }
+            }
+
+            if (!found)
+                return false;
+
+            float closestX = 0.0f;
+            float closestY = 0.0f;
+            float const lineDistance = GetDistanceToLineSegment2d(bot->GetPositionX(), bot->GetPositionY(), bestArea.Start, bestArea.End, &closestX, &closestY);
+            float const beamDx = bestArea.End.GetPositionX() - bestArea.Start.GetPositionX();
+            float const beamDy = bestArea.End.GetPositionY() - bestArea.Start.GetPositionY();
+            float const beamLength = std::sqrt(beamDx * beamDx + beamDy * beamDy);
+            if (beamLength < 0.1f)
+                return false;
+
+            float dirX = bot->GetPositionX() - closestX;
+            float dirY = bot->GetPositionY() - closestY;
+            float dirLength = std::sqrt(dirX * dirX + dirY * dirY);
+            if (dirLength < 0.05f)
+            {
+                dirX = -beamDy / beamLength;
+                dirY = beamDx / beamLength;
+            }
+            else
+            {
+                dirX /= dirLength;
+                dirY /= dirLength;
+            }
+
+            float const neededDistance = std::max(8.0f, bestArea.Width + EYE_BEAM_ESCAPE_PADDING - lineDistance);
+            std::array<float, 4> const moveDistances =
+            {
+                neededDistance,
+                neededDistance + 6.0f,
+                neededDistance + 12.0f,
+                neededDistance + 18.0f
+            };
+
+            for (float moveDistance : moveDistances)
+            {
+                if (TryEyeBeamEscapeCandidate(bot, master, bestArea,
+                    bot->GetPositionX() + dirX * moveDistance,
+                    bot->GetPositionY() + dirY * moveDistance,
+                    destination))
+                    return true;
+
+                if (TryEyeBeamEscapeCandidate(bot, master, bestArea,
+                    bot->GetPositionX() - dirX * moveDistance,
+                    bot->GetPositionY() - dirY * moveDistance,
+                    destination))
+                    return true;
+            }
+
+            return false;
+        }
+
         template <size_t Count>
         bool TryStaticPositionSet(Creature const* bot, std::array<Position, Count> const& positions, uint8 slot, Position& destination)
         {
@@ -3531,7 +4054,7 @@ namespace
             if (!bot || !flame)
                 return false;
 
-            bool const eastSide = flame->GetExactDist2d(ILLIDAN_E_GLAIVE_WAITING_POSITION) <= flame->GetExactDist2d(ILLIDAN_W_GLAIVE_WAITING_POSITION);
+            bool const eastSide = IsEastFlame(flame);
             return eastSide ? TryStaticPositionSet(bot, E_GLAIVE_TANK_POSITIONS, slot, destination) :
                 TryStaticPositionSet(bot, W_GLAIVE_TANK_POSITIONS, slot, destination);
         }
@@ -3557,6 +4080,261 @@ namespace
             return TryRelativePosition(bot, illidan, distance, angle, destination);
         }
 
+        void AddFlameBurstSpreadBot(Creature const* source, Creature const* illidan, Creature const* candidate, std::vector<Creature const*>& bots)
+        {
+            if (!source || !illidan || !candidate || !candidate->IsAlive() || !candidate->IsNPCBot())
+                return;
+
+            if (candidate->GetMap() != source->FindMap() || !candidate->InSamePhase(source) || candidate->GetDistance(illidan) > ENCOUNTER_SCAN_RANGE)
+                return;
+
+            bot_ai const* candidateAI = const_cast<Creature*>(candidate)->GetBotAI();
+            if (!candidateAI || candidateAI->IAmFree())
+                return;
+
+            for (Creature const* existing : bots)
+                if (existing && existing->GetGUID() == candidate->GetGUID())
+                    return;
+
+            bots.push_back(candidate);
+        }
+
+        std::vector<Creature const*> CollectFlameBurstSpreadBots(Creature const* bot, Player const* master, Creature const* illidan)
+        {
+            std::vector<Creature const*> bots;
+            if (!bot || !master || !illidan)
+                return bots;
+
+            auto addOwnerBots = [bot, illidan, &bots](Player* owner)
+            {
+                if (!owner || !owner->HaveBot() || !owner->GetBotMgr())
+                    return;
+
+                for (auto const& [_, ownedBot] : *owner->GetBotMgr()->GetBotMap())
+                    AddFlameBurstSpreadBot(bot, illidan, ownedBot, bots);
+            };
+
+            if (Group const* group = master->GetGroup())
+            {
+                for (GroupReference const* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+                    addOwnerBots(itr->GetSource());
+            }
+            else
+                addOwnerBots(const_cast<Player*>(master));
+
+            AddFlameBurstSpreadBot(bot, illidan, bot, bots);
+
+            std::sort(bots.begin(), bots.end(), [](Creature const* left, Creature const* right)
+            {
+                return left->GetGUID() < right->GetGUID();
+            });
+
+            return bots;
+        }
+
+        bool TryGetFlameBurstSpreadPosition(bot_ai const* ai, Creature const* bot, Player const* master, Creature const* illidan, Position& destination)
+        {
+            if (!ai || !bot || !master || !illidan || !HasSplashSpreadAura(bot))
+                return false;
+
+            if (GetCurrentTank(illidan) == bot && (ai->IsTank(bot) || ai->IsOffTank(bot)))
+                return false;
+
+            std::vector<Creature const*> bots = CollectFlameBurstSpreadBots(bot, master, illidan);
+            if (bots.empty())
+                return false;
+
+            auto itr = std::find_if(bots.begin(), bots.end(), [bot](Creature const* candidate)
+            {
+                return candidate && candidate->GetGUID() == bot->GetGUID();
+            });
+
+            if (itr == bots.end())
+                return false;
+
+            uint32 slot = uint32(std::distance(bots.begin(), itr));
+            uint32 ring = 0;
+            float radius = FLAME_BURST_BASE_RADIUS;
+
+            while (true)
+            {
+                uint32 const slotsOnRing = std::max<uint32>(8, uint32(std::floor((2.0f * float(M_PI) * radius) / FLAME_BURST_MIN_SPACING)));
+                if (slot < slotsOnRing)
+                {
+                    float const stagger = (ring % 2) ? 0.5f : 0.0f;
+                    float const baseAngle = Position::NormalizeOrientation(illidan->GetOrientation() + float(M_PI));
+                    float const angle = Position::NormalizeOrientation(baseAngle + 2.0f * float(M_PI) * (float(slot) + stagger) / float(slotsOnRing));
+                    return TryRelativePosition(bot, illidan, radius, angle, destination);
+                }
+
+                slot -= slotsOnRing;
+                ++ring;
+                radius += FLAME_BURST_RING_STEP;
+
+                if (radius > 52.0f)
+                    return false;
+            }
+        }
+
+        void BuildDemonPerimeterPoint(uint32 slot, uint32 slots, float halfExtent, Position& destination)
+        {
+            slots = std::max<uint32>(1, slots);
+
+            float const progress = (float(slot % slots) / float(slots)) * 4.0f;
+            uint8 side = uint8(std::floor(progress));
+            if (side > 3)
+                side = 3;
+
+            float const t = progress - float(side);
+            float x = ILLIDAN_ROOM_CENTER.GetPositionX();
+            float y = ILLIDAN_ROOM_CENTER.GetPositionY();
+
+            switch (side)
+            {
+                case 0:
+                    x += -halfExtent + 2.0f * halfExtent * t;
+                    y += halfExtent;
+                    break;
+                case 1:
+                    x += halfExtent;
+                    y += halfExtent - 2.0f * halfExtent * t;
+                    break;
+                case 2:
+                    x += halfExtent - 2.0f * halfExtent * t;
+                    y += -halfExtent;
+                    break;
+                default:
+                    x += -halfExtent;
+                    y += -halfExtent + 2.0f * halfExtent * t;
+                    break;
+            }
+
+            destination.Relocate(x, y, ILLIDAN_ROOM_CENTER.GetPositionZ(), 0.0f);
+        }
+
+        bool TryDemonPerimeterCandidate(Creature const* bot, Creature const* illidan, Position const& candidate, Position& destination)
+        {
+            if (!bot || !illidan)
+                return false;
+
+            float x = candidate.GetPositionX();
+            float y = candidate.GetPositionY();
+            float z = candidate.GetPositionZ();
+            Creature* mutableBot = const_cast<Creature*>(bot);
+            if (!mutableBot->CanFly())
+                mutableBot->UpdateAllowedPositionZ(x, y, z);
+
+            if (illidan->GetExactDist2d(x, y) < DREAD_AURA_SAFE_POSITION_RADIUS)
+                return false;
+
+            if (!bot->IsWithinLOS(x, y, z) || !illidan->IsWithinLOS(x, y, z))
+                return false;
+
+            destination.Relocate(x, y, z, bot->GetAngle(illidan));
+            return destination.IsPositionValid();
+        }
+
+        bool IsDemonPerimeterSpacingClear(Position const& candidate, std::vector<Position> const& assignedPositions)
+        {
+            for (Position const& assigned : assignedPositions)
+                if (candidate.GetExactDist2d(assigned.GetPositionX(), assigned.GetPositionY()) < DEMON_PERIMETER_MIN_SPACING)
+                    return false;
+
+            return true;
+        }
+
+        bool TryAssignDemonPerimeterPosition(Creature const* bot, Creature const* illidan, uint32 index, uint32 botCount, std::vector<Position> const& assignedPositions, Position& destination)
+        {
+            if (!bot || !illidan || !botCount)
+                return false;
+
+            static constexpr std::array<float, 3> halfExtents =
+            {
+                DEMON_PERIMETER_HALF_EXTENT,
+                DEMON_PERIMETER_HALF_EXTENT + DEMON_PERIMETER_MIN_SPACING,
+                DEMON_PERIMETER_HALF_EXTENT + 2.0f * DEMON_PERIMETER_MIN_SPACING
+            };
+
+            for (float halfExtent : halfExtents)
+            {
+                uint32 const candidateSlots = std::max<uint32>(DEMON_PERIMETER_MIN_SLOTS, uint32(std::ceil((8.0f * halfExtent) / 5.0f)));
+                uint32 const baseSlot = uint32(std::floor(float(index) * float(candidateSlots) / float(botCount)));
+
+                for (uint32 offset = 0; offset < candidateSlots; ++offset)
+                {
+                    uint32 const step = (offset + 1) / 2;
+                    uint32 const slot = (offset % 2) ? (baseSlot + step) % candidateSlots :
+                        (baseSlot + candidateSlots - step) % candidateSlots;
+
+                    Position candidate;
+                    BuildDemonPerimeterPoint(slot, candidateSlots, halfExtent, candidate);
+                    if (!TryDemonPerimeterCandidate(bot, illidan, candidate, destination))
+                        continue;
+
+                    if (IsDemonPerimeterSpacingClear(destination, assignedPositions))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        bool TryGetDemonPerimeterPosition(bot_ai const* ai, Creature const* bot, Player const* master, Creature const* illidan, Position& destination)
+        {
+            if (!ai || !bot || !master || !illidan)
+                return false;
+
+            uint64 const key = GetIllidanGroupCacheKey(bot, master);
+            uint64 const nowMs = uint64(GameTime::GetGameTimeMS().count());
+            DemonPerimeterCache& cache = DemonPerimeterCaches[key];
+
+            auto findCachedAssignment = [&cache, bot, &destination]() -> bool
+            {
+                for (DemonPerimeterAssignment const& assignment : cache.assignments)
+                {
+                    if (assignment.BotGuid != bot->GetGUID())
+                        continue;
+
+                    destination.Relocate(assignment.Destination);
+                    return true;
+                }
+
+                return false;
+            };
+
+            if (cache.expiresMs > nowMs && cache.instanceId == bot->GetInstanceId() && cache.illidanGuid == illidan->GetGUID())
+                return findCachedAssignment();
+
+            cache.expiresMs = nowMs + DEMON_PERIMETER_CACHE_MS;
+            cache.instanceId = bot->GetInstanceId();
+            cache.illidanGuid = illidan->GetGUID();
+            cache.assignments.clear();
+
+            std::vector<Creature const*> bots = CollectFlameBurstSpreadBots(bot, master, illidan);
+            if (bots.empty())
+                return false;
+
+            std::vector<Position> assignedPositions;
+            assignedPositions.reserve(bots.size());
+            cache.assignments.reserve(bots.size());
+
+            for (uint32 index = 0; index < bots.size(); ++index)
+            {
+                Creature const* assignedBot = bots[index];
+                if (!assignedBot)
+                    continue;
+
+                Position assignedPosition;
+                if (!TryAssignDemonPerimeterPosition(assignedBot, illidan, index, uint32(bots.size()), assignedPositions, assignedPosition))
+                    continue;
+
+                assignedPositions.push_back(assignedPosition);
+                cache.assignments.push_back({ assignedBot->GetGUID(), assignedPosition });
+            }
+
+            return findCachedAssignment();
+        }
+
         bool TryGetDemonPhasePosition(bot_ai const* ai, Creature const* bot, Player const* master, Creature const* illidan, Position& destination)
         {
             if (!ai || !bot || !illidan)
@@ -3564,11 +4342,32 @@ namespace
 
             uint8 const slot = GetBotSlot(bot, master);
             Unit const* tank = GetCurrentTank(illidan);
+            bool const dreadActive = HasAuraOfDread(illidan);
+
+            if (dreadActive && TryGetDemonPerimeterPosition(ai, bot, master, illidan, destination))
+                return true;
 
             if (tank == bot && (ai->HasRole(BOT_ROLE_RANGED) || ai->GetBotClass() == BOT_CLASS_WARLOCK))
             {
                 float const angle = illidan->GetAbsoluteAngle(bot);
-                return TryRelativePosition(bot, illidan, 25.0f, angle, destination);
+                return TryRelativePosition(bot, illidan, dreadActive ? 24.0f : 25.0f, angle, destination);
+            }
+
+            if (dreadActive)
+            {
+                static constexpr uint8 DREAD_SPREAD_SLOTS = 11;
+                float const tankAngle = tank ? illidan->GetAbsoluteAngle(tank) : illidan->GetAbsoluteAngle(master ? static_cast<Unit const*>(master) : bot);
+                float const forbiddenArc = (2.0f / 3.0f) * float(M_PI);
+                float const allowedArc = (4.0f / 3.0f) * float(M_PI);
+                float const arcStart = Position::NormalizeOrientation(tankAngle + forbiddenArc / 2.0f);
+                float const slotOffset = DREAD_SPREAD_SLOTS > 1 ? float(slot % DREAD_SPREAD_SLOTS) / float(DREAD_SPREAD_SLOTS - 1) : 0.5f;
+                float const angle = Position::NormalizeOrientation(arcStart + allowedArc * slotOffset);
+                bool const rangedOrHealer = ai->HasRole(BOT_ROLE_RANGED) || ai->HasRole(BOT_ROLE_HEAL);
+                float const distance = (rangedOrHealer ? DEMON_SAFE_DISTANCE : DREAD_AURA_SAFE_POSITION_RADIUS) +
+                    float(slot / DREAD_SPREAD_SLOTS) * 2.5f;
+
+                if (TryRelativePosition(bot, illidan, distance, angle, destination))
+                    return true;
             }
 
             if (!ai->HasRole(BOT_ROLE_RANGED) && !ai->HasRole(BOT_ROLE_HEAL))
@@ -3621,24 +4420,24 @@ namespace
             uint8 const slot = GetBotSlot(bot, master);
             Phase const phase = GetPhase(illidan);
 
-            if (HasParasiticShadowfiend(bot))
-            {
-                static constexpr std::array<float, 7> offsets =
-                {
-                    0.0f, 0.35f, -0.35f, 0.70f, -0.70f, 1.05f, -1.05f
-                };
+            if (TryGetEyeBeamEscapePosition(bot, master, destination))
+                return true;
 
-                for (float offset : offsets)
-                    if (TryRelativePosition(bot, illidan, PARASITE_SAFE_DISTANCE, Position::NormalizeOrientation(illidan->GetOrientation() + float(M_PI) + offset), destination))
-                        return true;
-            }
+            if (HasSplashSpreadAura(bot))
+                if (TryGetFlameBurstSpreadPosition(ai, bot, master, illidan, destination))
+                    return true;
 
             if (phase == Phase::Flying || phase == Phase::LandingTransition)
             {
                 Creature const* targetCreature = target;
-                if (targetCreature && targetCreature->GetEntry() == NPC_FLAME_OF_AZZINOTH && ai->IsTank(bot))
-                    if (TryGetFlameTankPosition(bot, targetCreature, slot, destination))
+                if (ai->IsTank(bot))
+                {
+                    Creature const* flame = targetCreature && targetCreature->GetEntry() == NPC_FLAME_OF_AZZINOTH ?
+                        targetCreature : SelectAssignedActiveFlameForPosition(bot, master);
+
+                    if (flame && TryGetFlameTankPosition(bot, flame, GetFlameTankPositionSlot(bot, master), destination))
                         return true;
+                }
 
                 return TryGetGratePosition(bot, slot, destination);
             }
@@ -3654,7 +4453,7 @@ namespace
             if (!ShouldUseIllidanPosition(ai, bot, master, target))
                 return false;
 
-            if (HasParasiticShadowfiend(bot) && master && bot->GetDistance(master) < 12.0f)
+            if (IsNearActiveEyeBeamPath(bot))
                 return true;
 
             Creature* illidan = target && IsActiveIllidan(target) ? const_cast<Creature*>(target) : FindIllidan(bot);
@@ -3662,6 +4461,9 @@ namespace
                 return false;
 
             Phase const phase = GetPhase(illidan);
+            if (HasAuraOfDread(illidan) && bot->GetDistance(illidan) < DREAD_AURA_AVOID_RADIUS)
+                return true;
+
             if (phase == Phase::Demon && bot->GetDistance(illidan) < DEMON_SAFE_DISTANCE - 3.0f && !ai->IsTank(bot))
                 return true;
 
@@ -3712,6 +4514,12 @@ namespace
             {
                 bot_ai const* tankAI = tankBot->IsNPCBot() ? const_cast<Creature*>(tankBot)->GetBotAI() : nullptr;
                 if (tankAI && !tankAI->IsTank(tankBot) && !tankAI->IsOffTank(tankBot))
+                    return false;
+
+                Player const* owner = tankAI ? tankAI->GetBotOwner() : nullptr;
+                Position desired;
+                if (owner && TryGetFlameTankPosition(tankBot, flame, GetFlameTankPositionSlot(tankBot, owner), desired) &&
+                    tankBot->GetExactDist2d(desired.GetPositionX(), desired.GetPositionY()) > 8.0f)
                     return false;
             }
 
@@ -3824,7 +4632,7 @@ namespace
             if (!hasDistinctFlameTanks)
                 return BotEncounterHeroismState::Delay;
 
-            if (!AreOwnedBotsPositionedForHeroism(bot, master, illidan))
+            if (HasSpreadAura(bot))
                 return BotEncounterHeroismState::Delay;
 
             return BotEncounterHeroismState::Ready;
@@ -3839,9 +4647,10 @@ namespace
             return true;
         }
 
-        void AddIllidanAvoidanceSpots(Unit const* unit, AoeSpotsVec& spots)
+        void AddIllidanSharedAvoidanceSpots(Unit const* unit, AoeSpotsVec& spots)
         {
-            if (!unit || unit->GetMapId() != MAP_BLACK_TEMPLE || !FindIllidan(unit))
+            Creature const* illidan = unit ? FindIllidan(unit) : nullptr;
+            if (!unit || unit->GetMapId() != MAP_BLACK_TEMPLE || !illidan)
                 return;
 
             auto addCreatureSpots = [unit, &spots](uint32 entry, float scanRange, float avoidRadius)
@@ -3864,7 +4673,15 @@ namespace
             addCreatureSpots(NPC_DEMON_FIRE, 85.0f, 12.0f);
             addCreatureSpots(NPC_BLAZE, 70.0f, 12.0f);
             addCreatureSpots(NPC_FLAME_CRASH, 60.0f, 13.0f);
-            addCreatureSpots(NPC_ILLIDAN_DB_TARGET, 90.0f, 13.0f);
+            AddEyeBeamPathAvoidanceSpots(unit, spots);
+            if (HasAuraOfDread(illidan))
+                spots.emplace_back(*illidan, DREAD_AURA_AVOID_RADIUS);
+        }
+
+        void AddIllidanPersonalAvoidanceSpots(Unit const* unit, AoeSpotsVec& spots)
+        {
+            if (!unit || unit->GetMapId() != MAP_BLACK_TEMPLE || !unit->GetMap())
+                return;
 
             std::list<Unit*> auraUnits;
             Bcore::AnyUnitInObjectRangeCheck auraCheck(unit, 80.0f);
@@ -3882,10 +4699,18 @@ namespace
                 if (!HasSpreadAura(auraUnit))
                     continue;
 
-                float radius = HasParasiticShadowfiend(auraUnit) ? 10.0f : 8.0f;
+                float radius = 8.0f;
                 radius += auraUnit->GetCombatReach() + DEFAULT_COMBAT_REACH;
                 spots.emplace_back(*auraUnit, radius);
             }
+        }
+
+        void AddIllidanAvoidanceSpots(Unit const* unit, AoeSpotsVec& spots, bool includeSharedHazards = true)
+        {
+            if (includeSharedHazards)
+                AddIllidanSharedAvoidanceSpots(unit, spots);
+
+            AddIllidanPersonalAvoidanceSpots(unit, spots);
         }
     }
 
@@ -7231,6 +8056,49 @@ void bot_ai::SetStats(bool force)
     //HEALTH
     _OnHealthUpdate();
 
+    static constexpr uint32 botHasteFromStatRatingMask = (1u << CR_HASTE_MELEE) | (1u << CR_HASTE_RANGED) | (1u << CR_HASTE_SPELL);
+    static constexpr uint32 botCritFromStatRatingMask = (1u << CR_CRIT_MELEE) | (1u << CR_CRIT_RANGED) | (1u << CR_CRIT_SPELL);
+    static constexpr uint32 botDefenseFromStatRatingMask = (1u << CR_DEFENSE_SKILL);
+
+    auto getSupportedRatingFromStatAuraBonus = [this](uint32 targetRatingMask) -> float
+    {
+        float bonus = 0.0f;
+        Unit::AuraEffectList const& ratingFromStatAuras = me->GetAuraEffectsByType(SPELL_AURA_MOD_RATING_FROM_STAT);
+
+        for (AuraEffect const* auraEffect : ratingFromStatAuras)
+        {
+            uint32 const auraRatingMask = uint32(auraEffect->GetMiscValue()) & targetRatingMask;
+            if (!auraRatingMask)
+                continue;
+
+            float sourceStatValue = 0.0f;
+            bool supported = false;
+
+            switch (Stats(auraEffect->GetMiscValueB()))
+            {
+                case STAT_SPIRIT:
+                    supported = (auraRatingMask & (botHasteFromStatRatingMask | botCritFromStatRatingMask)) != 0;
+                    sourceStatValue = _getTotalBotStat(BOT_STAT_MOD_SPIRIT);
+                    break;
+                case STAT_STRENGTH:
+                    supported = (auraRatingMask & (botHasteFromStatRatingMask | botCritFromStatRatingMask | botDefenseFromStatRatingMask)) != 0;
+                    sourceStatValue = _getTotalBotStat(BOT_STAT_MOD_STRENGTH);
+                    break;
+                case STAT_INTELLECT:
+                    supported = (auraRatingMask & (botHasteFromStatRatingMask | botCritFromStatRatingMask)) != 0;
+                    sourceStatValue = _getTotalBotStat(BOT_STAT_MOD_INTELLECT);
+                    break;
+                default:
+                    break;
+            }
+
+            if (supported)
+                bonus += CalculatePct(sourceStatValue, auraEffect->GetAmount());
+        }
+
+        return bonus;
+    };
+
     //HASTE
     if (haste)
     {
@@ -7245,6 +8113,7 @@ void bot_ai::SetStats(bool force)
     //25.5 HR = 1% haste at 80
     tempval = _getTotalBotStat(BOT_STAT_MOD_HASTE_MELEE_RATING) + _getTotalBotStat(BOT_STAT_MOD_HASTE_RANGED_RATING) + _getTotalBotStat(BOT_STAT_MOD_HASTE_SPELL_RATING) + _getTotalBotStat(BOT_STAT_MOD_HASTE_RATING);
     tempval += me->GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_RATING, (1u << CR_HASTE_MELEE) | (1u << CR_HASTE_RANGED) | (1u << CR_HASTE_SPELL));
+    tempval += getSupportedRatingFromStatAuraBonus(botHasteFromStatRatingMask);
 
     if (_botclass == BOT_CLASS_WARLOCK)
     {
@@ -7455,10 +8324,12 @@ void bot_ai::SetStats(bool force)
         //45 CR = 1% crit at 80
         tempval = _getTotalBotStat(BOT_STAT_MOD_CRIT_MELEE_RATING) + _getTotalBotStat(BOT_STAT_MOD_CRIT_RANGED_RATING) + _getTotalBotStat(BOT_STAT_MOD_CRIT_SPELL_RATING) + _getTotalBotStat(BOT_STAT_MOD_CRIT_RATING);
         tempval += me->GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_RATING, (1u << CR_CRIT_MELEE) | (1u << CR_CRIT_RANGED) | (1u << CR_CRIT_SPELL));
+        tempval += getSupportedRatingFromStatAuraBonus(botCritFromStatRatingMask);
 
-        //Molten Armor: 30% spirit to crit rating (+40% double-glyphed + 15% T9P2 bonus)
-        if (_botclass == BOT_CLASS_MAGE && me->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_RATING_FROM_STAT, SPELLFAMILY_MAGE, 0x40000))
-            tempval += _getTotalBotStat(BOT_STAT_MOD_SPIRIT) * (mylevel >= 80 ? 0.85f : mylevel >= 70 ? 0.70f : 0.50f);
+        // Molten Armor now uses the active SPELL_AURA_MOD_RATING_FROM_STAT aura amount through getSupportedRatingFromStatAuraBonus().
+        // Old bot-only emulation kept here for easy rollback if the aura amount needs server-specific tuning:
+        // if (_botclass == BOT_CLASS_MAGE && me->HasAuraTypeWithFamilyFlags(SPELL_AURA_MOD_RATING_FROM_STAT, SPELLFAMILY_MAGE, 0x40000))
+        //     tempval += _getTotalBotStat(BOT_STAT_MOD_SPIRIT) * (mylevel >= 80 ? 0.85f : mylevel >= 70 ? 0.70f : 0.50f);
         //Firestone: just emulate the rating bonus
         if (_botclass == BOT_CLASS_WARLOCK)
         {
@@ -7577,6 +8448,7 @@ void bot_ai::SetStats(bool force)
     value = 0.f;
     tempval = _getTotalBotStat(BOT_STAT_MOD_DEFENSE_SKILL_RATING);
     tempval += me->GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_RATING, (1u << CR_DEFENSE_SKILL));
+    tempval += getSupportedRatingFromStatAuraBonus(botDefenseFromStatRatingMask);
     value += tempval * _getRatingMultiplier(CR_DEFENSE_SKILL);
     value += me->GetTotalAuraModifierByMiscValue(SPELL_AURA_MOD_SKILL, SKILL_DEFENSE);
     defense = mylevel * 5 + uint32(value); //truncate
@@ -12685,7 +13557,7 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
         constexpr float VOLCANO_AVOID_RADIUS = 18.0f;
 
         MotherShahrazBot::AddFatalAttractionAvoidanceSpots(unit, spots);
-        IllidanBot::AddIllidanAvoidanceSpots(unit, spots);
+        IllidanBot::AddIllidanAvoidanceSpots(unit, spots, !unit->IsNPCBot());
 
         std::list<Creature*> flames;
         Bcore::AllCreaturesOfEntryInRange flameCheck(unit, SupremusBot::NPC_MOLTEN_FLAME_STALKER, MOLTEN_FLAME_SCAN_RANGE);

@@ -373,8 +373,7 @@ public:
 
         void CheckBloodlust(uint32 diff)
         {
-            if (BloodlustCheckTimer > diff || (!me->IsInCombat() && !master->IsInCombat()) ||
-                me->GetDistance(master) > 18)
+            if (BloodlustCheckTimer > diff || (!me->IsInCombat() && !master->IsInCombat()))
                 return;
 
             BotEncounterHeroismState const illidanHeroismState = GetIllidanPhaseTwoHeroismState();
@@ -385,6 +384,9 @@ public:
             }
 
             bool const illidanHeroismReady = illidanHeroismState == BotEncounterHeroismState::Ready;
+            if (!illidanHeroismReady && me->GetDistance(master) > 18)
+                return;
+
             if (!illidanHeroismReady && Rand() > 35)
                 return;
 

@@ -15,16 +15,42 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Cell.h"
+#include "CellImpl.h"
+#include "Config.h"
 #include "CreatureScript.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
+#include "Group.h"
+#include "Map.h"
+#include "ObjectAccessor.h"
+#include "RaceMgr.h"
 #include "ScriptedCreature.h"
 #include "ScriptedEscortAI.h"
 #include "SpellScriptLoader.h"
 #include "black_temple.h"
 #include "bot_ai.h"
+#include "botmgr.h"
 #include "Player.h"
 #include "ScriptedGossip.h"
 #include "SpellAuraEffects.h"
+#include "SpellMgr.h"
 #include "SpellScript.h"
+
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <list>
+#include <string>
+#include <vector>
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    Creature* AsNPCBotCreature(Unit* unit);
+    void AnnounceMoveAwayFromMeForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+    void AnnounceCustomForModule(Creature* bot, uint32 spellId, char const* moduleFolder, char const* moduleId, std::string const& message, uint32 cooldownMs = 5000);
+}
 
 enum Says
 {
@@ -84,6 +110,7 @@ enum Spells
     SPELL_DEMON_TRANSFORM_3             = 40510,
     SPELL_DEMON_FORM                    = 40506,
     SPELL_SHADOW_BLAST                  = 41078,
+    SPELL_AURA_OF_DREAD                 = 41142,
     SPELL_FLAME_BURST                   = 41126,
     SPELL_FLAME_BURST_EFFECT            = 41131,
     SPELL_SUMMON_SHADOW_DEMON           = 41117,
@@ -141,6 +168,7 @@ enum Misc
     NPC_WORLD_TRIGGER                   = 22515,
     NPC_ILLIDAN_DB_TARGET               = 23070,
     NPC_MAIEV_SHADOWSONG                = 23197,
+    NPC_SHADOW_DEMON                    = 23375,
 
     GO_CAGE_TRAP                        = 185916,
 
@@ -184,6 +212,27 @@ Position const BladesPositions[2] =
 
 namespace
 {
+    static constexpr char const* DBM_BLACK_TEMPLE_MODULE_FOLDER = "DBM-BlackTemple";
+    static constexpr char const* DBM_ILLIDAN_MODULE_ID = "Illidan";
+    static constexpr char const* CONFIG_ILLIDAN_FLAME_TETHER_EXTRA_DISTANCE = "BlackTemple.Illidan.FlameOfAzzinoth.TetherExtraDistance";
+    static constexpr char const* CONFIG_ILLIDAN_RANGED_DPS_BOT_HAZARD_DAMAGE_MULTIPLIER = "BlackTemple.Illidan.RangedDpsBotHazardDamageMultiplier";
+    static constexpr float FLAME_OF_AZZINOTH_BASE_TETHER_DISTANCE = 30.0f;
+    static constexpr float PARASITIC_SHADOWFIEND_SAFE_MIN_RADIUS = 14.0f;
+    static constexpr float PARASITIC_SHADOWFIEND_SAFE_MAX_RADIUS = 24.0f;
+    static constexpr float PARASITIC_SHADOWFIEND_SAFE_STEP = 4.0f;
+    static constexpr float ILLIDAN_PI = 3.14159265358979323846f;
+    static constexpr uint32 SPELL_BLOODLUST = 2825;
+    static constexpr uint32 SPELL_HEROISM = 32182;
+    static constexpr uint32 SPELL_EXHAUSTION = 57723;
+    static constexpr uint32 SPELL_SATED = 57724;
+    static constexpr uint32 SPELL_DRUMS_OF_WAR = 35475;
+    static constexpr uint32 SPELL_ELIXIR_OF_DEMONSLAYING = 11406;
+    static constexpr float ILLIDAN_INITIAL_TANK_BOT_THREAT = 1000000.0f;
+    static constexpr float ILLIDAN_DEMON_WARLOCK_TANK_THREAT = 10000000.0f;
+    static constexpr float FLAME_ASSIGNED_TANK_BOT_THREAT = 3500000.0f;
+    static constexpr float FLAME_BACKUP_TANK_BOT_THREAT = 900000.0f;
+    static constexpr float ILLIDAN_SUMMON_CLEANUP_RANGE = 220.0f;
+
     bool IsOwnedNPCBot(Unit const* target)
     {
         Creature const* creature = target ? target->ToCreature() : nullptr;
@@ -193,6 +242,661 @@ namespace
     bool IsPlayerOrOwnedNPCBot(Unit const* target)
     {
         return target && (target->IsPlayer() || IsOwnedNPCBot(target));
+    }
+
+    bool IsOwnedTankNPCBot(Unit const* target)
+    {
+        Creature const* creature = target ? target->ToCreature() : nullptr;
+        if (!creature || !creature->IsNPCBot())
+            return false;
+
+        bot_ai* ai = const_cast<Creature*>(creature)->GetBotAI();
+        return ai && (ai->IsTank(creature) || ai->IsOffTank(creature));
+    }
+
+    bool IsIllidanProtectedTankTarget(Creature const* illidan, Unit const* target)
+    {
+        if (!illidan || !target)
+            return false;
+
+        if (IsOwnedTankNPCBot(target))
+            return true;
+
+        Creature* mutableIllidan = const_cast<Creature*>(illidan);
+        return target == mutableIllidan->GetVictim() ||
+            target == mutableIllidan->GetThreatMgr().GetCurrentVictim() ||
+            target == mutableIllidan->GetThreatMgr().GetLastVictim();
+    }
+
+    bool HasParasiticShadowfiendAura(Unit const* target)
+    {
+        return target && (target->HasAura(SPELL_PARASITIC_SHADOWFIEND) || target->HasAura(SPELL_PARASITIC_SHADOWFIEND_TRIGGER));
+    }
+
+    float GetFlameOfAzzinothTetherDistance()
+    {
+        float extraDistance = sConfigMgr->GetOption<float>(CONFIG_ILLIDAN_FLAME_TETHER_EXTRA_DISTANCE, 5.0f);
+        if (extraDistance < 0.0f)
+            extraDistance = 0.0f;
+
+        return FLAME_OF_AZZINOTH_BASE_TETHER_DISTANCE + extraDistance;
+    }
+
+    float GetIllidanRangedDpsBotHazardDamageMultiplier()
+    {
+        return std::clamp(sConfigMgr->GetOption<float>(CONFIG_ILLIDAN_RANGED_DPS_BOT_HAZARD_DAMAGE_MULTIPLIER, 0.7f), 0.0f, 5.0f);
+    }
+
+    struct OwnedIllidanBotRef
+    {
+        Creature* Bot = nullptr;
+        Player* Owner = nullptr;
+        bot_ai* AI = nullptr;
+    };
+
+    bool IsValidIllidanSupportOwner(Creature const* source, Player const* player, float range)
+    {
+        return source && player && player->IsInWorld() && player->IsInMap(source) && player->InSamePhase(source) && player->IsWithinDistInMap(source, range);
+    }
+
+    bool IsValidIllidanSupportBot(Creature const* source, Creature const* bot, float range)
+    {
+        return source && bot && bot->IsNPCBot() && bot->IsAlive() && bot->IsInWorld() &&
+            bot->IsInMap(source) && bot->InSamePhase(source) && bot->IsWithinDistInMap(source, range);
+    }
+
+    void AddIllidanOwnedBotRef(Creature* source, Player* owner, Creature* bot, float range, std::vector<OwnedIllidanBotRef>& bots)
+    {
+        if (!IsValidIllidanSupportBot(source, bot, range))
+            return;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai || ai->IAmFree())
+            return;
+
+        for (OwnedIllidanBotRef const& existing : bots)
+            if (existing.Bot && existing.Bot->GetGUID() == bot->GetGUID())
+                return;
+
+        bots.push_back({ bot, owner, ai });
+    }
+
+    std::vector<OwnedIllidanBotRef> GatherNearbyOwnedIllidanBots(Creature* source, float range = 180.0f)
+    {
+        std::vector<OwnedIllidanBotRef> bots;
+        if (!source || !source->GetMap())
+            return bots;
+
+        for (MapReference const& ref : source->GetMap()->GetPlayers())
+        {
+            Player* player = ref.GetSource();
+            if (!IsValidIllidanSupportOwner(source, player, range) || !player->HaveBot() || !player->GetBotMgr())
+                continue;
+
+            for (BotMap::value_type const& pair : *player->GetBotMgr()->GetBotMap())
+                AddIllidanOwnedBotRef(source, player, pair.second, range, bots);
+        }
+
+        return bots;
+    }
+
+    bool IsIllidanTankBot(OwnedIllidanBotRef const& botRef)
+    {
+        return botRef.Bot && botRef.AI && (botRef.AI->IsTank(botRef.Bot) || botRef.AI->IsOffTank(botRef.Bot));
+    }
+
+    bool IsIllidanRangedDpsBot(Unit const* target)
+    {
+        Creature const* bot = target ? target->ToCreature() : nullptr;
+        if (!bot || !bot->IsNPCBot())
+            return false;
+
+        bot_ai* ai = const_cast<Creature*>(bot)->GetBotAI();
+        return ai && !ai->IAmFree() && ai->HasRole(BOT_ROLE_DPS) && ai->HasRole(BOT_ROLE_RANGED) &&
+            !ai->HasRole(BOT_ROLE_HEAL) && !IsOwnedTankNPCBot(target);
+    }
+
+    bool IsIllidanPhysicalDpsBot(OwnedIllidanBotRef const& botRef)
+    {
+        if (!botRef.Bot || !botRef.AI || botRef.AI->IAmFree())
+            return false;
+
+        if (!botRef.AI->HasRole(BOT_ROLE_DPS) || botRef.AI->HasRole(BOT_ROLE_HEAL) || IsIllidanTankBot(botRef))
+            return false;
+
+        if (!botRef.AI->HasRole(BOT_ROLE_RANGED))
+            return true;
+
+        switch (botRef.AI->GetBotClass())
+        {
+            case BOT_CLASS_HUNTER:
+            case BOT_CLASS_DARK_RANGER:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    uint8 GetIllidanTankBotSlot(OwnedIllidanBotRef const& botRef)
+    {
+        if (botRef.Owner && botRef.Owner->GetBotMgr())
+            return uint8(botRef.Owner->GetBotMgr()->GetNpcBotSlotByRole(BOT_ROLE_TANK | BOT_ROLE_TANK_OFF, botRef.Bot));
+
+        return uint8(botRef.Bot ? botRef.Bot->GetGUID().GetCounter() % 2 : 0);
+    }
+
+    bool IllidanTankBotPrefersEast(OwnedIllidanBotRef const& botRef)
+    {
+        return (GetIllidanTankBotSlot(botRef) % 2) == 0;
+    }
+
+    bool IsEastFlameOfAzzinoth(Creature const* flame)
+    {
+        return flame && flame->GetExactDist2d(BladesPositions[1].GetPositionX(), BladesPositions[1].GetPositionY()) <=
+            flame->GetExactDist2d(BladesPositions[0].GetPositionX(), BladesPositions[0].GetPositionY());
+    }
+
+    void AddIllidanThreat(Unit* target, Unit* tank, float threat)
+    {
+        Creature* creatureTarget = target ? target->ToCreature() : nullptr;
+        if (!creatureTarget || !tank || !creatureTarget->CanHaveThreatList())
+            return;
+
+        tank->SetInCombatWith(creatureTarget);
+        creatureTarget->SetInCombatWith(tank);
+
+        float const currentThreat = creatureTarget->GetThreatMgr().GetThreat(tank, true);
+        if (currentThreat < threat)
+            creatureTarget->GetThreatMgr().AddThreat(tank, threat - currentThreat, nullptr, true, true);
+    }
+
+    void SeedIllidanInitialTankBotThreat(Creature* illidan)
+    {
+        if (!illidan || !illidan->CanHaveThreatList())
+            return;
+
+        for (OwnedIllidanBotRef const& botRef : GatherNearbyOwnedIllidanBots(illidan))
+            if (IsIllidanTankBot(botRef))
+                AddIllidanThreat(illidan, botRef.Bot, ILLIDAN_INITIAL_TANK_BOT_THREAT);
+    }
+
+    Unit* SelectHighestHealthIllidanWarlock(Creature* illidan)
+    {
+        if (!illidan || !illidan->GetMap())
+            return nullptr;
+
+        Unit* bestWarlock = nullptr;
+        uint32 bestHealth = 0;
+
+        auto consider = [&](Unit* unit)
+        {
+            if (!unit || !unit->IsAlive() || !unit->IsInWorld() || unit->GetMap() != illidan->GetMap() ||
+                !unit->InSamePhase(illidan) || !unit->IsWithinDistInMap(illidan, 180.0f) || unit->HasUnitState(UNIT_STATE_ISOLATED))
+                return;
+
+            uint32 const maxHealth = unit->GetMaxHealth();
+            if (!bestWarlock || maxHealth > bestHealth)
+            {
+                bestWarlock = unit;
+                bestHealth = maxHealth;
+            }
+        };
+
+        for (MapReference const& ref : illidan->GetMap()->GetPlayers())
+        {
+            Player* player = ref.GetSource();
+            if (IsValidIllidanSupportOwner(illidan, player, 180.0f) && player->IsAlive() && player->getClass() == CLASS_WARLOCK)
+                consider(player);
+        }
+
+        for (OwnedIllidanBotRef const& botRef : GatherNearbyOwnedIllidanBots(illidan))
+            if (botRef.Bot && botRef.AI && botRef.AI->GetBotClass() == BOT_CLASS_WARLOCK)
+                consider(botRef.Bot);
+
+        return bestWarlock;
+    }
+
+    void SeedIllidanDemonWarlockTankThreat(Creature* illidan)
+    {
+        if (!illidan || !illidan->CanHaveThreatList())
+            return;
+
+        Unit* warlock = SelectHighestHealthIllidanWarlock(illidan);
+        if (!warlock)
+            return;
+
+        AddIllidanThreat(illidan, warlock, ILLIDAN_DEMON_WARLOCK_TANK_THREAT);
+        if (illidan->AI())
+            illidan->AI()->AttackStart(warlock);
+    }
+
+    void SeedFlameOfAzzinothTankBotThreat(Creature* flame)
+    {
+        if (!flame || !flame->CanHaveThreatList())
+            return;
+
+        bool const eastFlame = IsEastFlameOfAzzinoth(flame);
+        Unit* preferredTank = nullptr;
+        uint8 preferredTankSlot = std::numeric_limits<uint8>::max();
+
+        for (OwnedIllidanBotRef const& botRef : GatherNearbyOwnedIllidanBots(flame))
+        {
+            if (!IsIllidanTankBot(botRef))
+                continue;
+
+            bool const preferred = IllidanTankBotPrefersEast(botRef) == eastFlame;
+            AddIllidanThreat(flame, botRef.Bot, preferred ? FLAME_ASSIGNED_TANK_BOT_THREAT : FLAME_BACKUP_TANK_BOT_THREAT);
+
+            uint8 const tankSlot = GetIllidanTankBotSlot(botRef);
+            if (preferred && (!preferredTank || tankSlot < preferredTankSlot))
+            {
+                preferredTank = botRef.Bot;
+                preferredTankSlot = tankSlot;
+            }
+        }
+
+        if (!preferredTank)
+            for (OwnedIllidanBotRef const& botRef : GatherNearbyOwnedIllidanBots(flame))
+                if (IsIllidanTankBot(botRef))
+                {
+                    preferredTank = botRef.Bot;
+                    break;
+                }
+
+        if (preferredTank && flame->AI())
+            flame->AI()->AttackStart(preferredTank);
+    }
+
+    bool HasIllidanHeroismActive(Unit const* unit)
+    {
+        return unit && (unit->HasAura(SPELL_BLOODLUST) || unit->HasAura(SPELL_HEROISM) ||
+            unit->GetAuraEffect(SPELL_AURA_MOD_MELEE_RANGED_HASTE, SPELLFAMILY_SHAMAN, 0x0, 0x40, 0x0));
+    }
+
+    bool HasIllidanDrumsOfWarActive(Unit const* unit)
+    {
+        return unit && unit->HasAura(SPELL_DRUMS_OF_WAR);
+    }
+
+    bool HasAnyIllidanHeroismActive(Creature* source, std::vector<OwnedIllidanBotRef> const& bots)
+    {
+        for (OwnedIllidanBotRef const& botRef : bots)
+        {
+            if (HasIllidanHeroismActive(botRef.Bot) || HasIllidanHeroismActive(botRef.Owner))
+                return true;
+        }
+
+        if (source && source->GetMap())
+            for (MapReference const& ref : source->GetMap()->GetPlayers())
+                if (Player* player = ref.GetSource())
+                    if (IsValidIllidanSupportOwner(source, player, 180.0f) && HasIllidanHeroismActive(player))
+                        return true;
+
+        return false;
+    }
+
+    bool HasAnyIllidanDrumsOfWarActive(Creature* source, std::vector<OwnedIllidanBotRef> const& bots)
+    {
+        for (OwnedIllidanBotRef const& botRef : bots)
+        {
+            if (HasIllidanDrumsOfWarActive(botRef.Bot) || HasIllidanDrumsOfWarActive(botRef.Owner))
+                return true;
+        }
+
+        if (source && source->GetMap())
+            for (MapReference const& ref : source->GetMap()->GetPlayers())
+                if (Player* player = ref.GetSource())
+                    if (IsValidIllidanSupportOwner(source, player, 180.0f) && HasIllidanDrumsOfWarActive(player))
+                        return true;
+
+        return false;
+    }
+
+    uint8 GetActiveFlameOfAzzinothCount(Creature* source)
+    {
+        if (!source)
+            return 0;
+
+        uint8 count = 0;
+        std::list<Creature*> flames;
+        source->GetCreatureListWithEntryInGrid(flames, NPC_FLAME_OF_AZZINOTH, 180.0f);
+        for (Creature* flame : flames)
+            if (flame && flame->IsAlive() && flame->IsInCombat())
+                ++count;
+
+        return count;
+    }
+
+    void TriggerIllidanPhaseTwoBotBuffFallback(Creature* source)
+    {
+        if (!source || GetActiveFlameOfAzzinothCount(source) < 2)
+            return;
+
+        std::vector<OwnedIllidanBotRef> bots = GatherNearbyOwnedIllidanBots(source);
+        if (!HasAnyIllidanHeroismActive(source, bots))
+        {
+            for (OwnedIllidanBotRef const& botRef : bots)
+            {
+                if (!botRef.Bot || !botRef.AI || botRef.AI->GetBotClass() != BOT_CLASS_SHAMAN)
+                    continue;
+
+                uint32 const spellId = (botRef.Bot->GetRaceMask() & sRaceMgr->GetAllianceRaceMask()) ? SPELL_HEROISM : SPELL_BLOODLUST;
+                if (!sSpellMgr->GetSpellInfo(spellId) || botRef.Bot->HasAura(SPELL_EXHAUSTION) || botRef.Bot->HasAura(SPELL_SATED))
+                    continue;
+
+                botRef.Bot->InterruptNonMeleeSpells(true);
+                botRef.Bot->CastSpell(botRef.Bot, spellId, true);
+                break;
+            }
+        }
+
+        if (!HasAnyIllidanDrumsOfWarActive(source, bots) && sSpellMgr->GetSpellInfo(SPELL_DRUMS_OF_WAR))
+        {
+            for (OwnedIllidanBotRef const& botRef : bots)
+            {
+                if (!botRef.Bot || !botRef.Bot->IsAlive())
+                    continue;
+
+                botRef.Bot->CastSpell(botRef.Bot, SPELL_DRUMS_OF_WAR, true);
+                break;
+            }
+        }
+    }
+
+    void CastIllidanPhysicalDpsBotDemonSlayingElixir(Creature* source)
+    {
+        if (!source || !sSpellMgr->GetSpellInfo(SPELL_ELIXIR_OF_DEMONSLAYING))
+            return;
+
+        for (OwnedIllidanBotRef const& botRef : GatherNearbyOwnedIllidanBots(source))
+        {
+            if (!IsIllidanPhysicalDpsBot(botRef) || botRef.Bot->HasAura(SPELL_ELIXIR_OF_DEMONSLAYING))
+                continue;
+
+            botRef.Bot->CastSpell(botRef.Bot, SPELL_ELIXIR_OF_DEMONSLAYING, true);
+        }
+    }
+
+    void DespawnNearbyIllidanCreature(Creature* source, uint32 entry)
+    {
+        if (!source)
+            return;
+
+        std::list<Creature*> creatures;
+        source->GetCreatureListWithEntryInGrid(creatures, entry, ILLIDAN_SUMMON_CLEANUP_RANGE);
+        for (Creature* creature : creatures)
+            if (creature && creature->IsInWorld())
+                creature->DespawnOrUnsummon();
+    }
+
+    void CleanupIllidanSummons(Creature* illidan, SummonList& summons)
+    {
+        summons.DespawnEntry(NPC_SHADOW_DEMON);
+        summons.DespawnEntry(NPC_PARASITIC_SHADOWFIEND);
+
+        DespawnNearbyIllidanCreature(illidan, NPC_SHADOW_DEMON);
+        DespawnNearbyIllidanCreature(illidan, NPC_PARASITIC_SHADOWFIEND);
+    }
+
+    void RestoreIllidanFromDemonForm(Creature* illidan)
+    {
+        if (!illidan)
+            return;
+
+        illidan->SetReactState(REACT_AGGRESSIVE);
+        illidan->SetCombatMovement(true);
+        illidan->SetControlled(false, UNIT_STATE_ROOT);
+        illidan->RemoveAurasDueToSpell(SPELL_DEMON_TRANSFORM_1);
+        illidan->RemoveAurasDueToSpell(SPELL_DEMON_TRANSFORM_2);
+        illidan->RemoveAurasDueToSpell(SPELL_DEMON_TRANSFORM_3);
+        illidan->RemoveAurasDueToSpell(SPELL_DEMON_FORM);
+        illidan->LoadEquipment(EQUIPMENT_GLAIVES, true);
+    }
+
+    Unit* ResolveParasiticShadowfiendTarget(Creature* shadowfiend, WorldObject* summoner)
+    {
+        if (Unit* summonerUnit = summoner ? summoner->ToUnit() : nullptr)
+            if (IsPlayerOrOwnedNPCBot(summonerUnit) && !IsIllidanProtectedTankTarget(shadowfiend ? shadowfiend->FindNearestCreature(NPC_ILLIDAN_STORMRAGE, 160.0f) : nullptr, summonerUnit))
+                return summonerUnit;
+
+        if (!shadowfiend)
+            return nullptr;
+
+        std::list<Unit*> candidates;
+        Bcore::AnyUnitInObjectRangeCheck check(shadowfiend, 18.0f);
+        Bcore::UnitListSearcher<Bcore::AnyUnitInObjectRangeCheck> searcher(shadowfiend, candidates, check);
+        Cell::VisitObjects(shadowfiend, searcher, 18.0f);
+
+        Unit* best = nullptr;
+        float bestDistance = std::numeric_limits<float>::max();
+        for (Unit* candidate : candidates)
+        {
+            if (!IsPlayerOrOwnedNPCBot(candidate) || !candidate->IsAlive() || !HasParasiticShadowfiendAura(candidate) ||
+                IsIllidanProtectedTankTarget(shadowfiend->FindNearestCreature(NPC_ILLIDAN_STORMRAGE, 160.0f), candidate))
+                continue;
+
+            float const distance = shadowfiend->GetExactDist(candidate);
+            if (!best || distance < bestDistance)
+            {
+                best = candidate;
+                bestDistance = distance;
+            }
+        }
+
+        return best;
+    }
+
+    Player* GetParasiticShadowfiendBotOwner(Creature* bot)
+    {
+        bot_ai* ai = bot && bot->IsNPCBot() ? bot->GetBotAI() : nullptr;
+        return ai && !ai->IAmFree() ? ai->GetBotOwner() : nullptr;
+    }
+
+    void AddParasiticShadowfiendObstacle(Creature* bot, std::vector<Unit*>& obstacles, Unit* unit)
+    {
+        if (!bot || !unit || unit == bot || !unit->IsAlive())
+            return;
+
+        if (!unit->IsPlayer() && !IsOwnedNPCBot(unit))
+            return;
+
+        if (!unit->IsInMap(bot) || !unit->InSamePhase(bot) || !unit->IsWithinDistInMap(bot, 90.0f))
+            return;
+
+        for (Unit* existing : obstacles)
+            if (existing && existing->GetGUID() == unit->GetGUID())
+                return;
+
+        obstacles.push_back(unit);
+    }
+
+    void AddOwnedParasiticShadowfiendBotObstacles(Creature* bot, std::vector<Unit*>& obstacles, Player* owner)
+    {
+        if (!owner || !owner->HaveBot() || !owner->GetBotMgr())
+            return;
+
+        for (BotMap::value_type const& pair : *owner->GetBotMgr()->GetBotMap())
+            AddParasiticShadowfiendObstacle(bot, obstacles, pair.second);
+    }
+
+    std::vector<Unit*> GatherParasiticShadowfiendObstacles(Creature* bot)
+    {
+        std::vector<Unit*> obstacles;
+        Player* owner = GetParasiticShadowfiendBotOwner(bot);
+
+        if (owner && owner->GetGroup())
+        {
+            for (Unit* member : BotMgr::GetAllGroupMembers(owner->GetGroup()))
+            {
+                AddParasiticShadowfiendObstacle(bot, obstacles, member);
+                if (Player* player = member ? member->ToPlayer() : nullptr)
+                    AddOwnedParasiticShadowfiendBotObstacles(bot, obstacles, player);
+            }
+        }
+
+        AddParasiticShadowfiendObstacle(bot, obstacles, owner);
+        AddOwnedParasiticShadowfiendBotObstacles(bot, obstacles, owner);
+        return obstacles;
+    }
+
+    float GetParasiticShadowfiendPositionScore(Position const& candidate, std::vector<Unit*> const& obstacles)
+    {
+        if (obstacles.empty())
+            return 1000.0f;
+
+        float score = std::numeric_limits<float>::max();
+        for (Unit* unit : obstacles)
+        {
+            if (!unit)
+                continue;
+
+            float const distance = unit->GetExactDist2d(candidate.GetPositionX(), candidate.GetPositionY());
+            score = std::min(score, distance);
+        }
+
+        return score;
+    }
+
+    bool TryGetParasiticShadowfiendSafePosition(Creature* bot, Position& destination)
+    {
+        if (!bot)
+            return false;
+
+        Creature* illidan = bot->FindNearestCreature(NPC_ILLIDAN_STORMRAGE, 160.0f);
+        Position const& anchor = illidan ? illidan->GetHomePosition() : bot->GetPosition();
+        std::vector<Unit*> obstacles = GatherParasiticShadowfiendObstacles(bot);
+
+        float bestScore = -1.0f;
+        Position bestPosition;
+        bool found = false;
+
+        float const baseAngle = std::atan2(bot->GetPositionY() - anchor.GetPositionY(), bot->GetPositionX() - anchor.GetPositionX());
+        for (float radius = PARASITIC_SHADOWFIEND_SAFE_MIN_RADIUS; radius <= PARASITIC_SHADOWFIEND_SAFE_MAX_RADIUS; radius += PARASITIC_SHADOWFIEND_SAFE_STEP)
+        {
+            for (uint8 step = 0; step < 16; ++step)
+            {
+                float const angle = baseAngle + (2.0f * ILLIDAN_PI * float(step) / 16.0f);
+                float x = anchor.GetPositionX() + std::cos(angle) * radius;
+                float y = anchor.GetPositionY() + std::sin(angle) * radius;
+                float z = anchor.GetPositionZ();
+
+                if (!bot->CanFly())
+                    bot->UpdateAllowedPositionZ(x, y, z);
+
+                if (!bot->IsWithinLOS(x, y, z))
+                    continue;
+
+                Position candidate;
+                candidate.Relocate(x, y, z, illidan ? bot->GetAngle(illidan) : bot->GetOrientation());
+
+                if (bot->GetExactDist(candidate) > 32.0f)
+                    continue;
+
+                float score = GetParasiticShadowfiendPositionScore(candidate, obstacles);
+                score -= bot->GetExactDist2d(candidate.GetPositionX(), candidate.GetPositionY()) * 0.04f;
+
+                if (!found || score > bestScore)
+                {
+                    found = true;
+                    bestScore = score;
+                    bestPosition = candidate;
+                }
+            }
+        }
+
+        if (!found)
+            return false;
+
+        destination = bestPosition;
+        return true;
+    }
+
+    void MoveParasiticShadowfiendBot(Creature* bot)
+    {
+        if (!bot || !bot->IsAlive() || !bot->IsNPCBot())
+            return;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai || ai->IAmFree())
+            return;
+
+        Position destination;
+        if (!TryGetParasiticShadowfiendSafePosition(bot, destination))
+            return;
+
+        bot->InterruptNonMeleeSpells(false);
+        bot->AttackStop();
+        bot->BotStopMovement();
+        ai->RemoveBotCommandState(BOT_COMMAND_FOLLOW | BOT_COMMAND_ATTACK | BOT_COMMAND_COMBATRESET);
+        ai->SetBotCommandState(BOT_COMMAND_INACTION);
+        ai->SetBotCommandState(BOT_COMMAND_STAY);
+        ai->BotMovement(BOT_MOVE_POINT, &destination, nullptr, true);
+    }
+
+    void AnnounceParasiticShadowfiendBot(Creature* bot, int32 auraDurationMs)
+    {
+        if (!bot)
+            return;
+
+        DBMFTABotCallouts::AnnounceMoveAwayFromMeForModule(bot, SPELL_PARASITIC_SHADOWFIEND, DBM_BLACK_TEMPLE_MODULE_FOLDER, DBM_ILLIDAN_MODULE_ID, "Parasitic Shadowfiends", 1);
+
+        ObjectGuid const botGuid = bot->GetGUID();
+        uint32 const firstCountdownMs = auraDurationMs > 3000 ? uint32(auraDurationMs - 3000) : 1;
+        for (uint8 i = 0; i < 3; ++i)
+        {
+            uint8 const count = 3 - i;
+            bot->m_Events.AddEventAtOffset([bot, botGuid, count]()
+            {
+                if (!bot || !bot->IsInWorld() || bot->GetGUID() != botGuid || !bot->IsAlive() || !HasParasiticShadowfiendAura(bot))
+                    return;
+
+                DBMFTABotCallouts::AnnounceCustomForModule(bot, SPELL_PARASITIC_SHADOWFIEND, DBM_BLACK_TEMPLE_MODULE_FOLDER, DBM_ILLIDAN_MODULE_ID,
+                    "Shadowfiends on me in " + std::to_string(count) + "!", 1);
+            }, Milliseconds(firstCountdownMs + i * 1000));
+        }
+    }
+
+    bool BeginParasiticShadowfiendBotHandling(Unit* /*target*/, int32 /*auraDurationMs*/, uint32& originalCommandState)
+    {
+        originalCommandState = 0;
+        return false;
+    }
+
+    void EndParasiticShadowfiendBotHandling(Unit* target, bool handledBot, uint32 originalCommandState)
+    {
+        if (!handledBot)
+            return;
+
+        Creature* bot = DBMFTABotCallouts::AsNPCBotCreature(target);
+        if (!bot || !bot->IsNPCBot())
+            return;
+
+        ObjectGuid const botGuid = bot->GetGUID();
+        bot->m_Events.AddEventAtOffset([bot, botGuid, originalCommandState]()
+        {
+            if (!bot || !bot->IsInWorld() || bot->GetGUID() != botGuid || !bot->IsNPCBot())
+                return;
+
+            if (HasParasiticShadowfiendAura(bot))
+                return;
+
+            bot_ai* ai = bot->GetBotAI();
+            if (!ai)
+                return;
+
+            if (!(originalCommandState & BOT_COMMAND_INACTION))
+                ai->RemoveBotCommandState(BOT_COMMAND_INACTION);
+
+            if (!((originalCommandState) & BOT_COMMAND_MASK_NOCAST_ANY))
+                ai->RemoveBotCommandState(BOT_COMMAND_MASK_NOCAST_ANY);
+            else
+                ai->SetBotCommandState(originalCommandState & BOT_COMMAND_MASK_NOCAST_ANY);
+
+            ai->RemoveBotCommandState(BOT_COMMAND_STAY | BOT_COMMAND_FULLSTOP | BOT_COMMAND_ATTACK | BOT_COMMAND_COMBATRESET);
+
+            if (bot->IsAlive() && !ai->IAmFree())
+                ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+        }, 2500ms);
     }
 }
 
@@ -216,6 +920,7 @@ struct boss_illidan_stormrage : public BossAI
     void Reset() override
     {
         BossAI::Reset();
+        CleanupIllidanSummons(me, summons);
         me->m_Events.CancelEventGroup(GROUP_BERSERK);
         me->m_Events.CancelEventGroup(GROUP_PHASE_FLYING);
         me->m_Events.CancelEventGroup(GROUP_DEMON_FORM);
@@ -361,6 +1066,7 @@ struct boss_illidan_stormrage : public BossAI
                 me->m_Events.AddEventAtOffset([&] {
                     // me->SetControlled(false, UNIT_STATE_ROOT);
                     me->SetReactState(REACT_AGGRESSIVE);
+                    SeedIllidanDemonWarlockTankThreat(me);
                     ScheduleAbilities(PHASE_DEMON);
                 }, 12230ms, GROUP_DEMON_FORM);
             }
@@ -368,14 +1074,7 @@ struct boss_illidan_stormrage : public BossAI
             case ACTION_ILLIDAN_DEMON_TRANSFORM_BACK:
             {
                 scheduler.CancelAll();
-                me->SetReactState(REACT_AGGRESSIVE);
-                me->SetCombatMovement(true);
-                me->SetControlled(false, UNIT_STATE_ROOT);
-                me->RemoveAurasDueToSpell(SPELL_DEMON_TRANSFORM_1);
-                me->RemoveAurasDueToSpell(SPELL_DEMON_TRANSFORM_2);
-                me->RemoveAurasDueToSpell(SPELL_DEMON_TRANSFORM_3);
-                me->RemoveAurasDueToSpell(SPELL_DEMON_FORM);
-                me->LoadEquipment(EQUIPMENT_GLAIVES, true);
+                RestoreIllidanFromDemonForm(me);
             }
             break;
             case ACTION_ILLIDAN_CAGED:
@@ -497,7 +1196,7 @@ struct boss_illidan_stormrage : public BossAI
                 }, 32s);
 
                 ScheduleTimedEvent(25s, 30s, [&] {
-                    DoCastRandomPlayerOrBotTarget(SPELL_PARASITIC_SHADOWFIEND, 0U, 100.f);
+                    DoCastParasiticShadowfiendTarget();
                 }, 25s, 30s);
 
                 // Custom from SunwellCore?
@@ -568,7 +1267,7 @@ struct boss_illidan_stormrage : public BossAI
                 }, 32s);
 
                 ScheduleTimedEvent(25s, 30s, [&] {
-                    DoCastRandomPlayerOrBotTarget(SPELL_PARASITIC_SHADOWFIEND, 0U, 100.f);
+                    DoCastParasiticShadowfiendTarget();
                 }, 25s, 30s);
 
                 ScheduleTimedEvent(25s, [&] {
@@ -584,6 +1283,7 @@ struct boss_illidan_stormrage : public BossAI
             case PHASE_DEMON:
             {
                 scheduler.CancelAll();
+                SeedIllidanDemonWarlockTankThreat(me);
 
                 ScheduleTimedEvent(30s, [&] {
                     DoCastSelf(SPELL_SUMMON_SHADOW_DEMON, true);
@@ -596,6 +1296,16 @@ struct boss_illidan_stormrage : public BossAI
                 ScheduleTimedEvent(7s, [&] {
                     DoCastSelf(SPELL_FLAME_BURST);
                 }, 19500ms);
+
+                scheduler.Schedule(5s, [this](TaskContext context) {
+                    if (!SelectTargetFromPlayerList(150.0f))
+                    {
+                        EnterEvadeMode(EVADE_REASON_NO_HOSTILES);
+                        return;
+                    }
+
+                    context.Repeat(3s);
+                });
 
                 me->m_Events.AddEventAtOffset([&] {
                     DoAction(ACTION_ILLIDAN_DEMON_TRANSFORM_BACK);
@@ -628,6 +1338,8 @@ struct boss_illidan_stormrage : public BossAI
     void JustEngagedWith(Unit* who) override
     {
         BossAI::JustEngagedWith(who);
+        CastIllidanPhysicalDpsBotDemonSlayingElixir(me);
+        SeedIllidanInitialTankBotThreat(me);
         ScheduleAbilities(PHASE_INITIAL);
         if (Creature* akama = instance->GetCreature(DATA_AKAMA_ILLIDAN))
             akama->AI()->AttackStart(me);
@@ -642,15 +1354,19 @@ struct boss_illidan_stormrage : public BossAI
         if (_inCutscene)
             return;
 
+        scheduler.CancelAll();
+        me->m_Events.CancelEventGroup(GROUP_BERSERK);
+        me->m_Events.CancelEventGroup(GROUP_PHASE_FLYING);
+        me->m_Events.CancelEventGroup(GROUP_DEMON_FORM);
+        CleanupIllidanSummons(me, summons);
+        RestoreIllidanFromDemonForm(me);
+        DoStopAttack();
+
         if (Creature* akama = instance->GetCreature(DATA_AKAMA_ILLIDAN))
             akama->DespawnOnEvade();
 
         BossAI::EnterEvadeMode(why);
         me->DespawnOnEvade();
-
-        me->m_Events.CancelEventGroup(GROUP_BERSERK);
-        me->m_Events.CancelEventGroup(GROUP_PHASE_FLYING);
-        me->m_Events.CancelEventGroup(GROUP_DEMON_FORM);
     }
 
     void JustSummoned(Creature* summon) override
@@ -694,6 +1410,7 @@ struct boss_illidan_stormrage : public BossAI
 
     void JustDied(Unit* killer) override
     {
+        CleanupIllidanSummons(me, summons);
         summons.clear();
         BossAI::JustDied(killer);
     }
@@ -718,7 +1435,7 @@ private:
             if (target->HasUnitState(UNIT_STATE_ISOLATED))
                 return false;
 
-            if (!withTank && target == me->GetThreatMgr().GetLastVictim())
+            if (!withTank && IsIllidanProtectedTankTarget(me, target))
                 return false;
 
             if (dist > 0.0f && !me->IsWithinCombatRange(target, dist))
@@ -746,6 +1463,35 @@ private:
             return DoCast(victim, spellId, triggered);
 
         return result;
+    }
+
+    SpellCastResult DoCastParasiticShadowfiendTarget()
+    {
+        std::list<Unit*> targets;
+        SelectTargetList(targets, 1, SelectTargetMethod::Random, 0, [this](Unit* target)
+        {
+            if (!target || !target->IsInWorld() || !target->IsAlive() || !target->IsInCombat())
+                return false;
+
+            if (target->GetMap() != me->GetMap() || !target->InSamePhase(me))
+                return false;
+
+            if (target->HasUnitState(UNIT_STATE_ISOLATED) || HasParasiticShadowfiendAura(target))
+                return false;
+
+            if (IsIllidanProtectedTankTarget(me, target))
+                return false;
+
+            if (!me->IsWithinCombatRange(target, 100.0f) || !me->IsValidAttackTarget(target))
+                return false;
+
+            return IsPlayerOrOwnedNPCBot(target);
+        });
+
+        if (!targets.empty())
+            return DoCast(targets.front(), SPELL_PARASITIC_SHADOWFIEND);
+
+        return SPELL_FAILED_BAD_TARGETS;
     }
 
     bool _canTalk;
@@ -1306,7 +2052,16 @@ struct npc_parasitic_shadowfiend : public ScriptedAI
 
     bool CanAIAttack(Unit const* who) const override
     {
-        return !who->HasAura(SPELL_PARASITIC_SHADOWFIEND) && !who->HasAura(SPELL_PARASITIC_SHADOWFIEND_TRIGGER) && who->IsPlayer();
+        if (!who || !IsPlayerOrOwnedNPCBot(who))
+            return false;
+
+        if (IsIllidanProtectedTankTarget(me->FindNearestCreature(NPC_ILLIDAN_STORMRAGE, 160.0f), who))
+            return false;
+
+        if (_preferredTargetGuid && who->GetGUID() == _preferredTargetGuid)
+            return true;
+
+        return !HasParasiticShadowfiendAura(who);
     }
 
     void EnterEvadeMode(EvadeReason /*why*/) override
@@ -1314,14 +2069,26 @@ struct npc_parasitic_shadowfiend : public ScriptedAI
         me->DespawnOrUnsummon();
     }
 
-    void IsSummonedBy(WorldObject* /*summoner*/) override
+    void IsSummonedBy(WorldObject* summoner) override
     {
+        if (Unit* target = ResolveParasiticShadowfiendTarget(me, summoner))
+            _preferredTargetGuid = target->GetGUID();
+
         // Simulate blizz-like AI delay to avoid extreme overpopulation of adds
         me->SetReactState(REACT_DEFENSIVE);
 
         scheduler.Schedule(2400ms, [this](TaskContext context)
         {
             me->SetReactState(REACT_AGGRESSIVE);
+
+            if (Unit* target = ObjectAccessor::GetUnit(*me, _preferredTargetGuid))
+            {
+                me->SetInCombatWith(target);
+                target->SetInCombatWith(me);
+                me->GetThreatMgr().AddThreat(target, 50000.0f, nullptr, true, true);
+                AttackStart(target);
+            }
+
             me->SetInCombatWithZone();
             context.Repeat();
         });
@@ -1336,6 +2103,9 @@ struct npc_parasitic_shadowfiend : public ScriptedAI
 
         DoMeleeAttackIfReady();
     }
+
+private:
+    ObjectGuid _preferredTargetGuid;
 };
 
 enum WarbladeTear
@@ -1414,7 +2184,21 @@ struct npc_flame_of_azzinoth : public ScriptedAI
         me->m_Events.AddEventAtOffset([&] {
             me->SetReactState(REACT_AGGRESSIVE);
             me->SetInCombatWithZone();
+            SeedFlameOfAzzinothTankBotThreat(me);
+            TriggerIllidanPhaseTwoBotBuffFallback(me);
         }, 2020ms);
+
+        for (uint8 i = 1; i <= 3; ++i)
+        {
+            me->m_Events.AddEventAtOffset([this]()
+            {
+                if (!me || !me->IsAlive() || !me->IsInCombat())
+                    return;
+
+                SeedFlameOfAzzinothTankBotThreat(me);
+                TriggerIllidanPhaseTwoBotBuffFallback(me);
+            }, Milliseconds(3000 + i * 2000));
+        }
     }
 
     void JustSummoned(Creature* summon) override
@@ -1489,16 +2273,28 @@ class spell_illidan_parasitic_shadowfiend_aura : public AuraScript
         return ValidateSpellInfo({ SPELL_SUMMON_PARASITIC_SHADOWFIENDS });
     }
 
+    void HandleEffectApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        _handledBot = BeginParasiticShadowfiendBotHandling(GetTarget(), GetAura() ? GetAura()->GetDuration() : 3000, _originalCommandState);
+    }
+
     void HandleEffectRemove(AuraEffect const*  /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         if (!GetTarget()->HasAura(SPELL_SHADOW_PRISON) && GetTarget()->GetInstanceScript() && GetTarget()->GetInstanceScript()->IsEncounterInProgress())
             GetTarget()->CastSpell(GetTarget(), SPELL_SUMMON_PARASITIC_SHADOWFIENDS, true);
+
+        EndParasiticShadowfiendBotHandling(GetTarget(), _handledBot, _originalCommandState);
     }
 
     void Register() override
     {
+        AfterEffectApply += AuraEffectApplyFn(spell_illidan_parasitic_shadowfiend_aura::HandleEffectApply, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
         AfterEffectRemove += AuraEffectRemoveFn(spell_illidan_parasitic_shadowfiend_aura::HandleEffectRemove, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
     }
+
+private:
+    bool _handledBot = false;
+    uint32 _originalCommandState = 0;
 };
 
 class spell_illidan_parasitic_shadowfiend_trigger : public SpellScript
@@ -1527,16 +2323,28 @@ class spell_illidan_parasitic_shadowfiend_trigger_aura : public AuraScript
         return ValidateSpellInfo({ SPELL_SUMMON_PARASITIC_SHADOWFIENDS });
     }
 
+    void HandleEffectApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        _handledBot = BeginParasiticShadowfiendBotHandling(GetTarget(), GetAura() ? GetAura()->GetDuration() : 3000, _originalCommandState);
+    }
+
     void HandleEffectRemove(AuraEffect const*  /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         if (!GetTarget()->HasAura(SPELL_SHADOW_PRISON) && GetTarget()->GetInstanceScript() && GetTarget()->GetInstanceScript()->IsEncounterInProgress())
             GetTarget()->CastSpell(GetTarget(), SPELL_SUMMON_PARASITIC_SHADOWFIENDS, true);
+
+        EndParasiticShadowfiendBotHandling(GetTarget(), _handledBot, _originalCommandState);
     }
 
     void Register() override
     {
+        AfterEffectApply += AuraEffectApplyFn(spell_illidan_parasitic_shadowfiend_trigger_aura::HandleEffectApply, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
         AfterEffectRemove += AuraEffectRemoveFn(spell_illidan_parasitic_shadowfiend_trigger_aura::HandleEffectRemove, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
     }
+
+private:
+    bool _handledBot = false;
+    uint32 _originalCommandState = 0;
 };
 
 class spell_illidan_glaive_throw : public SpellScript
@@ -1575,7 +2383,7 @@ class spell_illidan_tear_of_azzinoth_summon_channel_aura : public AuraScript
         PreventDefaultAction();
         if (Unit* caster = GetCaster())
         {
-            if (GetTarget()->GetDistance2d(caster) > 30.0f)
+            if (GetTarget()->GetDistance2d(caster) > GetFlameOfAzzinothTetherDistance())
             {
                 SetDuration(0);
                 GetTarget()->CastSpell(GetTarget(), SPELL_UNCAGED_WRATH, true);
@@ -1693,6 +2501,22 @@ class spell_illidan_demon_transform2_aura : public AuraScript
     void Register() override
     {
         OnEffectPeriodic += AuraEffectPeriodicFn(spell_illidan_demon_transform2_aura::OnPeriodic, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+    }
+};
+
+class spell_illidan_shadow_blast : public SpellScript
+{
+    PrepareSpellScript(spell_illidan_shadow_blast);
+
+    void HandleDamage(SpellEffIndex /*effIndex*/)
+    {
+        if (IsIllidanRangedDpsBot(GetHitUnit()))
+            SetHitDamage(int32(float(GetHitDamage()) * GetIllidanRangedDpsBotHazardDamageMultiplier()));
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_illidan_shadow_blast::HandleDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
     }
 };
 
@@ -1818,6 +2642,7 @@ void AddSC_boss_illidan()
     RegisterSpellAndAuraScriptPair(spell_illidan_shadow_prison, spell_illidan_shadow_prison_aura);
     RegisterSpellScript(spell_illidan_demon_transform1_aura);
     RegisterSpellScript(spell_illidan_demon_transform2_aura);
+    RegisterSpellScript(spell_illidan_shadow_blast);
     RegisterSpellScript(spell_illidan_flame_burst);
     RegisterSpellScript(spell_illidan_found_target);
     RegisterSpellScript(spell_illidan_cage_trap);

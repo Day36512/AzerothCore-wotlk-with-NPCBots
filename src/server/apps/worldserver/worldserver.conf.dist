@@ -5009,6 +5009,25 @@ BlackTemple.ShadeOfAkama.NPCBotScaling.ExtraSpawnsPerStep = 1
 BlackTemple.ShadeOfAkama.NPCBotScaling.MaxExtraSpawnsPerGenerator = 6
 
 #
+#    BlackTemple.Illidan.FlameOfAzzinoth.TetherExtraDistance
+#        Description: Extra yards added to the original 30 yard Flame of Azzinoth
+#                     glaive tether before Uncaged Wrath is triggered.
+#                     Set to 0 for the original tether distance.
+#        Default:     5
+
+BlackTemple.Illidan.FlameOfAzzinoth.TetherExtraDistance = 5
+
+#
+#    BlackTemple.Illidan.RangedDpsBotHazardDamageMultiplier
+#        Description: Damage multiplier applied to ranged DPS NPCBots hit by Illidan
+#                     hazard spells using spell_illidan_shadow_blast, such as Shadow
+#                     Blast and Flame Burst when the script is bound to those spells.
+#                     Set to 1.0 for full damage.
+#        Default:     0.7
+
+BlackTemple.Illidan.RangedDpsBotHazardDamageMultiplier = 0.7
+
+#
 #    Glyph.ExtraSlots.RequiredItemQuality
 #        Description: Minimum item quality required when applying glyph items to the
 #                     ExtraGlyphSlots mastery slots. This does not affect normal

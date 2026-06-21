@@ -53,6 +53,7 @@ enum MageBaseSpells
     CONE_OF_COLD_1 = 120,
     BLIZZARD_1 = 10,
     FROST_ARMOR_1 = 168,
+    MAGE_ARMOR_1 = 6117,
     ICE_ARMOR_1 = 7302,
     MOLTEN_ARMOR_1 = 30482,
     ICE_BARRIER_1 = 11426,
@@ -156,9 +157,9 @@ FIRE_BLAST_1, FLAMESTRIKE_1, FROSTBOLT_1, FROSTFIRE_BOLT_1, FROST_NOVA_1, ICE_LA
 static const std::vector<uint32> Mage_spells_cc{ COUNTERSPELL_1, DRAGON_BREATH_1, DEEP_FREEZE_1, FROST_NOVA_1, POLYMORPH_1, SLOW_1 };
 static const std::vector<uint32> Mage_spells_support
 { AMPLIFYMAGIC_1, ARCANEINTELLECT_1, BLINK_1, COMBUSTION_1, DAMPENMAGIC_1, EVOCATION_1, FIRE_WARD_1, FROST_WARD_1,
-FROST_ARMOR_1, FOCUS_MAGIC_1, ICE_BARRIER_1, ICE_BLOCK_1, ICY_VEINS_1, INVISIBILITY_1, ICE_ARMOR_1, MOLTEN_ARMOR_1,
-SLOW_FALL_1, SPELLSTEAL_1, REMOVE_CURSE_1, CONJURE_MANA_GEM_1, RITUAL_OF_REFRESHMENT_1, SUMMON_WATER_ELEMENTAL_1,
-COLD_SNAP_1, PRESENCE_OF_MIND_1, ARCANE_POWER_1, ARCANE_BARRAGE_1, SLOW_1 };
+    FROST_ARMOR_1, FOCUS_MAGIC_1, ICE_BARRIER_1, ICE_BLOCK_1, ICY_VEINS_1, INVISIBILITY_1, MAGE_ARMOR_1, ICE_ARMOR_1, MOLTEN_ARMOR_1,
+    SLOW_FALL_1, SPELLSTEAL_1, REMOVE_CURSE_1, CONJURE_MANA_GEM_1, RITUAL_OF_REFRESHMENT_1, SUMMON_WATER_ELEMENTAL_1,
+    COLD_SNAP_1, PRESENCE_OF_MIND_1, ARCANE_POWER_1, ARCANE_BARRAGE_1, SLOW_1 };
 
 class mage_bot : public CreatureScript
 {
@@ -362,9 +363,11 @@ public:
             }
 
             //ARMOR
-            uint32 MOLTENARMOR = HasRole(BOT_ROLE_DPS) ? GetSpell(MOLTEN_ARMOR_1) : GetSpell(ICE_ARMOR_1);
+            uint32 MAGEARMOR = GetSpell(MAGE_ARMOR_1);
+            uint32 MOLTENARMOR = GetSpell(MOLTEN_ARMOR_1);
             uint32 ICEARMOR = GetSpell(ICE_ARMOR_1) ? GetSpell(ICE_ARMOR_1) : GetSpell(FROST_ARMOR_1);
-            uint32 ARMOR = !MOLTENARMOR ? ICEARMOR : (me->GetMap()->IsDungeon() || !ICEARMOR) ? MOLTENARMOR : ICEARMOR;
+            uint32 ARMOR = GetSpec() == BOT_SPEC_MAGE_ARCANE ? (MAGEARMOR ? MAGEARMOR : (MOLTENARMOR ? MOLTENARMOR : ICEARMOR)) :
+                (MOLTENARMOR ? MOLTENARMOR : (MAGEARMOR ? MAGEARMOR : ICEARMOR));
             if (ARMOR && !me->HasAura(ARMOR))
             {
                 if (doCast(me, ARMOR))
@@ -2267,6 +2270,7 @@ public:
             InitSpellMap(CONE_OF_COLD_1);
             InitSpellMap(BLIZZARD_1);
             InitSpellMap(FROST_ARMOR_1);
+            InitSpellMap(MAGE_ARMOR_1);
             InitSpellMap(ICE_ARMOR_1);
             InitSpellMap(MOLTEN_ARMOR_1);
             InitSpellMap(ICE_BLOCK_1);
@@ -2378,7 +2382,9 @@ public:
             case ARCANE_POWER_1:
             case ARCANE_BARRAGE_1:
             case SLOW_1:
+            case MAGE_ARMOR_1:
             case ICE_ARMOR_1:
+            case MOLTEN_ARMOR_1:
             case ICE_BARRIER_1:
             case COMBUSTION_1:
             case ICY_VEINS_1:
