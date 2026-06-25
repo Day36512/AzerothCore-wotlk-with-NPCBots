@@ -1,0 +1,123 @@
+# Safe item budget normalizer defaults for AzerothCore 3.3.5a.
+# The script is report-only unless --write-sql is passed.
+
+safety:
+  max_sql_updates: 250
+  dry_run_reviewed: false
+  visible_budget_change_cap_percent: 20.0
+  armor_change_cap_percent: 15.0
+  allow_large_changes: false
+  allow_armor_updates: false
+  allow_large_armor_changes: false
+  allow_special_effect_items: false
+  require_sql_origin_filter: true
+  require_sql_origin_expansion: true
+
+budget:
+  target_mode: peer
+  base_budget_at_ilvl_100: 42.0
+  budget_exponent: 1.15
+  minimum_visible_budget: 1.0
+  rounding_tolerance_percent: 3.0
+  max_rounding_adjustments: 500
+
+peer:
+  min_samples: 8
+  sql_min_samples: 8
+  strict_sql_min_samples: 10
+  outlier_tolerance_percent: 15.0
+  leveling_window_1: 5
+  leveling_window_2: 10
+  endgame_window_1: 6
+  endgame_window_2: 13
+
+calibration:
+  sane_median_abs_percent: 10.0
+  sane_min_samples: 10
+
+origin:
+  manifest_path: "F:/Downloads/private_server_item_origin_builder/private_server_item_origin_builder/item_origin_manifests/item_origin_manifest.csv"
+  custom_label: custom_or_unknown
+
+stat_weights:
+  1: 0.067   # Health
+  3: 1.00    # Agility
+  4: 1.00    # Strength
+  5: 1.00    # Intellect
+  6: 1.00    # Spirit
+  7: 0.67    # Stamina
+  12: 1.00   # Defense Rating
+  13: 1.00   # Dodge Rating
+  14: 1.00   # Parry Rating
+  15: 1.00   # Block Rating
+  31: 1.00   # Hit Rating
+  32: 1.00   # Crit Rating
+  35: 1.00   # Resilience Rating
+  36: 1.00   # Haste Rating
+  37: 1.00   # Expertise Rating
+  38: 0.50   # Attack Power
+  39: 0.50   # Ranged Attack Power
+  40: 0.50   # Feral Attack Power
+  43: 2.50   # Mana per 5 sec
+  44: 1.00   # Armor Penetration Rating
+  45: 0.86   # Spell Power
+  46: 2.50   # Health Regen
+  47: 1.00   # Spell Penetration
+  48: 0.65   # Block Value
+
+socket_budget:
+  level_70:
+    red: 8
+    yellow: 8
+    blue: 8
+    meta: 12
+  level_80:
+    red: 16
+    yellow: 16
+    blue: 16
+    meta: 24
+
+slot_multipliers:
+  head: 1.00
+  neck: 0.56
+  shoulder: 0.74
+  chest: 1.00
+  waist: 0.74
+  legs: 1.00
+  feet: 0.74
+  wrist: 0.56
+  hands: 0.74
+  finger: 0.56
+  weapon_one_hand: 1.00
+  weapon_main_hand: 1.00
+  weapon_off_hand: 0.56
+  weapon_two_hand: 1.80
+  ranged: 1.00
+  shield: 0.74
+  cloak: 0.56
+  held_in_off_hand: 0.56
+  relic: 0.40
+
+quality_multipliers:
+  2: 0.85   # Uncommon
+  3: 1.00   # Rare
+  4: 1.15   # Epic
+  5: 1.30   # Legendary
+
+armor:
+  nearby_ilvl_window: 6
+  max_ilvl_window: 13
+  min_samples: 8
+  bonus_armor_threshold_percent: 25.0
+
+weapon:
+  nearby_ilvl_window: 6
+  max_ilvl_window: 13
+  min_samples: 8
+  caster_spell_power_share_threshold: 0.45
+
+exclusions:
+  exclude_name_pattern_1: "[PH]"
+  exclude_name_pattern_2: "Monster -"
+  exclude_name_pattern_3: "QA"
+  exclude_name_pattern_4: "Test "

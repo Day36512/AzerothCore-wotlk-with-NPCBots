@@ -80,6 +80,20 @@ static BotGearStorageMap _botStoredGearMap;
 using BotGearSetStorageMap = std::unordered_map<ObjectGuid /*playerGuid*/, BotItemSetsArray>;
 static BotGearSetStorageMap _botStoredGearSetMap;
 
+static constexpr std::array<uint32, 10> DeathKnightRuneforgeSpellIds{ 53323, 53331, 53341, 53342, 53343, 53344, 53346, 53347, 62158, 70164 };
+
+static bool BotItemHasStoredEnchantments(Item const* item)
+{
+    for (auto i : NPCBots::index_array<uint8, MAX_ENCHANTMENT_SLOT>)
+    {
+        EnchantmentSlot slot = EnchantmentSlot(i);
+        if (item->GetEnchantmentId(slot) || item->GetEnchantmentDuration(slot) || item->GetEnchantmentCharges(slot))
+            return true;
+    }
+
+    return false;
+}
+
 static bool allBotsLoaded = false;
 
 static uint32 next_wandering_bot_spawn_delay = 0;
@@ -3142,6 +3156,67 @@ Item* BotDataMgr::GenerateWanderingBotItem(uint8 category, uint8 slot, uint8 bot
     return nullptr;
 }
 
+std::array<uint32, 10> const& BotDataMgr::GetDeathKnightRuneforgeSpellIds()
+{
+    return DeathKnightRuneforgeSpellIds;
+}
+
+bool BotDataMgr::GetDeathKnightRuneforgeEnchantIdForItem(uint32 spellId, ItemTemplate const* proto, bool checkItemRequiredLevel, uint32* enchantId/* = nullptr*/)
+{
+    if (!proto || std::find(DeathKnightRuneforgeSpellIds.begin(), DeathKnightRuneforgeSpellIds.end(), spellId) == DeathKnightRuneforgeSpellIds.end())
+        return false;
+
+    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+    if (!spellInfo)
+        return false;
+
+    SpellEffectInfo const& effect = spellInfo->GetEffect(EFFECT_0);
+    if (effect.Effect != SPELL_EFFECT_ENCHANT_ITEM || effect.MiscValue <= 0)
+        return false;
+
+    if (spellInfo->EquippedItemClass != int32(proto->Class))
+        return false;
+
+    if (checkItemRequiredLevel && spellInfo->BaseLevel > proto->RequiredLevel)
+        return false;
+
+    if (spellInfo->EquippedItemClass == ITEM_CLASS_WEAPON)
+    {
+        if (!(spellInfo->EquippedItemSubClassMask & (1u << proto->SubClass)))
+            return false;
+    }
+    else if (!(spellInfo->EquippedItemInventoryTypeMask & (1u << proto->InventoryType)))
+        return false;
+
+    uint32 id = uint32(effect.MiscValue);
+    if (!sSpellItemEnchantmentStore.LookupEntry(id))
+        return false;
+
+    if (enchantId)
+        *enchantId = id;
+
+    return true;
+}
+
+bool BotDataMgr::IsDeathKnightRuneforgeEnchant(uint32 enchantId)
+{
+    if (!enchantId)
+        return false;
+
+    for (uint32 spellId : DeathKnightRuneforgeSpellIds)
+    {
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+        if (!spellInfo)
+            continue;
+
+        SpellEffectInfo const& effect = spellInfo->GetEffect(EFFECT_0);
+        if (effect.Effect == SPELL_EFFECT_ENCHANT_ITEM && uint32(effect.MiscValue) == enchantId)
+            return true;
+    }
+
+    return false;
+}
+
 bool BotDataMgr::GenerateWanderingBotItemEnchants(Item* item, uint8 slot, uint8 spec)
 {
     bool result = false;
@@ -3168,7 +3243,6 @@ bool BotDataMgr::GenerateWanderingBotItemEnchants(Item* item, uint8 slot, uint8 
             sSpellItemEnchantmentStore.LookupEntry(uint32(e.MiscValue));
     };
 
-    static const std::array<uint32, 10> weapon_enchants_dk{ 53323, 53331, 53341, 53342, 53343, 53344, 53346, 53347, 62158, 70164 }; //2h only
     static const std::array<uint32, 11> weapon_enchants_caster{ 27968, 27975, 28003, 34010, 44510, 44629, 59619, 59625, 60714, 62948, 62959 };
     static const std::array<uint32, 18> weapon_enchants_melee{ 27971, 27977, 27984, 28004, 42620, 42974, 44524, 44576, 44630, 44633, 46578, 55836, 59619, 59621, 60621, 60691, 60707, 62257 };
     static const std::array<uint32, 34> armor_enchants_caster{ 34003, 34008, 44383, 44488, 44492, 44528, 44555, 44582, 44592, 44612, 44616, 44623, 44635, 47898, 47900, 47901, 57690, 57691, 59636, 59784, 59970, 60609, 60653, 60692, 60767, 61120, 61271, 62256, 60583, 50911, 55016, 55634, 55642, 56034 };
@@ -3222,11 +3296,11 @@ bool BotDataMgr::GenerateWanderingBotItemEnchants(Item* item, uint8 slot, uint8 
             switch (proto->Class)
             {
                 case ITEM_CLASS_WEAPON:
-                    for (uint32 spellId : weapon_enchants_dk)
+                    for (uint32 spellId : GetDeathKnightRuneforgeSpellIds())
                     {
-                        sInfo = sSpellMgr->AssertSpellInfo(spellId);
-                        if (is_enchantable(proto, sInfo))
-                            valid_enchant_ids.push_back(uint32(sInfo->GetEffect(EFFECT_0).MiscValue));
+                        uint32 enchant_id = 0;
+                        if (GetDeathKnightRuneforgeEnchantIdForItem(spellId, proto, true, &enchant_id))
+                            valid_enchant_ids.push_back(enchant_id);
                     }
                     break;
                 default:
@@ -3517,7 +3591,7 @@ void BotDataMgr::UpdateNpcBotData(uint32 entry, NpcBotDataUpdateType updateType,
                     bool standard = false;
                     for (auto i : NPCBots::index_array<uint8, MAX_EQUIPMENT_ITEMS>)
                     {
-                        if (einfo->ItemEntry[i] == botitem->GetEntry())
+                        if (einfo->ItemEntry[i] == botitem->GetEntry() && !BotItemHasStoredEnchantments(botitem))
                         {
                             itr->second.equips[k] = 0;
                             bstmt->SetData(k, uint32(0));

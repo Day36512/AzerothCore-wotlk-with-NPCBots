@@ -51,10 +51,51 @@ static constexpr int32 UPDATE_TARGET_MAP_INTERVAL = 500;
 namespace
 {
     constexpr uint32 SPELL_PALADIN_RET_TWO_SEALS = 600451;
+    constexpr uint32 SPELL_PALADIN_SEAL_OF_RIGHTEOUSNESS_R1 = 20154;
+    constexpr uint32 SPELL_PALADIN_SEAL_OF_RIGHTEOUSNESS = 21084;
+    constexpr uint32 SPELL_PALADIN_SEAL_OF_VENGEANCE = 31801;
+    constexpr uint32 SPELL_PALADIN_SEAL_OF_CORRUPTION = 53736;
+
+    uint32 GetFirstRankSpellId(Aura const* aura)
+    {
+        if (!aura)
+            return 0;
+
+        SpellInfo const* spellInfo = aura->GetSpellInfo();
+        if (!spellInfo)
+            return aura->GetId();
+
+        if (SpellInfo const* firstRank = spellInfo->GetFirstRankSpell())
+            return firstRank->Id;
+
+        return spellInfo->Id;
+    }
 
     bool IsPaladinSealAura(Aura const* aura)
     {
         return aura && aura->GetSpellInfo()->GetSpellSpecific() == SPELL_SPECIFIC_SEAL;
+    }
+
+    bool IsSealOfRighteousnessAura(Aura const* aura)
+    {
+        uint32 const spellId = aura ? aura->GetId() : 0;
+        uint32 const firstRankId = GetFirstRankSpellId(aura);
+        return spellId == SPELL_PALADIN_SEAL_OF_RIGHTEOUSNESS_R1 || spellId == SPELL_PALADIN_SEAL_OF_RIGHTEOUSNESS ||
+            firstRankId == SPELL_PALADIN_SEAL_OF_RIGHTEOUSNESS_R1 || firstRankId == SPELL_PALADIN_SEAL_OF_RIGHTEOUSNESS;
+    }
+
+    bool IsSealOfVengeanceOrCorruptionAura(Aura const* aura)
+    {
+        uint32 const spellId = aura ? aura->GetId() : 0;
+        uint32 const firstRankId = GetFirstRankSpellId(aura);
+        return spellId == SPELL_PALADIN_SEAL_OF_VENGEANCE || spellId == SPELL_PALADIN_SEAL_OF_CORRUPTION ||
+            firstRankId == SPELL_PALADIN_SEAL_OF_VENGEANCE || firstRankId == SPELL_PALADIN_SEAL_OF_CORRUPTION;
+    }
+
+    bool IsRetTwoSealBlockedPair(Aura const* lhs, Aura const* rhs)
+    {
+        return (IsSealOfRighteousnessAura(lhs) && IsSealOfVengeanceOrCorruptionAura(rhs)) ||
+            (IsSealOfRighteousnessAura(rhs) && IsSealOfVengeanceOrCorruptionAura(lhs));
     }
 
     bool IsPreferredSealToKeep(Aura const* candidate, Aura const* current)
@@ -100,6 +141,10 @@ namespace
 
         Unit const* owner = newAura->GetOwner()->ToUnit();
         if (!owner || !owner->HasAura(SPELL_PALADIN_RET_TWO_SEALS))
+            return false;
+
+        // Keep this proc-heavy pair mutually exclusive even for the dual-seal bonus.
+        if (IsRetTwoSealBlockedPair(newAura, existingAura))
             return false;
 
         Aura const* sealToKeep = GetRetTwoSealBonusSealToKeep(owner, newAura);

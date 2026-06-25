@@ -389,6 +389,7 @@ public:
     bool CanPlayerChangeEquipment(Player const* player) const;
     [[nodiscard]] BotEquipResult PaperdollEquip(Player* player, uint8 slot, Item* item);
     [[nodiscard]] BotEquipResult PaperdollRemove(Player* player, uint8 slot);
+    [[nodiscard]] bool PaperdollRuneforge(Player* player, uint8 slot, uint32 spellId);
     void PaperdollWhisperEquipment(Player* player) const;
     void PaperdollWhisperRoster(Player* player) const;
     static uint32 DefaultRolesForClass(uint8 m_class, uint8 spec);
@@ -693,6 +694,10 @@ private:
     uint32 _getEquipUniqueIgnoreSlotMask(ItemTemplate const* proto, uint8 slot) const;
     void _whisperEquipUniqueFailure(Player const* player, Item const* item, BotEquipUniqueCheckResult const& checkResult) const;
     void _removeEquipment(uint8 slot);
+    bool _canDeathKnightRuneforge(uint8 slot, Item const* item) const;
+    bool _applyDeathKnightRuneforge(uint8 slot, uint32 spellId);
+    bool _clearDeathKnightRuneforge(Item* item) const;
+    bool _canIgnoreDeathKnightRuneforgeLevel(uint32 enchantId, EnchantmentSlot eslot) const;
     bool _isItemFitForGeneratedBot(uint8 category, uint8 slot, ItemTemplate const* proto) const;
     [[nodiscard]] BotEquipResult _unequip(uint8 slot, ObjectGuid receiver, bool store_to_bank, bool on_equip_from_bank = false);
     [[nodiscard]] BotEquipResult _equip(uint8 slot, Item* newItem, ObjectGuid receiver, bool store_to_bank, bool from_bank = false);
@@ -704,6 +709,9 @@ private:
     Unit* _getVehicleTarget(BotVehicleStrats strat) const;
     void _listAuras(Player const* player, Unit const* unit) const;
     bool _checkImmunities(Unit const* target, SpellInfo const* spellInfo) const;
+    bool _isSendMoveComplete() const;
+    bool _shouldDelaySendMoveCast(SpellInfo const* spellInfo) const;
+    void _updateSendMoveState();
     static float _getAttackDistance(float distance) { return distance * 0.72f; }
     void _extendAttackRange(float& dist) const;
     bool _canSwitchToTarget(Unit const* from, Unit const* newTarget, int8 byspell) const;
@@ -739,6 +747,7 @@ private:
 
     SpellInfo const* m_botSpellInfo{};
     Position homepos{}, movepos{}, attackpos{}, sendlastpos{};
+    Position sendmovepos{};
     Position sendpos[MAX_SEND_POINTS]{};
     AoeSpotsVec _aoeSpots;
 
@@ -796,6 +805,7 @@ private:
     bool _atHome{ true };
     bool _duringTeleport{};
     bool _canAppearInWorld{};
+    bool _sendMoveActive{};
     //Custom Dinkle
     uint32 _towerHoldTimer{};
     //Custom Dinkle end

@@ -1,0 +1,1257 @@
+required_level,item_level,quality,quality_label,inventory_type,inventory_label,subclass,subclass_label,slot_key,role,count,median_visible_budget,median_total_budget_with_sockets,median_target_budget,median_percent_over_under
+70,110,3,Rare,6,Waist,1,Cloth,waist,caster,1,79.16,79.16,34.68,128.257
+70,110,3,Rare,6,Waist,1,Cloth,waist,generic,1,71.66,71.66,34.68,106.63
+70,110,3,Rare,8,Feet,1,Cloth,feet,generic,1,71.66,71.66,34.68,106.63
+70,110,3,Rare,20,Robe,1,Cloth,chest,caster,1,98.33,98.33,46.865,109.814
+70,110,3,Rare,25,Thrown,16,Thrown,ranged,generic,1,30.0,30.0,46.865,-35.987
+70,110,4,Epic,1,Head,1,Cloth,head,caster,2,99.78,119.78,53.895,122.247
+70,110,4,Epic,1,Head,2,Leather,head,physical,2,98.605,118.605,53.895,120.067
+70,110,4,Epic,1,Head,3,Mail,head,caster,1,103.9,123.9,53.895,129.891
+70,110,4,Epic,1,Head,3,Mail,head,physical,1,104.12,124.12,53.895,130.3
+70,110,4,Epic,1,Head,4,Plate,head,caster,1,112.44,132.44,53.895,145.737
+70,110,4,Epic,1,Head,4,Plate,head,physical,1,100.82,124.82,53.895,131.598
+70,110,4,Epic,1,Head,4,Plate,head,tank,1,104.12,124.12,53.895,130.3
+70,110,4,Epic,2,Neck,0,Misc,neck,caster,5,62.16,62.16,30.181,105.956
+70,110,4,Epic,2,Neck,0,Misc,neck,generic,1,59.73,59.73,30.181,97.905
+70,110,4,Epic,2,Neck,0,Misc,neck,physical,2,71.06,71.06,30.181,135.444
+70,110,4,Epic,2,Neck,0,Misc,neck,tank,2,63.11,63.11,30.181,109.104
+70,110,4,Epic,3,Shoulder,2,Leather,shoulder,physical,1,78.11,78.11,39.882,95.851
+70,110,4,Epic,3,Shoulder,3,Mail,shoulder,caster,1,93.45,93.45,39.882,134.314
+70,110,4,Epic,3,Shoulder,4,Plate,shoulder,physical,1,94.78,94.78,39.882,137.649
+70,110,4,Epic,5,Chest,3,Mail,chest,physical,1,115.75,139.75,53.895,159.3
+70,110,4,Epic,6,Waist,1,Cloth,waist,caster,3,94.01,94.01,39.882,135.718
+70,110,4,Epic,6,Waist,2,Leather,waist,physical,2,92.25,92.25,39.882,131.305
+70,110,4,Epic,6,Waist,3,Mail,waist,caster,1,92.27,92.27,39.882,131.356
+70,110,4,Epic,6,Waist,3,Mail,waist,physical,1,100.07,100.07,39.882,150.913
+70,110,4,Epic,6,Waist,4,Plate,waist,tank,2,97.88,97.88,39.882,145.422
+70,110,4,Epic,7,Legs,1,Cloth,legs,caster,3,102.85,126.85,53.895,135.365
+70,110,4,Epic,7,Legs,2,Leather,legs,generic,1,96.1,120.1,53.895,122.841
+70,110,4,Epic,7,Legs,2,Leather,legs,physical,1,102.08,126.08,53.895,133.936
+70,110,4,Epic,7,Legs,3,Mail,legs,caster,2,106.425,130.425,53.895,141.998
+70,110,4,Epic,7,Legs,4,Plate,legs,caster,1,110.1,134.1,53.895,148.817
+70,110,4,Epic,7,Legs,4,Plate,legs,physical,1,83.12,107.12,53.895,98.757
+70,110,4,Epic,8,Feet,1,Cloth,feet,caster,3,93.46,93.46,39.882,134.339
+70,110,4,Epic,8,Feet,2,Leather,feet,physical,3,93.12,93.12,39.882,133.487
+70,110,4,Epic,8,Feet,3,Mail,feet,caster,2,101.935,101.935,39.882,155.589
+70,110,4,Epic,8,Feet,4,Plate,feet,caster,1,95.86,95.86,39.882,140.357
+70,110,4,Epic,8,Feet,4,Plate,feet,physical,2,82.605,90.605,39.882,127.181
+70,110,4,Epic,9,Wrist,1,Cloth,wrist,caster,3,71.56,71.56,30.181,137.101
+70,110,4,Epic,9,Wrist,2,Leather,wrist,physical,2,65.915,65.915,30.181,118.397
+70,110,4,Epic,9,Wrist,3,Mail,wrist,caster,2,70.935,70.935,30.181,135.03
+70,110,4,Epic,9,Wrist,4,Plate,wrist,physical,2,68.41,68.41,30.181,126.664
+70,110,4,Epic,9,Wrist,4,Plate,wrist,tank,1,69.44,69.44,30.181,130.077
+70,110,4,Epic,10,Hands,1,Cloth,hands,caster,1,77.96,93.96,39.882,135.593
+70,110,4,Epic,10,Hands,2,Leather,hands,physical,1,68.75,68.75,39.882,72.382
+70,110,4,Epic,10,Hands,3,Mail,hands,caster,1,94.16,94.16,39.882,136.095
+70,110,4,Epic,10,Hands,3,Mail,hands,physical,1,91.74,91.74,39.882,130.027
+70,110,4,Epic,10,Hands,4,Plate,hands,tank,1,95.12,95.12,39.882,138.502
+70,110,4,Epic,11,Finger,0,Misc,finger,caster,7,67.5,71.09,30.181,135.544
+70,110,4,Epic,11,Finger,0,Misc,finger,physical,4,50.77,50.77,30.181,68.217
+70,110,4,Epic,11,Finger,0,Misc,finger,tank,1,42.77,42.77,30.181,41.711
+70,110,4,Epic,13,One-hand Weapon,15,Dagger,weapon_one_hand,physical,1,39.0,39.0,53.895,-27.637
+70,110,4,Epic,14,Shield,6,Shield,shield,tank,4,64.755,64.755,39.882,62.365
+70,110,4,Epic,16,Cloak,1,Cloth,cloak,caster,5,68.12,68.12,30.181,125.703
+70,110,4,Epic,16,Cloak,1,Cloth,cloak,generic,1,42.77,42.77,30.181,41.711
+70,110,4,Epic,16,Cloak,1,Cloth,cloak,physical,2,61.74,61.74,30.181,104.564
+70,110,4,Epic,16,Cloak,1,Cloth,cloak,tank,2,56.975,56.975,30.181,88.776
+70,110,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,caster,1,286.16,286.16,97.011,194.977
+70,110,4,Epic,22,Off-hand Weapon,15,Dagger,weapon_off_hand,physical,1,38.74,38.74,30.181,28.358
+70,110,4,Epic,23,Held in Off-hand,0,Misc,held_in_off_hand,caster,3,42.14,42.14,30.181,39.623
+70,110,4,Epic,23,Held in Off-hand,0,Misc,held_in_off_hand,generic,3,12.06,12.06,30.181,-60.041
+70,110,4,Epic,26,Ranged,19,Wand,ranged,caster,1,34.9,34.9,53.895,-35.244
+70,113,3,Rare,1,Head,4,Plate,head,generic,1,12.73,36.73,48.338,-24.014
+70,113,3,Rare,2,Neck,0,Misc,neck,caster,1,67.42,67.42,27.069,149.064
+70,113,3,Rare,2,Neck,0,Misc,neck,generic,1,47.12,47.12,27.069,74.072
+70,113,3,Rare,6,Waist,4,Plate,waist,generic,1,14.07,30.07,35.77,-15.936
+70,113,3,Rare,7,Legs,2,Leather,legs,tank,1,69.11,93.11,48.338,92.622
+70,113,3,Rare,8,Feet,4,Plate,feet,generic,1,14.07,30.07,35.77,-15.936
+70,113,3,Rare,11,Finger,0,Misc,finger,caster,2,40.59,40.59,27.069,49.948
+70,113,4,Epic,2,Neck,0,Misc,neck,caster,1,71.13,79.13,31.13,154.194
+70,113,4,Epic,2,Neck,0,Misc,neck,generic,1,63.76,71.76,31.13,130.519
+70,113,4,Epic,9,Wrist,1,Cloth,wrist,caster,6,63.67,71.67,31.13,130.23
+70,113,4,Epic,9,Wrist,2,Leather,wrist,caster,4,64.56,72.56,31.13,133.089
+70,113,4,Epic,9,Wrist,2,Leather,wrist,physical,4,62.255,70.255,31.13,125.685
+70,113,4,Epic,9,Wrist,3,Mail,wrist,caster,4,70.94,78.94,31.13,153.584
+70,113,4,Epic,9,Wrist,3,Mail,wrist,generic,2,69.75,77.75,31.13,149.761
+70,113,4,Epic,9,Wrist,3,Mail,wrist,physical,2,69.75,77.75,31.13,149.761
+70,113,4,Epic,9,Wrist,4,Plate,wrist,caster,4,70.94,78.94,31.13,153.584
+70,113,4,Epic,9,Wrist,4,Plate,wrist,generic,2,63.75,71.75,31.13,130.487
+70,113,4,Epic,9,Wrist,4,Plate,wrist,physical,2,66.74,74.74,31.13,140.092
+70,114,3,Rare,2,Neck,0,Misc,neck,generic,6,12.06,12.06,27.345,-55.897
+70,114,3,Rare,5,Chest,1,Cloth,chest,caster,1,96.76,96.76,48.83,98.155
+70,114,3,Rare,5,Chest,2,Leather,chest,tank,1,69.15,93.15,48.83,90.762
+70,114,3,Rare,5,Chest,3,Mail,chest,physical,1,78.0,102.0,48.83,108.886
+70,114,3,Rare,5,Chest,4,Plate,chest,generic,1,18.09,42.09,48.83,-13.804
+70,114,3,Rare,6,Waist,4,Plate,waist,caster,1,87.6,87.6,36.134,142.428
+70,114,3,Rare,7,Legs,4,Plate,legs,caster,1,119.52,119.52,48.83,144.766
+70,114,3,Rare,7,Legs,4,Plate,legs,tank,1,59.13,83.13,48.83,70.242
+70,114,3,Rare,8,Feet,1,Cloth,feet,generic,1,26.13,26.13,36.134,-27.687
+70,114,3,Rare,9,Wrist,3,Mail,wrist,physical,1,48.0,56.0,27.345,104.791
+70,114,3,Rare,10,Hands,1,Cloth,hands,caster,1,21.05,21.05,36.134,-41.745
+70,114,3,Rare,10,Hands,4,Plate,hands,generic,1,14.07,30.07,36.134,-16.783
+70,114,3,Rare,10,Hands,4,Plate,hands,tank,1,43.09,59.09,36.134,63.528
+70,114,3,Rare,11,Finger,0,Misc,finger,caster,1,40.59,40.59,27.345,48.437
+70,114,3,Rare,11,Finger,0,Misc,finger,generic,1,16.04,16.04,27.345,-41.342
+70,114,3,Rare,20,Robe,1,Cloth,chest,caster,1,119.52,119.52,48.83,144.766
+70,115,3,Rare,1,Head,1,Cloth,head,caster,23,87.61,106.09,49.323,115.091
+70,115,3,Rare,1,Head,2,Leather,head,caster,9,96.88,116.88,49.323,136.967
+70,115,3,Rare,1,Head,2,Leather,head,generic,4,88.12,108.12,49.323,119.207
+70,115,3,Rare,1,Head,2,Leather,head,physical,5,107.83,127.83,49.323,159.168
+70,115,3,Rare,1,Head,2,Leather,head,tank,1,105.76,105.76,49.323,114.422
+70,115,3,Rare,1,Head,3,Mail,head,caster,8,94.59,114.59,49.323,132.324
+70,115,3,Rare,1,Head,3,Mail,head,generic,6,88.1,108.1,49.323,119.166
+70,115,3,Rare,1,Head,3,Mail,head,physical,6,94.585,111.585,49.323,126.232
+70,115,3,Rare,1,Head,4,Plate,head,caster,6,101.12,121.12,49.323,145.564
+70,115,3,Rare,1,Head,4,Plate,head,generic,9,91.1,111.1,49.323,125.249
+70,115,3,Rare,1,Head,4,Plate,head,physical,4,81.705,88.895,49.323,80.229
+70,115,3,Rare,1,Head,4,Plate,head,tank,1,51.09,75.09,49.323,52.241
+70,115,3,Rare,2,Neck,0,Misc,neck,caster,8,59.66,59.66,27.621,115.995
+70,115,3,Rare,2,Neck,0,Misc,neck,generic,2,54.255,54.255,27.621,96.426
+70,115,3,Rare,2,Neck,0,Misc,neck,physical,5,52.07,52.07,27.621,88.516
+70,115,3,Rare,2,Neck,0,Misc,neck,tank,4,55.075,55.075,27.621,99.395
+70,115,3,Rare,3,Shoulder,1,Cloth,shoulder,caster,21,70.0,86.0,36.499,135.622
+70,115,3,Rare,3,Shoulder,2,Leather,shoulder,caster,10,74.65,90.65,36.499,148.362
+70,115,3,Rare,3,Shoulder,2,Leather,shoulder,generic,4,68.77,84.77,36.499,132.252
+70,115,3,Rare,3,Shoulder,2,Leather,shoulder,physical,7,70.0,82.71,36.499,126.608
+70,115,3,Rare,3,Shoulder,3,Mail,shoulder,caster,10,84.51,100.51,36.499,175.376
+70,115,3,Rare,3,Shoulder,3,Mail,shoulder,generic,8,78.59,91.11,36.499,149.622
+70,115,3,Rare,3,Shoulder,3,Mail,shoulder,physical,1,82.06,82.06,36.499,124.827
+70,115,3,Rare,3,Shoulder,4,Plate,shoulder,caster,5,78.42,94.42,36.499,158.69
+70,115,3,Rare,3,Shoulder,4,Plate,shoulder,generic,9,74.11,90.11,36.499,146.882
+70,115,3,Rare,3,Shoulder,4,Plate,shoulder,physical,4,62.4,70.74,36.499,93.812
+70,115,3,Rare,3,Shoulder,4,Plate,shoulder,tank,3,65.74,81.74,36.499,123.95
+70,115,3,Rare,5,Chest,1,Cloth,chest,caster,2,72.735,72.735,49.323,47.466
+70,115,3,Rare,5,Chest,2,Leather,chest,caster,4,91.03,115.03,49.323,133.217
+70,115,3,Rare,5,Chest,2,Leather,chest,generic,5,88.14,112.14,49.323,127.357
+70,115,3,Rare,5,Chest,2,Leather,chest,physical,3,80.12,104.12,49.323,111.097
+70,115,3,Rare,5,Chest,3,Mail,chest,caster,9,106.9,120.6,49.323,144.509
+70,115,3,Rare,5,Chest,3,Mail,chest,generic,6,97.985,121.14,49.323,145.604
+70,115,3,Rare,5,Chest,3,Mail,chest,physical,1,116.08,116.08,49.323,135.345
+70,115,3,Rare,5,Chest,4,Plate,chest,caster,2,83.155,107.155,49.323,117.25
+70,115,3,Rare,5,Chest,4,Plate,chest,generic,13,94.14,118.14,49.323,139.522
+70,115,3,Rare,5,Chest,4,Plate,chest,physical,3,79.0,91.09,49.323,84.68
+70,115,3,Rare,5,Chest,4,Plate,chest,tank,2,101.315,101.315,49.323,105.41
+70,115,3,Rare,6,Waist,1,Cloth,waist,caster,7,80.27,81.82,36.499,124.169
+70,115,3,Rare,6,Waist,2,Leather,waist,caster,1,81.14,81.14,36.499,122.306
+70,115,3,Rare,6,Waist,2,Leather,waist,generic,1,51.08,67.08,36.499,83.785
+70,115,3,Rare,6,Waist,2,Leather,waist,physical,3,56.74,72.74,36.499,99.292
+70,115,3,Rare,6,Waist,3,Mail,waist,caster,4,79.0,84.995,36.499,132.868
+70,115,3,Rare,6,Waist,3,Mail,waist,physical,3,70.0,81.74,36.499,123.95
+70,115,3,Rare,6,Waist,4,Plate,waist,caster,1,80.58,80.58,36.499,120.772
+70,115,3,Rare,6,Waist,4,Plate,waist,physical,2,68.585,76.585,36.499,109.826
+70,115,3,Rare,6,Waist,4,Plate,waist,tank,1,69.11,85.11,36.499,133.183
+70,115,3,Rare,7,Legs,1,Cloth,legs,caster,21,110.1,110.1,49.323,123.221
+70,115,3,Rare,7,Legs,2,Leather,legs,caster,11,122.65,122.65,49.323,148.666
+70,115,3,Rare,7,Legs,2,Leather,legs,generic,4,130.46,130.46,49.323,164.5
+70,115,3,Rare,7,Legs,2,Leather,legs,physical,10,102.47,109.125,49.323,121.244
+70,115,3,Rare,7,Legs,3,Mail,legs,caster,12,123.0,128.115,49.323,159.746
+70,115,3,Rare,7,Legs,3,Mail,legs,generic,3,122.14,122.14,49.323,147.632
+70,115,3,Rare,7,Legs,3,Mail,legs,physical,3,117.14,117.14,49.323,137.494
+70,115,3,Rare,7,Legs,4,Plate,legs,caster,5,124.21,124.21,49.323,151.828
+70,115,3,Rare,7,Legs,4,Plate,legs,generic,9,112.14,112.14,49.323,127.357
+70,115,3,Rare,7,Legs,4,Plate,legs,physical,3,95.0,95.0,49.323,92.607
+70,115,3,Rare,7,Legs,4,Plate,legs,tank,2,70.99,94.99,49.323,92.587
+70,115,3,Rare,8,Feet,1,Cloth,feet,caster,5,70.33,81.89,36.499,124.361
+70,115,3,Rare,8,Feet,2,Leather,feet,caster,2,77.32,85.32,36.499,133.758
+70,115,3,Rare,8,Feet,2,Leather,feet,generic,1,59.1,75.1,36.499,105.758
+70,115,3,Rare,8,Feet,2,Leather,feet,physical,2,76.425,76.425,36.499,109.388
+70,115,3,Rare,8,Feet,2,Leather,feet,tank,1,73.08,73.08,36.499,100.223
+70,115,3,Rare,8,Feet,3,Mail,feet,caster,2,83.845,83.845,36.499,129.717
+70,115,3,Rare,8,Feet,3,Mail,feet,generic,1,82.06,82.06,36.499,124.827
+70,115,3,Rare,8,Feet,3,Mail,feet,physical,1,82.08,82.08,36.499,124.882
+70,115,3,Rare,8,Feet,4,Plate,feet,caster,3,88.85,88.85,36.499,143.43
+70,115,3,Rare,8,Feet,4,Plate,feet,physical,1,54.1,70.1,36.499,92.059
+70,115,3,Rare,8,Feet,4,Plate,feet,tank,1,59.09,75.09,36.499,105.73
+70,115,3,Rare,9,Wrist,1,Cloth,wrist,caster,5,55.97,60.95,27.621,120.665
+70,115,3,Rare,9,Wrist,2,Leather,wrist,caster,2,59.68,59.68,27.621,116.067
+70,115,3,Rare,9,Wrist,2,Leather,wrist,physical,3,51.06,51.06,27.621,84.859
+70,115,3,Rare,9,Wrist,3,Mail,wrist,caster,4,64.82,64.82,27.621,134.676
+70,115,3,Rare,9,Wrist,3,Mail,wrist,physical,1,58.7,66.7,27.621,141.483
+70,115,3,Rare,9,Wrist,4,Plate,wrist,caster,2,64.28,64.28,27.621,132.721
+70,115,3,Rare,9,Wrist,4,Plate,wrist,physical,1,47.05,55.05,27.621,99.305
+70,115,3,Rare,9,Wrist,4,Plate,wrist,tank,1,75.67,75.67,27.621,173.958
+70,115,3,Rare,10,Hands,1,Cloth,hands,caster,17,73.33,76.13,36.499,108.58
+70,115,3,Rare,10,Hands,1,Cloth,hands,generic,3,84.45,84.45,36.499,131.375
+70,115,3,Rare,10,Hands,2,Leather,hands,caster,10,85.26,85.26,36.499,133.594
+70,115,3,Rare,10,Hands,2,Leather,hands,generic,1,74.72,74.72,36.499,104.717
+70,115,3,Rare,10,Hands,2,Leather,hands,physical,10,79.77,79.77,36.499,118.553
+70,115,3,Rare,10,Hands,3,Mail,hands,caster,11,85.26,85.26,36.499,133.594
+70,115,3,Rare,10,Hands,3,Mail,hands,generic,4,78.11,78.11,36.499,114.005
+70,115,3,Rare,10,Hands,3,Mail,hands,physical,6,82.77,82.77,36.499,126.772
+70,115,3,Rare,10,Hands,4,Plate,hands,caster,9,86.18,89.04,36.499,143.95
+70,115,3,Rare,10,Hands,4,Plate,hands,generic,7,80.75,80.75,36.499,121.238
+70,115,3,Rare,10,Hands,4,Plate,hands,physical,5,67.75,69.74,36.499,91.073
+70,115,3,Rare,10,Hands,4,Plate,hands,tank,2,89.125,89.125,36.499,144.183
+70,115,3,Rare,11,Finger,0,Misc,finger,caster,17,51.05,51.05,27.621,84.823
+70,115,3,Rare,11,Finger,0,Misc,finger,generic,2,51.415,51.415,27.621,86.144
+70,115,3,Rare,11,Finger,0,Misc,finger,physical,8,53.905,53.905,27.621,95.159
+70,115,3,Rare,11,Finger,0,Misc,finger,tank,5,56.09,56.09,27.621,103.07
+70,115,3,Rare,13,One-hand Weapon,0,Axe,weapon_one_hand,generic,6,55.06,55.06,49.323,11.631
+70,115,3,Rare,13,One-hand Weapon,0,Axe,weapon_one_hand,physical,3,40.04,40.04,49.323,-18.821
+70,115,3,Rare,13,One-hand Weapon,4,Mace,weapon_one_hand,generic,6,55.06,55.06,49.323,11.631
+70,115,3,Rare,13,One-hand Weapon,4,Mace,weapon_one_hand,tank,1,41.73,41.73,49.323,-15.395
+70,115,3,Rare,13,One-hand Weapon,7,Sword,weapon_one_hand,generic,4,55.06,55.06,49.323,11.631
+70,115,3,Rare,13,One-hand Weapon,7,Sword,weapon_one_hand,physical,4,40.855,40.855,49.323,-17.169
+70,115,3,Rare,13,One-hand Weapon,7,Sword,weapon_one_hand,tank,1,42.07,42.07,49.323,-14.706
+70,115,3,Rare,13,One-hand Weapon,15,Dagger,weapon_one_hand,generic,5,55.06,55.06,49.323,11.631
+70,115,3,Rare,13,One-hand Weapon,15,Dagger,weapon_one_hand,physical,8,39.71,39.71,49.323,-19.49
+70,115,3,Rare,14,Shield,6,Shield,shield,tank,7,49.84,49.84,36.499,36.551
+70,115,3,Rare,15,Ranged,2,Bow,ranged,generic,5,27.73,27.73,49.323,-43.779
+70,115,3,Rare,15,Ranged,2,Bow,ranged,physical,1,31.0,31.0,49.323,-37.149
+70,115,3,Rare,16,Cloak,1,Cloth,cloak,caster,10,54.805,56.05,27.621,102.925
+70,115,3,Rare,16,Cloak,1,Cloth,cloak,generic,4,49.245,49.245,27.621,78.288
+70,115,3,Rare,16,Cloak,1,Cloth,cloak,physical,4,52.73,52.73,27.621,90.905
+70,115,3,Rare,16,Cloak,1,Cloth,cloak,tank,2,63.43,63.43,27.621,129.644
+70,115,3,Rare,17,Two-hand Weapon,1,Two-hand Axe,weapon_two_hand,generic,2,121.14,121.14,88.782,36.447
+70,115,3,Rare,17,Two-hand Weapon,1,Two-hand Axe,weapon_two_hand,physical,5,91.13,91.13,88.782,2.645
+70,115,3,Rare,17,Two-hand Weapon,5,Two-hand Mace,weapon_two_hand,generic,4,113.45,117.12,88.782,31.919
+70,115,3,Rare,17,Two-hand Weapon,5,Two-hand Mace,weapon_two_hand,physical,3,390.64,390.64,88.782,340.0
+70,115,3,Rare,17,Two-hand Weapon,6,Polearm,weapon_two_hand,generic,2,121.14,121.14,88.782,36.447
+70,115,3,Rare,17,Two-hand Weapon,6,Polearm,weapon_two_hand,physical,4,94.575,94.575,88.782,6.525
+70,115,3,Rare,17,Two-hand Weapon,8,Two-hand Sword,weapon_two_hand,generic,3,121.14,121.14,88.782,36.447
+70,115,3,Rare,17,Two-hand Weapon,8,Two-hand Sword,weapon_two_hand,physical,1,44.76,44.76,88.782,-49.584
+70,115,3,Rare,17,Two-hand Weapon,10,Staff,weapon_two_hand,caster,10,200.34,202.19,88.782,127.738
+70,115,3,Rare,17,Two-hand Weapon,10,Staff,weapon_two_hand,physical,3,361.26,361.26,88.782,306.907
+70,115,3,Rare,20,Robe,1,Cloth,chest,caster,25,89.35,109.77,49.323,122.552
+70,115,3,Rare,20,Robe,2,Leather,chest,caster,6,99.845,118.49,49.323,140.231
+70,115,3,Rare,20,Robe,2,Leather,chest,generic,2,108.25,132.25,49.323,168.129
+70,115,3,Rare,20,Robe,3,Mail,chest,caster,3,106.9,130.9,49.323,165.392
+70,115,3,Rare,20,Robe,3,Mail,chest,generic,2,97.64,121.64,49.323,146.618
+70,115,3,Rare,21,Main-hand Weapon,4,Mace,weapon_main_hand,caster,8,141.915,144.935,49.323,193.847
+70,115,3,Rare,21,Main-hand Weapon,7,Sword,weapon_main_hand,caster,5,143.16,143.16,49.323,190.248
+70,115,3,Rare,21,Main-hand Weapon,11,Weapon subclass 11,weapon_main_hand,caster,1,164.62,164.62,49.323,233.757
+70,115,3,Rare,21,Main-hand Weapon,13,Fist,weapon_main_hand,generic,2,55.06,55.06,49.323,11.631
+70,115,3,Rare,21,Main-hand Weapon,13,Fist,weapon_main_hand,physical,3,40.71,40.71,49.323,-17.463
+70,115,3,Rare,21,Main-hand Weapon,15,Dagger,weapon_main_hand,caster,4,150.115,150.115,49.323,204.349
+70,115,3,Rare,22,Off-hand Weapon,13,Fist,weapon_off_hand,generic,3,55.06,55.06,27.621,99.341
+70,115,3,Rare,22,Off-hand Weapon,13,Fist,weapon_off_hand,physical,1,37.7,37.7,27.621,36.49
+70,115,3,Rare,23,Held in Off-hand,0,Misc,held_in_off_hand,caster,10,53.69,53.69,27.621,94.381
+70,115,3,Rare,25,Thrown,16,Thrown,ranged,generic,2,28.385,28.385,49.323,-42.451
+70,115,3,Rare,26,Ranged,3,Gun,ranged,physical,3,27.0,27.0,49.323,-45.259
+70,115,3,Rare,26,Ranged,3,Gun,ranged,tank,1,27.07,27.07,49.323,-45.117
+70,115,3,Rare,26,Ranged,18,Crossbow,ranged,generic,3,37.04,37.04,49.323,-24.904
+70,115,3,Rare,26,Ranged,18,Crossbow,ranged,physical,1,25.0,25.0,49.323,-49.314
+70,115,3,Rare,26,Ranged,19,Wand,ranged,caster,3,33.91,33.91,49.323,-31.249
+70,115,4,Epic,1,Head,1,Cloth,head,caster,3,131.77,131.77,56.722,132.309
+70,115,4,Epic,1,Head,2,Leather,head,physical,1,130.11,130.11,56.722,129.383
+70,115,4,Epic,1,Head,3,Mail,head,caster,2,143.92,143.92,56.722,153.73
+70,115,4,Epic,1,Head,4,Plate,head,tank,2,82.01,94.01,56.722,65.739
+70,115,4,Epic,2,Neck,0,Misc,neck,caster,3,73.56,73.56,31.764,131.582
+70,115,4,Epic,2,Neck,0,Misc,neck,generic,1,16.08,16.08,31.764,-49.377
+70,115,4,Epic,2,Neck,0,Misc,neck,physical,3,66.11,66.11,31.764,108.128
+70,115,4,Epic,2,Neck,0,Misc,neck,tank,1,63.13,63.13,31.764,98.746
+70,115,4,Epic,3,Shoulder,1,Cloth,shoulder,caster,3,105.6,105.6,41.974,151.584
+70,115,4,Epic,3,Shoulder,2,Leather,shoulder,caster,1,96.84,96.84,41.974,130.714
+70,115,4,Epic,3,Shoulder,2,Leather,shoulder,generic,1,83.1,99.1,41.974,136.098
+70,115,4,Epic,3,Shoulder,2,Leather,shoulder,physical,1,98.14,98.14,41.974,133.811
+70,115,4,Epic,3,Shoulder,3,Mail,shoulder,caster,2,105.37,105.37,41.974,151.036
+70,115,4,Epic,3,Shoulder,3,Mail,shoulder,physical,1,108.1,108.1,41.974,157.54
+70,115,4,Epic,3,Shoulder,4,Plate,shoulder,caster,1,111.71,111.71,41.974,166.14
+70,115,4,Epic,3,Shoulder,4,Plate,shoulder,generic,1,89.15,89.15,41.974,112.393
+70,115,4,Epic,3,Shoulder,4,Plate,shoulder,tank,1,72.81,88.81,41.974,111.583
+70,115,4,Epic,5,Chest,2,Leather,chest,caster,1,151.54,151.54,56.722,167.164
+70,115,4,Epic,5,Chest,2,Leather,chest,generic,1,36.18,36.18,56.722,-36.215
+70,115,4,Epic,5,Chest,2,Leather,chest,physical,2,129.99,129.99,56.722,129.171
+70,115,4,Epic,5,Chest,3,Mail,chest,caster,2,145.735,145.735,56.722,156.93
+70,115,4,Epic,5,Chest,3,Mail,chest,generic,1,36.18,36.18,56.722,-36.215
+70,115,4,Epic,5,Chest,3,Mail,chest,physical,1,147.12,147.12,56.722,159.371
+70,115,4,Epic,5,Chest,4,Plate,chest,caster,1,139.18,139.18,56.722,145.373
+70,115,4,Epic,5,Chest,4,Plate,chest,generic,3,42.83,42.83,56.722,-24.491
+70,115,4,Epic,5,Chest,4,Plate,chest,tank,2,89.51,101.51,56.722,78.961
+70,115,4,Epic,6,Waist,1,Cloth,waist,caster,5,96.6,96.84,41.974,130.714
+70,115,4,Epic,6,Waist,2,Leather,waist,caster,2,101.475,109.475,41.974,160.816
+70,115,4,Epic,6,Waist,2,Leather,waist,physical,2,77.615,85.615,41.974,103.971
+70,115,4,Epic,6,Waist,3,Mail,waist,caster,4,96.035,107.555,41.974,156.241
+70,115,4,Epic,6,Waist,3,Mail,waist,physical,1,122.07,122.07,41.974,190.822
+70,115,4,Epic,6,Waist,4,Plate,waist,caster,1,102.86,102.86,41.974,145.056
+70,115,4,Epic,6,Waist,4,Plate,waist,tank,1,84.12,100.12,41.974,138.528
+70,115,4,Epic,7,Legs,1,Cloth,legs,caster,3,110.28,134.28,56.722,136.735
+70,115,4,Epic,7,Legs,1,Cloth,legs,generic,1,46.23,46.23,56.722,-18.497
+70,115,4,Epic,7,Legs,2,Leather,legs,caster,1,107.73,131.73,56.722,132.239
+70,115,4,Epic,7,Legs,2,Leather,legs,generic,1,46.23,46.23,56.722,-18.497
+70,115,4,Epic,7,Legs,2,Leather,legs,physical,2,122.44,134.44,56.722,137.017
+70,115,4,Epic,7,Legs,3,Mail,legs,caster,2,110.73,134.73,56.722,137.528
+70,115,4,Epic,7,Legs,3,Mail,legs,generic,1,46.23,46.23,56.722,-18.497
+70,115,4,Epic,7,Legs,3,Mail,legs,physical,1,144.11,144.11,56.722,154.065
+70,115,4,Epic,7,Legs,4,Plate,legs,caster,1,124.18,148.18,56.722,161.24
+70,115,4,Epic,7,Legs,4,Plate,legs,generic,4,82.88,82.88,56.722,46.117
+70,115,4,Epic,7,Legs,4,Plate,legs,tank,1,112.16,136.16,56.722,140.049
+70,115,4,Epic,8,Feet,1,Cloth,feet,caster,4,97.27,97.89,41.974,133.215
+70,115,4,Epic,8,Feet,1,Cloth,feet,generic,1,24.12,24.12,41.974,-42.536
+70,115,4,Epic,8,Feet,2,Leather,feet,caster,1,84.02,100.02,41.974,138.29
+70,115,4,Epic,8,Feet,2,Leather,feet,generic,1,24.12,24.12,41.974,-42.536
+70,115,4,Epic,8,Feet,2,Leather,feet,physical,3,82.76,84.11,41.974,100.385
+70,115,4,Epic,8,Feet,3,Mail,feet,generic,1,24.12,24.12,41.974,-42.536
+70,115,4,Epic,8,Feet,3,Mail,feet,physical,2,86.41,102.41,41.974,143.984
+70,115,4,Epic,8,Feet,4,Plate,feet,caster,1,96.7,96.7,41.974,130.38
+70,115,4,Epic,8,Feet,4,Plate,feet,generic,2,60.465,60.465,41.974,44.053
+70,115,4,Epic,8,Feet,4,Plate,feet,physical,1,71.76,87.76,41.974,109.081
+70,115,4,Epic,8,Feet,4,Plate,feet,tank,2,82.27,90.27,41.974,115.061
+70,115,4,Epic,9,Wrist,1,Cloth,wrist,caster,3,71.43,71.43,31.764,124.876
+70,115,4,Epic,9,Wrist,2,Leather,wrist,caster,2,74.66,78.66,31.764,147.637
+70,115,4,Epic,9,Wrist,2,Leather,wrist,physical,2,62.41,62.41,31.764,96.479
+70,115,4,Epic,9,Wrist,3,Mail,wrist,caster,2,76.32,80.32,31.764,152.863
+70,115,4,Epic,9,Wrist,3,Mail,wrist,physical,1,72.06,72.06,31.764,126.859
+70,115,4,Epic,9,Wrist,4,Plate,wrist,caster,1,74.24,74.24,31.764,133.722
+70,115,4,Epic,9,Wrist,4,Plate,wrist,generic,1,73.11,73.11,31.764,130.165
+70,115,4,Epic,9,Wrist,4,Plate,wrist,tank,1,80.01,88.01,31.764,177.073
+70,115,4,Epic,10,Hands,1,Cloth,hands,caster,4,84.165,100.165,41.974,138.635
+70,115,4,Epic,10,Hands,1,Cloth,hands,generic,1,34.84,34.84,41.974,-16.996
+70,115,4,Epic,10,Hands,2,Leather,hands,caster,1,81.99,97.99,41.974,133.454
+70,115,4,Epic,10,Hands,2,Leather,hands,generic,1,34.84,34.84,41.974,-16.996
+70,115,4,Epic,10,Hands,2,Leather,hands,physical,3,96.78,96.78,41.974,130.571
+70,115,4,Epic,10,Hands,3,Mail,hands,caster,2,89.685,105.685,41.974,151.786
+70,115,4,Epic,10,Hands,3,Mail,hands,generic,1,34.84,34.84,41.974,-16.996
+70,115,4,Epic,10,Hands,3,Mail,hands,physical,1,107.77,107.77,41.974,156.754
+70,115,4,Epic,10,Hands,4,Plate,hands,caster,1,85.11,101.11,41.974,140.887
+70,115,4,Epic,10,Hands,4,Plate,hands,generic,1,34.84,34.84,41.974,-16.996
+70,115,4,Epic,10,Hands,4,Plate,hands,physical,1,89.15,89.15,41.974,112.393
+70,115,4,Epic,10,Hands,4,Plate,hands,tank,1,107.88,123.88,41.974,195.134
+70,115,4,Epic,11,Finger,0,Misc,finger,caster,4,67.625,67.625,31.764,112.897
+70,115,4,Epic,11,Finger,0,Misc,finger,generic,1,18.76,18.76,31.764,-40.94
+70,115,4,Epic,11,Finger,0,Misc,finger,physical,2,69.415,69.415,31.764,118.532
+70,115,4,Epic,11,Finger,0,Misc,finger,tank,1,47.12,47.12,31.764,48.343
+70,115,4,Epic,13,One-hand Weapon,4,Mace,weapon_one_hand,physical,1,39.0,47.0,56.722,-17.139
+70,115,4,Epic,13,One-hand Weapon,7,Sword,weapon_one_hand,physical,1,47.72,47.72,56.722,-15.87
+70,115,4,Epic,13,One-hand Weapon,7,Sword,weapon_one_hand,tank,1,48.76,48.76,56.722,-14.037
+70,115,4,Epic,13,One-hand Weapon,15,Dagger,weapon_one_hand,generic,1,26.71,50.71,56.722,-10.599
+70,115,4,Epic,13,One-hand Weapon,15,Dagger,weapon_one_hand,physical,2,49.06,49.06,56.722,-13.508
+70,115,4,Epic,14,Shield,6,Shield,shield,tank,3,81.0,81.0,41.974,92.976
+70,115,4,Epic,16,Cloak,1,Cloth,cloak,caster,4,66.095,66.095,31.764,108.08
+70,115,4,Epic,16,Cloak,1,Cloth,cloak,physical,2,67.42,67.42,31.764,112.252
+70,115,4,Epic,16,Cloak,1,Cloth,cloak,tank,1,44.1,44.1,31.764,38.836
+70,115,4,Epic,17,Two-hand Weapon,1,Two-hand Axe,weapon_two_hand,physical,3,112.16,112.16,102.099,9.854
+70,115,4,Epic,17,Two-hand Weapon,8,Two-hand Sword,weapon_two_hand,physical,1,52.0,52.0,102.099,-49.069
+70,115,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,caster,2,272.09,272.09,102.099,166.496
+70,115,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,physical,1,132.16,132.16,102.099,29.443
+70,115,4,Epic,20,Robe,1,Cloth,chest,caster,3,122.61,122.61,56.722,116.16
+70,115,4,Epic,20,Robe,1,Cloth,chest,generic,1,36.18,36.18,56.722,-36.215
+70,115,4,Epic,21,Main-hand Weapon,4,Mace,weapon_main_hand,caster,1,213.84,213.84,56.722,276.998
+70,115,4,Epic,21,Main-hand Weapon,7,Sword,weapon_main_hand,physical,1,47.72,47.72,56.722,-15.87
+70,115,4,Epic,21,Main-hand Weapon,13,Fist,weapon_main_hand,generic,1,49.06,49.06,56.722,-13.508
+70,115,4,Epic,23,Held in Off-hand,0,Misc,held_in_off_hand,caster,4,72.16,72.16,31.764,127.174
+70,115,4,Epic,25,Thrown,16,Thrown,ranged,generic,1,32.0,32.0,56.722,-43.584
+70,115,4,Epic,26,Ranged,3,Gun,ranged,physical,1,31.0,31.0,56.722,-45.347
+70,115,4,Epic,26,Ranged,18,Crossbow,ranged,physical,1,31.0,31.0,56.722,-45.347
+70,115,4,Epic,26,Ranged,19,Wand,ranged,caster,2,38.25,38.25,56.722,-32.566
+70,117,3,Rare,11,Finger,0,Misc,finger,physical,1,53.06,53.06,28.174,88.329
+70,120,2,Uncommon,21,Main-hand Weapon,4,Mace,weapon_main_hand,caster,1,81.7,81.7,44.028,85.565
+70,120,2,Uncommon,21,Main-hand Weapon,15,Dagger,weapon_main_hand,caster,1,81.7,81.7,44.028,85.565
+70,120,4,Epic,1,Head,1,Cloth,head,caster,4,128.82,148.82,59.567,149.836
+70,120,4,Epic,1,Head,2,Leather,head,caster,2,129.47,149.47,59.567,150.928
+70,120,4,Epic,1,Head,2,Leather,head,physical,2,113.13,133.13,59.567,123.496
+70,120,4,Epic,1,Head,3,Mail,head,caster,3,120.5,140.5,59.567,135.869
+70,120,4,Epic,1,Head,3,Mail,head,physical,2,115.28,135.28,59.567,127.106
+70,120,4,Epic,1,Head,4,Plate,head,caster,1,116.84,136.84,59.567,129.725
+70,120,4,Epic,1,Head,4,Plate,head,physical,2,115.63,135.63,59.567,127.693
+70,120,4,Epic,1,Head,4,Plate,head,tank,3,116.81,136.81,59.567,129.674
+70,120,4,Epic,2,Neck,0,Misc,neck,caster,1,57.4,57.4,33.358,72.075
+70,120,4,Epic,3,Shoulder,1,Cloth,shoulder,caster,4,87.245,103.245,44.08,134.224
+70,120,4,Epic,3,Shoulder,2,Leather,shoulder,caster,2,100.86,116.86,44.08,165.112
+70,120,4,Epic,3,Shoulder,2,Leather,shoulder,physical,2,87.105,103.105,44.08,133.907
+70,120,4,Epic,3,Shoulder,3,Mail,shoulder,caster,3,87.72,103.72,44.08,135.302
+70,120,4,Epic,3,Shoulder,3,Mail,shoulder,physical,1,96.77,112.77,44.08,155.833
+70,120,4,Epic,3,Shoulder,4,Plate,shoulder,caster,1,90.73,106.73,44.08,142.13
+70,120,4,Epic,3,Shoulder,4,Plate,shoulder,physical,3,89.11,105.11,44.08,138.455
+70,120,4,Epic,3,Shoulder,4,Plate,shoulder,tank,2,105.675,121.675,44.08,176.035
+70,120,4,Epic,5,Chest,2,Leather,chest,caster,3,123.32,147.32,59.567,147.318
+70,120,4,Epic,5,Chest,2,Leather,chest,physical,4,111.125,131.63,59.567,120.978
+70,120,4,Epic,5,Chest,3,Mail,chest,caster,6,132.365,156.365,59.567,162.503
+70,120,4,Epic,5,Chest,4,Plate,chest,caster,1,132.04,156.04,59.567,161.957
+70,120,4,Epic,5,Chest,4,Plate,chest,physical,2,106.105,130.105,59.567,118.418
+70,120,4,Epic,5,Chest,4,Plate,chest,tank,2,139.91,163.91,59.567,175.169
+70,120,4,Epic,7,Legs,1,Cloth,legs,caster,6,144.73,145.39,59.567,144.078
+70,120,4,Epic,7,Legs,2,Leather,legs,caster,2,155.86,155.86,59.567,161.655
+70,120,4,Epic,7,Legs,2,Leather,legs,physical,2,136.965,136.965,59.567,129.934
+70,120,4,Epic,7,Legs,3,Mail,legs,caster,3,153.94,153.94,59.567,158.432
+70,120,4,Epic,7,Legs,3,Mail,legs,physical,2,118.55,130.55,59.567,119.165
+70,120,4,Epic,7,Legs,4,Plate,legs,caster,1,146.23,146.23,59.567,145.488
+70,120,4,Epic,7,Legs,4,Plate,legs,generic,1,127.86,127.86,59.567,114.649
+70,120,4,Epic,7,Legs,4,Plate,legs,physical,2,135.48,135.48,59.567,127.441
+70,120,4,Epic,7,Legs,4,Plate,legs,tank,2,140.335,140.335,59.567,135.592
+70,120,4,Epic,8,Feet,2,Leather,feet,caster,1,76.56,92.56,44.08,109.984
+70,120,4,Epic,10,Hands,1,Cloth,hands,caster,5,115.56,115.56,44.08,162.162
+70,120,4,Epic,10,Hands,2,Leather,hands,caster,2,112.54,112.54,44.08,155.311
+70,120,4,Epic,10,Hands,2,Leather,hands,physical,2,97.77,97.77,44.08,121.803
+70,120,4,Epic,10,Hands,3,Mail,hands,caster,3,114.66,114.66,44.08,160.121
+70,120,4,Epic,10,Hands,3,Mail,hands,physical,1,123.42,123.42,44.08,179.994
+70,120,4,Epic,10,Hands,4,Plate,hands,caster,1,105.83,105.83,44.08,140.089
+70,120,4,Epic,10,Hands,4,Plate,hands,physical,2,101.27,101.27,44.08,129.744
+70,120,4,Epic,10,Hands,4,Plate,hands,tank,3,105.46,105.46,44.08,139.249
+70,120,4,Epic,11,Finger,0,Misc,finger,caster,1,57.4,57.4,33.358,72.075
+70,120,4,Epic,11,Finger,0,Misc,finger,physical,1,65.0,65.0,33.358,94.859
+70,120,4,Epic,13,One-hand Weapon,7,Sword,weapon_one_hand,physical,1,35.0,35.0,59.567,-41.243
+70,120,4,Epic,16,Cloak,1,Cloth,cloak,caster,1,64.96,64.96,33.358,94.739
+70,120,4,Epic,16,Cloak,1,Cloth,cloak,physical,2,61.875,65.875,33.358,97.482
+70,120,4,Epic,17,Two-hand Weapon,1,Two-hand Axe,weapon_two_hand,physical,1,80.0,104.0,107.221,-3.004
+70,120,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,caster,1,258.34,282.34,107.221,163.326
+70,120,4,Epic,20,Robe,1,Cloth,chest,caster,5,112.52,136.52,59.567,129.187
+70,120,4,Epic,21,Main-hand Weapon,15,Dagger,weapon_main_hand,caster,1,204.84,220.84,59.567,270.742
+70,120,4,Epic,26,Ranged,3,Gun,ranged,physical,1,16.0,32.0,59.567,-46.279
+70,123,4,Epic,1,Head,1,Cloth,head,caster,9,117.72,137.72,61.283,124.729
+70,123,4,Epic,1,Head,2,Leather,head,caster,4,143.925,163.925,61.283,167.49
+70,123,4,Epic,1,Head,2,Leather,head,physical,2,135.58,155.58,61.283,153.873
+70,123,4,Epic,1,Head,3,Mail,head,caster,2,131.28,151.28,61.283,146.856
+70,123,4,Epic,1,Head,3,Mail,head,generic,2,124.17,144.17,61.283,135.254
+70,123,4,Epic,1,Head,3,Mail,head,physical,2,142.83,162.83,61.283,165.703
+70,123,4,Epic,1,Head,4,Plate,head,caster,2,143.64,163.64,61.283,167.025
+70,123,4,Epic,1,Head,4,Plate,head,generic,4,130.16,150.16,61.283,145.028
+70,123,4,Epic,3,Shoulder,1,Cloth,shoulder,caster,9,102.66,118.66,45.349,161.658
+70,123,4,Epic,3,Shoulder,2,Leather,shoulder,caster,4,94.9,110.9,45.349,144.547
+70,123,4,Epic,3,Shoulder,2,Leather,shoulder,physical,2,109.07,125.07,45.349,175.793
+70,123,4,Epic,3,Shoulder,3,Mail,shoulder,caster,2,118.03,134.03,45.349,195.551
+70,123,4,Epic,3,Shoulder,3,Mail,shoulder,generic,2,105.14,121.14,45.349,167.127
+70,123,4,Epic,3,Shoulder,3,Mail,shoulder,physical,2,99.13,115.13,45.349,153.874
+70,123,4,Epic,3,Shoulder,4,Plate,shoulder,caster,2,103.44,119.44,45.349,163.378
+70,123,4,Epic,3,Shoulder,4,Plate,shoulder,generic,4,101.78,117.78,45.349,159.718
+70,123,4,Epic,5,Chest,2,Leather,chest,caster,4,137.12,161.12,61.283,162.913
+70,123,4,Epic,5,Chest,2,Leather,chest,physical,2,126.77,150.77,61.283,146.024
+70,123,4,Epic,5,Chest,3,Mail,chest,caster,2,149.16,173.16,61.283,182.559
+70,123,4,Epic,5,Chest,3,Mail,chest,generic,4,135.67,159.67,61.283,160.547
+70,123,4,Epic,5,Chest,4,Plate,chest,caster,2,137.07,161.07,61.283,162.831
+70,123,4,Epic,5,Chest,4,Plate,chest,generic,4,134.26,158.26,61.283,158.246
+70,123,4,Epic,6,Waist,1,Cloth,waist,caster,6,107.65,107.65,45.349,137.38
+70,123,4,Epic,6,Waist,2,Leather,waist,caster,4,120.66,120.66,45.349,166.069
+70,123,4,Epic,6,Waist,2,Leather,waist,physical,4,117.22,117.22,45.349,158.483
+70,123,4,Epic,6,Waist,3,Mail,waist,caster,4,116.86,116.86,45.349,157.689
+70,123,4,Epic,6,Waist,3,Mail,waist,generic,2,117.13,117.13,45.349,158.285
+70,123,4,Epic,6,Waist,3,Mail,waist,physical,2,118.13,118.13,45.349,160.49
+70,123,4,Epic,6,Waist,4,Plate,waist,caster,4,116.86,116.86,45.349,157.689
+70,123,4,Epic,6,Waist,4,Plate,waist,generic,4,110.455,110.455,45.349,143.565
+70,123,4,Epic,7,Legs,1,Cloth,legs,caster,9,155.3,155.3,61.283,153.416
+70,123,4,Epic,7,Legs,2,Leather,legs,caster,4,165.07,165.07,61.283,169.358
+70,123,4,Epic,7,Legs,2,Leather,legs,physical,2,155.325,155.325,61.283,153.456
+70,123,4,Epic,7,Legs,3,Mail,legs,caster,2,168.3,168.3,61.283,174.629
+70,123,4,Epic,7,Legs,3,Mail,legs,generic,2,155.18,155.18,61.283,153.22
+70,123,4,Epic,7,Legs,3,Mail,legs,physical,2,153.51,153.51,61.283,150.495
+70,123,4,Epic,7,Legs,4,Plate,legs,caster,2,158.98,158.98,61.283,159.421
+70,123,4,Epic,7,Legs,4,Plate,legs,generic,4,148.18,148.18,61.283,141.797
+70,123,4,Epic,8,Feet,1,Cloth,feet,caster,6,108.32,108.32,45.349,138.858
+70,123,4,Epic,8,Feet,2,Leather,feet,caster,4,120.66,120.66,45.349,166.069
+70,123,4,Epic,8,Feet,2,Leather,feet,physical,4,117.22,117.22,45.349,158.483
+70,123,4,Epic,8,Feet,3,Mail,feet,caster,4,116.86,116.86,45.349,157.689
+70,123,4,Epic,8,Feet,3,Mail,feet,generic,2,117.13,117.13,45.349,158.285
+70,123,4,Epic,8,Feet,3,Mail,feet,physical,2,118.13,118.13,45.349,160.49
+70,123,4,Epic,8,Feet,4,Plate,feet,caster,4,116.86,116.86,45.349,157.689
+70,123,4,Epic,8,Feet,4,Plate,feet,generic,5,107.8,107.8,45.349,137.711
+70,123,4,Epic,10,Hands,1,Cloth,hands,caster,9,99.65,99.65,45.349,119.739
+70,123,4,Epic,10,Hands,2,Leather,hands,caster,4,118.21,118.21,45.349,160.666
+70,123,4,Epic,10,Hands,2,Leather,hands,physical,2,110.13,110.13,45.349,142.849
+70,123,4,Epic,10,Hands,3,Mail,hands,caster,2,111.64,111.64,45.349,146.178
+70,123,4,Epic,10,Hands,3,Mail,hands,generic,2,99.8,99.8,45.349,120.07
+70,123,4,Epic,10,Hands,3,Mail,hands,physical,2,108.47,108.47,45.349,139.188
+70,123,4,Epic,10,Hands,4,Plate,hands,caster,3,108.86,108.86,45.349,140.048
+70,123,4,Epic,10,Hands,4,Plate,hands,generic,3,104.78,104.78,45.349,131.051
+70,123,4,Epic,13,One-hand Weapon,0,Axe,weapon_one_hand,generic,1,62.07,62.07,61.283,1.285
+70,123,4,Epic,13,One-hand Weapon,0,Axe,weapon_one_hand,physical,1,43.0,43.0,61.283,-29.833
+70,123,4,Epic,13,One-hand Weapon,4,Mace,weapon_one_hand,generic,2,34.05,34.05,61.283,-44.438
+70,123,4,Epic,13,One-hand Weapon,7,Sword,weapon_one_hand,generic,2,56.41,56.41,61.283,-7.951
+70,123,4,Epic,13,One-hand Weapon,15,Dagger,weapon_one_hand,generic,1,62.07,62.07,61.283,1.285
+70,123,4,Epic,14,Shield,6,Shield,shield,tank,1,59.15,59.15,45.349,30.432
+70,123,4,Epic,16,Cloak,1,Cloth,cloak,caster,2,72.47,72.47,34.318,111.17
+70,123,4,Epic,16,Cloak,1,Cloth,cloak,generic,2,75.09,75.09,34.318,118.804
+70,123,4,Epic,17,Two-hand Weapon,1,Two-hand Axe,weapon_two_hand,generic,1,147.16,147.16,110.309,33.407
+70,123,4,Epic,17,Two-hand Weapon,1,Two-hand Axe,weapon_two_hand,physical,1,105.0,105.0,110.309,-4.813
+70,123,4,Epic,17,Two-hand Weapon,5,Two-hand Mace,weapon_two_hand,generic,1,147.16,147.16,110.309,33.407
+70,123,4,Epic,17,Two-hand Weapon,5,Two-hand Mace,weapon_two_hand,physical,2,352.505,352.505,110.309,219.562
+70,123,4,Epic,17,Two-hand Weapon,6,Polearm,weapon_two_hand,generic,1,138.16,138.16,110.309,25.248
+70,123,4,Epic,17,Two-hand Weapon,8,Two-hand Sword,weapon_two_hand,generic,1,147.16,147.16,110.309,33.407
+70,123,4,Epic,17,Two-hand Weapon,8,Two-hand Sword,weapon_two_hand,physical,1,93.0,93.0,110.309,-15.691
+70,123,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,caster,1,320.3,320.3,110.309,190.366
+70,123,4,Epic,20,Robe,1,Cloth,chest,caster,7,128.67,152.67,61.283,149.124
+70,123,4,Epic,20,Robe,1,Cloth,chest,generic,2,128.69,152.69,61.283,149.157
+70,123,4,Epic,21,Main-hand Weapon,4,Mace,weapon_main_hand,caster,2,225.9,225.9,61.283,268.619
+70,123,4,Epic,21,Main-hand Weapon,13,Fist,weapon_main_hand,generic,1,62.07,62.07,61.283,1.285
+70,123,4,Epic,21,Main-hand Weapon,15,Dagger,weapon_main_hand,caster,1,225.9,225.9,61.283,268.619
+70,123,4,Epic,22,Off-hand Weapon,0,Axe,weapon_off_hand,generic,1,62.07,62.07,34.318,80.865
+70,123,4,Epic,22,Off-hand Weapon,4,Mace,weapon_off_hand,generic,1,62.07,62.07,34.318,80.865
+70,123,4,Epic,22,Off-hand Weapon,7,Sword,weapon_off_hand,generic,1,62.07,62.07,34.318,80.865
+70,123,4,Epic,22,Off-hand Weapon,13,Fist,weapon_off_hand,generic,1,62.07,62.07,34.318,80.865
+70,123,4,Epic,22,Off-hand Weapon,15,Dagger,weapon_off_hand,generic,1,62.07,62.07,34.318,80.865
+70,123,4,Epic,23,Held in Off-hand,0,Misc,held_in_off_hand,caster,2,59.41,59.41,34.318,73.115
+70,123,4,Epic,25,Thrown,16,Thrown,ranged,generic,1,45.05,45.05,61.283,-26.488
+70,123,4,Epic,26,Ranged,18,Crossbow,ranged,generic,1,47.05,47.05,61.283,-23.225
+70,123,4,Epic,26,Ranged,19,Wand,ranged,caster,1,45.09,45.09,61.283,-26.423
+70,125,4,Epic,1,Head,1,Cloth,head,caster,1,122.62,122.62,62.43,96.412
+70,125,4,Epic,1,Head,2,Leather,head,caster,1,140.92,140.92,62.43,125.725
+70,125,4,Epic,1,Head,2,Leather,head,generic,1,145.15,145.15,62.43,132.5
+70,125,4,Epic,1,Head,3,Mail,head,generic,1,144.81,144.81,62.43,131.956
+70,125,4,Epic,1,Head,4,Plate,head,physical,1,125.83,125.83,62.43,101.554
+70,125,4,Epic,2,Neck,0,Misc,neck,caster,2,82.82,82.82,34.961,136.894
+70,125,4,Epic,6,Waist,1,Cloth,waist,caster,1,81.07,97.07,46.198,110.116
+70,125,4,Epic,6,Waist,2,Leather,waist,physical,1,79.09,95.09,46.198,105.83
+70,125,4,Epic,6,Waist,3,Mail,waist,caster,1,102.06,118.06,46.198,155.551
+70,125,4,Epic,6,Waist,4,Plate,waist,physical,1,82.1,98.1,46.198,112.346
+70,125,4,Epic,8,Feet,3,Mail,feet,caster,1,108.33,108.33,46.198,134.489
+70,125,4,Epic,9,Wrist,4,Plate,wrist,physical,1,54.72,70.72,34.961,102.284
+70,125,4,Epic,10,Hands,1,Cloth,hands,caster,1,96.73,112.73,46.198,144.014
+70,125,4,Epic,10,Hands,2,Leather,hands,physical,1,82.77,98.77,46.198,113.796
+70,125,4,Epic,10,Hands,3,Mail,hands,physical,1,93.09,109.09,46.198,136.135
+70,125,4,Epic,10,Hands,4,Plate,hands,physical,1,81.78,97.78,46.198,111.653
+70,125,4,Epic,11,Finger,0,Misc,finger,caster,1,68.46,68.46,34.961,95.819
+70,125,4,Epic,11,Finger,0,Misc,finger,generic,1,78.07,78.07,34.961,123.307
+70,125,4,Epic,13,One-hand Weapon,0,Axe,weapon_one_hand,generic,1,27.0,27.0,62.43,-56.752
+70,125,4,Epic,13,One-hand Weapon,0,Axe,weapon_one_hand,physical,1,51.22,59.22,62.43,-5.142
+70,125,4,Epic,13,One-hand Weapon,15,Dagger,weapon_one_hand,physical,1,50.72,50.72,62.43,-18.757
+70,125,4,Epic,14,Shield,6,Shield,shield,tank,2,70.105,74.105,46.198,60.407
+70,125,4,Epic,15,Ranged,2,Bow,ranged,physical,1,36.0,36.0,62.43,-42.335
+70,125,4,Epic,16,Cloak,1,Cloth,cloak,caster,3,79.54,79.54,34.961,127.512
+70,125,4,Epic,16,Cloak,1,Cloth,cloak,physical,2,64.94,64.94,34.961,85.751
+70,125,4,Epic,17,Two-hand Weapon,1,Two-hand Axe,weapon_two_hand,physical,2,116.195,116.195,112.374,3.4
+70,125,4,Epic,17,Two-hand Weapon,5,Two-hand Mace,weapon_two_hand,physical,1,108.47,132.47,112.374,17.883
+70,125,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,caster,1,309.61,309.61,112.374,175.517
+70,125,4,Epic,21,Main-hand Weapon,4,Mace,weapon_main_hand,caster,1,227.16,227.16,62.43,263.863
+70,125,4,Epic,21,Main-hand Weapon,7,Sword,weapon_main_hand,caster,1,225.3,225.3,62.43,260.884
+70,125,4,Epic,21,Main-hand Weapon,15,Dagger,weapon_main_hand,caster,1,227.64,227.64,62.43,264.632
+70,125,4,Epic,23,Held in Off-hand,0,Misc,held_in_off_hand,caster,1,68.51,68.51,34.961,95.962
+70,125,4,Epic,25,Thrown,16,Thrown,ranged,physical,1,33.73,33.73,62.43,-45.972
+70,125,4,Epic,26,Ranged,19,Wand,ranged,caster,1,45.46,45.46,62.43,-27.182
+70,126,4,Epic,9,Wrist,1,Cloth,wrist,caster,3,75.27,83.27,35.283,136.008
+70,126,4,Epic,9,Wrist,2,Leather,wrist,caster,2,85.97,93.97,35.283,166.335
+70,126,4,Epic,9,Wrist,2,Leather,wrist,physical,2,77.32,85.32,35.283,141.819
+70,126,4,Epic,9,Wrist,3,Mail,wrist,caster,2,81.67,89.67,35.283,154.148
+70,126,4,Epic,9,Wrist,3,Mail,wrist,generic,1,80.43,88.43,35.283,150.633
+70,126,4,Epic,9,Wrist,3,Mail,wrist,physical,1,79.43,87.43,35.283,147.799
+70,126,4,Epic,9,Wrist,4,Plate,wrist,caster,3,80.67,88.67,35.283,151.313
+70,126,4,Epic,9,Wrist,4,Plate,wrist,generic,1,75.1,83.1,35.283,135.526
+70,126,4,Epic,9,Wrist,4,Plate,wrist,physical,1,75.75,83.75,35.283,137.369
+70,127,4,Epic,5,Chest,3,Mail,chest,generic,1,148.66,172.66,63.58,171.563
+70,127,4,Epic,5,Chest,4,Plate,chest,generic,1,131.85,155.85,63.58,145.124
+70,128,4,Epic,1,Head,1,Cloth,head,caster,1,138.32,162.32,64.156,153.008
+70,128,4,Epic,1,Head,2,Leather,head,caster,2,130.67,154.67,64.156,141.084
+70,128,4,Epic,1,Head,3,Mail,head,caster,2,123.21,147.21,64.156,129.456
+70,128,4,Epic,1,Head,4,Plate,head,caster,2,145.615,157.615,64.156,145.674
+70,128,4,Epic,1,Head,4,Plate,head,generic,1,150.82,150.82,64.156,135.083
+70,128,4,Epic,1,Head,4,Plate,head,physical,1,113.17,137.17,64.156,113.806
+70,128,4,Epic,2,Neck,0,Misc,neck,caster,5,84.15,92.15,35.927,156.489
+70,128,4,Epic,2,Neck,0,Misc,neck,generic,3,75.16,75.16,35.927,109.199
+70,128,4,Epic,2,Neck,0,Misc,neck,physical,2,71.08,71.08,35.927,97.843
+70,128,4,Epic,2,Neck,0,Misc,neck,tank,1,72.15,72.15,35.927,100.821
+70,128,4,Epic,3,Shoulder,1,Cloth,shoulder,caster,4,105.82,114.4,47.476,140.966
+70,128,4,Epic,3,Shoulder,2,Leather,shoulder,caster,2,96.61,112.61,47.476,137.196
+70,128,4,Epic,3,Shoulder,2,Leather,shoulder,physical,2,108.445,112.445,47.476,136.848
+70,128,4,Epic,3,Shoulder,3,Mail,shoulder,caster,2,105.72,113.72,47.476,139.534
+70,128,4,Epic,3,Shoulder,3,Mail,shoulder,physical,2,103.55,111.55,47.476,134.963
+70,128,4,Epic,3,Shoulder,4,Plate,shoulder,caster,2,113.855,113.855,47.476,139.818
+70,128,4,Epic,3,Shoulder,4,Plate,shoulder,physical,3,88.79,104.79,47.476,120.724
+70,128,4,Epic,3,Shoulder,4,Plate,shoulder,tank,1,96.31,112.31,47.476,136.564
+70,128,4,Epic,5,Chest,2,Leather,chest,caster,3,148.9,171.05,64.156,166.615
+70,128,4,Epic,5,Chest,2,Leather,chest,physical,3,150.12,150.12,64.156,133.991
+70,128,4,Epic,5,Chest,3,Mail,chest,caster,2,163.085,163.085,64.156,154.2
+70,128,4,Epic,5,Chest,3,Mail,chest,physical,2,149.74,161.74,64.156,152.103
+70,128,4,Epic,5,Chest,4,Plate,chest,caster,3,144.08,164.71,64.156,156.733
+70,128,4,Epic,5,Chest,4,Plate,chest,physical,1,150.23,150.23,64.156,134.163
+70,128,4,Epic,5,Chest,4,Plate,chest,tank,1,130.3,154.3,64.156,140.507
+70,128,4,Epic,6,Waist,1,Cloth,waist,caster,5,98.93,114.93,47.476,142.082
+70,128,4,Epic,6,Waist,1,Cloth,waist,generic,1,67.07,67.07,47.476,41.273
+70,128,4,Epic,6,Waist,2,Leather,waist,caster,3,112.8,128.8,47.476,171.297
+70,128,4,Epic,6,Waist,2,Leather,waist,physical,4,93.74,109.74,47.476,131.15
+70,128,4,Epic,6,Waist,3,Mail,waist,caster,4,102.885,118.885,47.476,150.413
+70,128,4,Epic,6,Waist,3,Mail,waist,generic,1,108.1,108.1,47.476,127.696
+70,128,4,Epic,6,Waist,3,Mail,waist,physical,2,111.26,119.26,47.476,151.203
+70,128,4,Epic,6,Waist,4,Plate,waist,caster,2,113.44,121.44,47.476,155.795
+70,128,4,Epic,6,Waist,4,Plate,waist,physical,2,93.93,109.93,47.476,131.551
+70,128,4,Epic,6,Waist,4,Plate,waist,tank,4,98.685,114.685,47.476,141.566
+70,128,4,Epic,7,Legs,1,Cloth,legs,caster,4,146.375,149.22,64.156,132.589
+70,128,4,Epic,7,Legs,2,Leather,legs,caster,2,130.66,154.66,64.156,141.068
+70,128,4,Epic,7,Legs,2,Leather,legs,physical,1,151.82,151.82,64.156,136.641
+70,128,4,Epic,7,Legs,3,Mail,legs,caster,2,139.2,163.2,64.156,154.379
+70,128,4,Epic,7,Legs,3,Mail,legs,physical,2,145.63,157.63,64.156,145.697
+70,128,4,Epic,7,Legs,4,Plate,legs,caster,1,128.55,152.55,64.156,137.779
+70,128,4,Epic,7,Legs,4,Plate,legs,physical,2,111.815,135.815,64.156,111.694
+70,128,4,Epic,7,Legs,4,Plate,legs,tank,1,176.96,200.96,64.156,213.236
+70,128,4,Epic,8,Feet,1,Cloth,feet,caster,5,116.21,116.21,47.476,144.778
+70,128,4,Epic,8,Feet,1,Cloth,feet,generic,1,67.47,67.47,47.476,42.115
+70,128,4,Epic,8,Feet,2,Leather,feet,caster,2,94.805,110.805,47.476,133.394
+70,128,4,Epic,8,Feet,2,Leather,feet,generic,1,110.78,110.78,47.476,133.341
+70,128,4,Epic,8,Feet,2,Leather,feet,physical,4,97.115,110.93,47.476,133.657
+70,128,4,Epic,8,Feet,3,Mail,feet,caster,4,108.72,116.72,47.476,145.853
+70,128,4,Epic,8,Feet,3,Mail,feet,physical,4,110.815,118.815,47.476,150.265
+70,128,4,Epic,8,Feet,4,Plate,feet,caster,2,103.99,111.99,47.476,135.89
+70,128,4,Epic,8,Feet,4,Plate,feet,physical,2,89.11,97.11,47.476,104.547
+70,128,4,Epic,8,Feet,4,Plate,feet,tank,5,109.33,120.38,47.476,153.562
+70,128,4,Epic,9,Wrist,1,Cloth,wrist,caster,5,82.98,87.66,35.927,143.992
+70,128,4,Epic,9,Wrist,2,Leather,wrist,caster,4,77.69,84.035,35.927,133.902
+70,128,4,Epic,9,Wrist,2,Leather,wrist,physical,3,73.77,81.77,35.927,127.597
+70,128,4,Epic,9,Wrist,3,Mail,wrist,caster,3,81.09,89.09,35.927,147.972
+70,128,4,Epic,9,Wrist,3,Mail,wrist,generic,1,73.06,81.06,35.927,125.621
+70,128,4,Epic,9,Wrist,3,Mail,wrist,physical,2,86.535,86.535,35.927,140.86
+70,128,4,Epic,9,Wrist,4,Plate,wrist,caster,1,80.48,88.48,35.927,146.274
+70,128,4,Epic,9,Wrist,4,Plate,wrist,generic,1,74.04,82.04,35.927,128.349
+70,128,4,Epic,9,Wrist,4,Plate,wrist,physical,1,75.44,75.44,35.927,109.979
+70,128,4,Epic,9,Wrist,4,Plate,wrist,tank,2,77.97,77.97,35.927,117.021
+70,128,4,Epic,10,Hands,1,Cloth,hands,caster,2,95.47,111.47,47.476,134.794
+70,128,4,Epic,10,Hands,2,Leather,hands,caster,2,109.23,109.23,47.476,130.076
+70,128,4,Epic,10,Hands,2,Leather,hands,physical,2,108.275,108.275,47.476,128.065
+70,128,4,Epic,10,Hands,3,Mail,hands,caster,3,112.11,118.51,47.476,149.623
+70,128,4,Epic,10,Hands,3,Mail,hands,physical,1,106.09,122.09,47.476,157.164
+70,128,4,Epic,10,Hands,4,Plate,hands,caster,1,116.65,116.65,47.476,145.705
+70,128,4,Epic,10,Hands,4,Plate,hands,physical,1,83.79,99.79,47.476,110.192
+70,128,4,Epic,10,Hands,4,Plate,hands,tank,1,85.17,101.17,47.476,113.099
+70,128,4,Epic,11,Finger,0,Misc,finger,caster,5,81.44,81.44,35.927,126.679
+70,128,4,Epic,11,Finger,0,Misc,finger,generic,4,79.945,79.945,35.927,122.518
+70,128,4,Epic,11,Finger,0,Misc,finger,physical,2,76.915,76.915,35.927,114.084
+70,128,4,Epic,11,Finger,0,Misc,finger,tank,2,85.07,85.07,35.927,136.783
+70,128,4,Epic,13,One-hand Weapon,15,Dagger,weapon_one_hand,physical,1,58.76,58.76,64.156,-8.411
+70,128,4,Epic,14,Shield,6,Shield,shield,tank,2,91.13,99.13,47.476,108.802
+70,128,4,Epic,16,Cloak,1,Cloth,cloak,caster,2,82.96,82.96,35.927,130.91
+70,128,4,Epic,16,Cloak,1,Cloth,cloak,physical,3,82.74,82.74,35.927,130.297
+70,128,4,Epic,16,Cloak,1,Cloth,cloak,tank,2,69.79,69.79,35.927,94.252
+70,128,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,caster,1,300.9,324.9,115.481,181.345
+70,128,4,Epic,20,Robe,1,Cloth,chest,caster,3,128.51,152.51,64.156,137.717
+70,128,4,Epic,21,Main-hand Weapon,15,Dagger,weapon_main_hand,caster,1,236.66,236.66,64.156,268.881
+70,128,4,Epic,23,Held in Off-hand,0,Misc,held_in_off_hand,caster,4,81.95,81.95,35.927,128.098
+70,128,4,Epic,25,Thrown,16,Thrown,ranged,physical,1,43.5,43.5,64.156,-32.197
+70,130,4,Epic,2,Neck,0,Misc,neck,caster,2,80.545,80.545,36.574,120.226
+70,130,4,Epic,2,Neck,0,Misc,neck,generic,1,74.84,74.84,36.574,104.627
+70,130,4,Epic,2,Neck,0,Misc,neck,physical,1,74.59,74.59,36.574,103.944
+70,130,4,Epic,6,Waist,1,Cloth,waist,generic,1,26.8,26.8,48.33,-44.548
+70,130,4,Epic,6,Waist,2,Leather,waist,generic,1,26.8,26.8,48.33,-44.548
+70,130,4,Epic,6,Waist,3,Mail,waist,generic,1,26.8,26.8,48.33,-44.548
+70,130,4,Epic,6,Waist,4,Plate,waist,generic,1,26.8,26.8,48.33,-44.548
+70,130,4,Epic,7,Legs,1,Cloth,legs,generic,1,36.18,36.18,65.31,-44.603
+70,130,4,Epic,7,Legs,2,Leather,legs,generic,1,36.18,36.18,65.31,-44.603
+70,130,4,Epic,7,Legs,3,Mail,legs,generic,1,36.18,36.18,65.31,-44.603
+70,130,4,Epic,7,Legs,4,Plate,legs,generic,2,93.205,93.205,65.31,42.711
+70,130,4,Epic,8,Feet,1,Cloth,feet,generic,1,26.8,26.8,48.33,-44.548
+70,130,4,Epic,8,Feet,2,Leather,feet,generic,1,26.8,26.8,48.33,-44.548
+70,130,4,Epic,8,Feet,3,Mail,feet,generic,1,26.8,26.8,48.33,-44.548
+70,130,4,Epic,8,Feet,4,Plate,feet,generic,2,69.985,69.985,48.33,44.808
+70,130,4,Epic,9,Wrist,1,Cloth,wrist,generic,1,20.1,20.1,36.574,-45.043
+70,130,4,Epic,9,Wrist,2,Leather,wrist,generic,1,20.1,20.1,36.574,-45.043
+70,130,4,Epic,9,Wrist,3,Mail,wrist,generic,1,20.1,20.1,36.574,-45.043
+70,130,4,Epic,9,Wrist,4,Plate,wrist,generic,2,51.945,51.945,36.574,42.028
+70,130,4,Epic,11,Finger,0,Misc,finger,generic,1,200.0,200.0,36.574,446.84
+70,130,4,Epic,14,Shield,6,Shield,shield,tank,2,98.015,98.015,48.33,102.805
+70,130,4,Epic,16,Cloak,1,Cloth,cloak,generic,1,20.1,20.1,36.574,-45.043
+70,130,4,Epic,17,Two-hand Weapon,1,Two-hand Axe,weapon_two_hand,physical,1,55.0,55.0,117.559,-53.215
+70,130,4,Epic,26,Ranged,19,Wand,ranged,generic,1,42.76,42.76,65.31,-34.528
+70,132,4,Epic,13,One-hand Weapon,7,Sword,weapon_one_hand,generic,1,61.1,61.1,66.467,-8.075
+70,132,4,Epic,13,One-hand Weapon,7,Sword,weapon_one_hand,physical,2,60.75,60.75,66.467,-8.601
+70,132,4,Epic,13,One-hand Weapon,15,Dagger,weapon_one_hand,generic,1,45.1,61.1,66.467,-8.075
+70,132,4,Epic,13,One-hand Weapon,15,Dagger,weapon_one_hand,physical,2,61.05,61.05,66.467,-8.15
+70,132,4,Epic,15,Ranged,2,Bow,ranged,physical,1,37.0,37.0,66.467,-44.333
+70,132,4,Epic,17,Two-hand Weapon,1,Two-hand Axe,weapon_two_hand,physical,1,124.86,140.86,119.641,17.736
+70,132,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,caster,2,308.53,332.53,119.641,177.94
+70,132,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,physical,1,140.9,140.9,119.641,17.769
+70,132,4,Epic,21,Main-hand Weapon,4,Mace,weapon_main_hand,caster,1,247.72,247.72,66.467,272.695
+70,132,4,Epic,21,Main-hand Weapon,13,Fist,weapon_main_hand,physical,1,45.06,53.06,66.467,-20.171
+70,132,4,Epic,21,Main-hand Weapon,15,Dagger,weapon_main_hand,caster,1,260.62,260.62,66.467,292.103
+70,132,4,Epic,22,Off-hand Weapon,13,Fist,weapon_off_hand,generic,1,46.4,54.4,37.222,46.152
+70,132,4,Epic,26,Ranged,3,Gun,ranged,physical,1,37.0,37.0,66.467,-44.333
+70,132,4,Epic,26,Ranged,19,Wand,ranged,caster,1,36.51,44.51,66.467,-33.035
+70,133,4,Epic,1,Head,1,Cloth,head,caster,6,151.4,171.4,67.047,155.643
+70,133,4,Epic,1,Head,2,Leather,head,caster,2,157.495,177.495,67.047,164.734
+70,133,4,Epic,1,Head,2,Leather,head,physical,3,135.16,155.16,67.047,131.421
+70,133,4,Epic,1,Head,3,Mail,head,caster,3,162.62,182.62,67.047,172.378
+70,133,4,Epic,1,Head,3,Mail,head,physical,2,150.81,172.81,67.047,157.746
+70,133,4,Epic,1,Head,4,Plate,head,caster,1,156.59,176.59,67.047,163.384
+70,133,4,Epic,1,Head,4,Plate,head,physical,2,134.485,154.485,67.047,130.414
+70,133,4,Epic,1,Head,4,Plate,head,tank,3,169.5,193.5,67.047,188.605
+70,133,4,Epic,2,Neck,0,Misc,neck,caster,1,87.25,87.25,37.546,132.381
+70,133,4,Epic,3,Shoulder,1,Cloth,shoulder,caster,4,108.095,124.095,49.614,150.119
+70,133,4,Epic,3,Shoulder,2,Leather,shoulder,caster,2,113.18,129.18,49.614,160.368
+70,133,4,Epic,3,Shoulder,2,Leather,shoulder,physical,3,104.12,118.28,49.614,138.398
+70,133,4,Epic,3,Shoulder,3,Mail,shoulder,caster,3,115.68,128.99,49.614,159.985
+70,133,4,Epic,3,Shoulder,3,Mail,shoulder,generic,1,117.79,133.79,49.614,169.659
+70,133,4,Epic,3,Shoulder,3,Mail,shoulder,physical,1,106.42,122.42,49.614,146.743
+70,133,4,Epic,3,Shoulder,4,Plate,shoulder,caster,1,100.04,116.04,49.614,133.883
+70,133,4,Epic,3,Shoulder,4,Plate,shoulder,physical,2,99.12,115.12,49.614,132.029
+70,133,4,Epic,3,Shoulder,4,Plate,shoulder,tank,2,115.945,131.945,49.614,165.941
+70,133,4,Epic,5,Chest,2,Leather,chest,caster,2,149.49,173.49,67.047,158.76
+70,133,4,Epic,5,Chest,2,Leather,chest,physical,2,134.0,158.0,67.047,135.657
+70,133,4,Epic,5,Chest,3,Mail,chest,caster,3,159.9,183.9,67.047,174.287
+70,133,4,Epic,5,Chest,3,Mail,chest,physical,3,167.3,174.82,67.047,160.744
+70,133,4,Epic,5,Chest,4,Plate,chest,caster,1,134.4,158.4,67.047,136.254
+70,133,4,Epic,5,Chest,4,Plate,chest,physical,3,130.16,154.16,67.047,129.93
+70,133,4,Epic,5,Chest,4,Plate,chest,tank,3,151.19,175.19,67.047,161.296
+70,133,4,Epic,7,Legs,1,Cloth,legs,caster,4,173.98,181.98,67.047,171.423
+70,133,4,Epic,7,Legs,2,Leather,legs,caster,2,175.48,183.48,67.047,173.661
+70,133,4,Epic,7,Legs,2,Leather,legs,physical,2,152.985,160.985,67.047,140.109
+70,133,4,Epic,7,Legs,3,Mail,legs,caster,2,160.78,168.78,67.047,151.736
+70,133,4,Epic,7,Legs,3,Mail,legs,physical,2,171.245,179.245,67.047,167.344
+70,133,4,Epic,7,Legs,4,Plate,legs,caster,1,171.73,179.73,67.047,168.067
+70,133,4,Epic,7,Legs,4,Plate,legs,physical,2,147.5,155.5,67.047,131.928
+70,133,4,Epic,7,Legs,4,Plate,legs,tank,2,190.065,198.065,67.047,195.414
+70,133,4,Epic,8,Feet,1,Cloth,feet,caster,1,109.71,125.71,49.614,153.374
+70,133,4,Epic,8,Feet,4,Plate,feet,caster,1,98.4,114.4,49.614,130.578
+70,133,4,Epic,10,Hands,1,Cloth,hands,caster,4,125.355,125.355,49.614,152.658
+70,133,4,Epic,10,Hands,2,Leather,hands,caster,2,128.93,128.93,49.614,159.864
+70,133,4,Epic,10,Hands,2,Leather,hands,physical,2,116.79,116.79,49.614,135.395
+70,133,4,Epic,10,Hands,3,Mail,hands,caster,2,134.61,134.61,49.614,171.312
+70,133,4,Epic,10,Hands,3,Mail,hands,physical,2,127.605,127.605,49.614,157.193
+70,133,4,Epic,10,Hands,4,Plate,hands,caster,1,132.53,132.53,49.614,167.12
+70,133,4,Epic,10,Hands,4,Plate,hands,physical,2,107.95,107.95,49.614,117.578
+70,133,4,Epic,10,Hands,4,Plate,hands,tank,2,144.165,144.165,49.614,190.571
+70,133,4,Epic,13,One-hand Weapon,7,Sword,weapon_one_hand,physical,1,58.93,58.93,67.047,-12.106
+70,133,4,Epic,20,Robe,1,Cloth,chest,caster,4,138.43,162.43,67.047,142.264
+70,133,4,Epic,21,Main-hand Weapon,4,Mace,weapon_main_hand,caster,1,238.2,246.2,67.047,267.207
+70,134,2,Uncommon,3,Shoulder,1,Cloth,shoulder,caster,1,79.02,79.02,36.989,113.632
+70,134,2,Uncommon,9,Wrist,1,Cloth,wrist,caster,1,59.54,59.54,27.992,112.707
+70,134,2,Uncommon,10,Hands,3,Mail,hands,caster,1,80.26,80.26,36.989,116.984
+70,134,2,Uncommon,20,Robe,1,Cloth,chest,caster,1,106.57,106.57,49.985,113.204
+70,134,3,Rare,3,Shoulder,3,Mail,shoulder,caster,1,99.86,99.86,43.516,129.477
+70,134,3,Rare,6,Waist,2,Leather,waist,physical,1,98.15,98.15,43.516,125.548
+70,134,3,Rare,8,Feet,1,Cloth,feet,caster,1,102.35,102.35,43.516,135.199
+70,134,3,Rare,10,Hands,4,Plate,hands,caster,1,106.36,106.36,43.516,144.414
+70,134,3,Rare,11,Finger,0,Misc,finger,tank,1,56.76,56.76,32.931,72.359
+70,134,3,Rare,22,Off-hand Weapon,13,Fist,weapon_off_hand,generic,1,75.74,75.74,32.931,129.995
+70,134,4,Epic,13,One-hand Weapon,0,Axe,weapon_one_hand,physical,1,59.07,59.07,67.627,-12.653
+70,134,4,Epic,13,One-hand Weapon,4,Mace,weapon_one_hand,tank,1,52.78,52.78,67.627,-21.954
+70,134,4,Epic,13,One-hand Weapon,7,Sword,weapon_one_hand,physical,1,55.0,55.0,67.627,-18.671
+70,134,4,Epic,13,One-hand Weapon,15,Dagger,weapon_one_hand,physical,1,40.1,40.1,67.627,-40.704
+70,134,4,Epic,17,Two-hand Weapon,5,Two-hand Mace,weapon_two_hand,physical,1,84.17,84.17,121.728,-30.854
+70,134,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,caster,1,330.9,330.9,121.728,171.836
+70,134,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,tank,1,104.25,104.25,121.728,-14.358
+70,134,4,Epic,21,Main-hand Weapon,7,Sword,weapon_main_hand,caster,1,244.66,244.66,67.627,261.781
+70,134,4,Epic,21,Main-hand Weapon,13,Fist,weapon_main_hand,physical,1,60.0,60.0,67.627,-11.278
+70,134,4,Epic,22,Off-hand Weapon,13,Fist,weapon_off_hand,physical,1,61.1,61.1,37.871,61.338
+70,134,4,Epic,25,Thrown,16,Thrown,ranged,generic,1,41.38,41.38,67.627,-38.811
+70,134,4,Epic,26,Ranged,3,Gun,ranged,physical,1,39.0,39.0,67.627,-42.33
+70,134,4,Epic,26,Ranged,19,Wand,ranged,caster,2,47.56,47.56,67.627,-29.673
+70,135,4,Epic,11,Finger,0,Misc,finger,caster,1,102.74,102.74,38.196,168.98
+70,136,4,Epic,1,Head,1,Cloth,head,caster,4,125.68,145.68,68.789,111.779
+70,136,4,Epic,1,Head,1,Cloth,head,generic,1,138.32,158.32,68.789,130.154
+70,136,4,Epic,1,Head,2,Leather,head,caster,2,156.48,176.48,68.789,156.554
+70,136,4,Epic,1,Head,2,Leather,head,physical,4,139.86,159.86,68.789,132.393
+70,136,4,Epic,1,Head,3,Mail,head,caster,3,150.18,170.18,68.789,147.395
+70,136,4,Epic,1,Head,3,Mail,head,generic,1,138.2,158.2,68.789,129.98
+70,136,4,Epic,1,Head,3,Mail,head,physical,1,161.85,181.85,68.789,164.36
+70,136,4,Epic,1,Head,4,Plate,head,caster,3,156.75,176.75,68.789,156.946
+70,136,4,Epic,1,Head,4,Plate,head,generic,3,141.18,161.18,68.789,134.312
+70,136,4,Epic,3,Shoulder,1,Cloth,shoulder,caster,5,105.11,121.11,50.904,137.92
+70,136,4,Epic,3,Shoulder,2,Leather,shoulder,caster,2,104.43,120.43,50.904,136.584
+70,136,4,Epic,3,Shoulder,2,Leather,shoulder,physical,4,123.15,139.15,50.904,173.36
+70,136,4,Epic,3,Shoulder,3,Mail,shoulder,caster,3,128.49,144.49,50.904,183.85
+70,136,4,Epic,3,Shoulder,3,Mail,shoulder,generic,1,119.16,135.16,50.904,165.521
+70,136,4,Epic,3,Shoulder,3,Mail,shoulder,physical,1,119.15,135.15,50.904,165.502
+70,136,4,Epic,3,Shoulder,4,Plate,shoulder,caster,3,115.3,131.3,50.904,157.938
+70,136,4,Epic,3,Shoulder,4,Plate,shoulder,generic,3,110.17,126.17,50.904,147.861
+70,136,4,Epic,5,Chest,2,Leather,chest,caster,2,147.04,171.04,68.789,148.646
+70,136,4,Epic,5,Chest,2,Leather,chest,physical,4,133.19,157.19,68.789,128.511
+70,136,4,Epic,5,Chest,3,Mail,chest,caster,3,165.98,189.98,68.789,176.179
+70,136,4,Epic,5,Chest,3,Mail,chest,generic,2,147.69,171.69,68.789,149.591
+70,136,4,Epic,5,Chest,4,Plate,chest,caster,1,148.67,172.67,68.789,151.015
+70,136,4,Epic,5,Chest,4,Plate,chest,generic,5,152.55,176.55,68.789,156.656
+70,136,4,Epic,6,Waist,1,Cloth,waist,caster,3,122.11,122.11,50.904,139.885
+70,136,4,Epic,6,Waist,2,Leather,waist,caster,2,135.09,135.09,50.904,165.384
+70,136,4,Epic,6,Waist,2,Leather,waist,physical,2,132.1,132.1,50.904,159.51
+70,136,4,Epic,6,Waist,3,Mail,waist,caster,2,133.65,133.65,50.904,162.555
+70,136,4,Epic,6,Waist,3,Mail,waist,generic,2,132.65,132.65,50.904,160.591
+70,136,4,Epic,6,Waist,4,Plate,waist,caster,3,133.65,133.65,50.904,162.555
+70,136,4,Epic,6,Waist,4,Plate,waist,generic,2,126.14,126.14,50.904,147.802
+70,136,4,Epic,7,Legs,1,Cloth,legs,caster,5,161.34,161.34,68.789,134.544
+70,136,4,Epic,7,Legs,2,Leather,legs,caster,2,183.32,183.32,68.789,166.497
+70,136,4,Epic,7,Legs,2,Leather,legs,physical,4,163.2,163.2,68.789,137.248
+70,136,4,Epic,7,Legs,3,Mail,legs,caster,3,193.0,193.0,68.789,180.569
+70,136,4,Epic,7,Legs,3,Mail,legs,generic,1,174.2,174.2,68.789,153.239
+70,136,4,Epic,7,Legs,3,Mail,legs,physical,1,171.86,171.86,68.789,149.838
+70,136,4,Epic,7,Legs,4,Plate,legs,caster,3,173.33,173.33,68.789,151.975
+70,136,4,Epic,7,Legs,4,Plate,legs,generic,3,168.21,168.21,68.789,144.532
+70,136,4,Epic,8,Feet,1,Cloth,feet,caster,3,122.11,122.11,50.904,139.885
+70,136,4,Epic,8,Feet,2,Leather,feet,caster,2,135.02,135.02,50.904,165.246
+70,136,4,Epic,8,Feet,2,Leather,feet,physical,2,132.1,132.1,50.904,159.51
+70,136,4,Epic,8,Feet,3,Mail,feet,caster,2,133.65,133.65,50.904,162.555
+70,136,4,Epic,8,Feet,3,Mail,feet,generic,2,132.65,132.65,50.904,160.591
+70,136,4,Epic,8,Feet,4,Plate,feet,caster,3,133.65,133.65,50.904,162.555
+70,136,4,Epic,8,Feet,4,Plate,feet,generic,2,126.14,126.14,50.904,147.802
+70,136,4,Epic,10,Hands,1,Cloth,hands,caster,5,107.11,107.11,50.904,110.417
+70,136,4,Epic,10,Hands,2,Leather,hands,caster,2,128.85,128.85,50.904,153.125
+70,136,4,Epic,10,Hands,2,Leather,hands,physical,4,118.15,118.15,50.904,132.105
+70,136,4,Epic,10,Hands,3,Mail,hands,caster,3,126.24,126.24,50.904,147.998
+70,136,4,Epic,10,Hands,3,Mail,hands,generic,1,110.15,110.15,50.904,116.389
+70,136,4,Epic,10,Hands,3,Mail,hands,physical,1,130.16,130.16,50.904,155.699
+70,136,4,Epic,10,Hands,4,Plate,hands,caster,3,126.32,126.32,50.904,148.155
+70,136,4,Epic,10,Hands,4,Plate,hands,generic,3,116.82,116.82,50.904,129.493
+70,136,4,Epic,13,One-hand Weapon,0,Axe,weapon_one_hand,generic,1,74.09,74.09,68.789,7.707
+70,136,4,Epic,13,One-hand Weapon,0,Axe,weapon_one_hand,physical,1,47.0,47.0,68.789,-31.675
+70,136,4,Epic,13,One-hand Weapon,4,Mace,weapon_one_hand,generic,2,43.41,43.41,68.789,-36.894
+70,136,4,Epic,13,One-hand Weapon,7,Sword,weapon_one_hand,generic,2,64.925,64.925,68.789,-5.617
+70,136,4,Epic,13,One-hand Weapon,15,Dagger,weapon_one_hand,generic,1,74.09,74.09,68.789,7.707
+70,136,4,Epic,14,Shield,6,Shield,shield,tank,3,92.47,92.47,50.904,81.657
+70,136,4,Epic,16,Cloak,1,Cloth,cloak,caster,4,100.0,100.0,38.522,159.594
+70,136,4,Epic,16,Cloak,1,Cloth,cloak,physical,1,102.78,102.78,38.522,166.811
+70,136,4,Epic,17,Two-hand Weapon,1,Two-hand Axe,weapon_two_hand,generic,1,171.85,171.85,123.82,38.791
+70,136,4,Epic,17,Two-hand Weapon,1,Two-hand Axe,weapon_two_hand,physical,1,112.0,112.0,123.82,-9.546
+70,136,4,Epic,17,Two-hand Weapon,5,Two-hand Mace,weapon_two_hand,generic,1,171.85,171.85,123.82,38.791
+70,136,4,Epic,17,Two-hand Weapon,5,Two-hand Mace,weapon_two_hand,physical,2,400.86,400.86,123.82,223.745
+70,136,4,Epic,17,Two-hand Weapon,6,Polearm,weapon_two_hand,generic,1,161.85,161.85,123.82,30.714
+70,136,4,Epic,17,Two-hand Weapon,8,Two-hand Sword,weapon_two_hand,generic,1,171.85,171.85,123.82,38.791
+70,136,4,Epic,17,Two-hand Weapon,8,Two-hand Sword,weapon_two_hand,physical,1,96.0,96.0,123.82,-22.468
+70,136,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,caster,1,367.35,367.35,123.82,196.682
+70,136,4,Epic,20,Robe,1,Cloth,chest,caster,4,132.67,156.67,68.789,127.756
+70,136,4,Epic,20,Robe,1,Cloth,chest,generic,1,136.29,160.29,68.789,133.018
+70,136,4,Epic,21,Main-hand Weapon,4,Mace,weapon_main_hand,caster,2,259.43,259.43,68.789,277.141
+70,136,4,Epic,21,Main-hand Weapon,13,Fist,weapon_main_hand,generic,1,74.09,74.09,68.789,7.707
+70,136,4,Epic,21,Main-hand Weapon,15,Dagger,weapon_main_hand,caster,1,262.59,262.59,68.789,281.734
+70,136,4,Epic,22,Off-hand Weapon,0,Axe,weapon_off_hand,generic,1,74.09,74.09,38.522,92.333
+70,136,4,Epic,22,Off-hand Weapon,4,Mace,weapon_off_hand,generic,1,74.09,74.09,38.522,92.333
+70,136,4,Epic,22,Off-hand Weapon,7,Sword,weapon_off_hand,generic,1,74.09,74.09,38.522,92.333
+70,136,4,Epic,22,Off-hand Weapon,13,Fist,weapon_off_hand,generic,1,74.09,74.09,38.522,92.333
+70,136,4,Epic,22,Off-hand Weapon,15,Dagger,weapon_off_hand,generic,1,74.09,74.09,38.522,92.333
+70,136,4,Epic,23,Held in Off-hand,0,Misc,held_in_off_hand,caster,2,92.47,92.47,38.522,140.047
+70,136,4,Epic,25,Thrown,16,Thrown,ranged,generic,1,56.07,56.07,68.789,-18.489
+70,136,4,Epic,26,Ranged,18,Crossbow,ranged,generic,1,55.07,55.07,68.789,-19.943
+70,136,4,Epic,26,Ranged,19,Wand,ranged,caster,1,50.81,50.81,68.789,-26.136
+70,138,2,Uncommon,2,Neck,0,Misc,neck,caster,1,53.2,61.2,28.955,111.366
+70,138,2,Uncommon,2,Neck,0,Misc,neck,physical,1,46.73,54.73,28.955,89.02
+70,138,2,Uncommon,5,Chest,2,Leather,chest,caster,1,109.28,109.28,51.705,111.355
+70,138,2,Uncommon,8,Feet,2,Leather,feet,caster,1,79.87,79.87,38.261,108.748
+70,138,2,Uncommon,11,Finger,0,Misc,finger,caster,1,41.5,49.5,28.955,70.957
+70,138,2,Uncommon,11,Finger,0,Misc,finger,physical,1,42.0,50.0,28.955,72.684
+70,138,3,Rare,13,One-hand Weapon,7,Sword,weapon_one_hand,physical,1,63.41,63.41,60.829,4.243
+70,138,3,Rare,13,One-hand Weapon,15,Dagger,weapon_one_hand,physical,1,63.41,63.41,60.829,4.243
+70,138,3,Rare,17,Two-hand Weapon,1,Two-hand Axe,weapon_two_hand,physical,1,145.83,145.83,109.492,33.188
+70,138,3,Rare,21,Main-hand Weapon,4,Mace,weapon_main_hand,caster,2,202.76,202.76,60.829,233.328
+70,138,3,Rare,21,Main-hand Weapon,7,Sword,weapon_main_hand,caster,1,200.03,200.03,60.829,228.84
+70,138,3,Rare,26,Ranged,18,Crossbow,ranged,physical,1,44.72,44.72,60.829,-26.482
+70,138,4,Epic,1,Head,1,Cloth,head,caster,1,162.15,162.15,69.953,131.798
+70,138,4,Epic,3,Shoulder,2,Leather,shoulder,caster,1,121.21,121.21,51.765,134.152
+70,138,4,Epic,5,Chest,4,Plate,chest,physical,1,162.14,162.14,69.953,131.783
+70,138,4,Epic,6,Waist,2,Leather,waist,physical,1,107.75,123.75,51.765,139.059
+70,138,4,Epic,7,Legs,2,Leather,legs,physical,1,148.77,148.77,69.953,112.671
+70,138,4,Epic,7,Legs,3,Mail,legs,caster,1,146.15,170.15,69.953,143.234
+70,138,4,Epic,7,Legs,4,Plate,legs,generic,1,146.22,146.22,69.953,109.025
+70,138,4,Epic,8,Feet,3,Mail,feet,physical,1,107.75,123.75,51.765,139.059
+70,138,4,Epic,10,Hands,1,Cloth,hands,caster,1,131.88,131.88,51.765,154.765
+70,138,4,Epic,10,Hands,4,Plate,hands,caster,1,107.73,123.73,51.765,139.021
+70,138,4,Epic,10,Hands,4,Plate,hands,tank,1,94.19,110.19,51.765,112.864
+70,138,4,Epic,11,Finger,0,Misc,finger,caster,2,82.03,82.03,39.174,109.4
+70,138,4,Epic,11,Finger,0,Misc,finger,generic,1,92.09,92.09,39.174,135.08
+70,138,4,Epic,13,One-hand Weapon,0,Axe,weapon_one_hand,tank,1,52.77,60.77,69.953,-13.128
+70,138,4,Epic,16,Cloak,1,Cloth,cloak,caster,2,84.625,84.625,39.174,116.024
+70,138,4,Epic,16,Cloak,1,Cloth,cloak,physical,1,80.76,80.76,39.174,106.158
+70,138,4,Epic,17,Two-hand Weapon,8,Two-hand Sword,weapon_two_hand,physical,1,137.83,137.83,125.916,9.462
+70,138,4,Epic,20,Robe,1,Cloth,chest,caster,1,153.78,177.78,69.953,154.141
+70,138,4,Epic,21,Main-hand Weapon,4,Mace,weapon_main_hand,caster,1,246.8,246.8,69.953,252.807
+70,138,4,Epic,21,Main-hand Weapon,7,Sword,weapon_main_hand,caster,1,261.05,261.05,69.953,273.178
+70,141,4,Epic,1,Head,1,Cloth,head,caster,1,148.45,168.45,71.705,134.921
+70,141,4,Epic,1,Head,2,Leather,head,caster,1,155.93,175.93,71.705,145.353
+70,141,4,Epic,1,Head,3,Mail,head,caster,1,154.62,174.62,71.705,143.526
+70,141,4,Epic,1,Head,3,Mail,head,physical,1,159.43,179.43,71.705,150.234
+70,141,4,Epic,1,Head,4,Plate,head,caster,1,148.45,168.45,71.705,134.921
+70,141,4,Epic,1,Head,4,Plate,head,generic,1,146.43,166.43,71.705,132.104
+70,141,4,Epic,2,Neck,0,Misc,neck,caster,10,96.27,104.27,40.155,159.67
+70,141,4,Epic,2,Neck,0,Misc,neck,generic,2,88.255,96.255,40.155,139.71
+70,141,4,Epic,2,Neck,0,Misc,neck,physical,2,84.395,84.395,40.155,110.174
+70,141,4,Epic,2,Neck,0,Misc,neck,tank,1,94.81,94.81,40.155,136.111
+70,141,4,Epic,3,Shoulder,1,Cloth,shoulder,caster,5,126.05,126.05,53.062,137.554
+70,141,4,Epic,3,Shoulder,2,Leather,shoulder,caster,2,125.515,125.515,53.062,136.546
+70,141,4,Epic,3,Shoulder,2,Leather,shoulder,physical,3,125.85,125.85,53.062,137.177
+70,141,4,Epic,3,Shoulder,3,Mail,shoulder,caster,2,131.065,131.065,53.062,147.005
+70,141,4,Epic,3,Shoulder,3,Mail,shoulder,physical,3,126.79,126.79,53.062,138.948
+70,141,4,Epic,3,Shoulder,4,Plate,shoulder,caster,2,117.505,125.505,53.062,136.527
+70,141,4,Epic,3,Shoulder,4,Plate,shoulder,physical,2,122.605,122.605,53.062,131.061
+70,141,4,Epic,3,Shoulder,4,Plate,shoulder,tank,1,112.24,112.24,53.062,111.527
+70,141,4,Epic,5,Chest,2,Leather,chest,caster,3,162.45,170.1,71.705,137.222
+70,141,4,Epic,5,Chest,2,Leather,chest,physical,3,163.17,172.84,71.705,141.043
+70,141,4,Epic,5,Chest,3,Mail,chest,caster,4,169.605,177.04,71.705,146.901
+70,141,4,Epic,5,Chest,3,Mail,chest,physical,2,163.61,167.61,71.705,133.75
+70,141,4,Epic,5,Chest,4,Plate,chest,caster,1,165.7,173.7,71.705,142.243
+70,141,4,Epic,5,Chest,4,Plate,chest,generic,1,163.86,171.86,71.705,139.677
+70,141,4,Epic,5,Chest,4,Plate,chest,physical,2,156.515,160.515,71.705,123.855
+70,141,4,Epic,5,Chest,4,Plate,chest,tank,2,179.105,183.105,71.705,155.359
+70,141,4,Epic,6,Waist,1,Cloth,waist,caster,4,117.96,124.655,53.062,134.925
+70,141,4,Epic,6,Waist,2,Leather,waist,caster,2,131.605,131.605,53.062,148.023
+70,141,4,Epic,6,Waist,2,Leather,waist,physical,3,118.11,126.79,53.062,138.948
+70,141,4,Epic,6,Waist,3,Mail,waist,caster,4,125.55,130.74,53.062,146.393
+70,141,4,Epic,6,Waist,3,Mail,waist,physical,2,139.375,139.375,53.062,162.666
+70,141,4,Epic,6,Waist,4,Plate,waist,caster,4,121.46,125.28,53.062,136.103
+70,141,4,Epic,6,Waist,4,Plate,waist,physical,3,110.79,114.85,53.062,116.446
+70,141,4,Epic,6,Waist,4,Plate,waist,tank,3,147.32,163.32,53.062,207.793
+70,141,4,Epic,7,Legs,1,Cloth,legs,caster,5,153.25,170.4,71.705,137.641
+70,141,4,Epic,7,Legs,2,Leather,legs,caster,3,162.58,178.62,71.705,149.104
+70,141,4,Epic,7,Legs,2,Leather,legs,physical,3,155.84,171.15,71.705,138.686
+70,141,4,Epic,7,Legs,3,Mail,legs,caster,3,154.87,178.87,71.705,149.453
+70,141,4,Epic,7,Legs,3,Mail,legs,physical,2,161.94,181.94,71.705,153.734
+70,141,4,Epic,7,Legs,4,Plate,legs,caster,1,166.7,182.7,71.705,154.794
+70,141,4,Epic,7,Legs,4,Plate,legs,generic,1,152.16,168.16,71.705,134.517
+70,141,4,Epic,7,Legs,4,Plate,legs,physical,1,170.17,170.17,71.705,137.32
+70,141,4,Epic,7,Legs,4,Plate,legs,tank,3,152.08,169.26,71.705,136.051
+70,141,4,Epic,8,Feet,1,Cloth,feet,caster,6,121.27,127.175,53.062,139.674
+70,141,4,Epic,8,Feet,2,Leather,feet,caster,2,128.545,136.545,53.062,157.333
+70,141,4,Epic,8,Feet,2,Leather,feet,physical,3,110.47,115.49,53.062,117.652
+70,141,4,Epic,8,Feet,3,Mail,feet,caster,2,130.265,130.265,53.062,145.497
+70,141,4,Epic,8,Feet,3,Mail,feet,physical,2,130.05,138.05,53.062,160.169
+70,141,4,Epic,8,Feet,4,Plate,feet,caster,1,142.63,142.63,53.062,168.8
+70,141,4,Epic,8,Feet,4,Plate,feet,generic,1,112.8,128.8,53.062,142.736
+70,141,4,Epic,8,Feet,4,Plate,feet,tank,3,111.32,126.52,53.062,138.44
+70,141,4,Epic,9,Wrist,1,Cloth,wrist,caster,9,93.21,95.29,40.155,137.307
+70,141,4,Epic,9,Wrist,2,Leather,wrist,caster,5,98.05,106.05,40.155,164.103
+70,141,4,Epic,9,Wrist,2,Leather,wrist,generic,1,87.76,95.76,40.155,138.477
+70,141,4,Epic,9,Wrist,2,Leather,wrist,physical,4,91.27,95.435,40.155,137.668
+70,141,4,Epic,9,Wrist,3,Mail,wrist,caster,5,95.65,101.81,40.155,153.544
+70,141,4,Epic,9,Wrist,3,Mail,wrist,generic,1,94.11,102.11,40.155,154.291
+70,141,4,Epic,9,Wrist,3,Mail,wrist,physical,4,98.08,102.08,40.155,154.216
+70,141,4,Epic,9,Wrist,4,Plate,wrist,caster,4,94.48,98.48,40.155,145.251
+70,141,4,Epic,9,Wrist,4,Plate,wrist,generic,2,91.94,99.94,40.155,148.887
+70,141,4,Epic,9,Wrist,4,Plate,wrist,physical,2,78.1,82.1,40.155,104.459
+70,141,4,Epic,9,Wrist,4,Plate,wrist,tank,2,90.785,90.785,40.155,126.088
+70,141,4,Epic,10,Hands,1,Cloth,hands,caster,2,118.91,130.91,53.062,146.713
+70,141,4,Epic,10,Hands,2,Leather,hands,caster,3,116.6,126.58,53.062,138.553
+70,141,4,Epic,10,Hands,2,Leather,hands,physical,2,124.29,128.29,53.062,141.775
+70,141,4,Epic,10,Hands,3,Mail,hands,caster,1,127.3,127.3,53.062,139.91
+70,141,4,Epic,10,Hands,3,Mail,hands,physical,2,130.59,134.59,53.062,153.648
+70,141,4,Epic,10,Hands,4,Plate,hands,generic,1,124.15,124.15,53.062,133.973
+70,141,4,Epic,10,Hands,4,Plate,hands,physical,1,104.79,120.79,53.062,127.641
+70,141,4,Epic,10,Hands,4,Plate,hands,tank,1,146.7,146.7,53.062,176.471
+70,141,4,Epic,11,Finger,0,Misc,finger,caster,10,97.81,97.81,40.155,143.583
+70,141,4,Epic,11,Finger,0,Misc,finger,generic,4,96.105,96.105,40.155,139.336
+70,141,4,Epic,11,Finger,0,Misc,finger,physical,4,94.93,94.93,40.155,136.41
+70,141,4,Epic,11,Finger,0,Misc,finger,tank,3,83.51,83.51,40.155,107.97
+70,141,4,Epic,13,One-hand Weapon,0,Axe,weapon_one_hand,generic,1,65.11,65.11,71.705,-9.197
+70,141,4,Epic,13,One-hand Weapon,0,Axe,weapon_one_hand,tank,1,65.11,65.11,71.705,-9.197
+70,141,4,Epic,13,One-hand Weapon,4,Mace,weapon_one_hand,generic,1,66.0,66.0,71.705,-7.956
+70,141,4,Epic,13,One-hand Weapon,4,Mace,weapon_one_hand,physical,2,25.5,25.5,71.705,-64.438
+70,141,4,Epic,13,One-hand Weapon,7,Sword,weapon_one_hand,generic,1,71.73,71.73,71.705,0.035
+70,141,4,Epic,13,One-hand Weapon,7,Sword,weapon_one_hand,physical,1,56.0,56.0,71.705,-21.902
+70,141,4,Epic,13,One-hand Weapon,7,Sword,weapon_one_hand,tank,1,43.11,43.11,71.705,-39.879
+70,141,4,Epic,13,One-hand Weapon,15,Dagger,weapon_one_hand,generic,4,65.0,65.0,71.705,-9.351
+70,141,4,Epic,13,One-hand Weapon,15,Dagger,weapon_one_hand,physical,3,61.73,61.73,71.705,-13.911
+70,141,4,Epic,14,Shield,6,Shield,shield,tank,4,82.1,86.1,53.062,62.264
+70,141,4,Epic,15,Ranged,2,Bow,ranged,physical,1,46.39,46.39,71.705,-35.304
+70,141,4,Epic,16,Cloak,1,Cloth,cloak,caster,3,93.21,93.21,40.155,132.127
+70,141,4,Epic,16,Cloak,1,Cloth,cloak,generic,1,54.09,54.09,40.155,34.704
+70,141,4,Epic,16,Cloak,1,Cloth,cloak,physical,1,93.08,93.08,40.155,131.803
+70,141,4,Epic,16,Cloak,1,Cloth,cloak,tank,1,85.15,85.15,40.155,112.055
+70,141,4,Epic,17,Two-hand Weapon,1,Two-hand Axe,weapon_two_hand,physical,1,152.21,152.21,129.069,17.929
+70,141,4,Epic,17,Two-hand Weapon,5,Two-hand Mace,weapon_two_hand,generic,1,169.15,169.15,129.069,31.054
+70,141,4,Epic,17,Two-hand Weapon,6,Polearm,weapon_two_hand,physical,1,169.19,169.19,129.069,31.085
+70,141,4,Epic,17,Two-hand Weapon,8,Two-hand Sword,weapon_two_hand,physical,1,127.51,151.51,129.069,17.387
+70,141,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,caster,2,369.875,369.875,129.069,186.572
+70,141,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,physical,1,111.32,111.32,129.069,-13.751
+70,141,4,Epic,20,Robe,1,Cloth,chest,caster,5,172.24,177.57,71.705,147.64
+70,141,4,Epic,21,Main-hand Weapon,4,Mace,weapon_main_hand,caster,3,269.07,269.07,71.705,275.246
+70,141,4,Epic,21,Main-hand Weapon,13,Fist,weapon_main_hand,physical,1,57.76,57.76,71.705,-19.448
+70,141,4,Epic,21,Main-hand Weapon,15,Dagger,weapon_main_hand,caster,1,268.07,268.07,71.705,273.851
+70,141,4,Epic,22,Off-hand Weapon,13,Fist,weapon_off_hand,physical,1,57.76,57.76,40.155,43.843
+70,141,4,Epic,23,Held in Off-hand,0,Misc,held_in_off_hand,caster,3,98.84,98.84,40.155,146.148
+70,141,4,Epic,25,Thrown,16,Thrown,ranged,physical,1,39.0,39.0,71.705,-45.61
+70,141,4,Epic,26,Ranged,3,Gun,ranged,tank,1,40.77,40.77,71.705,-43.142
+70,141,4,Epic,26,Ranged,18,Crossbow,ranged,physical,1,41.1,41.1,71.705,-42.682
+70,141,4,Epic,26,Ranged,19,Wand,ranged,caster,2,50.905,50.905,71.705,-29.008
+70,142,2,Uncommon,1,Head,4,Plate,head,tank,1,117.17,117.17,53.432,119.289
+70,142,2,Uncommon,3,Shoulder,3,Mail,shoulder,physical,1,82.23,82.23,39.54,107.969
+70,142,2,Uncommon,3,Shoulder,4,Plate,shoulder,tank,1,87.12,87.12,39.54,120.336
+70,142,2,Uncommon,5,Chest,2,Leather,chest,physical,1,115.14,115.14,53.432,115.49
+70,142,2,Uncommon,5,Chest,4,Plate,chest,tank,1,118.2,118.2,53.432,121.217
+70,142,2,Uncommon,6,Waist,4,Plate,waist,tank,1,88.13,88.13,39.54,122.891
+70,142,2,Uncommon,7,Legs,2,Leather,legs,caster,1,113.53,113.53,53.432,112.476
+70,142,2,Uncommon,7,Legs,3,Mail,legs,physical,1,117.0,117.0,53.432,118.971
+70,142,2,Uncommon,7,Legs,4,Plate,legs,tank,1,116.22,116.22,53.432,117.511
+70,142,2,Uncommon,8,Feet,2,Leather,feet,physical,1,84.76,84.76,39.54,114.368
+70,142,2,Uncommon,8,Feet,4,Plate,feet,tank,1,88.48,88.48,39.54,123.776
+70,142,2,Uncommon,9,Wrist,4,Plate,wrist,tank,1,88.09,88.09,29.922,194.401
+70,142,2,Uncommon,10,Hands,2,Leather,hands,caster,1,86.96,86.96,39.54,119.932
+70,142,2,Uncommon,10,Hands,4,Plate,hands,tank,1,88.13,88.13,39.54,122.891
+70,142,2,Uncommon,14,Shield,6,Shield,shield,tank,1,66.11,66.11,39.54,67.2
+70,142,2,Uncommon,21,Main-hand Weapon,4,Mace,weapon_main_hand,caster,1,154.8,154.8,53.432,189.715
+70,142,2,Uncommon,21,Main-hand Weapon,15,Dagger,weapon_main_hand,caster,1,154.8,154.8,53.432,189.715
+70,145,2,Uncommon,1,Head,1,Cloth,head,caster,1,118.4,126.4,54.732,130.943
+70,145,2,Uncommon,1,Head,2,Leather,head,generic,1,133.17,133.17,54.732,143.313
+70,145,3,Rare,17,Two-hand Weapon,6,Polearm,weapon_two_hand,physical,1,132.0,132.0,115.903,13.888
+70,145,4,Epic,7,Legs,4,Plate,legs,generic,1,173.93,173.93,74.049,134.884
+70,145,4,Epic,8,Feet,4,Plate,feet,generic,1,127.86,127.86,54.796,133.336
+70,145,4,Epic,9,Wrist,4,Plate,wrist,generic,1,96.81,96.81,41.468,133.46
+70,146,4,Epic,1,Head,1,Cloth,head,caster,9,159.95,179.95,74.637,141.101
+70,146,4,Epic,1,Head,2,Leather,head,caster,4,175.94,195.94,74.637,162.525
+70,146,4,Epic,1,Head,2,Leather,head,physical,4,170.7,190.7,74.637,155.504
+70,146,4,Epic,1,Head,3,Mail,head,caster,5,168.73,188.73,74.637,152.865
+70,146,4,Epic,1,Head,3,Mail,head,generic,2,179.37,199.37,74.637,167.12
+70,146,4,Epic,1,Head,3,Mail,head,physical,2,185.51,205.51,74.637,175.347
+70,146,4,Epic,1,Head,4,Plate,head,caster,3,169.28,189.28,74.637,153.601
+70,146,4,Epic,1,Head,4,Plate,head,generic,2,175.025,195.025,74.637,161.299
+70,146,4,Epic,1,Head,4,Plate,head,physical,2,151.19,171.19,74.637,129.364
+70,146,4,Epic,1,Head,4,Plate,head,tank,2,170.95,190.95,74.637,155.839
+70,146,4,Epic,3,Shoulder,1,Cloth,shoulder,caster,9,120.9,136.9,55.231,147.867
+70,146,4,Epic,3,Shoulder,2,Leather,shoulder,caster,4,125.965,141.965,55.231,157.038
+70,146,4,Epic,3,Shoulder,2,Leather,shoulder,physical,4,125.81,141.81,55.231,156.757
+70,146,4,Epic,3,Shoulder,3,Mail,shoulder,caster,5,140.25,156.25,55.231,182.902
+70,146,4,Epic,3,Shoulder,3,Mail,shoulder,generic,2,137.5,153.5,55.231,177.923
+70,146,4,Epic,3,Shoulder,3,Mail,shoulder,physical,2,130.48,146.48,55.231,165.212
+70,146,4,Epic,3,Shoulder,4,Plate,shoulder,caster,4,127.29,143.29,55.231,159.437
+70,146,4,Epic,3,Shoulder,4,Plate,shoulder,generic,2,126.16,142.16,55.231,157.391
+70,146,4,Epic,3,Shoulder,4,Plate,shoulder,physical,2,112.285,128.285,55.231,132.269
+70,146,4,Epic,3,Shoulder,4,Plate,shoulder,tank,2,112.505,128.505,55.231,132.667
+70,146,4,Epic,5,Chest,2,Leather,chest,caster,2,166.1,190.1,74.637,154.7
+70,146,4,Epic,5,Chest,2,Leather,chest,physical,3,170.85,194.85,74.637,161.064
+70,146,4,Epic,5,Chest,3,Mail,chest,caster,1,183.3,207.3,74.637,177.745
+70,146,4,Epic,5,Chest,3,Mail,chest,generic,2,176.615,200.615,74.637,168.788
+70,146,4,Epic,5,Chest,3,Mail,chest,physical,1,175.84,199.84,74.637,167.75
+70,146,4,Epic,5,Chest,4,Plate,chest,caster,2,171.13,195.13,74.637,161.439
+70,146,4,Epic,5,Chest,4,Plate,chest,generic,6,169.785,193.785,74.637,159.637
+70,146,4,Epic,5,Chest,4,Plate,chest,physical,1,157.18,181.18,74.637,142.749
+70,146,4,Epic,5,Chest,4,Plate,chest,tank,2,187.455,211.455,74.637,183.312
+70,146,4,Epic,6,Waist,1,Cloth,waist,caster,3,131.09,131.09,55.231,137.348
+70,146,4,Epic,6,Waist,2,Leather,waist,caster,2,146.71,146.71,55.231,165.629
+70,146,4,Epic,6,Waist,2,Leather,waist,physical,2,144.485,144.485,55.231,161.6
+70,146,4,Epic,6,Waist,3,Mail,waist,caster,2,144.91,144.91,55.231,162.37
+70,146,4,Epic,6,Waist,3,Mail,waist,generic,1,143.83,143.83,55.231,160.414
+70,146,4,Epic,6,Waist,3,Mail,waist,physical,1,146.16,146.16,55.231,164.633
+70,146,4,Epic,6,Waist,4,Plate,waist,caster,2,144.91,144.91,55.231,162.37
+70,146,4,Epic,6,Waist,4,Plate,waist,generic,2,138.98,138.98,55.231,151.633
+70,146,4,Epic,7,Legs,1,Cloth,legs,caster,9,182.11,182.11,74.637,143.995
+70,146,4,Epic,7,Legs,2,Leather,legs,caster,4,200.375,204.375,74.637,173.826
+70,146,4,Epic,7,Legs,2,Leather,legs,physical,4,185.36,189.36,74.637,153.709
+70,146,4,Epic,7,Legs,3,Mail,legs,caster,5,210.96,210.96,74.637,182.649
+70,146,4,Epic,7,Legs,3,Mail,legs,generic,2,208.14,212.14,74.637,184.23
+70,146,4,Epic,7,Legs,3,Mail,legs,physical,2,203.845,207.845,74.637,178.475
+70,146,4,Epic,7,Legs,4,Plate,legs,caster,4,191.79,193.57,74.637,159.349
+70,146,4,Epic,7,Legs,4,Plate,legs,generic,2,198.06,198.06,74.637,165.365
+70,146,4,Epic,7,Legs,4,Plate,legs,physical,2,171.505,179.505,74.637,140.505
+70,146,4,Epic,7,Legs,4,Plate,legs,tank,2,193.045,201.045,74.637,169.365
+70,146,4,Epic,8,Feet,1,Cloth,feet,caster,3,131.09,131.09,55.231,137.348
+70,146,4,Epic,8,Feet,2,Leather,feet,caster,2,146.71,146.71,55.231,165.629
+70,146,4,Epic,8,Feet,2,Leather,feet,physical,2,144.485,144.485,55.231,161.6
+70,146,4,Epic,8,Feet,3,Mail,feet,caster,2,144.91,144.91,55.231,162.37
+70,146,4,Epic,8,Feet,3,Mail,feet,generic,1,143.83,143.83,55.231,160.414
+70,146,4,Epic,8,Feet,3,Mail,feet,physical,1,146.16,146.16,55.231,164.633
+70,146,4,Epic,8,Feet,4,Plate,feet,caster,3,144.91,144.91,55.231,162.37
+70,146,4,Epic,8,Feet,4,Plate,feet,generic,2,138.98,138.98,55.231,151.633
+70,146,4,Epic,10,Hands,1,Cloth,hands,caster,9,130.9,130.9,55.231,137.004
+70,146,4,Epic,10,Hands,2,Leather,hands,caster,4,142.41,146.545,55.231,165.33
+70,146,4,Epic,10,Hands,2,Leather,hands,physical,4,131.975,137.14,55.231,148.302
+70,146,4,Epic,10,Hands,3,Mail,hands,caster,5,136.75,138.36,55.231,150.51
+70,146,4,Epic,10,Hands,3,Mail,hands,generic,2,127.16,131.16,55.231,137.474
+70,146,4,Epic,10,Hands,3,Mail,hands,physical,2,141.805,145.805,55.231,163.99
+70,146,4,Epic,10,Hands,4,Plate,hands,caster,4,136.94,137.545,55.231,149.035
+70,146,4,Epic,10,Hands,4,Plate,hands,generic,2,134.32,134.32,55.231,143.196
+70,146,4,Epic,10,Hands,4,Plate,hands,physical,2,118.31,126.31,55.231,128.693
+70,146,4,Epic,10,Hands,4,Plate,hands,tank,2,141.49,149.49,55.231,170.662
+70,146,4,Epic,13,One-hand Weapon,0,Axe,weapon_one_hand,generic,1,85.1,85.1,74.637,14.019
+70,146,4,Epic,13,One-hand Weapon,4,Mace,weapon_one_hand,generic,1,85.1,85.1,74.637,14.019
+70,146,4,Epic,13,One-hand Weapon,7,Sword,weapon_one_hand,generic,1,85.1,85.1,74.637,14.019
+70,146,4,Epic,13,One-hand Weapon,15,Dagger,weapon_one_hand,generic,2,75.6,75.6,74.637,1.291
+70,146,4,Epic,14,Shield,6,Shield,shield,tank,3,98.87,98.87,55.231,79.011
+70,146,4,Epic,15,Ranged,2,Bow,ranged,generic,1,62.08,62.08,74.637,-16.824
+70,146,4,Epic,17,Two-hand Weapon,1,Two-hand Axe,weapon_two_hand,generic,3,195.54,195.54,134.346,45.549
+70,146,4,Epic,17,Two-hand Weapon,5,Two-hand Mace,weapon_two_hand,generic,1,195.54,195.54,134.346,45.549
+70,146,4,Epic,17,Two-hand Weapon,6,Polearm,weapon_two_hand,generic,1,176.54,176.54,134.346,31.407
+70,146,4,Epic,17,Two-hand Weapon,8,Two-hand Sword,weapon_two_hand,generic,1,195.54,195.54,134.346,45.549
+70,146,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,caster,2,388.96,388.96,134.346,189.521
+70,146,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,physical,2,726.4,726.4,134.346,440.693
+70,146,4,Epic,20,Robe,1,Cloth,chest,caster,7,155.4,179.4,74.637,140.364
+70,146,4,Epic,20,Robe,1,Cloth,chest,generic,2,148.41,172.41,74.637,130.999
+70,146,4,Epic,20,Robe,2,Leather,chest,caster,2,181.96,205.96,74.637,175.95
+70,146,4,Epic,20,Robe,2,Leather,chest,physical,1,152.17,176.17,74.637,136.036
+70,146,4,Epic,20,Robe,3,Mail,chest,caster,4,184.05,208.05,74.637,178.75
+70,146,4,Epic,20,Robe,3,Mail,chest,generic,2,189.135,213.135,74.637,185.563
+70,146,4,Epic,21,Main-hand Weapon,4,Mace,weapon_main_hand,caster,3,279.87,279.87,74.637,274.976
+70,146,4,Epic,21,Main-hand Weapon,13,Fist,weapon_main_hand,generic,1,85.1,85.1,74.637,14.019
+70,146,4,Epic,21,Main-hand Weapon,13,Fist,weapon_main_hand,physical,1,66.0,66.0,74.637,-11.572
+70,146,4,Epic,21,Main-hand Weapon,15,Dagger,weapon_main_hand,caster,2,278.04,278.04,74.637,272.524
+70,146,4,Epic,22,Off-hand Weapon,0,Axe,weapon_off_hand,generic,2,85.1,85.1,41.797,103.605
+70,146,4,Epic,22,Off-hand Weapon,4,Mace,weapon_off_hand,generic,1,85.1,85.1,41.797,103.605
+70,146,4,Epic,22,Off-hand Weapon,7,Sword,weapon_off_hand,generic,1,85.1,85.1,41.797,103.605
+70,146,4,Epic,22,Off-hand Weapon,13,Fist,weapon_off_hand,generic,4,75.55,75.55,41.797,80.756
+70,146,4,Epic,22,Off-hand Weapon,15,Dagger,weapon_off_hand,generic,4,75.6,75.6,41.797,80.876
+70,146,4,Epic,23,Held in Off-hand,0,Misc,held_in_off_hand,caster,2,98.87,98.87,41.797,136.55
+70,146,4,Epic,23,Held in Off-hand,0,Misc,held_in_off_hand,generic,1,69.86,69.86,41.797,67.143
+70,146,4,Epic,25,Thrown,16,Thrown,ranged,generic,1,60.08,60.08,74.637,-19.503
+70,146,4,Epic,26,Ranged,3,Gun,ranged,generic,1,62.08,62.08,74.637,-16.824
+70,146,4,Epic,26,Ranged,18,Crossbow,ranged,generic,2,55.04,55.04,74.637,-26.256
+70,146,4,Epic,26,Ranged,19,Wand,ranged,caster,2,55.54,55.54,74.637,-25.586
+70,146,4,Epic,26,Ranged,19,Wand,ranged,generic,1,38.1,38.1,74.637,-48.953
+70,151,4,Epic,1,Head,1,Cloth,head,caster,1,176.15,196.15,77.584,152.824
+70,151,4,Epic,1,Head,2,Leather,head,physical,1,182.82,202.82,77.584,161.421
+70,151,4,Epic,1,Head,4,Plate,head,tank,1,210.44,230.44,77.584,197.021
+70,151,4,Epic,5,Chest,2,Leather,chest,generic,1,170.88,194.88,77.584,151.187
+70,151,4,Epic,5,Chest,3,Mail,chest,physical,1,201.22,201.22,77.584,159.359
+70,151,4,Epic,5,Chest,4,Plate,chest,caster,1,188.39,188.39,77.584,142.822
+70,151,4,Epic,7,Legs,1,Cloth,legs,caster,1,173.19,197.19,77.584,154.164
+70,151,4,Epic,7,Legs,4,Plate,legs,physical,1,175.87,175.87,77.584,126.684
+70,151,4,Epic,11,Finger,0,Misc,finger,caster,2,110.79,110.79,43.447,155.001
+70,151,4,Epic,11,Finger,0,Misc,finger,physical,2,98.295,98.295,43.447,126.242
+70,151,4,Epic,13,One-hand Weapon,15,Dagger,weapon_one_hand,physical,1,32.0,32.0,77.584,-58.754
+70,151,4,Epic,14,Shield,6,Shield,shield,tank,2,82.04,82.04,57.412,42.897
+70,151,4,Epic,15,Ranged,2,Bow,ranged,generic,1,43.76,43.76,77.584,-43.596
+70,151,4,Epic,15,Ranged,2,Bow,ranged,physical,1,13.0,13.0,77.584,-83.244
+70,151,4,Epic,16,Cloak,1,Cloth,cloak,caster,1,102.04,102.04,43.447,134.861
+70,151,4,Epic,17,Two-hand Weapon,8,Two-hand Sword,weapon_two_hand,physical,6,155.83,155.83,139.651,11.586
+70,151,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,caster,2,401.71,401.71,139.651,187.653
+70,151,4,Epic,20,Robe,1,Cloth,chest,caster,1,195.51,195.51,77.584,151.999
+70,151,4,Epic,21,Main-hand Weapon,4,Mace,weapon_main_hand,caster,1,272.48,272.48,77.584,251.208
+70,151,4,Epic,21,Main-hand Weapon,7,Sword,weapon_main_hand,caster,1,305.84,305.84,77.584,294.206
+70,151,4,Epic,23,Held in Off-hand,0,Misc,held_in_off_hand,caster,1,93.34,93.34,43.447,114.837
+70,154,4,Epic,2,Neck,0,Misc,neck,caster,7,107.53,115.53,44.441,159.963
+70,154,4,Epic,2,Neck,0,Misc,neck,generic,1,99.13,107.13,44.441,141.061
+70,154,4,Epic,2,Neck,0,Misc,neck,physical,1,109.11,109.11,44.441,145.516
+70,154,4,Epic,2,Neck,0,Misc,neck,tank,1,96.21,96.21,44.441,116.489
+70,154,4,Epic,6,Waist,1,Cloth,waist,caster,5,158.07,166.07,58.726,182.79
+70,154,4,Epic,6,Waist,2,Leather,waist,caster,2,160.07,168.07,58.726,186.195
+70,154,4,Epic,6,Waist,2,Leather,waist,physical,2,150.09,158.09,58.726,169.201
+70,154,4,Epic,6,Waist,3,Mail,waist,caster,1,165.07,173.07,58.726,194.709
+70,154,4,Epic,6,Waist,3,Mail,waist,physical,2,159.575,167.575,58.726,185.352
+70,154,4,Epic,6,Waist,4,Plate,waist,caster,1,164.57,172.57,58.726,193.858
+70,154,4,Epic,6,Waist,4,Plate,waist,physical,2,145.54,153.54,58.726,161.453
+70,154,4,Epic,6,Waist,4,Plate,waist,tank,2,184.78,192.78,58.726,228.272
+70,154,4,Epic,8,Feet,1,Cloth,feet,caster,4,161.085,169.085,58.726,187.924
+70,154,4,Epic,8,Feet,2,Leather,feet,caster,2,164.155,172.155,58.726,193.151
+70,154,4,Epic,8,Feet,2,Leather,feet,physical,2,154.13,162.13,58.726,176.08
+70,154,4,Epic,8,Feet,3,Mail,feet,caster,2,163.57,171.57,58.726,192.155
+70,154,4,Epic,8,Feet,3,Mail,feet,physical,2,159.905,167.905,58.726,185.914
+70,154,4,Epic,8,Feet,4,Plate,feet,caster,1,161.57,169.57,58.726,188.75
+70,154,4,Epic,8,Feet,4,Plate,feet,generic,1,135.0,143.0,58.726,143.505
+70,154,4,Epic,8,Feet,4,Plate,feet,physical,1,142.74,150.74,58.726,156.685
+70,154,4,Epic,8,Feet,4,Plate,feet,tank,2,155.345,163.345,58.726,178.149
+70,154,4,Epic,9,Wrist,1,Cloth,wrist,caster,7,106.6,114.6,44.441,157.87
+70,154,4,Epic,9,Wrist,2,Leather,wrist,caster,4,118.285,126.285,44.441,184.163
+70,154,4,Epic,9,Wrist,2,Leather,wrist,physical,4,106.925,114.925,44.441,158.601
+70,154,4,Epic,9,Wrist,3,Mail,wrist,caster,4,106.91,114.91,44.441,158.567
+70,154,4,Epic,9,Wrist,3,Mail,wrist,generic,1,105.79,113.79,44.441,156.047
+70,154,4,Epic,9,Wrist,3,Mail,wrist,physical,3,115.72,123.72,44.441,178.391
+70,154,4,Epic,9,Wrist,4,Plate,wrist,caster,3,105.91,113.91,44.441,156.317
+70,154,4,Epic,9,Wrist,4,Plate,wrist,generic,2,102.12,110.12,44.441,147.789
+70,154,4,Epic,9,Wrist,4,Plate,wrist,physical,2,102.525,110.525,44.441,148.7
+70,154,4,Epic,9,Wrist,4,Plate,wrist,tank,2,109.83,117.83,44.441,165.138
+70,154,4,Epic,10,Hands,2,Leather,hands,caster,2,143.6,159.6,58.726,171.772
+70,154,4,Epic,10,Hands,3,Mail,hands,caster,1,141.08,157.08,58.726,167.481
+70,154,4,Epic,11,Finger,0,Misc,finger,caster,5,115.47,115.47,44.441,159.828
+70,154,4,Epic,11,Finger,0,Misc,finger,generic,2,108.79,108.79,44.441,144.796
+70,154,4,Epic,11,Finger,0,Misc,finger,physical,1,108.1,108.1,44.441,143.244
+70,154,4,Epic,11,Finger,0,Misc,finger,tank,1,140.76,140.76,44.441,216.734
+70,154,4,Epic,13,One-hand Weapon,0,Axe,weapon_one_hand,generic,1,89.77,89.77,79.359,13.119
+70,154,4,Epic,13,One-hand Weapon,4,Mace,weapon_one_hand,generic,1,89.77,89.77,79.359,13.119
+70,154,4,Epic,13,One-hand Weapon,7,Sword,weapon_one_hand,generic,3,74.12,74.12,79.359,-6.602
+70,154,4,Epic,13,One-hand Weapon,15,Dagger,weapon_one_hand,generic,1,89.77,89.77,79.359,13.119
+70,154,4,Epic,13,One-hand Weapon,15,Dagger,weapon_one_hand,physical,2,74.0,74.0,79.359,-6.753
+70,154,4,Epic,14,Shield,6,Shield,shield,tank,2,122.965,126.965,58.726,116.2
+70,154,4,Epic,15,Ranged,2,Bow,ranged,generic,1,67.09,67.09,79.359,-15.46
+70,154,4,Epic,15,Ranged,2,Bow,ranged,physical,2,60.0,60.0,79.359,-24.394
+70,154,4,Epic,16,Cloak,1,Cloth,cloak,caster,1,115.63,115.63,44.441,160.188
+70,154,4,Epic,16,Cloak,1,Cloth,cloak,tank,1,96.87,96.87,44.441,117.974
+70,154,4,Epic,17,Two-hand Weapon,1,Two-hand Axe,weapon_two_hand,generic,1,210.22,210.22,142.846,47.165
+70,154,4,Epic,17,Two-hand Weapon,5,Two-hand Mace,weapon_two_hand,generic,1,210.22,210.22,142.846,47.165
+70,154,4,Epic,17,Two-hand Weapon,6,Polearm,weapon_two_hand,generic,1,189.56,189.56,142.846,32.702
+70,154,4,Epic,17,Two-hand Weapon,6,Polearm,weapon_two_hand,physical,1,165.0,173.0,142.846,21.109
+70,154,4,Epic,17,Two-hand Weapon,8,Two-hand Sword,weapon_two_hand,generic,1,210.22,210.22,142.846,47.165
+70,154,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,caster,2,425.965,437.965,142.846,206.599
+70,154,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,physical,2,802.86,802.86,142.846,462.045
+70,154,4,Epic,20,Robe,1,Cloth,chest,caster,1,199.19,223.19,79.359,181.241
+70,154,4,Epic,21,Main-hand Weapon,0,Axe,weapon_main_hand,generic,1,90.77,90.77,79.359,14.379
+70,154,4,Epic,21,Main-hand Weapon,4,Mace,weapon_main_hand,caster,4,301.28,304.545,79.359,283.756
+70,154,4,Epic,21,Main-hand Weapon,4,Mace,weapon_main_hand,generic,1,298.46,298.46,79.359,276.089
+70,154,4,Epic,21,Main-hand Weapon,13,Fist,weapon_main_hand,generic,1,89.77,89.77,79.359,13.119
+70,154,4,Epic,21,Main-hand Weapon,15,Dagger,weapon_main_hand,caster,1,308.87,308.87,79.359,289.206
+70,154,4,Epic,21,Main-hand Weapon,15,Dagger,weapon_main_hand,generic,1,305.44,305.44,79.359,284.884
+70,154,4,Epic,22,Off-hand Weapon,0,Axe,weapon_off_hand,generic,3,89.77,89.77,44.441,101.998
+70,154,4,Epic,22,Off-hand Weapon,4,Mace,weapon_off_hand,generic,1,89.77,89.77,44.441,101.998
+70,154,4,Epic,22,Off-hand Weapon,7,Sword,weapon_off_hand,generic,1,89.77,89.77,44.441,101.998
+70,154,4,Epic,22,Off-hand Weapon,13,Fist,weapon_off_hand,generic,3,89.77,89.77,44.441,101.998
+70,154,4,Epic,22,Off-hand Weapon,13,Fist,weapon_off_hand,physical,1,57.74,73.74,44.441,65.928
+70,154,4,Epic,22,Off-hand Weapon,15,Dagger,weapon_off_hand,generic,2,89.77,89.77,44.441,101.998
+70,154,4,Epic,23,Held in Off-hand,0,Misc,held_in_off_hand,caster,2,116.04,116.04,44.441,161.11
+70,154,4,Epic,25,Thrown,16,Thrown,ranged,generic,1,65.09,65.09,79.359,-17.98
+70,154,4,Epic,25,Thrown,16,Thrown,ranged,physical,1,46.73,54.73,79.359,-31.035
+70,154,4,Epic,26,Ranged,3,Gun,ranged,generic,1,67.09,67.09,79.359,-15.46
+70,154,4,Epic,26,Ranged,18,Crossbow,ranged,generic,1,67.09,67.09,79.359,-15.46
+70,154,4,Epic,26,Ranged,19,Wand,ranged,caster,4,56.275,60.595,79.359,-23.644
+70,154,4,Epic,26,Ranged,19,Wand,ranged,generic,1,40.49,40.49,79.359,-48.979
+70,155,3,Rare,1,Head,1,Cloth,head,caster,1,168.02,168.02,69.523,141.674
+70,155,3,Rare,3,Shoulder,1,Cloth,shoulder,caster,1,126.41,126.41,51.447,145.708
+70,155,3,Rare,3,Shoulder,3,Mail,shoulder,caster,1,124.73,124.73,51.447,142.442
+70,155,3,Rare,5,Chest,2,Leather,chest,physical,1,155.15,155.15,69.523,123.162
+70,155,3,Rare,5,Chest,4,Plate,chest,caster,1,167.76,167.76,69.523,141.3
+70,155,3,Rare,7,Legs,2,Leather,legs,caster,1,160.57,160.57,69.523,130.958
+70,155,3,Rare,9,Wrist,2,Leather,wrist,physical,1,95.13,95.13,38.933,144.342
+70,155,3,Rare,10,Hands,3,Mail,hands,physical,1,128.16,128.16,51.447,149.109
+70,155,3,Rare,17,Two-hand Weapon,1,Two-hand Axe,weapon_two_hand,physical,1,126.0,126.0,125.142,0.686
+70,155,3,Rare,21,Main-hand Weapon,13,Fist,weapon_main_hand,generic,1,51.06,51.06,69.523,-26.557
+70,155,3,Rare,21,Main-hand Weapon,15,Dagger,weapon_main_hand,caster,1,255.38,255.38,69.523,267.33
+70,156,4,Epic,10,Hands,4,Plate,hands,tank,1,131.22,147.22,59.604,146.999
+70,156,4,Epic,16,Cloak,1,Cloth,cloak,caster,1,127.52,127.52,45.105,182.716
+70,156,4,Epic,16,Cloak,1,Cloth,cloak,generic,2,117.02,117.02,45.105,159.437
+70,156,4,Epic,16,Cloak,1,Cloth,cloak,physical,1,120.14,120.14,45.105,166.354
+70,156,5,Legendary,21,Main-hand Weapon,7,Sword,weapon_main_hand,physical,1,84.43,84.43,91.051,-7.272
+70,156,5,Legendary,22,Off-hand Weapon,7,Sword,weapon_off_hand,physical,1,84.76,84.76,50.989,66.233
+70,159,3,Rare,23,Held in Off-hand,0,Misc,held_in_off_hand,caster,1,77.01,77.01,40.091,92.089
+70,159,3,Rare,23,Held in Off-hand,0,Misc,held_in_off_hand,generic,5,85.79,85.79,40.091,113.99
+70,159,4,Epic,1,Head,1,Cloth,head,caster,7,172.59,192.59,82.329,133.927
+70,159,4,Epic,1,Head,2,Leather,head,caster,5,199.21,219.21,82.329,166.26
+70,159,4,Epic,1,Head,2,Leather,head,physical,4,192.05,212.05,82.329,157.564
+70,159,4,Epic,1,Head,3,Mail,head,caster,5,189.88,209.88,82.329,154.928
+70,159,4,Epic,1,Head,3,Mail,head,generic,1,191.58,211.58,82.329,156.993
+70,159,4,Epic,1,Head,3,Mail,head,physical,2,196.69,216.69,82.329,163.199
+70,159,4,Epic,1,Head,4,Plate,head,caster,3,191.99,211.99,82.329,157.491
+70,159,4,Epic,1,Head,4,Plate,head,generic,3,186.56,206.56,82.329,150.895
+70,159,4,Epic,1,Head,4,Plate,head,physical,1,170.49,190.49,82.329,131.376
+70,159,4,Epic,1,Head,4,Plate,head,tank,3,178.97,198.97,82.329,141.676
+70,159,4,Epic,2,Neck,0,Misc,neck,caster,2,120.08,128.08,46.104,177.805
+70,159,4,Epic,2,Neck,0,Misc,neck,physical,1,108.14,116.14,46.104,151.907
+70,159,4,Epic,3,Shoulder,1,Cloth,shoulder,caster,8,137.36,153.36,60.924,151.725
+70,159,4,Epic,3,Shoulder,2,Leather,shoulder,caster,4,145.88,161.88,60.924,165.71
+70,159,4,Epic,3,Shoulder,2,Leather,shoulder,physical,4,158.475,169.155,60.924,177.651
+70,159,4,Epic,3,Shoulder,3,Mail,shoulder,caster,4,157.455,173.455,60.924,184.709
+70,159,4,Epic,3,Shoulder,3,Mail,shoulder,generic,1,145.86,161.86,60.924,165.677
+70,159,4,Epic,3,Shoulder,3,Mail,shoulder,physical,2,142.155,158.155,60.924,159.596
+70,159,4,Epic,3,Shoulder,4,Plate,shoulder,caster,3,145.34,161.34,60.924,164.823
+70,159,4,Epic,3,Shoulder,4,Plate,shoulder,generic,4,135.88,151.88,60.924,149.296
+70,159,4,Epic,3,Shoulder,4,Plate,shoulder,tank,2,188.135,204.135,60.924,235.067
+70,159,4,Epic,5,Chest,2,Leather,chest,caster,5,199.22,223.22,82.329,171.131
+70,159,4,Epic,5,Chest,2,Leather,chest,physical,5,200.15,224.15,82.329,172.261
+70,159,4,Epic,5,Chest,3,Mail,chest,caster,3,206.72,230.72,82.329,180.241
+70,159,4,Epic,5,Chest,3,Mail,chest,generic,1,204.9,228.9,82.329,178.03
+70,159,4,Epic,5,Chest,3,Mail,chest,physical,2,198.345,222.345,82.329,170.068
+70,159,4,Epic,5,Chest,4,Plate,chest,caster,4,198.765,222.765,82.329,170.578
+70,159,4,Epic,5,Chest,4,Plate,chest,generic,4,194.92,218.92,82.329,165.908
+70,159,4,Epic,5,Chest,4,Plate,chest,physical,1,178.85,202.85,82.329,146.389
+70,159,4,Epic,5,Chest,4,Plate,chest,tank,2,189.56,213.56,82.329,159.398
+70,159,4,Epic,6,Waist,1,Cloth,waist,caster,3,145.94,145.94,60.924,139.546
+70,159,4,Epic,6,Waist,2,Leather,waist,caster,2,166.67,166.67,60.924,173.572
+70,159,4,Epic,6,Waist,2,Leather,waist,physical,2,162.335,162.335,60.924,166.457
+70,159,4,Epic,6,Waist,3,Mail,waist,caster,2,162.23,162.23,60.924,166.284
+70,159,4,Epic,6,Waist,3,Mail,waist,generic,1,160.85,160.85,60.924,164.019
+70,159,4,Epic,6,Waist,3,Mail,waist,physical,1,164.84,164.84,60.924,170.568
+70,159,4,Epic,6,Waist,4,Plate,waist,caster,2,162.23,162.23,60.924,166.284
+70,159,4,Epic,6,Waist,4,Plate,waist,generic,2,154.835,154.835,60.924,154.146
+70,159,4,Epic,7,Legs,1,Cloth,legs,caster,8,192.895,206.155,82.329,150.403
+70,159,4,Epic,7,Legs,2,Leather,legs,caster,4,203.105,215.105,82.329,161.274
+70,159,4,Epic,7,Legs,2,Leather,legs,physical,4,208.87,220.87,82.329,168.277
+70,159,4,Epic,7,Legs,3,Mail,legs,caster,4,223.765,235.765,82.329,186.369
+70,159,4,Epic,7,Legs,3,Mail,legs,generic,1,231.58,231.58,82.329,181.285
+70,159,4,Epic,7,Legs,3,Mail,legs,physical,2,213.365,225.365,82.329,173.736
+70,159,4,Epic,7,Legs,4,Plate,legs,caster,3,213.91,219.53,82.329,166.649
+70,159,4,Epic,7,Legs,4,Plate,legs,generic,4,213.59,213.59,82.329,159.434
+70,159,4,Epic,7,Legs,4,Plate,legs,tank,2,206.92,230.92,82.329,180.484
+70,159,4,Epic,8,Feet,1,Cloth,feet,caster,3,145.94,145.94,60.924,139.546
+70,159,4,Epic,8,Feet,2,Leather,feet,caster,2,166.67,166.67,60.924,173.572
+70,159,4,Epic,8,Feet,2,Leather,feet,physical,2,162.335,162.335,60.924,166.457
+70,159,4,Epic,8,Feet,3,Mail,feet,caster,2,162.23,162.23,60.924,166.284
+70,159,4,Epic,8,Feet,3,Mail,feet,generic,1,160.85,160.85,60.924,164.019
+70,159,4,Epic,8,Feet,3,Mail,feet,physical,1,164.84,164.84,60.924,170.568
+70,159,4,Epic,8,Feet,4,Plate,feet,caster,2,162.23,162.23,60.924,166.284
+70,159,4,Epic,8,Feet,4,Plate,feet,generic,2,154.335,154.335,60.924,153.325
+70,159,4,Epic,10,Hands,1,Cloth,hands,caster,7,134.69,147.36,60.924,141.877
+70,159,4,Epic,10,Hands,2,Leather,hands,caster,3,159.63,164.59,60.924,170.158
+70,159,4,Epic,10,Hands,2,Leather,hands,physical,5,145.85,154.15,60.924,153.022
+70,159,4,Epic,10,Hands,3,Mail,hands,caster,4,151.825,154.445,60.924,153.506
+70,159,4,Epic,10,Hands,3,Mail,hands,generic,1,135.86,135.86,60.924,123.001
+70,159,4,Epic,10,Hands,3,Mail,hands,physical,2,155.315,163.315,60.924,168.065
+70,159,4,Epic,10,Hands,4,Plate,hands,caster,4,154.535,164.135,60.924,169.411
+70,159,4,Epic,10,Hands,4,Plate,hands,generic,4,142.53,146.34,60.924,140.202
+70,159,4,Epic,11,Finger,0,Misc,finger,caster,2,127.33,127.33,46.104,176.178
+70,159,4,Epic,11,Finger,0,Misc,finger,physical,1,115.14,115.14,46.104,149.738
+70,159,4,Epic,14,Shield,6,Shield,shield,tank,3,111.19,111.19,60.924,82.507
+70,159,4,Epic,20,Robe,1,Cloth,chest,caster,9,175.1,199.1,82.329,141.834
+70,159,4,Epic,20,Robe,3,Mail,chest,caster,2,214.51,238.51,82.329,189.703
+70,159,4,Epic,20,Robe,3,Mail,chest,generic,1,212.07,236.07,82.329,186.739
+70,159,4,Epic,23,Held in Off-hand,0,Misc,held_in_off_hand,caster,3,111.19,111.19,46.104,141.17
+70,164,4,Epic,1,Head,1,Cloth,head,caster,3,208.67,228.67,85.313,168.035
+70,164,4,Epic,1,Head,2,Leather,head,caster,1,213.66,233.66,85.313,173.884
+70,164,4,Epic,1,Head,2,Leather,head,physical,1,208.19,228.19,85.313,167.472
+70,164,4,Epic,1,Head,3,Mail,head,caster,1,208.81,228.81,85.313,168.199
+70,164,4,Epic,1,Head,3,Mail,head,physical,1,221.15,241.15,85.313,182.663
+70,164,4,Epic,1,Head,4,Plate,head,caster,1,219.81,239.81,85.313,181.093
+70,164,4,Epic,1,Head,4,Plate,head,physical,1,178.89,198.89,85.313,133.129
+70,164,4,Epic,10,Hands,1,Cloth,hands,caster,3,157.53,173.53,63.132,174.869
+70,164,4,Epic,10,Hands,3,Mail,hands,physical,1,184.81,200.81,63.132,218.08
+70,164,4,Epic,10,Hands,4,Plate,hands,physical,1,141.16,157.16,63.132,148.939
+70,164,4,Epic,13,One-hand Weapon,15,Dagger,weapon_one_hand,physical,1,83.05,91.05,85.313,6.724
+70,164,4,Epic,16,Cloak,1,Cloth,cloak,caster,1,110.87,118.87,47.776,148.809
+70,164,4,Epic,16,Cloak,1,Cloth,cloak,physical,1,110.75,118.75,47.776,148.558
+70,164,4,Epic,17,Two-hand Weapon,8,Two-hand Sword,weapon_two_hand,generic,1,187.25,211.25,153.564,37.565
+70,164,4,Epic,17,Two-hand Weapon,10,Staff,weapon_two_hand,caster,1,435.18,459.18,153.564,199.015
+70,164,4,Epic,21,Main-hand Weapon,4,Mace,weapon_main_hand,caster,1,340.21,348.21,85.313,308.154
+70,164,4,Epic,21,Main-hand Weapon,13,Fist,weapon_main_hand,physical,1,73.76,89.76,85.313,5.212
+70,164,4,Epic,21,Main-hand Weapon,15,Dagger,weapon_main_hand,caster,1,335.51,335.51,85.313,293.267
+70,164,5,Legendary,15,Ranged,2,Bow,ranged,physical,1,67.0,67.0,96.441,-30.528

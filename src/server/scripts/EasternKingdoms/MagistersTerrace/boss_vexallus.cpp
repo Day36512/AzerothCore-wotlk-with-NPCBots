@@ -101,7 +101,8 @@ struct boss_vexallus : public BossAI
     void JustDied(Unit*) override
     {
         _JustDied();
-        instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_ENERGY_FEEDBACK);
+        // Original script for aura removal is not blizzlike
+        //instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_ENERGY_FEEDBACK);
     }
 
     void KilledUnit(Unit* victim) override

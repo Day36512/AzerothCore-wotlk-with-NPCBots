@@ -6,6 +6,7 @@
 #include "DBCEnums.h"
 
 #include <algorithm>
+#include <array>
 #include <functional>
 #include <map>
 #include <ranges>
@@ -258,6 +259,9 @@ public:
     static ItemPerBotClassPerBotCategoryMap const& GetWanderingBotsSortedGearMap();
     static Item* GenerateWanderingBotItem(uint8 category, uint8 slot, uint8 botclass, uint8 level, uint32 minitemlevel, uint32 maxitemlevel, std::function<bool(uint8, ItemTemplate const*)> const& check);
     static bool GenerateWanderingBotItemEnchants(Item* item, uint8 slot, uint8 spec);
+    static std::array<uint32, 10> const& GetDeathKnightRuneforgeSpellIds();
+    static bool GetDeathKnightRuneforgeEnchantIdForItem(uint32 spellId, ItemTemplate const* proto, bool checkItemRequiredLevel, uint32* enchantId = nullptr);
+    static bool IsDeathKnightRuneforgeEnchant(uint32 enchantId);
     static CreatureTemplate const* GetBotExtraCreatureTemplate(uint32 entry);
     static EquipmentInfo const* GetBotEquipmentInfo(uint32 entry);
 

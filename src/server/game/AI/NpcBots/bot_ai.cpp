@@ -5155,6 +5155,20 @@ BotEquipResult bot_ai::PaperdollRemove(Player* player, uint8 slot)
     return result;
 }
 
+bool bot_ai::PaperdollRuneforge(Player* player, uint8 slot, uint32 spellId)
+{
+    if (!player)
+        return false;
+
+    if (slot >= BOT_INVENTORY_SIZE)
+        return false;
+
+    if (!CanPlayerChangeEquipment(player))
+        return false;
+
+    return _applyDeathKnightRuneforge(slot, spellId);
+}
+
 void bot_ai::PaperdollWhisperEquipment(Player* player) const
 {
     if (!player)
@@ -5490,6 +5504,7 @@ void bot_ai::ResetBotAI(uint8 resetType)
 {
     _botCommandState = 0;
     _botAwaitState = BOT_AWAIT_NONE;
+    _sendMoveActive = false;
     _reviveTimer = 0;
     _towerHoldTimer = 0;
     _avObjectiveRole = 0;
@@ -5549,6 +5564,57 @@ bool bot_ai::_checkImmunities(Unit const* target, SpellInfo const* spellInfo) co
     return target && spellInfo && !target->IsImmunedToDamage(me, spellInfo);
 }
 
+bool bot_ai::_isSendMoveComplete() const
+{
+    return !_sendMoveActive ||
+        (me->GetExactDist2d(&sendmovepos) <= 1.5f && std::fabs(me->GetPositionZ() - sendmovepos.GetPositionZ()) <= 3.0f);
+}
+
+bool bot_ai::_shouldDelaySendMoveCast(SpellInfo const* spellInfo) const
+{
+    if (!_sendMoveActive || !spellInfo || !HasBotCommandState(BOT_COMMAND_STAY) || _isSendMoveComplete())
+        return false;
+
+    if (spellInfo->IsAutoRepeatRangedSpell() || spellInfo->HasAttribute(SPELL_ATTR0_ON_NEXT_SWING))
+        return false;
+
+    if (spellInfo->IsChanneled())
+        return true;
+
+    int32 castTime = int32(spellInfo->CalcCastTime());
+    if (castTime > 0)
+        ApplyClassSpellCastTimeMods(spellInfo, castTime);
+
+    return castTime > 0;
+}
+
+void bot_ai::_updateSendMoveState()
+{
+    if (!_sendMoveActive)
+        return;
+
+    if (!me->IsAlive() || !HasBotCommandState(BOT_COMMAND_STAY) || _isSendMoveComplete())
+    {
+        _sendMoveActive = false;
+        return;
+    }
+
+    float destX = 0.0f;
+    float destY = 0.0f;
+    float destZ = 0.0f;
+    if (me->GetMotionMaster()->GetDestination(destX, destY, destZ))
+    {
+        Position dest;
+        dest.Relocate(destX, destY, destZ);
+        if (dest.GetExactDist2d(&sendmovepos) > 3.0f || std::fabs(destZ - sendmovepos.GetPositionZ()) > 5.0f)
+            _sendMoveActive = false;
+        return;
+    }
+
+    if (!IsCasting())
+        _sendMoveActive = false;
+}
+
 SpellCastResult bot_ai::CheckBotCast(Unit const* victim, uint32 spellId) const
 {
     if (spellId == 0)
@@ -5565,6 +5631,9 @@ SpellCastResult bot_ai::CheckBotCast(Unit const* victim, uint32 spellId) const
         return SPELL_FAILED_DONT_REPORT;
 
     spellInfo = spellInfo->TryGetSpellInfoOverride(me);
+
+    if (_shouldDelaySendMoveCast(spellInfo))
+        return SPELL_FAILED_NOT_IDLE;
 
     if (ReliquaryBot::ShouldBlockHealing(me, spellInfo))
         return SPELL_FAILED_BAD_TARGETS;
@@ -5754,6 +5823,9 @@ bool bot_ai::doCast(Unit* victim, uint32 spellId, TriggerCastFlags flags)
         return false;
 
     m_botSpellInfo = m_botSpellInfo->TryGetSpellInfoOverride(me);
+
+    if (!(flags & TRIGGERED_CAST_DIRECTLY) && _shouldDelaySendMoveCast(m_botSpellInfo))
+        return false;
 
     if (MotherShahrazBot::HasFatalAttraction(me) && (flags & TRIGGERED_FULL_MASK) != TRIGGERED_FULL_MASK)
         return false;
@@ -6121,6 +6193,8 @@ void bot_ai::MoveToSendPosition(Position const& mpos) //Dinkle
         CancelAllActions();
         SetBotCommandState(BOT_COMMAND_STAY);
         me->InterruptNonMeleeSpells(true);
+        sendmovepos.Relocate(mpos);
+        _sendMoveActive = true;
         BotMovement(BOT_MOVE_POINT, &mpos, nullptr, false);
         if (botPet && !CCed(botPet, true))
         {
@@ -6132,7 +6206,10 @@ void bot_ai::MoveToSendPosition(Position const& mpos) //Dinkle
         BotWhisper("Moving to position!");
     }
     else
+    {
+        _sendMoveActive = false;
         BotWhisper("Position is too far away!");
+    }
 } //end Dinkle
 void bot_ai::MoveToSendPosition(uint32 point_id)
 {
@@ -14110,6 +14187,29 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
             }
         }
     }
+    // Temple of Atal'Hakkar - Atal'ai Deathwalker's Spirit avoidance
+    else if (unit->GetMapId() == 109)
+    {
+        static constexpr uint32 NPC_ATALAI_DEATHWALKER_SPIRIT = 8317;
+        static constexpr float DEATHWALKER_SPIRIT_SCAN_RANGE = 60.0f;
+        static constexpr float DEATHWALKER_SPIRIT_AVOID_RADIUS = 16.0f;
+
+        std::list<Creature*> spirits;
+        Bcore::AllCreaturesOfEntryInRange spiritCheck(unit, NPC_ATALAI_DEATHWALKER_SPIRIT, DEATHWALKER_SPIRIT_SCAN_RANGE);
+        Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> spiritSearcher(unit, spirits, spiritCheck);
+        Cell::VisitObjects(unit, spiritSearcher, DEATHWALKER_SPIRIT_SCAN_RANGE);
+
+        for (Creature const* spirit : spirits)
+        {
+            if (!spirit || !spirit->IsInWorld() || !spirit->IsAlive())
+                continue;
+
+            float radius = DEATHWALKER_SPIRIT_AVOID_RADIUS
+                + spirit->GetObjectSize()
+                + DEFAULT_COMBAT_REACH * 1.5f;
+            spots.emplace_back(*spirit, radius);
+        }
+    }
     // Dinkle Zul'Gurub
     else if (unit->GetMapId() == 309)
     {
@@ -14653,6 +14753,25 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
     //Magister's Terrace
     else if (unit->GetMapId() == 585)
     {
+        static constexpr uint32 SPELL_MT_MAGIC_DAMPENING_FIELD = 44475;
+        static constexpr float MAGIC_DAMPENING_FIELD_SCAN_RANGE = 60.0f;
+
+        std::list<WorldObject*> fieldList;
+        NearbyHostileAoEDynobjectCheck fieldCheck(unit, MAGIC_DAMPENING_FIELD_SCAN_RANGE);
+        Bcore::WorldObjectListSearcher fieldSearcher(unit, fieldList, fieldCheck, GRID_MAP_TYPE_MASK_DYNAMICOBJECT);
+        Cell::VisitObjects(unit, fieldSearcher, MAGIC_DAMPENING_FIELD_SCAN_RANGE);
+
+        for (WorldObject const* wObj : fieldList)
+        {
+            DynamicObject const* dObj = wObj->ToDynObject();
+            if (!dObj || dObj->GetSpellId() != SPELL_MT_MAGIC_DAMPENING_FIELD)
+                continue;
+
+            float radius = dObj->GetRadius() + DEFAULT_WORLD_OBJECT_SIZE;
+            radius += (unit->GetVehicle() ? unit->GetVehicleBase()->GetCombatReach() : DEFAULT_COMBAT_REACH) * 1.2f;
+            spots.emplace_back(*dObj, radius);
+        }
+
         std::list<Creature*> cList;
         static const auto kael_aoe_check = [](Creature const* c)
             {
@@ -19428,6 +19547,9 @@ bool bot_ai::OnGossipSelect(Player* player, Creature* creature/* == me*/, uint32
 
             if (can_change_equips && !visual_only && BotCfg::DisplayEquipment() && BotCfg::IsTransmogEnabled() && slot < BOT_TRANSMOG_INVENTORY_SIZE && CanDisplayNonWeaponEquipmentChanges())
                 AddGossipItemFor(player, GOSSIP_ICON_TALK, LocalizedNpcText(player, BOT_TEXT_TRANSMOGRIFICATION), GOSSIP_SENDER_EQUIP_TRANSMOGS, action);
+
+            if (can_change_equips && _canDeathKnightRuneforge(slot, item))
+                AddGossipItemFor(player, GOSSIP_ICON_TALK, "Runeforge...", slot == BOT_SLOT_MAINHAND ? GOSSIP_SENDER_DK_RUNEFORGE_MHAND : GOSSIP_SENDER_DK_RUNEFORGE_OHAND, GOSSIP_ACTION_INFO_DEF);
         }
         else
         {
@@ -19476,7 +19598,7 @@ bool bot_ai::OnGossipSelect(Player* player, Creature* creature/* == me*/, uint32
             else
             {
                 uint32 counter = 0;
-                const uint32 maxcounter = BOT_GOSSIP_MAX_ITEMS - 6; //unequip, unequip (gear bank), reset, current, transmog, back
+                const uint32 maxcounter = BOT_GOSSIP_MAX_ITEMS - 7; //unequip, unequip (gear bank), reset, current, transmog, runeforge, back
                 std::ostringstream name;
 
                 auto try_put_gossip = [player, slot, &name, &counter, this](uint8 bag, uint8 bag_slot, uint32 guidlow) {
@@ -19539,6 +19661,73 @@ bool bot_ai::OnGossipSelect(Player* player, Creature* creature/* == me*/, uint32
         //BOT_LOG_ERROR("entities.player", "OnGossipSelect(bot): added %u item(s) to list of %s (requester: %s)",
         //    counter, me->GetName().c_str(), player->GetName().c_str());
 
+        break;
+    }
+    case GOSSIP_SENDER_DK_RUNEFORGE_MHAND:
+    case GOSSIP_SENDER_DK_RUNEFORGE_OHAND:
+    {
+        const uint8 slot = sender == GOSSIP_SENDER_DK_RUNEFORGE_MHAND ? BOT_SLOT_MAINHAND : BOT_SLOT_OFFHAND;
+        uint32 spellId = action - GOSSIP_ACTION_INFO_DEF;
+
+        if (spellId)
+        {
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            if (_applyDeathKnightRuneforge(slot, spellId))
+            {
+                std::ostringstream msg;
+                msg << "Runeforged ";
+                if (Item const* item = _equips[slot])
+                    _AddItemLink(player, item, msg, false);
+                else
+                    msg << "weapon";
+                if (spellInfo)
+                {
+                    msg << " with ";
+                    _AddSpellLink(player, spellInfo, msg);
+                }
+                BotWhisper(msg.view(), player);
+            }
+            else
+                BotWhisper(LocalizedNpcText(player, BOT_TEXT_FAILED), player);
+
+            return OnGossipSelect(player, creature, GOSSIP_SENDER_EQUIPMENT_SHOW, GOSSIP_ACTION_INFO_DEF + slot);
+        }
+
+        subMenu = true;
+
+        Item const* item = _equips[slot];
+        if (!_canDeathKnightRuneforge(slot, item))
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, LocalizedNpcText(player, BOT_TEXT_NOTHING), 0, GOSSIP_ACTION_INFO_DEF + 1);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, LocalizedNpcText(player, BOT_TEXT_BACK), GOSSIP_SENDER_EQUIPMENT_SHOW, GOSSIP_ACTION_INFO_DEF + slot);
+            break;
+        }
+
+        uint32 counter = 0;
+        for (uint32 forgeSpellId : BotDataMgr::GetDeathKnightRuneforgeSpellIds())
+        {
+            uint32 enchantId = 0;
+            if (!BotDataMgr::GetDeathKnightRuneforgeEnchantIdForItem(forgeSpellId, item->GetTemplate(), false, &enchantId))
+                continue;
+
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(forgeSpellId);
+            if (!spellInfo)
+                continue;
+
+            std::ostringstream name;
+            _AddSpellLink(player, spellInfo, name);
+            if (item->GetEnchantmentId(PERM_ENCHANTMENT_SLOT) == enchantId)
+                name << " (Current)";
+
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, name.str(), sender, GOSSIP_ACTION_INFO_DEF + forgeSpellId);
+            if (++counter >= BOT_GOSSIP_MAX_ITEMS - 1)
+                break;
+        }
+
+        if (!counter)
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "No valid runeforges for this weapon", 0, GOSSIP_ACTION_INFO_DEF + 1);
+
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, LocalizedNpcText(player, BOT_TEXT_BACK), GOSSIP_SENDER_EQUIPMENT_SHOW, GOSSIP_ACTION_INFO_DEF + slot);
         break;
     }
     case GOSSIP_SENDER_UNEQUIP: //equips change s3: Unequip DEPRECATED
@@ -23723,6 +23912,9 @@ void bot_ai::_removeEquipment(uint8 slot)
     }
 
     RemoveItemBonuses(slot);
+    if (_botclass == BOT_CLASS_DEATH_KNIGHT && (slot == BOT_SLOT_MAINHAND || slot == BOT_SLOT_OFFHAND))
+        _clearDeathKnightRuneforge(item);
+
     ApplyItemSetBonuses(item, false);
 
     if (slot == BOT_SLOT_OFFHAND)
@@ -23978,6 +24170,67 @@ void bot_ai::_updateEquips(uint8 slot, Item* item)
     _equips[slot] = item;
     BotDataMgr::UpdateNpcBotData(me->GetEntry(), NPCBOT_UPDATE_EQUIPS, _equips.data());
 }
+
+static constexpr uint8 DEATH_KNIGHT_RUNEFORGE_MIN_LEVEL = 55;
+
+bool bot_ai::_canDeathKnightRuneforge(uint8 slot, Item const* item) const
+{
+    if (_botclass != BOT_CLASS_DEATH_KNIGHT || me->GetLevel() < DEATH_KNIGHT_RUNEFORGE_MIN_LEVEL)
+        return false;
+
+    if (slot != BOT_SLOT_MAINHAND && slot != BOT_SLOT_OFFHAND)
+        return false;
+
+    if (!item || !CanChangeEquip(slot))
+        return false;
+
+    ItemTemplate const* proto = item->GetTemplate();
+    return proto && proto->Class == ITEM_CLASS_WEAPON;
+}
+
+bool bot_ai::_applyDeathKnightRuneforge(uint8 slot, uint32 spellId)
+{
+    Item* item = _equips[slot];
+    if (!_canDeathKnightRuneforge(slot, item))
+        return false;
+
+    uint32 enchantId = 0;
+    if (!BotDataMgr::GetDeathKnightRuneforgeEnchantIdForItem(spellId, item->GetTemplate(), false, &enchantId))
+        return false;
+
+    RemoveItemBonuses(slot);
+
+    if (!IAmFree() && master)
+        master->GetSession()->SendEnchantmentLog(me->GetGUID(), me->GetGUID(), item->GetEntry(), enchantId);
+
+    item->SetUInt32Value(ITEM_FIELD_ENCHANTMENT_1_1 + PERM_ENCHANTMENT_SLOT * MAX_ENCHANTMENT_OFFSET + ENCHANTMENT_ID_OFFSET, enchantId);
+    item->SetUInt32Value(ITEM_FIELD_ENCHANTMENT_1_1 + PERM_ENCHANTMENT_SLOT * MAX_ENCHANTMENT_OFFSET + ENCHANTMENT_DURATION_OFFSET, 0);
+    item->SetUInt32Value(ITEM_FIELD_ENCHANTMENT_1_1 + PERM_ENCHANTMENT_SLOT * MAX_ENCHANTMENT_OFFSET + ENCHANTMENT_CHARGES_OFFSET, 0);
+    item->FSetState(ITEM_CHANGED);
+
+    ApplyItemBonuses(slot);
+    _updateEquips(slot, item);
+    return true;
+}
+
+bool bot_ai::_clearDeathKnightRuneforge(Item* item) const
+{
+    if (!item || !BotDataMgr::IsDeathKnightRuneforgeEnchant(item->GetEnchantmentId(PERM_ENCHANTMENT_SLOT)))
+        return false;
+
+    for (auto s : NPCBots::index_array<uint8, MAX_SPELL_ITEM_ENCHANTMENT_EFFECTS>)
+        item->SetUInt32Value(ITEM_FIELD_ENCHANTMENT_1_1 + PERM_ENCHANTMENT_SLOT * MAX_ENCHANTMENT_OFFSET + s, 0);
+
+    item->FSetState(ITEM_CHANGED);
+    return true;
+}
+
+bool bot_ai::_canIgnoreDeathKnightRuneforgeLevel(uint32 enchantId, EnchantmentSlot eslot) const
+{
+    return eslot == PERM_ENCHANTMENT_SLOT && _botclass == BOT_CLASS_DEATH_KNIGHT && me->GetLevel() >= DEATH_KNIGHT_RUNEFORGE_MIN_LEVEL &&
+        BotDataMgr::IsDeathKnightRuneforgeEnchant(enchantId);
+}
+
 //Called from gossip menu only (applies only to weapons)
 BotEquipResult bot_ai::_resetEquipment(uint8 slot, ObjectGuid receiver, bool store_to_bank)
 {
@@ -23992,7 +24245,7 @@ BotEquipResult bot_ai::_resetEquipment(uint8 slot, ObjectGuid receiver, bool sto
 
     EquipmentInfo const* einfo = BotDataMgr::GetBotEquipmentInfo(me->GetEntry());
     uint32 itemId = einfo->ItemEntry[slot];
-    Item const* oldItem = _equips[slot];
+    Item* oldItem = _equips[slot];
 
     BotLogger::Log(NPCBOT_LOG_EQUIP_RESET, me, uint32(slot), uint32(oldItem ? oldItem->GetGUID().GetCounter() : 0), uint32(oldItem ? oldItem->GetEntry() : 0), uint32(receiver.GetCounter()), uint32(itemId));
 
@@ -24000,7 +24253,19 @@ BotEquipResult bot_ai::_resetEquipment(uint8 slot, ObjectGuid receiver, bool sto
         return _unequip(slot, receiver, store_to_bank);
     else if (oldItem)
         if (oldItem->GetEntry() == itemId)
+        {
+            if (_botclass == BOT_CLASS_DEATH_KNIGHT && (slot == BOT_SLOT_MAINHAND || slot == BOT_SLOT_OFFHAND))
+            {
+                if (BotDataMgr::IsDeathKnightRuneforgeEnchant(oldItem->GetEnchantmentId(PERM_ENCHANTMENT_SLOT)))
+                {
+                    RemoveItemBonuses(slot);
+                    _clearDeathKnightRuneforge(oldItem);
+                    ApplyItemBonuses(slot);
+                    _updateEquips(slot, oldItem);
+                }
+            }
             return BotEquipResult::BOT_EQUIP_RESULT_OK;
+        }
 
     if (slot == BOT_SLOT_MAINHAND && !(_botclass == BOT_CLASS_WARRIOR && me->GetLevel() >= 60 && GetSpec() == BOT_SPEC_WARRIOR_FURY))
     {
@@ -24172,7 +24437,7 @@ void bot_ai::ApplyItemEnchantment(Item* item, EnchantmentSlot eslot, uint8 slot)
     if (!pEnchant)
         return;
 
-    if (pEnchant->requiredLevel > me->GetLevel())
+    if (pEnchant->requiredLevel > me->GetLevel() && !_canIgnoreDeathKnightRuneforgeLevel(enchant_id, eslot))
         return;
 
     uint32 enchant_display_type;
@@ -24444,7 +24709,7 @@ void bot_ai::ApplyItemEquipEnchantmentSpells(Item* item)
         SpellItemEnchantmentEntry const* pEnchant = sSpellItemEnchantmentStore.LookupEntry(enchant_id);
         if (!pEnchant)
             continue;
-        if (pEnchant->requiredLevel > me->GetLevel())
+        if (pEnchant->requiredLevel > me->GetLevel() && !_canIgnoreDeathKnightRuneforgeLevel(enchant_id, EnchantmentSlot(e_slot)))
             continue;
 
         uint32 enchant_display_type;
@@ -28558,6 +28823,8 @@ bool bot_ai::GlobalUpdate(uint32 diff)
         doMana = false;
         _OnManaUpdate();
     }
+
+    _updateSendMoveState();
 
     // group update
     if (_groupUpdateTimer <= diff)

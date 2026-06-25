@@ -1,0 +1,416 @@
+# Item Budget Normalizer Summary
+
+- Generated: 2026-06-22T22:16:27
+- Input CSV: `F:\Downloads\First_pass_normalization.csv`
+- Config: `C:\AzerothCore\Burning_ Legacy_Server\AzerothCore-wotlk-with-NPCBots\tools\item_budget_normalizer\item_budget_config.yml`
+- SQL generation: enabled
+- Origin manifest: `F:\Downloads\private_server_item_origin_builder\private_server_item_origin_builder\item_origin_manifests\item_origin_manifest.csv`
+- SQL origin filter: custom_only `False`, labels `['vanilla']`, expansions `none`
+- Target mode: `peer`
+- Peer minimum samples: `8`; outlier tolerance: `+/-15.0%`
+- Calibration sanity minimum samples: `10`
+- Visible budget per-pass cap: `+/-20.0%`; allow large changes: `False`
+- Allow special-effect/itemset SQL: `False`
+- Calibration sanity: sane; worst grouped median `0.0%`
+- Filters: min ilvl `None`, max ilvl `59`, required level `None`, qualities `any`
+
+## Output Files
+
+- Before/after CSV: `tools\item_budget_normalizer\reports\20260622_221627_normalization_report.csv`
+- Calibration CSV: `tools\item_budget_normalizer\reports\20260622_221627_calibration.csv`
+- Update SQL: `tools\item_budget_normalizer\reports\20260622_221627_normalization_updates.sql`
+- Rollback SQL: `tools\item_budget_normalizer\reports\20260622_221627_normalization_rollback.sql`
+
+## Counts
+
+- Report rows: 3429
+- Skipped: 67
+- Report-only changes: 541
+- Updated SQL rows: 235
+- Unchanged: 2586
+- Would change if SQL were enabled: 776
+- Special weapon-stat rows: 58
+- Peer outliers: 754
+- SQL-blocked rows: 2191
+- Low-sample calibration groups ignored by sanity: 2535
+
+## Origin Coverage
+
+| origin_label | count |
+| --- | --- |
+| custom_or_unknown | 145 |
+| tbc | 288 |
+| vanilla | 2959 |
+| wrath | 37 |
+
+## Skipped Items And Why
+
+| Reason | Count |
+| --- | --- |
+| cannot classify inventory slot | 32 |
+| trinket excluded | 28 |
+| quality 1 not configured | 9 |
+| not armor or weapon class | 5 |
+| name matched exclusion pattern Test  | 4 |
+| name matched exclusion pattern [PH] | 4 |
+| stat slot 1 has negative value -5 | 4 |
+| stat slot 1 has negative value -3 | 3 |
+| stat slot 2 has negative value -5 | 3 |
+| name matched exclusion pattern Monster - | 2 |
+| quality 7 not configured | 2 |
+| scaling item excluded | 2 |
+| stat slot 2 has negative value -10 | 2 |
+| ammo/projectile excluded | 1 |
+| duplicate stat type 38 in slot 2 | 1 |
+| duplicate stat type 38 in slot 3 | 1 |
+| duplicate stat type 38 in slot 4 | 1 |
+| name matched exclusion pattern QA | 1 |
+| no normal stats and no weapon damage | 1 |
+| quality 6 not configured | 1 |
+| shirt excluded | 1 |
+| stat slot 1 has negative value -10 | 1 |
+| stat slot 1 has negative value -15 | 1 |
+| stat slot 2 has negative value -3 | 1 |
+| stat slot 3 has negative value -10 | 1 |
+| stat slot 3 has negative value -40 | 1 |
+
+## Most Overbudget Before Normalization
+
+| entry | name | origin_label | pvp_family | item_level | quality_label | slot_key | role | target_source | target_sample_count | percent_over_under_before | action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 24351 | Mace of the Hand | tbc | none | 20 | Uncommon | weapon_one_hand | physical | peer_+/-10_ilvl | 10 | 401.0 | report-only |
+| 13139 | Guttbuster | vanilla | none | 50 | Rare | ranged | physical | peer_+/-5_ilvl | 8 | 266.667 | report-only |
+| 3848 | Big Bronze Knife | vanilla | none | 20 | Uncommon | weapon_one_hand | generic | peer_+/-5_ilvl | 34 | 200.0 | unchanged |
+| 5321 | Elegant Shortsword | vanilla | none | 20 | Uncommon | weapon_one_hand | generic | peer_+/-5_ilvl | 34 | 200.0 | unchanged |
+| 5627 | Relic Blade | vanilla | none | 20 | Uncommon | weapon_one_hand | generic | peer_+/-5_ilvl | 34 | 200.0 | unchanged |
+| 23410 | Well Crafted Sword | tbc | none | 20 | Uncommon | weapon_one_hand | physical | peer_+/-10_ilvl | 10 | 200.0 | unchanged |
+| 29583 | Sinister Scimitar | tbc | none | 20 | Uncommon | weapon_one_hand | physical | peer_+/-10_ilvl | 10 | 200.0 | unchanged |
+| 2013 | Cryptbone Staff | vanilla | none | 26 | Uncommon | weapon_two_hand | healer | peer_+/-10_ilvl | 19 | 133.333 | report-only |
+| 10835 | Crest of Supremacy | vanilla | none | 56 | Rare | shield | tank | peer_+/-5_ilvl | 10 | 118.59 | report-only |
+| 1219 | Redridge Machete | vanilla | none | 16 | Uncommon | weapon_one_hand | generic | peer_+/-5_ilvl | 35 | 100.0 | unchanged |
+| 5324 | Engineer's Hammer | vanilla | none | 16 | Uncommon | weapon_one_hand | generic | peer_+/-5_ilvl | 35 | 100.0 | unchanged |
+| 1958 | Petrified Shinbone | vanilla | none | 17 | Uncommon | weapon_one_hand | generic | peer_+/-5_ilvl | 36 | 100.0 | unchanged |
+| 2089 | Scrimshaw Dagger | vanilla | none | 18 | Uncommon | weapon_one_hand | generic | peer_+/-5_ilvl | 36 | 100.0 | unchanged |
+| 3222 | Wicked Dagger | tbc | none | 19 | Uncommon | weapon_one_hand | physical | peer_+/-10_ilvl | 10 | 100.0 | unchanged |
+| 13022 | Gryphonwing Long Bow | vanilla | none | 55 | Rare | ranged | physical | peer_+/-5_ilvl | 9 | 99.254 | report-only |
+| 13040 | Heartseeking Crossbow | vanilla | none | 56 | Rare | ranged | physical | peer_+/-5_ilvl | 13 | 93.698 | report-only |
+| 9426 | Monolithic Bow | vanilla | none | 41 | Rare | ranged | physical | peer_+/-10_ilvl | 8 | 80.0 | report-only |
+| 4243 | Fine Leather Tunic | vanilla | none | 17 | Uncommon | chest | physical | peer_+/-5_ilvl | 9 | 79.94 | report-only |
+| 16659 | Deftkin Belt | vanilla | none | 27 | Uncommon | waist | physical | peer_+/-5_ilvl | 13 | 79.79 | report-only |
+| 13026 | Heaven's Light | vanilla | none | 45 | Rare | weapon_one_hand | healer | peer_+/-10_ilvl | 9 | 78.909 | report-only |
+
+## Most Underbudget Before Normalization
+
+| entry | name | origin_label | pvp_family | item_level | quality_label | slot_key | role | target_source | target_sample_count | percent_over_under_before | action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 30504 | Leafblade Dagger | tbc | none | 19 | Uncommon | weapon_one_hand | physical | peer_+/-10_ilvl | 10 | -100.0 | unchanged |
+| 5191 | Cruel Barb | vanilla | none | 24 | Rare | weapon_one_hand | physical | peer_+/-5_ilvl | 20 | -100.0 | unchanged |
+| 4825 | Callous Axe | vanilla | none | 29 | Uncommon | weapon_one_hand | physical | peer_+/-5_ilvl | 17 | -100.0 | unchanged |
+| 16886 | Outlaw Sabre | vanilla | none | 30 | Rare | weapon_one_hand | physical | peer_+/-5_ilvl | 21 | -100.0 | unchanged |
+| 12259 | Glinting Steel Dagger | vanilla | none | 36 | Uncommon | weapon_one_hand | physical | peer_+/-5_ilvl | 10 | -100.0 | unchanged |
+| 4983 | Rock Pulverizer | vanilla | none | 42 | Uncommon | weapon_two_hand | physical | peer_+/-5_ilvl | 9 | -100.0 | unchanged |
+| 13138 | The Silencer | vanilla | none | 42 | Rare | ranged | physical | peer_+/-10_ilvl | 8 | -100.0 | unchanged |
+| 10823 | Vanquisher's Sword | vanilla | none | 44 | Rare | weapon_one_hand | physical | peer_+/-5_ilvl | 16 | -100.0 | unchanged |
+| 12527 | Ribsplitter | vanilla | none | 53 | Rare | weapon_one_hand | physical | peer_+/-5_ilvl | 15 | -100.0 | unchanged |
+| 17717 | Megashot Rifle | vanilla | none | 53 | Rare | ranged | physical | peer_+/-5_ilvl | 9 | -100.0 | unchanged |
+| 15862 | Blitzcleaver | vanilla | none | 54 | Uncommon | weapon_one_hand | physical | peer_+/-10_ilvl | 20 | -100.0 | unchanged |
+| 11923 | The Hammer of Grace | vanilla | none | 57 | Rare | weapon_main_hand | caster | peer_+/-10_ilvl | 11 | -100.0 | unchanged |
+| 12653 | Riphook | vanilla | none | 59 | Rare | ranged | physical | peer_+/-5_ilvl | 14 | -100.0 | unchanged |
+| 13052 | Warmonger | vanilla | none | 52 | Rare | weapon_two_hand | physical | peer_+/-5_ilvl | 13 | -90.017 | unchanged |
+| 2958 | Journeyman's Pants | vanilla | none | 10 | Uncommon | legs | healer | peer_+/-10_ilvl | 13 | -83.333 | report-only |
+| 2962 | Burnt Leather Breeches | vanilla | none | 10 | Uncommon | legs | physical | peer_+/-10_ilvl | 10 | -83.333 | unchanged |
+| 4446 | Blackvenom Blade | vanilla | none | 26 | Rare | weapon_one_hand | physical | peer_+/-5_ilvl | 25 | -83.333 | unchanged |
+| 13254 | Astral Guard | vanilla | none | 56 | Rare | shield | tank | peer_+/-5_ilvl | 10 | -79.784 | report-only |
+| 2572 | Red Linen Robe | vanilla | none | 10 | Uncommon | chest | caster | peer_+/-10_ilvl | 10 | -78.632 | unchanged |
+| 6241 | White Linen Robe | vanilla | none | 10 | Uncommon | chest | caster | peer_+/-10_ilvl | 10 | -78.632 | unchanged |
+
+## Calibration Sanity Offenders
+
+None.
+
+## Low-Sample Calibration Groups
+
+| expansion_band | ilvl_band | item_level | origin_label | pvp_family | quality_label | slot_key | role | count | median_percent_over_under | median_target_budget |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| classic_leveling | 050-059 | 50 | vanilla | none | Rare | ranged | physical | 1 | 266.667 | 3.0 |
+| classic_leveling | 020-029 | 20 | tbc | none | Uncommon | weapon_one_hand | physical | 3 | 200.0 | 1.0 |
+| classic_leveling | 020-029 | 20 | vanilla | none | Uncommon | weapon_one_hand | generic | 3 | 200.0 | 0.67 |
+| classic_leveling | 010-019 | 16 | vanilla | none | Uncommon | weapon_one_hand | generic | 2 | 100.0 | 0.67 |
+| classic_leveling | 010-019 | 17 | vanilla | none | Uncommon | weapon_one_hand | generic | 1 | 100.0 | 0.67 |
+| classic_leveling | 010-019 | 18 | vanilla | none | Uncommon | weapon_one_hand | generic | 1 | 100.0 | 0.67 |
+| classic_leveling | 020-029 | 29 | vanilla | none | Uncommon | weapon_one_hand | physical | 1 | -100.0 | 4.0 |
+| classic_leveling | 040-049 | 42 | vanilla | none | Rare | ranged | physical | 1 | -100.0 | 7.01 |
+| classic_leveling | 050-059 | 54 | vanilla | none | Uncommon | weapon_one_hand | physical | 1 | -100.0 | 9.0 |
+| classic_leveling | 050-059 | 57 | vanilla | none | Rare | weapon_main_hand | caster | 1 | -100.0 | 8.0 |
+| classic_leveling | 050-059 | 59 | vanilla | none | Rare | ranged | physical | 1 | -100.0 | 10.69 |
+| classic_leveling | 050-059 | 55 | vanilla | none | Rare | ranged | physical | 1 | 99.254 | 5.36 |
+| classic_leveling | 020-029 | 26 | vanilla | none | Uncommon | weapon_two_hand | healer | 2 | 91.667 | 6.0 |
+| classic_leveling | 010-019 | 10 | vanilla | none | Uncommon | legs | healer | 1 | -83.333 | 6.0 |
+| classic_leveling | 010-019 | 10 | vanilla | none | Uncommon | legs | physical | 1 | -83.333 | 6.0 |
+| classic_leveling | 040-049 | 41 | vanilla | none | Rare | ranged | physical | 1 | 80.0 | 5.0 |
+| classic_leveling | 040-049 | 45 | vanilla | none | Rare | weapon_one_hand | healer | 1 | 78.909 | 11.0 |
+| classic_leveling | 010-019 | 10 | vanilla | none | Uncommon | chest | caster | 2 | -78.632 | 4.68 |
+| classic_leveling | 010-019 | 10 | vanilla | none | Uncommon | weapon_two_hand | generic | 2 | -77.778 | 3.015 |
+| classic_leveling | 010-019 | 10 | vanilla | none | Uncommon | chest | physical | 1 | -76.959 | 4.34 |
+| classic_leveling | 030-039 | 37 | vanilla | none | Rare | shield | tank | 1 | -76.359 | 12.69 |
+| classic_leveling | 010-019 | 10 | vanilla | none | Uncommon | chest | physical | 1 | -75.062 | 4.01 |
+| classic_leveling | 050-059 | 57 | vanilla | none | Rare | chest | caster | 1 | -74.555 | 47.16 |
+| classic_leveling | 020-029 | 27 | vanilla | none | Uncommon | weapon_two_hand | healer | 1 | 72.5 | 6.0 |
+| classic_leveling | 010-019 | 12 | vanilla | none | Uncommon | legs | healer | 1 | -72.167 | 6.0 |
+| classic_leveling | 050-059 | 58 | vanilla | none | Rare | shield | tank | 1 | -71.718 | 23.69 |
+| classic_leveling | 040-049 | 47 | vanilla | none | Rare | weapon_two_hand | healer | 1 | -71.609 | 31.7 |
+| classic_leveling | 050-059 | 55 | vanilla | none | Rare | feet | caster | 1 | -70.616 | 34.1 |
+| classic_leveling | 050-059 | 58 | vanilla | none | Rare | held_in_off_hand | healer | 1 | -69.705 | 28.685 |
+| classic_leveling | 050-059 | 57 | vanilla | none | Rare | shoulder | caster | 1 | -68.507 | 36.04 |
+| classic_leveling | 050-059 | 53 | vanilla | none | Uncommon | hands | caster | 1 | -68.288 | 18.92 |
+| classic_leveling | 010-019 | 16 | tbc | none | Uncommon | weapon_one_hand | physical | 1 | 67.0 | 1.0 |
+| classic_leveling | 020-029 | 23 | vanilla | none | Uncommon | chest | physical | 1 | 66.694 | 6.005 |
+| classic_leveling | 010-019 | 10 | vanilla | none | Uncommon | weapon_two_hand | healer | 2 | -66.667 | 6.0 |
+| classic_leveling | 010-019 | 12 | vanilla | none | Uncommon | legs | physical | 1 | -66.667 | 6.0 |
+| classic_leveling | 010-019 | 12 | vanilla | none | Uncommon | weapon_two_hand | healer | 1 | -66.667 | 6.0 |
+| classic_leveling | 020-029 | 26 | vanilla | none | Uncommon | cloak | generic | 1 | 66.667 | 2.01 |
+| classic_leveling | 030-039 | 36 | vanilla | none | Uncommon | cloak | generic | 1 | -66.611 | 6.02 |
+| classic_leveling | 020-029 | 23 | vanilla | none | Uncommon | chest | caster | 2 | 66.389 | 6.01 |
+| classic_leveling | 040-049 | 43 | vanilla | none | Uncommon | chest | healer | 1 | -65.017 | 20.01 |
+
+## SQL Blocked Rows
+
+| entry | name | origin_label | pvp_family | item_level | quality_label | slot_key | role | target_source | target_sample_count | percent_over_under_before | sql_block_reasons | warnings |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 16604 | Moon Robes of Elune | vanilla | none | 5 | Uncommon | chest | healer | peer_+/-10_ilvl | 10 | -50.0 | peer target requires 100.0% visible budget change | SQL blocked: peer target requires 100.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; armor median from 10 sample(s) within 5 ilvl |
+| 16605 | Friar's Robes of the Light | vanilla | none | 5 | Uncommon | chest | healer | peer_+/-10_ilvl | 10 | -50.0 | peer target requires 100.0% visible budget change | SQL blocked: peer target requires 100.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; armor median from 10 sample(s) within 5 ilvl |
+| 16606 | Juju Hex Robes | vanilla | none | 5 | Uncommon | chest | healer | peer_+/-10_ilvl | 10 | -50.0 | peer target requires 100.0% visible budget change | SQL blocked: peer target requires 100.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; armor median from 10 sample(s) within 5 ilvl |
+| 16607 | Acolyte's Sacrificial Robes | vanilla | none | 5 | Uncommon | chest | healer | peer_+/-10_ilvl | 10 | -50.0 | peer target requires 100.0% visible budget change | SQL blocked: peer target requires 100.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; armor median from 10 sample(s) within 5 ilvl |
+| 23924 | Robes of Silvermoon | tbc | none | 5 | Uncommon | chest | healer | no_peer_skip | 0 | 0.0 | not enough comparable peer samples; origin tbc/1 did not match SQL origin filter | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 10 sample(s) within 5 ilvl |
+| 23931 | Azure Watch Robes | tbc | none | 5 | Uncommon | chest | healer | no_peer_skip | 0 | 0.0 | not enough comparable peer samples; origin tbc/1 did not match SQL origin filter | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 10 sample(s) within 5 ilvl |
+| 2572 | Red Linen Robe | vanilla | none | 10 | Uncommon | chest | caster | peer_+/-10_ilvl | 10 | -78.632 | peer target requires 368.0% visible budget change | SQL blocked: peer target requires 368.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; armor unchanged: within +/-15% peer tolerance from 17 sample(s) |
+| 2958 | Journeyman's Pants | vanilla | none | 10 | Uncommon | legs | healer | peer_+/-10_ilvl | 13 | -83.333 | peer target requires 500.0% visible budget change | SQL blocked: peer target requires 500.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; armor median from 22 sample(s) within 10 ilvl |
+| 2962 | Burnt Leather Breeches | vanilla | none | 10 | Uncommon | legs | physical | peer_+/-10_ilvl | 10 | -83.333 | peer target requires 500.0% visible budget change | SQL blocked: peer target requires 500.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; armor unchanged: within +/-15% peer tolerance from 12 sample(s) |
+| 2966 | Warrior's Pants | vanilla | none | 10 | Uncommon | legs | generic | no_peer_skip | 0 | 0.0 | not enough comparable peer samples | normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 8 sample(s) |
+| 3000 | Brood Mother Carapace | vanilla | none | 10 | Uncommon | chest | generic | no_peer_skip | 0 | 0.0 | not enough comparable peer samples | normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 15 sample(s) |
+| 3471 | Copper Chain Vest | vanilla | none | 10 | Uncommon | chest | physical | peer_+/-10_ilvl | 9 | -76.959 | peer target requires 334.0% visible budget change | SQL blocked: peer target requires 334.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; armor median from 11 sample(s) within 5 ilvl |
+| 4861 | Sleek Feathered Tunic | vanilla | none | 10 | Uncommon | chest | physical | peer_+/-10_ilvl | 10 | -75.062 | peer target requires 301.0% visible budget change | SQL blocked: peer target requires 301.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; armor unchanged: within +/-15% peer tolerance from 15 sample(s) |
+| 6238 | Brown Linen Robe | vanilla | none | 10 | Uncommon | chest | healer | peer_+/-5_ilvl | 10 | -50.0 | peer target requires 100.0% visible budget change | SQL blocked: peer target requires 100.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; armor unchanged: within +/-15% peer tolerance from 17 sample(s) |
+| 6241 | White Linen Robe | vanilla | none | 10 | Uncommon | chest | caster | peer_+/-10_ilvl | 10 | -78.632 | peer target requires 368.0% visible budget change | SQL blocked: peer target requires 368.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; armor unchanged: within +/-15% peer tolerance from 17 sample(s) |
+| 7507 | Arcane Orb | vanilla | none | 10 | Uncommon | held_in_off_hand | healer | no_peer_skip | 0 | 0.0 | not enough comparable peer samples; special-effect/itemset rows require --allow-special-effects | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples |
+| 7508 | Ley Orb | vanilla | none | 10 | Uncommon | held_in_off_hand | healer | no_peer_skip | 0 | 0.0 | not enough comparable peer samples; special-effect/itemset rows require --allow-special-effects | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples |
+| 9513 | Ley Staff | vanilla | none | 10 | Uncommon | weapon_two_hand | healer | peer_+/-10_ilvl | 13 | -66.667 | peer target requires 200.0% visible budget change | SQL blocked: peer target requires 200.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; weapon DPS median from 17 sample(s) within 10 ilvl |
+| 9514 | Arcane Staff | vanilla | none | 10 | Uncommon | weapon_two_hand | healer | peer_+/-10_ilvl | 13 | -66.667 | peer target requires 200.0% visible budget change | SQL blocked: peer target requires 200.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; weapon DPS median from 17 sample(s) within 10 ilvl |
+| 9598 | Sleeping Robes | vanilla | none | 10 | Uncommon | chest | generic | no_peer_skip | 0 | 0.0 | not enough comparable peer samples | normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 17 sample(s) |
+| 9599 | Barkmail Leggings | vanilla | none | 10 | Uncommon | legs | generic | no_peer_skip | 0 | 0.0 | not enough comparable peer samples | normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 8 sample(s) |
+| 9602 | Brushwood Blade | vanilla | none | 10 | Uncommon | weapon_two_hand | generic | peer_+/-10_ilvl | 12 | -77.778 | peer target requires 350.0% visible budget change | SQL blocked: peer target requires 350.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; weapon DPS median from 15 sample(s) within 10 ilvl |
+| 9603 | Gritroot Staff | vanilla | none | 10 | Uncommon | weapon_two_hand | generic | peer_+/-10_ilvl | 12 | -77.778 | peer target requires 350.0% visible budget change | SQL blocked: peer target requires 350.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; weapon DPS median from 17 sample(s) within 10 ilvl |
+| 15925 | Journeyman's Stave | vanilla | none | 10 | Uncommon | held_in_off_hand | generic | no_peer_skip | 0 | 0.0 | not enough comparable peer samples | normal stats unchanged: not enough comparable peer samples |
+| 17922 | Lionfur Armor | vanilla | none | 10 | Uncommon | chest | caster | no_peer_skip | 0 | 0.0 | not enough comparable peer samples | normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 15 sample(s) |
+| 23399 | Fallen Apprentice's Robe | tbc | none | 10 | Uncommon | chest | caster | no_peer_skip | 0 | 0.0 | not enough comparable peer samples; origin tbc/1 did not match SQL origin filter | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 17 sample(s) |
+| 23423 | Mercenary Greatsword | tbc | none | 10 | Uncommon | weapon_two_hand | physical | no_peer_skip | 0 | 0.0 | not enough comparable peer samples; origin tbc/1 did not match SQL origin filter | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; weapon DPS median from 15 sample(s) within 10 ilvl |
+| 23429 | Mercenary Clout | tbc | none | 10 | Uncommon | weapon_two_hand | physical | no_peer_skip | 0 | 0.0 | not enough comparable peer samples; origin tbc/1 did not match SQL origin filter | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; weapon DPS median from 10 sample(s) within 10 ilvl |
+| 23430 | Mercenary Sword | tbc | none | 10 | Uncommon | weapon_one_hand | generic | no_peer_skip | 0 | 0.0 | not enough comparable peer samples; origin tbc/1 did not match SQL origin filter | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; weapon DPS median from 12 sample(s) within 5 ilvl |
+| 23431 | Mercenary Stiletto | tbc | none | 10 | Uncommon | weapon_one_hand | generic | no_peer_skip | 0 | 0.0 | not enough comparable peer samples; origin tbc/1 did not match SQL origin filter | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; weapon DPS median from 18 sample(s) within 5 ilvl |
+| 24107 | Ravager Chitin Tunic | tbc | none | 10 | Uncommon | chest | physical | no_peer_skip | 0 | 0.0 | not enough comparable peer samples; origin tbc/1 did not match SQL origin filter | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 11 sample(s) within 5 ilvl |
+| 24108 | Ravager Hide Leggings | tbc | none | 10 | Uncommon | legs | physical | no_peer_skip | 0 | 0.0 | not enough comparable peer samples; origin tbc/1 did not match SQL origin filter | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 12 sample(s) |
+| 24109 | Thick Ravager Belt | tbc | none | 10 | Uncommon | waist | caster | no_peer_skip | 0 | 0.0 | not enough comparable peer samples; origin tbc/1 did not match SQL origin filter | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 14 sample(s) within 10 ilvl |
+| 24111 | Kurken Hide Jerkin | tbc | none | 10 | Uncommon | chest | physical | no_peer_skip | 0 | 0.0 | not enough comparable peer samples; origin tbc/1 did not match SQL origin filter | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 15 sample(s) |
+| 24112 | Kurkenstoks | tbc | none | 10 | Uncommon | feet | generic | no_peer_skip | 0 | 0.0 | not enough comparable peer samples; origin tbc/1 did not match SQL origin filter | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 11 sample(s) within 10 ilvl |
+| 24113 | Cowlen's Bracers of Kinship | tbc | none | 10 | Uncommon | wrist | generic | no_peer_skip | 0 | 0.0 | not enough comparable peer samples; origin tbc/1 did not match SQL origin filter | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 9 sample(s) within 10 ilvl |
+| 28146 | Courier's Wraps | tbc | none | 10 | Uncommon | wrist | caster | no_peer_skip | 0 | 0.0 | not enough comparable peer samples; origin tbc/1 did not match SQL origin filter | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 9 sample(s) within 10 ilvl |
+| 28147 | Tranquillien Scout's Bracers | tbc | none | 10 | Uncommon | wrist | physical | no_peer_skip | 0 | 0.0 | not enough comparable peer samples; origin tbc/1 did not match SQL origin filter | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor unchanged: not enough comparable armor samples |
+| 28148 | Bronze Mail Bracers | tbc | none | 10 | Uncommon | wrist | physical | no_peer_skip | 0 | 0.0 | not enough comparable peer samples; origin tbc/1 did not match SQL origin filter | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor unchanged: not enough comparable armor samples |
+| 2281 | Rodentia Flint Axe | vanilla | none | 11 | Uncommon | weapon_one_hand | healer | no_peer_skip | 0 | 0.0 | not enough comparable peer samples | normal stats unchanged: not enough comparable peer samples; weapon DPS median from 9 sample(s) within 5 ilvl |
+
+## Weapons Changed
+
+| entry | name | origin_label | pvp_family | item_level | quality_label | subclass_label | old_dps | new_dps | action | warnings |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1917 | Jeweled Dagger | vanilla | none | 10 | Uncommon | Dagger | 5.312 | 7.188 | updated | normal stats unchanged: within +/-15% peer tolerance; weapon DPS median from 18 sample(s) within 5 ilvl |
+| 9513 | Ley Staff | vanilla | none | 10 | Uncommon | Staff | 7.069 | 11.379 | report-only | SQL blocked: peer target requires 200.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; weapon DPS median from 17 sample(s) within 10 ilvl |
+| 9514 | Arcane Staff | vanilla | none | 10 | Uncommon | Staff | 7.069 | 11.379 | report-only | SQL blocked: peer target requires 200.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; weapon DPS median from 17 sample(s) within 10 ilvl |
+| 9602 | Brushwood Blade | vanilla | none | 10 | Uncommon | Two-hand Sword | 7.167 | 11.333 | report-only | SQL blocked: peer target requires 350.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; weapon DPS median from 15 sample(s) within 10 ilvl |
+| 9603 | Gritroot Staff | vanilla | none | 10 | Uncommon | Staff | 6.923 | 11.346 | report-only | SQL blocked: peer target requires 350.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; weapon DPS median from 17 sample(s) within 10 ilvl |
+| 18957 | Brushwood Blade | vanilla | none | 10 | Uncommon | Sword | 5.333 | 7.333 | updated | normal stats unchanged: within +/-15% peer tolerance; weapon DPS median from 12 sample(s) within 5 ilvl |
+| 23423 | Mercenary Greatsword | tbc | none | 10 | Uncommon | Two-hand Sword | 7.069 | 11.379 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; weapon DPS median from 15 sample(s) within 10 ilvl |
+| 23429 | Mercenary Clout | tbc | none | 10 | Uncommon | Two-hand Mace | 7.143 | 9.286 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; weapon DPS median from 10 sample(s) within 10 ilvl |
+| 23430 | Mercenary Sword | tbc | none | 10 | Uncommon | Sword | 5.417 | 7.292 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; weapon DPS median from 12 sample(s) within 5 ilvl |
+| 23431 | Mercenary Stiletto | tbc | none | 10 | Uncommon | Dagger | 5.333 | 7.333 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; weapon DPS median from 18 sample(s) within 5 ilvl |
+| 816 | Small Hand Blade | vanilla | none | 11 | Uncommon | Dagger | 6.0 | 7.333 | updated | normal stats unchanged: within +/-15% peer tolerance; weapon DPS median from 18 sample(s) within 5 ilvl |
+| 2281 | Rodentia Flint Axe | vanilla | none | 11 | Uncommon | Axe | 6.0 | 7.75 | report-only | normal stats unchanged: not enough comparable peer samples; weapon DPS median from 9 sample(s) within 5 ilvl |
+| 3223 | Frostmane Scepter | vanilla | none | 11 | Uncommon | Mace | 5.909 | 7.727 | updated | normal stats unchanged: within +/-15% peer tolerance; weapon DPS median from 17 sample(s) within 5 ilvl |
+| 4939 | Steady Bastard Sword | vanilla | none | 11 | Uncommon | Two-hand Sword | 7.593 | 11.481 | report-only | SQL blocked: peer target requires 159.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; weapon DPS median from 15 sample(s) within 10 ilvl |
+| 4947 | Jagged Dagger | vanilla | none | 11 | Uncommon | Dagger | 6.0 | 7.333 | updated | normal stats unchanged: within +/-15% peer tolerance; weapon DPS median from 18 sample(s) within 5 ilvl |
+| 4948 | Stinging Mace | vanilla | none | 11 | Uncommon | Mace | 5.87 | 7.609 | updated | normal stats unchanged: within +/-15% peer tolerance; weapon DPS median from 17 sample(s) within 5 ilvl |
+| 24339 | Stung | tbc | none | 11 | Uncommon | Sword | 6.0 | 7.6 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; SQL blocked: peer target requires 33.5% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; weapon DPS median from 15 sample(s) within 5 ilvl |
+| 26049 | Old Elekk Prod | tbc | none | 11 | Uncommon | Mace | 5.833 | 7.5 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; weapon DPS median from 17 sample(s) within 5 ilvl |
+| 26053 | Elekk Handler's Blade | tbc | none | 11 | Uncommon | Sword | 6.0 | 7.5 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; SQL blocked: peer target requires 33.5% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; weapon DPS median from 15 sample(s) within 5 ilvl |
+| 27389 | Surplus Bastard Sword | tbc | none | 11 | Uncommon | Two-hand Sword | 7.812 | 11.406 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; weapon DPS median from 15 sample(s) within 10 ilvl |
+| 33791 | Heavy Copper Longsword | tbc | none | 11 | Uncommon | Sword | 6.0 | 7.6 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; SQL blocked: peer target requires 33.5% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; weapon DPS median from 15 sample(s) within 5 ilvl |
+| 4303 | Cranial Thumper | vanilla | none | 12 | Uncommon | Mace | 6.429 | 7.5 | updated | normal stats unchanged: within +/-15% peer tolerance; weapon DPS median from 21 sample(s) within 5 ilvl |
+| 4974 | Compact Fighting Knife | vanilla | none | 12 | Uncommon | Dagger | 6.333 | 7.333 | updated | normal stats unchanged: within +/-15% peer tolerance; weapon DPS median from 19 sample(s) within 5 ilvl |
+| 3488 | Copper Battle Axe | vanilla | none | 13 | Uncommon | Two-hand Axe | 9.062 | 12.969 | report-only | SQL blocked: peer target requires 33.3% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; final visible stat budget adjusted to stay within +/-20% safety cap; weapon DPS median from 14 sample(s) within 10 ilvl |
+| 3586 | Logsplitter | vanilla | none | 16 | Uncommon | Two-hand Axe | 10.833 | 12.639 | updated | rounding remained outside configured tolerance; final visible stat budget adjusted to stay within +/-20% safety cap; weapon DPS median from 12 sample(s) within 5 ilvl |
+| 1405 | Foamspittle Staff | vanilla | none | 17 | Uncommon | Staff | 11.406 | 11.406 | updated | weapon DPS unchanged: within +/-15% peer tolerance from 16 sample(s) |
+| 3154 | Thelsamar Axe | vanilla | none | 18 | Uncommon | Axe | 9.048 | 7.619 | updated | normal stats unchanged: within +/-15% peer tolerance; weapon DPS median from 13 sample(s) within 5 ilvl |
+| 6094 | Piercing Axe | vanilla | none | 18 | Uncommon | Two-hand Axe | 11.818 | 11.818 | updated | weapon DPS unchanged: within +/-15% peer tolerance from 14 sample(s) |
+| 6186 | Trogg Slicer | vanilla | none | 18 | Uncommon | Two-hand Sword | 11.912 | 11.912 | updated | weapon DPS unchanged: within +/-15% peer tolerance from 12 sample(s) |
+| 15424 | Axe of Orgrimmar | vanilla | none | 18 | Uncommon | Two-hand Axe | 11.818 | 11.818 | updated | rounding remained outside configured tolerance; final visible stat budget adjusted to stay within +/-20% safety cap; weapon DPS unchanged: within +/-15% peer tolerance from 14 sample(s) |
+
+## Armor Changed
+
+| entry | name | origin_label | pvp_family | item_level | quality_label | subclass_label | old_armor | new_armor | action | warnings |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 16604 | Moon Robes of Elune | vanilla | none | 5 | Uncommon | Cloth | 10 | 15 | report-only | SQL blocked: peer target requires 100.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; armor median from 10 sample(s) within 5 ilvl |
+| 16605 | Friar's Robes of the Light | vanilla | none | 5 | Uncommon | Cloth | 10 | 15 | report-only | SQL blocked: peer target requires 100.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; armor median from 10 sample(s) within 5 ilvl |
+| 16606 | Juju Hex Robes | vanilla | none | 5 | Uncommon | Cloth | 10 | 15 | report-only | SQL blocked: peer target requires 100.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; armor median from 10 sample(s) within 5 ilvl |
+| 16607 | Acolyte's Sacrificial Robes | vanilla | none | 5 | Uncommon | Cloth | 10 | 15 | report-only | SQL blocked: peer target requires 100.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; armor median from 10 sample(s) within 5 ilvl |
+| 23924 | Robes of Silvermoon | tbc | none | 5 | Uncommon | Cloth | 10 | 15 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 10 sample(s) within 5 ilvl |
+| 23931 | Azure Watch Robes | tbc | none | 5 | Uncommon | Cloth | 10 | 15 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 10 sample(s) within 5 ilvl |
+| 2958 | Journeyman's Pants | vanilla | none | 10 | Uncommon | Cloth | 17 | 26 | report-only | SQL blocked: peer target requires 500.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; armor median from 22 sample(s) within 10 ilvl |
+| 3471 | Copper Chain Vest | vanilla | none | 10 | Uncommon | Mail | 108 | 129 | report-only | SQL blocked: peer target requires 334.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; armor median from 11 sample(s) within 5 ilvl |
+| 24107 | Ravager Chitin Tunic | tbc | none | 10 | Uncommon | Mail | 108 | 129 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 11 sample(s) within 5 ilvl |
+| 24109 | Thick Ravager Belt | tbc | none | 10 | Uncommon | Cloth | 11 | 17 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 14 sample(s) within 10 ilvl |
+| 24112 | Kurkenstoks | tbc | none | 10 | Uncommon | Cloth | 13 | 21 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 11 sample(s) within 10 ilvl |
+| 24113 | Cowlen's Bracers of Kinship | tbc | none | 10 | Uncommon | Cloth | 8 | 14 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 9 sample(s) within 10 ilvl |
+| 28146 | Courier's Wraps | tbc | none | 10 | Uncommon | Cloth | 8 | 14 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 9 sample(s) within 10 ilvl |
+| 2965 | Warrior's Tunic | vanilla | none | 11 | Uncommon | Mail | 115 | 144 | report-only | SQL blocked: peer target requires 117.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; final visible stat budget adjusted to stay within +/-20% safety cap; armor median from 15 sample(s) within 5 ilvl |
+| 10554 | Foreman Pants | vanilla | none | 11 | Uncommon | Cloth | 18 | 23 | report-only | normal stats unchanged: not enough comparable peer samples; armor median from 11 sample(s) within 5 ilvl |
+| 24340 | Vandril's Hand Me Down Pants | tbc | none | 11 | Uncommon | Cloth | 18 | 23 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 11 sample(s) within 5 ilvl |
+| 24341 | Fortified Oven Mitts | tbc | none | 11 | Uncommon | Mail | 72 | 101 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 13 sample(s) within 10 ilvl |
+| 26031 | Elekk Rider's Mail | tbc | none | 11 | Uncommon | Mail | 115 | 144 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 15 sample(s) within 5 ilvl |
+| 10549 | Rancher's Trousers | vanilla | none | 12 | Uncommon | Cloth | 20 | 24 | report-only | SQL blocked: peer target requires 259.3% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; armor median from 13 sample(s) within 5 ilvl |
+| 26006 | Crystal-Flecked Pants | tbc | none | 12 | Uncommon | Cloth | 20 | 24 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 13 sample(s) within 5 ilvl |
+| 27399 | Stillpine Defender | tbc | none | 12 | Uncommon | Shield | 239 | 328 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 11 sample(s) within 5 ilvl |
+| 28144 | Troll Handler Gloves | tbc | none | 12 | Uncommon | Cloth | 14 | 17 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 8 sample(s) within 5 ilvl |
+| 28153 | Farstrider's Shield | tbc | none | 12 | Uncommon | Shield | 239 | 328 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 11 sample(s) within 5 ilvl |
+| 26008 | Scholar's Gloves | tbc | none | 13 | Uncommon | Cloth | 15 | 18 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 11 sample(s) within 5 ilvl |
+| 26014 | Jessera's Fungus Lined Cuffs | tbc | none | 13 | Uncommon | Cloth | 11 | 14 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 10 sample(s) within 10 ilvl |
+| 26028 | Jessera's Fungus Lined Bands | tbc | none | 13 | Uncommon | Leather | 28 | 33 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 8 sample(s) within 10 ilvl |
+| 26034 | Protective Field Gloves | tbc | none | 13 | Uncommon | Mail | 81 | 105 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 16 sample(s) within 10 ilvl |
+| 26030 | Jessera's Fungus Lined Hauberk | tbc | none | 16 | Uncommon | Mail | 181 | 144 | report-only | SQL blocked: origin tbc/1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples; armor median from 18 sample(s) within 5 ilvl |
+| 6731 | Ironforge Breastplate | vanilla | none | 20 | Uncommon | Mail | 198 | 162 | updated | final visible stat budget adjusted to stay within +/-20% safety cap; armor median from 20 sample(s) within 5 ilvl |
+| 6468 | Deviate Scale Belt | vanilla | none | 23 | Rare | Leather | 51 | 61 | report-only | normal stats unchanged: not enough comparable peer samples; armor median from 11 sample(s) within 10 ilvl |
+
+## Items With Sockets
+
+| entry | name | origin_label | item_level | quality_label | slot_key | socket_budget | action | warnings |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 23229 | Sword of Sockety Goodness | custom_or_unknown | 41 | Uncommon | weapon_one_hand | 16.0 | unchanged | socket budget counted; socket colors and socket bonus unchanged; SQL blocked: origin custom_or_unknown/-1 did not match SQL origin filter; normal stats unchanged: not enough comparable peer samples |
+
+## Spell Payloads Detected
+
+| entry | name | origin_label | item_level | quality_label | slot_key | action | warnings |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 17 | Martin Fury | vanilla | 5 | 6 |  | skipped | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: item could not be peer-classified |
+| 7507 | Arcane Orb | vanilla | 10 | Uncommon | held_in_off_hand | unchanged | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples |
+| 7508 | Ley Orb | vanilla | 10 | Uncommon | held_in_off_hand | unchanged | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples |
+| 15866 | Veildust Medicine Bag | vanilla | 15 | Uncommon | held_in_off_hand | unchanged | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; SQL blocked: peer target requires 67.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance |
+| 28164 | Tranquillien Flamberge | tbc | 15 | Uncommon | weapon_two_hand | unchanged | spell payload detected and left unchanged; SQL blocked: origin tbc/1 did not match SQL origin filter; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; weapon DPS unchanged: within +/-15% peer tolerance from 15 sample(s) |
+| 825438 | Distinct Emerald Pendant | custom_or_unknown | 18 | Rare | neck | unchanged | spell payload detected and left unchanged; SQL blocked: origin custom_or_unknown/-1 did not match SQL origin filter; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples |
+| 5183 | Pulsating Hydra Heart | vanilla | 20 | Rare | held_in_off_hand | unchanged | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples |
+| 5387 | Enchanted Moonstalker Cloak | vanilla | 20 | Uncommon | cloak | unchanged | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: within +/-15% peer tolerance; armor unchanged: within +/-15% peer tolerance from 48 sample(s) |
+| 22783 | Sunwell Blade | tbc | 20 | Uncommon | weapon_one_hand | unchanged | spell payload detected and left unchanged; SQL blocked: origin tbc/1 did not match SQL origin filter; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; weapon DPS unchanged: within +/-15% peer tolerance from 24 sample(s) |
+| 22784 | Sunwell Orb | tbc | 20 | Uncommon | held_in_off_hand | unchanged | spell payload detected and left unchanged; SQL blocked: origin tbc/1 did not match SQL origin filter; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples |
+| 1484 | Witching Stave | vanilla | 22 | Rare | weapon_two_hand | unchanged | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; weapon DPS unchanged: within +/-15% peer tolerance from 10 sample(s) |
+| 5613 | Staff of the Purifier | vanilla | 23 | Uncommon | weapon_two_hand | report-only | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; SQL blocked: peer target requires 25.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; final visible stat budget adjusted to stay within +/-20% safety cap; weapon DPS unchanged: within +/-15% peer tolerance from 17 sample(s) |
+| 30804 | Bronze Band of Force | tbc | 23 | Rare | finger | unchanged | spell payload detected and left unchanged; SQL blocked: origin tbc/1 did not match SQL origin filter; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples |
+| 4444 | Black Husk Shield | vanilla | 24 | Uncommon | shield | report-only | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; rounding remained outside configured tolerance; final visible stat budget adjusted to stay within +/-20% safety cap; armor unchanged: within +/-15% peer tolerance from 25 sample(s) |
+| 2950 | Icicle Rod | vanilla | 25 | Uncommon | weapon_two_hand | unchanged | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; weapon DPS unchanged: within +/-15% peer tolerance from 12 sample(s) |
+| 4317 | Phoenix Pants | vanilla | 25 | Uncommon | legs | unchanged | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 13 sample(s) |
+| 5323 | Everglow Lantern | vanilla | 25 | Uncommon | held_in_off_hand | unchanged | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; SQL blocked: peer target requires 44.7% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; final visible stat budget adjusted to stay within +/-20% safety cap |
+| 21566 | Rune of Perfection | vanilla | 25 | Rare |  | skipped | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: item could not be peer-classified |
+| 21568 | Rune of Duty | vanilla | 25 | Rare |  | skipped | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: item could not be peer-classified |
+| 43655 | Book of Survival | wrath | 25 | Rare | held_in_off_hand | unchanged | spell payload detected and left unchanged; SQL blocked: origin wrath/2 did not match SQL origin filter; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples |
+| 883922 | Stonemason's Mark | custom_or_unknown | 25 | Rare |  | skipped | spell payload detected and left unchanged; SQL blocked: origin custom_or_unknown/-1 did not match SQL origin filter; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: item could not be peer-classified |
+| 4446 | Blackvenom Blade | vanilla | 26 | Rare | weapon_one_hand | unchanged | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; SQL blocked: peer target requires 500.0% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; weapon DPS unchanged: within +/-15% peer tolerance from 11 sample(s) |
+| 7027 | Boots of Darkness | vanilla | 28 | Uncommon | feet | unchanged | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 14 sample(s) |
+| 7046 | Azure Silk Pants | vanilla | 28 | Uncommon | legs | unchanged | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 12 sample(s) |
+| 13031 | Orb of Mistmantle | vanilla | 28 | Rare | held_in_off_hand | unchanged | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples |
+| 3566 | Raptorbane Armor | vanilla | 29 | Uncommon | chest | unchanged | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 16 sample(s) |
+| 4319 | Azure Silk Gloves | vanilla | 29 | Uncommon | hands | unchanged | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; SQL blocked: peer target requires 233.3% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; final visible stat budget adjusted to stay within +/-20% safety cap; armor unchanged: within +/-15% peer tolerance from 15 sample(s) |
+| 7047 | Hands of Darkness | vanilla | 29 | Uncommon | hands | report-only | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; SQL blocked: peer target requires 100.0% visible budget change; visible stat target clamped to +/-20% safety cap; armor unchanged: within +/-15% peer tolerance from 15 sample(s) |
+| 4324 | Azure Silk Vest | vanilla | 30 | Uncommon | chest | report-only | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; final visible stat budget adjusted to stay within +/-20% safety cap; armor unchanged: within +/-15% peer tolerance from 9 sample(s) |
+| 6972 | Fire Hardened Hauberk | vanilla | 30 | Rare | chest | unchanged | spell payload detected and left unchanged; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 10 sample(s) |
+
+## Itemsets Detected
+
+| entry | name | origin_label | item_level | quality_label | slot_key | action | warnings |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 10400 | Blackened Defias Leggings | vanilla | 18 | Uncommon | legs | unchanged | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: within +/-15% peer tolerance; armor unchanged: within +/-15% peer tolerance from 25 sample(s) |
+| 10401 | Blackened Defias Gloves | vanilla | 18 | Uncommon | hands | report-only | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; SQL blocked: peer target requires 36.2% visible budget change; visible stat target clamped to +/-20% safety cap; rounding remained outside configured tolerance; armor unchanged: within +/-15% peer tolerance from 21 sample(s) |
+| 10402 | Blackened Defias Boots | vanilla | 18 | Uncommon | feet | report-only | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; SQL blocked: peer target requires 53.9% visible budget change; visible stat target clamped to +/-20% safety cap; final visible stat budget adjusted to stay within +/-20% safety cap; armor unchanged: within +/-15% peer tolerance from 16 sample(s) |
+| 10413 | Gloves of the Fang | vanilla | 19 | Uncommon | hands | unchanged | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: within +/-15% peer tolerance; armor unchanged: within +/-15% peer tolerance from 22 sample(s) |
+| 10412 | Belt of the Fang | vanilla | 21 | Uncommon | waist | report-only | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; SQL blocked: peer target requires 49.9% visible budget change; visible stat target clamped to +/-20% safety cap; armor unchanged: within +/-15% peer tolerance from 17 sample(s) |
+| 10403 | Blackened Defias Belt | vanilla | 22 | Uncommon | waist | report-only | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; SQL blocked: peer target requires 20.2% visible budget change; visible stat target clamped to +/-20% safety cap; armor unchanged: within +/-15% peer tolerance from 19 sample(s) |
+| 6473 | Armor of the Fang | vanilla | 23 | Uncommon | chest | unchanged | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: within +/-15% peer tolerance; armor unchanged: within +/-15% peer tolerance from 20 sample(s) |
+| 10410 | Leggings of the Fang | vanilla | 23 | Rare | legs | unchanged | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: not enough comparable armor samples |
+| 10411 | Footpads of the Fang | vanilla | 23 | Uncommon | feet | unchanged | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: within +/-15% peer tolerance; armor unchanged: within +/-15% peer tolerance from 18 sample(s) |
+| 10399 | Blackened Defias Armor | vanilla | 24 | Rare | chest | unchanged | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: not enough comparable armor samples |
+| 10332 | Scarlet Boots | vanilla | 35 | Rare | feet | report-only | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; SQL blocked: peer target requires 33.1% visible budget change; visible stat target clamped to +/-20% safety cap; armor unchanged: within +/-15% peer tolerance from 11 sample(s) |
+| 10333 | Scarlet Wristguards | vanilla | 36 | Uncommon | wrist | unchanged | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 9 sample(s) |
+| 10329 | Scarlet Belt | vanilla | 37 | Uncommon | waist | report-only | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; armor unchanged: within +/-15% peer tolerance from 9 sample(s) |
+| 10331 | Scarlet Gauntlets | vanilla | 38 | Uncommon | hands | report-only | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; SQL blocked: peer target requires 26.7% visible budget change; visible stat target clamped to +/-20% safety cap; armor unchanged: within +/-15% peer tolerance from 19 sample(s) |
+| 10328 | Scarlet Chestpiece | vanilla | 39 | Rare | chest | unchanged | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 13 sample(s) |
+| 7953 | Mask of Thero-Shan | custom_or_unknown | 42 | Uncommon | head | unchanged | spell payload detected and left unchanged; itemset detected; set bonuses are not modeled; SQL blocked: origin custom_or_unknown/-1 did not match SQL origin filter; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples |
+| 10330 | Scarlet Leggings | vanilla | 43 | Rare | legs | unchanged | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 10 sample(s) |
+| 15045 | Green Dragonscale Breastplate | vanilla | 52 | Rare | chest | report-only | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; SQL blocked: peer target requires 24.0% visible budget change; visible stat target clamped to +/-20% safety cap; armor unchanged: within +/-15% peer tolerance from 18 sample(s) |
+| 12424 | Imperial Plate Belt | vanilla | 53 | Uncommon | waist | unchanged | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 12 sample(s) |
+| 12428 | Imperial Plate Shoulders | vanilla | 53 | Uncommon | shoulder | unchanged | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 16 sample(s) |
+| 12425 | Imperial Plate Bracers | vanilla | 54 | Uncommon | wrist | unchanged | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 13 sample(s) |
+| 15046 | Green Dragonscale Leggings | vanilla | 54 | Rare | legs | unchanged | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 8 sample(s) |
+| 15067 | Ironfeather Shoulders | vanilla | 54 | Rare | shoulder | report-only | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; SQL blocked: peer target requires 27.7% visible budget change; visible stat target clamped to +/-20% safety cap; final visible stat budget adjusted to stay within +/-20% safety cap; armor unchanged: within +/-15% peer tolerance from 22 sample(s) |
+| 15057 | Stormshroud Pants | vanilla | 55 | Rare | legs | unchanged | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: within +/-15% peer tolerance from 14 sample(s) |
+| 21998 | Gauntlets of Heroism | vanilla | 55 | Epic | hands | unchanged | spell payload detected and left unchanged; itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: not enough comparable armor samples |
+| 22006 | Darkmantle Gloves | vanilla | 55 | Epic | hands | unchanged | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: not enough comparable armor samples |
+| 22015 | Beastmaster's Gloves | vanilla | 55 | Epic | hands | unchanged | spell payload detected and left unchanged; itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: not enough comparable armor samples |
+| 22066 | Sorcerer's Gloves | vanilla | 55 | Epic | hands | unchanged | spell payload detected and left unchanged; itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: not enough comparable armor samples |
+| 22077 | Deathmist Wraps | vanilla | 55 | Epic | hands | unchanged | spell payload detected and left unchanged; itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: not enough comparable armor samples |
+| 22081 | Virtuous Gloves | vanilla | 55 | Epic | hands | unchanged | itemset detected; set bonuses are not modeled; SQL blocked: special-effect/itemset rows require --allow-special-effects; normal stats unchanged: not enough comparable peer samples; armor unchanged: not enough comparable armor samples |
+
+## Unknown Stat Types
+
+None.
+
+## Calibration Snapshot
+
+Grouped by expansion, item-level band, exact item level, origin, PvP family, quality, slot, inferred role, and peer group. Full data is in the calibration CSV.
+
+| count | expansion_band | ilvl_band | item_level | origin_label | pvp_family | quality_label | slot_key | role | peer_group | median_visible_budget | median_special_weapon_budget | median_total_budget_with_sockets | median_target_budget | median_percent_over_under | peer_outlier_count | sql_blocked_count |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 24 | classic_leveling | 010-019 | 15 | vanilla | none | Uncommon | weapon_one_hand | generic | origin=0;quality=2;slot=weapon_one_hand;armor=none;weapon=weapon_one_hand:physical;pvp=none;role=generic | 0.67 | 0.0 | 0.67 | 0.67 | 0.0 | 0 | 0 |
+| 8 | classic_leveling | 010-019 | 18 | vanilla | none | Uncommon | weapon_one_hand | physical | origin=0;quality=2;slot=weapon_one_hand;armor=none;weapon=weapon_one_hand:physical;pvp=none;role=physical | 1.835 | 0.0 | 1.835 | 2.0 | -8.25 | 4 | 0 |
+| 7 | classic_leveling | 050-059 | 53 | vanilla | none | Rare | weapon_one_hand | physical | origin=0;quality=3;slot=weapon_one_hand;armor=none;weapon=weapon_one_hand:physical;pvp=none;role=physical | 14.35 | 0.0 | 14.35 | 13.04 | 10.046 | 1 | 0 |
+| 6 | classic_leveling | 010-019 | 17 | vanilla | none | Uncommon | weapon_one_hand | physical | origin=0;quality=2;slot=weapon_one_hand;armor=none;weapon=weapon_one_hand:physical;pvp=none;role=physical | 2.0 | 0.0 | 2.0 | 2.0 | 0.0 | 1 | 0 |
+| 6 | classic_leveling | 020-029 | 20 | vanilla | none | Uncommon | shield | tank | origin=0;quality=2;slot=shield;armor=shield;weapon=shield;pvp=none;role=tank | 3.0 | 0.0 | 3.0 | 3.835 | -21.773 | 4 | 4 |
+| 6 | classic_leveling | 020-029 | 23 | vanilla | none | Rare | weapon_one_hand | physical | origin=0;quality=3;slot=weapon_one_hand;armor=none;weapon=weapon_one_hand:physical;pvp=none;role=physical | 5.34 | 0.0 | 5.34 | 5.68 | -5.986 | 0 | 0 |
+| 6 | classic_leveling | 020-029 | 24 | vanilla | none | Uncommon | weapon_one_hand | physical | origin=0;quality=2;slot=weapon_one_hand;armor=none;weapon=weapon_one_hand:physical;pvp=none;role=physical | 3.17 | 0.0 | 3.17 | 3.34 | -5.09 | 2 | 0 |
+| 6 | classic_leveling | 030-039 | 31 | vanilla | none | Uncommon | chest | healer | origin=0;quality=2;slot=chest;armor=1;weapon=none;pvp=none;role=healer | 15.505 | 0.0 | 15.505 | 13.52 | 14.682 | 4 | 1 |
+| 5 | classic_leveling | 010-019 | 13 | vanilla | none | Uncommon | weapon_one_hand | physical | origin=0;quality=2;slot=weapon_one_hand;armor=none;weapon=weapon_one_hand:physical;pvp=none;role=physical | 1.0 | 0.0 | 1.0 | 1.67 | -40.12 | 5 | 4 |
+| 5 | classic_leveling | 010-019 | 15 | vanilla | none | Uncommon | cloak | generic | origin=0;quality=2;slot=cloak;armor=1;weapon=none;pvp=none;role=generic | 1.34 | 0.0 | 1.34 | 2.01 | -33.333 | 5 | 5 |
+| 5 | classic_leveling | 020-029 | 20 | vanilla | none | Uncommon | cloak | generic | origin=0;quality=2;slot=cloak;armor=1;weapon=none;pvp=none;role=generic | 2.01 | 0.0 | 2.01 | 2.01 | 0.0 | 1 | 2 |
+| 5 | classic_leveling | 020-029 | 20 | vanilla | none | Uncommon | legs | healer | origin=0;quality=2;slot=legs;armor=1;weapon=none;pvp=none;role=healer | 6.68 | 0.0 | 6.68 | 6.34 | 5.363 | 1 | 1 |
+| 5 | classic_leveling | 020-029 | 20 | vanilla | none | Uncommon | weapon_two_hand | physical | origin=0;quality=2;slot=weapon_two_hand;armor=none;weapon=weapon_two_hand:physical;pvp=none;role=physical | 6.0 | 0.0 | 6.0 | 6.68 | -10.18 | 2 | 2 |
+| 5 | classic_leveling | 020-029 | 22 | vanilla | none | Uncommon | weapon_one_hand | physical | origin=0;quality=2;slot=weapon_one_hand;armor=none;weapon=weapon_one_hand:physical;pvp=none;role=physical | 3.34 | 0.0 | 3.34 | 3.0 | 11.333 | 2 | 1 |
+| 5 | classic_leveling | 020-029 | 23 | vanilla | none | Uncommon | cloak | healer | origin=0;quality=2;slot=cloak;armor=1;weapon=none;pvp=none;role=healer | 4.0 | 0.0 | 4.0 | 4.34 | -7.834 | 0 | 0 |
+| 5 | classic_leveling | 020-029 | 25 | vanilla | none | Uncommon | weapon_one_hand | physical | origin=0;quality=2;slot=weapon_one_hand;armor=none;weapon=weapon_one_hand:physical;pvp=none;role=physical | 4.0 | 0.0 | 4.0 | 3.34 | 19.76 | 5 | 0 |
+| 5 | classic_leveling | 020-029 | 27 | vanilla | none | Uncommon | shield | tank | origin=0;quality=2;slot=shield;armor=shield;weapon=shield;pvp=none;role=tank | 5.68 | 0.0 | 5.68 | 6.0 | -5.333 | 2 | 0 |
+| 5 | classic_leveling | 030-039 | 31 | vanilla | none | Uncommon | finger | healer | origin=0;quality=2;slot=finger;armor=0;weapon=none;pvp=none;role=healer | 6.68 | 0.0 | 6.68 | 7.01 | -4.708 | 0 | 0 |
+| 5 | classic_leveling | 030-039 | 33 | vanilla | none | Rare | feet | physical | origin=0;quality=3;slot=feet;armor=2;weapon=none;pvp=none;role=physical | 13.36 | 0.0 | 13.36 | 13.36 | 0.0 | 0 | 5 |
+| 5 | classic_leveling | 030-039 | 33 | vanilla | none | Rare | weapon_one_hand | physical | origin=0;quality=3;slot=weapon_one_hand;armor=none;weapon=weapon_one_hand:physical;pvp=none;role=physical | 9.01 | 0.0 | 9.01 | 7.84 | 14.923 | 1 | 1 |
+| 5 | classic_leveling | 040-049 | 43 | vanilla | none | Rare | weapon_one_hand | physical | origin=0;quality=3;slot=weapon_one_hand;armor=none;weapon=weapon_one_hand:physical;pvp=none;role=physical | 10.01 | 0.0 | 10.01 | 10.02 | -0.1 | 0 | 0 |
+| 5 | classic_leveling | 050-059 | 53 | vanilla | none | Rare | feet | physical | origin=0;quality=3;slot=feet;armor=2;weapon=none;pvp=none;role=physical | 25.71 | 0.0 | 25.71 | 27.03 | -4.883 | 0 | 4 |
+| 5 | classic_leveling | 050-059 | 53 | vanilla | none | Rare | ranged | physical | origin=0;quality=3;slot=ranged;armor=none;weapon=ranged:bow_gun_crossbow;pvp=none;role=physical | 3.0 | 0.0 | 3.0 | 8.36 | -64.115 | 5 | 4 |
+| 5 | classic_leveling | 050-059 | 58 | vanilla | none | Rare | waist | healer | origin=0;quality=3;slot=waist;armor=1;weapon=none;pvp=none;role=healer | 31.68 | 0.0 | 31.68 | 32.7 | -3.119 | 1 | 4 |
+| 5 | classic_leveling | 050-059 | 59 | vanilla | none | Rare | feet | healer | origin=0;quality=3;slot=feet;armor=1;weapon=none;pvp=none;role=healer | 34.03 | 0.0 | 34.03 | 34.71 | -1.959 | 1 | 3 |
+| 4 | classic_leveling | 000-009 | 5 | vanilla | none | Uncommon | chest | healer | origin=0;quality=2;slot=chest;armor=1;weapon=none;pvp=none;role=healer | 1.0 | 0.0 | 1.0 | 2.0 | -50.0 | 4 | 4 |
+| 4 | classic_leveling | 010-019 | 13 | vanilla | none | Uncommon | chest | physical | origin=0;quality=2;slot=chest;armor=2;weapon=none;pvp=none;role=physical | 2.505 | 0.0 | 2.505 | 4.68 | -46.474 | 4 | 4 |
+| 4 | classic_leveling | 010-019 | 15 | vanilla | none | Uncommon | cloak | healer | origin=0;quality=2;slot=cloak;armor=1;weapon=none;pvp=none;role=healer | 2.0 | 0.0 | 2.0 | 4.0 | -50.0 | 4 | 4 |
+| 4 | classic_leveling | 010-019 | 15 | vanilla | none | Uncommon | shield | tank | origin=0;quality=2;slot=shield;armor=shield;weapon=shield;pvp=none;role=tank | 2.0 | 0.0 | 2.0 | 2.01 | -0.498 | 0 | 0 |
+| 4 | classic_leveling | 010-019 | 18 | vanilla | none | Uncommon | cloak | generic | origin=0;quality=2;slot=cloak;armor=1;weapon=none;pvp=none;role=generic | 2.01 | 0.0 | 2.01 | 2.01 | 0.0 | 0 | 0 |
+| 4 | classic_leveling | 010-019 | 18 | vanilla | none | Uncommon | hands | physical | origin=0;quality=2;slot=hands;armor=2;weapon=none;pvp=none;role=physical | 4.335 | 0.0 | 4.335 | 5.0 | -13.3 | 2 | 2 |
+| 4 | classic_leveling | 010-019 | 18 | vanilla | none | Uncommon | weapon_two_hand | healer | origin=0;quality=2;slot=weapon_two_hand;armor=none;weapon=weapon_two_hand:physical;pvp=none;role=healer | 5.67 | 0.0 | 5.67 | 6.0 | -5.5 | 1 | 0 |
+| 4 | classic_leveling | 010-019 | 19 | vanilla | none | Uncommon | weapon_one_hand | physical | origin=0;quality=2;slot=weapon_one_hand;armor=none;weapon=weapon_one_hand:physical;pvp=none;role=physical | 2.0 | 0.0 | 2.0 | 2.0 | 0.0 | 1 | 1 |
+| 4 | classic_leveling | 020-029 | 20 | vanilla | none | Uncommon | hands | physical | origin=0;quality=2;slot=hands;armor=2;weapon=none;pvp=none;role=physical | 5.505 | 0.0 | 5.505 | 5.0 | 10.1 | 2 | 0 |
+| 4 | classic_leveling | 020-029 | 20 | vanilla | none | Uncommon | hands | physical | origin=0;quality=2;slot=hands;armor=3;weapon=none;pvp=none;role=physical | 6.0 | 0.0 | 6.0 | 5.0 | 20.0 | 4 | 1 |
+| 4 | classic_leveling | 020-029 | 21 | vanilla | none | Uncommon | weapon_one_hand | physical | origin=0;quality=2;slot=weapon_one_hand;armor=none;weapon=weapon_one_hand:physical;pvp=none;role=physical | 3.0 | 0.0 | 3.0 | 3.0 | 0.0 | 2 | 2 |
+| 4 | classic_leveling | 020-029 | 23 | vanilla | none | Rare | weapon_two_hand | healer | origin=0;quality=3;slot=weapon_two_hand;armor=none;weapon=weapon_two_hand:physical;pvp=none;role=healer | 17.855 | 0.0 | 17.855 | 16.515 | 8.216 | 3 | 1 |
+| 4 | classic_leveling | 020-029 | 25 | vanilla | none | Uncommon | chest | healer | origin=0;quality=2;slot=chest;armor=1;weapon=none;pvp=none;role=healer | 9.5 | 0.0 | 9.5 | 9.59 | -0.884 | 1 | 1 |
+| 4 | classic_leveling | 020-029 | 25 | vanilla | none | Uncommon | feet | healer | origin=0;quality=2;slot=feet;armor=1;weapon=none;pvp=none;role=healer | 7.175 | 0.0 | 7.175 | 6.338 | 13.623 | 2 | 2 |
+| 4 | classic_leveling | 020-029 | 25 | vanilla | none | Uncommon | finger | healer | origin=0;quality=2;slot=finger;armor=0;weapon=none;pvp=none;role=healer | 5.34 | 0.0 | 5.34 | 5.67 | -4.82 | 2 | 2 |
