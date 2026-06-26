@@ -7273,6 +7273,33 @@ bool bot_ai::_canCureTarget(Unit const* target, uint32 cureSpell) const
     return !(dispel_list.empty());
 }
 
+namespace
+{
+    constexpr uint32 SPELL_KALECGOS_CURSE_OF_BOUNDLESS_AGONY = 45032;
+    constexpr uint32 SPELL_KALECGOS_CURSE_OF_BOUNDLESS_AGONY_PLAYER = 45034;
+    constexpr int32 KALECGOS_BOUNDLESS_AGONY_MIN_DISPEL_DELAY = 15 * IN_MILLISECONDS;
+    constexpr int32 KALECGOS_BOUNDLESS_AGONY_DISPEL_DELAY_SPREAD = 5 * IN_MILLISECONDS;
+
+    bool ShouldDelayKalecgosBoundlessAgonyDispel(Unit const* target, Aura const* aura)
+    {
+        if (!target || !aura)
+            return false;
+
+        uint32 const spellId = aura->GetSpellInfo()->Id;
+        if (spellId != SPELL_KALECGOS_CURSE_OF_BOUNDLESS_AGONY && spellId != SPELL_KALECGOS_CURSE_OF_BOUNDLESS_AGONY_PLAYER)
+            return false;
+
+        int32 const maxDuration = aura->GetMaxDuration();
+        int32 const remainingDuration = aura->GetDuration();
+        if (maxDuration <= 0 || remainingDuration < 0)
+            return false;
+
+        int32 const activeDuration = std::max<int32>(0, maxDuration - remainingDuration);
+        int32 const dispelDelay = KALECGOS_BOUNDLESS_AGONY_MIN_DISPEL_DELAY + int32(target->GetGUID().GetCounter() % (KALECGOS_BOUNDLESS_AGONY_DISPEL_DELAY_SPREAD + 1));
+        return activeDuration < dispelDelay;
+    }
+}
+
 void bot_ai::_getBotDispellableAuraList(Unit const* target, uint32 dispelMask, std::list<Aura const*>& dispelList) const
 {
     //Unholy Blight prevents diseases from being dispelled
@@ -7297,6 +7324,9 @@ void bot_ai::_getBotDispellableAuraList(Unit const* target, uint32 dispelMask, s
 
             //skip Vampiric Touch to prevent being CCed just heal it out
             if (HasRole(BOT_ROLE_HEAL) && aura->GetSpellInfo()->IsRankOf(sSpellMgr->GetSpellInfo(34914)))
+                continue;
+
+            if (ShouldDelayKalecgosBoundlessAgonyDispel(target, aura))
                 continue;
 
             if (((aura->GetSpellInfo()->AttributesEx7 & SPELL_ATTR7_DISPEL_REMOVES_CHARGES) ? aura->GetCharges() : aura->GetStackAmount()) > 0)
