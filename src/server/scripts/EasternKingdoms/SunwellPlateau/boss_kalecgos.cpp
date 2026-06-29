@@ -33,6 +33,11 @@
 #include <list>
 #include <vector>
 
+namespace BonusLootRolls
+{
+    void AddExplicitBossDeathOpportunities(Player* killer, Creature* killed);
+}
+
 enum Yells
 {
     SAY_SATH_AGGRO                              = 0,
@@ -181,6 +186,15 @@ namespace
             return nullptr;
 
         return targets[urand(0, uint32(targets.size() - 1))];
+    }
+
+    Player* SelectKalecgosBonusLootKiller(WorldObject const* source)
+    {
+        for (Unit* unit : GatherKalecgosEncounterUnits(source))
+            if (Player* player = unit->GetCharmerOrOwnerPlayerOrPlayerItself())
+                return player;
+
+        return nullptr;
     }
 
     void AppendKalecgosEncounterTargets(std::list<WorldObject*>& targets, WorldObject const* source, ObjectGuid avoid = ObjectGuid::Empty)
@@ -335,6 +349,9 @@ struct boss_kalecgos : public BossAI
 
         _encounterComplete = true;
         scheduler.CancelAll();
+
+        if (Creature* Sath = instance->GetCreature(DATA_SATHROVARR))
+            BonusLootRolls::AddExplicitBossDeathOpportunities(SelectKalecgosBonusLootKiller(me), Sath);
 
         me->m_Events.AddEventAtOffset([&] {
             me->SetRegeneratingHealth(false);
@@ -729,32 +746,56 @@ private:
     Unit* _caster;
 };
 
+void SelectBoundlessAgonyTarget(std::list<WorldObject*>& targets, Unit* caster)
+{
+    if (!caster)
+    {
+        targets.clear();
+        return;
+    }
+
+    AppendKalecgosEncounterTargets(targets, caster, caster->GetGUID());
+    targets.remove_if(BoundlessAgonyTargetCheck(caster));
+    Acore::Containers::RandomResize(targets, 1);
+}
+
 class spell_kalecgos_curse_of_boundless_agony : public SpellScript
 {
     PrepareSpellScript(spell_kalecgos_curse_of_boundless_agony);
 
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
-        return ValidateSpellInfo({ SPELL_CURSE_OF_BOUNDLESS_AGONY, SPELL_CURSE_OF_BOUNDLESS_AGONY_PLR });
+        return ValidateSpellInfo({ SPELL_CURSE_OF_BOUNDLESS_AGONY });
     }
 
     void FilterTargets(std::list<WorldObject*>& targets)
     {
-        Unit* caster = GetCaster();
-        if (!caster)
-        {
-            targets.clear();
-            return;
-        }
-
-        AppendKalecgosEncounterTargets(targets, caster, caster->GetGUID());
-        targets.remove_if(BoundlessAgonyTargetCheck(caster));
-        Acore::Containers::RandomResize(targets, 1);
+        SelectBoundlessAgonyTarget(targets, GetCaster());
     }
 
     void Register() override
     {
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_kalecgos_curse_of_boundless_agony::FilterTargets, EFFECT_ALL, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_kalecgos_curse_of_boundless_agony::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+    }
+};
+
+class spell_kalecgos_curse_of_boundless_agony_player : public SpellScript
+{
+    PrepareSpellScript(spell_kalecgos_curse_of_boundless_agony_player);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SPELL_CURSE_OF_BOUNDLESS_AGONY_PLR });
+    }
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        SelectBoundlessAgonyTarget(targets, GetCaster());
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_kalecgos_curse_of_boundless_agony_player::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ALLY);
     }
 };
 
@@ -854,6 +895,7 @@ void AddSC_boss_kalecgos()
     RegisterSunwellPlateauCreatureAI(boss_kalec);
     RegisterSpellScript(spell_kalecgos_spectral_blast_dummy);
     RegisterSpellAndAuraScriptPairWithArgs(spell_kalecgos_curse_of_boundless_agony, spell_kalecgos_curse_of_boundless_agony_aura, "spell_kalecgos_curse_of_boundless_agony_aura");
+    RegisterSpellAndAuraScriptPairWithArgs(spell_kalecgos_curse_of_boundless_agony_player, spell_kalecgos_curse_of_boundless_agony_aura, "spell_kalecgos_curse_of_boundless_agony_player");
     RegisterSpellScript(spell_kalecgos_spectral_realm_dummy);
     RegisterSpellScript(spell_kalecgos_spectral_realm_aura);
 }

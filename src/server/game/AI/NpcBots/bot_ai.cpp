@@ -2983,6 +2983,405 @@ namespace
         }
     }
 
+    namespace KalecgosBot
+    {
+        static constexpr uint32 NPC_KALECGOS = 24850;
+        static constexpr uint32 NPC_SATHROVARR = 24892;
+        static constexpr float TARGET_SEARCH_RANGE = 180.0f;
+        static constexpr float HEALTH_BALANCE_SWAP_GAP = 5.0f;
+
+        bool IsEncounterBossEntry(uint32 entry)
+        {
+            return entry == NPC_KALECGOS || entry == NPC_SATHROVARR;
+        }
+
+        bool IsAttackableEncounterBoss(bot_ai const* ai, Creature* bot, Creature* boss, int8 byspell)
+        {
+            if (!ai || !bot || !boss || !boss->IsAlive() || !IsEncounterBossEntry(boss->GetEntry()))
+                return false;
+
+            if (boss->GetMapId() != MAP_THE_SUNWELL || bot->GetMap() != boss->GetMap())
+                return false;
+
+            if (boss->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE))
+                return false;
+
+            if (!boss->IsVisible() || !boss->isTargetableForAttack(false))
+                return false;
+
+            if (!(ai->CanSeeEveryone() || (bot->CanSeeOrDetect(boss) && boss->InSamePhase(bot))))
+                return false;
+
+            if (!bot->IsWithinLOSInMap(boss))
+                return false;
+
+            return ai->CanBotAttack(boss, byspell);
+        }
+
+        Creature* FindBoss(bot_ai const* ai, Creature* bot, uint32 entry, int8 byspell)
+        {
+            if (!bot)
+                return nullptr;
+
+            std::list<Creature*> bosses;
+            bot->GetCreatureListWithEntryInGrid(bosses, entry, TARGET_SEARCH_RANGE);
+
+            Creature* best = nullptr;
+            float bestDistance = std::numeric_limits<float>::max();
+            for (Creature* boss : bosses)
+            {
+                if (!IsAttackableEncounterBoss(ai, bot, boss, byspell))
+                    continue;
+
+                float const distance = bot->GetDistance(boss);
+                if (!best || distance < bestDistance)
+                {
+                    best = boss;
+                    bestDistance = distance;
+                }
+            }
+
+            return best;
+        }
+
+        Creature* SelectBalancedTarget(bot_ai const* ai, Creature* bot, Unit* currentUnit, int8 byspell, bool& reset)
+        {
+            Creature* kalecgos = FindBoss(ai, bot, NPC_KALECGOS, byspell);
+            Creature* sathrovarr = FindBoss(ai, bot, NPC_SATHROVARR, byspell);
+            Creature* currentCreature = currentUnit ? currentUnit->ToCreature() : nullptr;
+            Creature* current = currentCreature && IsEncounterBossEntry(currentCreature->GetEntry()) ? currentCreature : nullptr;
+
+            Creature* target = nullptr;
+            if (kalecgos && sathrovarr)
+            {
+                float const healthGap = kalecgos->GetHealthPct() - sathrovarr->GetHealthPct();
+                if (std::fabs(healthGap) >= HEALTH_BALANCE_SWAP_GAP)
+                    target = healthGap > 0.0f ? kalecgos : sathrovarr;
+                else if (current == kalecgos || current == sathrovarr)
+                    target = current;
+                else
+                    target = (bot->GetGUID().GetCounter() % 2) ? kalecgos : sathrovarr;
+            }
+            else
+                target = kalecgos ? kalecgos : sathrovarr;
+
+            if (!target || target == currentUnit)
+                return target;
+
+            reset = true;
+            return target;
+        }
+    }
+
+    namespace BrutallusBot
+    {
+        static constexpr uint32 NPC_BRUTALLUS = 24882;
+
+        static constexpr uint32 SPELL_METEOR_SLASH = 45150;
+        static constexpr uint32 SPELL_BURN_DAMAGE = 46394;
+        static constexpr uint32 SPELL_STOMP = 45185;
+        static constexpr uint32 SPELL_MAJOR_FIRE_PROTECTION_POTION = 28511;
+        static constexpr uint32 SPELL_ICE_BLOCK = 45438;
+        static constexpr uint32 SPELL_FIRE_WARD = 543;
+        static constexpr uint32 SPELL_DIVINE_SHIELD = 642;
+        static constexpr uint32 SPELL_CLOAK_OF_SHADOWS = 31224;
+
+        static constexpr uint8 TANK_SWAP_METEOR_STACKS = 4;
+        static constexpr uint8 EMERGENCY_METEOR_STACKS = 6;
+
+        static constexpr float ENCOUNTER_SCAN_RANGE = 140.0f;
+        static constexpr float TANK_DISTANCE = 7.0f;
+        static constexpr float TANK_ANCHOR_TOLERANCE = 2.0f;
+        static constexpr float TANK_ANCHOR_DESTINATION_TOLERANCE = 1.0f;
+        static constexpr float TANK_BOSS_RELOCATE_DISTANCE = 10.0f;
+        static constexpr float SOAK_GROUP_DISTANCE = 29.0f;
+        static constexpr float SOAK_GROUP_ANGLE = 0.70f;
+        static constexpr float SOAK_GROUP_SPACING = 5.0f;
+        static constexpr float SOAK_GROUP_TOLERANCE = 2.5f;
+        static constexpr uint8 SOAK_GROUP_COLUMNS = 3;
+
+        struct BurnSurvivalState
+        {
+            uint32 instanceId = 0;
+            ObjectGuid brutallusGuid = ObjectGuid::Empty;
+            bool hadBurn = false;
+            bool classResponseHandled = false;
+            bool burnPotionCast = false;
+            bool tankPotionCast = false;
+        };
+
+        std::unordered_map<ObjectGuid::LowType, BurnSurvivalState> BurnSurvivalStates;
+
+        bool IsActive(Creature const* brutallus)
+        {
+            return brutallus && brutallus->IsAlive() && brutallus->IsInCombat() && brutallus->GetEntry() == NPC_BRUTALLUS;
+        }
+
+        Creature* FindBrutallus(Unit const* source)
+        {
+            if (!source || source->GetMapId() != MAP_THE_SUNWELL || !source->GetMap())
+                return nullptr;
+
+            if (Creature* victim = source->GetVictim() ? source->GetVictim()->ToCreature() : nullptr)
+                if (IsActive(victim))
+                    return victim;
+
+            Creature* brutallus = nullptr;
+            Bcore::AllCreaturesOfEntryInRange check(source, NPC_BRUTALLUS, ENCOUNTER_SCAN_RANGE);
+            Bcore::CreatureSearcher<Bcore::AllCreaturesOfEntryInRange> searcher(source, brutallus, check);
+            Cell::VisitObjects(source, searcher, ENCOUNTER_SCAN_RANGE);
+
+            return IsActive(brutallus) ? brutallus : nullptr;
+        }
+
+        Unit* GetCurrentTank(Creature const* brutallus)
+        {
+            Creature* mutableBrutallus = const_cast<Creature*>(brutallus);
+            if (!mutableBrutallus)
+                return nullptr;
+
+            if (Unit* victim = mutableBrutallus->GetVictim())
+                return victim;
+
+            if (Unit* current = mutableBrutallus->GetThreatMgr().GetCurrentVictim())
+                return current;
+
+            return mutableBrutallus->GetThreatMgr().GetLastVictim();
+        }
+
+        uint8 GetMeteorSlashStacks(Unit const* unit)
+        {
+            Aura const* aura = unit ? unit->GetAura(SPELL_METEOR_SLASH) : nullptr;
+            return aura ? std::max<uint8>(1, aura->GetStackAmount()) : 0;
+        }
+
+        bool HasBurn(Unit const* unit)
+        {
+            return unit && unit->HasAura(SPELL_BURN_DAMAGE);
+        }
+
+        BurnSurvivalState& GetBurnSurvivalState(Creature* bot, Creature* brutallus)
+        {
+            BurnSurvivalState& state = BurnSurvivalStates[bot->GetGUID().GetCounter()];
+            uint32 const instanceId = bot->GetInstanceId();
+            ObjectGuid const brutallusGuid = brutallus ? brutallus->GetGUID() : ObjectGuid::Empty;
+            if (state.instanceId != instanceId || state.brutallusGuid != brutallusGuid)
+                state = BurnSurvivalState{ instanceId, brutallusGuid };
+
+            return state;
+        }
+
+        void ClearBurnSurvivalState(Creature const* bot)
+        {
+            if (bot)
+                BurnSurvivalStates.erase(bot->GetGUID().GetCounter());
+        }
+
+        bool TryCastFireProtectionPotion(Creature* bot)
+        {
+            if (!bot || !sSpellMgr->GetSpellInfo(SPELL_MAJOR_FIRE_PROTECTION_POTION))
+                return false;
+
+            if (bot->HasAura(SPELL_MAJOR_FIRE_PROTECTION_POTION))
+                return true;
+
+            bot->CastSpell(bot, SPELL_MAJOR_FIRE_PROTECTION_POTION, true);
+            return true;
+        }
+
+        bool IsTankRole(bot_ai const* ai, Creature const* bot)
+        {
+            return ai && bot && (ai->IsTank(bot) || ai->IsOffTank(bot) || ai->HasRole(BOT_ROLE_TANK | BOT_ROLE_TANK_OFF));
+        }
+
+        bool IsSoakRole(bot_ai const* ai, Creature const* bot)
+        {
+            return ai && bot && !IsTankRole(ai, bot) && ai->HasRole(BOT_ROLE_RANGED | BOT_ROLE_HEAL);
+        }
+
+        uint8 GetBotSlot(Creature const* bot, Player const* master);
+
+        Position GetEncounterAnchor(Creature const* brutallus)
+        {
+            if (!brutallus)
+                return Position();
+
+            Position const& home = brutallus->GetHomePosition();
+            Position anchor = home;
+            if (brutallus->GetExactDist2d(home.GetPositionX(), home.GetPositionY()) >= TANK_BOSS_RELOCATE_DISTANCE)
+                anchor.Relocate(brutallus->GetPositionX(), brutallus->GetPositionY(), brutallus->GetPositionZ(), brutallus->GetOrientation());
+
+            return anchor;
+        }
+
+        bool TryBuildAnchorPosition(Creature* bot, Creature const* brutallus, float angleOffset, float distance, float lateralOffset, float radialOffset, Position& destination)
+        {
+            if (!bot || !IsActive(brutallus))
+                return false;
+
+            Position anchor = GetEncounterAnchor(brutallus);
+            float const angle = Position::NormalizeOrientation(anchor.GetOrientation() + angleOffset);
+            float const sideAngle = Position::NormalizeOrientation(angle + float(M_PI) * 0.5f);
+            float x = anchor.GetPositionX() + std::cos(angle) * (distance + radialOffset) + std::cos(sideAngle) * lateralOffset;
+            float y = anchor.GetPositionY() + std::sin(angle) * (distance + radialOffset) + std::sin(sideAngle) * lateralOffset;
+            float z = anchor.GetPositionZ();
+
+            if (!bot->CanFly())
+                bot->UpdateAllowedPositionZ(x, y, z);
+
+            destination.Relocate(x, y, z, bot->GetAngle(brutallus));
+            return destination.IsPositionValid() && bot->IsWithinLOS(destination.GetPositionX(), destination.GetPositionY(), destination.GetPositionZ());
+        }
+
+        bool TryGetTankAnchorPosition(Creature* bot, Creature const* brutallus, Position& destination)
+        {
+            return TryBuildAnchorPosition(bot, brutallus, 0.0f, 0.0f, 0.0f, 0.0f, destination);
+        }
+
+        bool TryGetSoakGroupPosition(bot_ai const* ai, Creature* bot, Player const* master, Creature const* brutallus, Position& destination)
+        {
+            if (!IsSoakRole(ai, bot) || !master)
+                return false;
+
+            uint8 const slot = master->GetBotMgr() ? master->GetBotMgr()->GetNpcBotSlotByRole(BOT_ROLE_RANGED | BOT_ROLE_HEAL, bot) : GetBotSlot(bot, master);
+            uint8 const zeroBasedSlot = slot > 0 ? slot - 1 : 0;
+            uint8 const group = zeroBasedSlot % 2;
+            uint8 const groupSlot = zeroBasedSlot / 2;
+            int8 const column = int8(groupSlot % SOAK_GROUP_COLUMNS) - 1;
+            uint8 const row = groupSlot / SOAK_GROUP_COLUMNS;
+            float const lateralOffset = float(column) * SOAK_GROUP_SPACING;
+            float const radialOffset = float(row) * SOAK_GROUP_SPACING;
+            float const angleOffset = group == 0 ? SOAK_GROUP_ANGLE : -SOAK_GROUP_ANGLE;
+
+            return TryBuildAnchorPosition(bot, brutallus, angleOffset, SOAK_GROUP_DISTANCE, lateralOffset, radialOffset, destination);
+        }
+
+        bool IsMovingToPosition(Creature* bot, Position const& destination)
+        {
+            if (!bot || !bot->isMoving())
+                return false;
+
+            Position currentDestination;
+            bot->GetMotionMaster()->GetDestination(currentDestination.m_positionX, currentDestination.m_positionY, currentDestination.m_positionZ);
+            return currentDestination.GetExactDist2d(&destination) <= TANK_ANCHOR_DESTINATION_TOLERANCE;
+        }
+
+        bool MaintainAssignedPosition(bot_ai* ai, Creature* bot, Player const* master, Creature* brutallus)
+        {
+            if (!ai || !bot || ai->IAmFree() || !IsActive(brutallus) || HasBurn(bot))
+                return false;
+
+            Position destination;
+            float tolerance = SOAK_GROUP_TOLERANCE;
+            if (IsTankRole(ai, bot))
+            {
+                if (!TryGetTankAnchorPosition(bot, brutallus, destination))
+                    return false;
+
+                tolerance = TANK_ANCHOR_TOLERANCE;
+            }
+            else if (!TryGetSoakGroupPosition(ai, bot, master, brutallus, destination))
+                return false;
+
+            bot->Attack(brutallus, true);
+
+            if (bot->GetExactDist2d(destination.GetPositionX(), destination.GetPositionY()) <= tolerance)
+            {
+                if (bot->isMoving())
+                    bot->BotStopMovement();
+
+                if (!ai->HasBotCommandState(BOT_COMMAND_STAY))
+                    ai->SetBotCommandState(BOT_COMMAND_STAY);
+
+                return true;
+            }
+
+            if (IsMovingToPosition(bot, destination))
+                return true;
+
+            bot->InterruptNonMeleeSpells(false);
+            if (!ai->HasBotCommandState(BOT_COMMAND_STAY))
+                ai->SetBotCommandState(BOT_COMMAND_STAY);
+
+            ai->BotMovement(BOT_MOVE_POINT, &destination, nullptr, true);
+            return true;
+        }
+
+        uint8 GetBotSlot(Creature const* bot, Player const* master)
+        {
+            if (master && master->GetBotMgr())
+                return master->GetBotMgr()->GetNpcBotSlot(bot);
+
+            return bot ? uint8(bot->GetGUID().GetCounter() % 24) : 0;
+        }
+
+        bool TryRelativePosition(Creature const* bot, Creature const* brutallus, float distance, float angle, Position& destination)
+        {
+            if (!bot || !brutallus)
+                return false;
+
+            Position candidate = brutallus->GetFirstCollisionPosition(distance, Position::NormalizeOrientation(angle - brutallus->GetOrientation()));
+            if (!candidate.IsPositionValid())
+                return false;
+
+            if (!bot->IsWithinLOS(candidate.GetPositionX(), candidate.GetPositionY(), candidate.GetPositionZ()) ||
+                !brutallus->IsWithinLOS(candidate.GetPositionX(), candidate.GetPositionY(), candidate.GetPositionZ()))
+                return false;
+
+            destination.Relocate(candidate);
+            return true;
+        }
+
+        bool TryGetBrutallusPosition(bot_ai const* ai, Creature const* bot, Player const* master, Creature const* brutallus, Position& destination)
+        {
+            if (!ai || !bot || !master || !IsActive(brutallus))
+                return false;
+
+            Unit* tank = GetCurrentTank(brutallus);
+            if (!tank)
+                tank = const_cast<Player*>(master);
+
+            float const frontAngle = brutallus->GetAbsoluteAngle(tank);
+
+            if (IsTankRole(ai, bot))
+            {
+                if (TryGetTankAnchorPosition(const_cast<Creature*>(bot), brutallus, destination))
+                    return true;
+
+                return TryRelativePosition(bot, brutallus, TANK_DISTANCE, frontAngle, destination);
+            }
+
+            if (TryGetSoakGroupPosition(ai, const_cast<Creature*>(bot), master, brutallus, destination))
+                return true;
+
+            return false;
+        }
+
+        bool ShouldUseBrutallusPosition(bot_ai const* ai, Creature const* bot, Player const* master, Creature const* brutallus)
+        {
+            if (!ai || !bot || ai->IAmFree() || !master || bot->GetMapId() != MAP_THE_SUNWELL || !IsActive(brutallus))
+                return false;
+
+            if (HasBurn(bot))
+                return false;
+
+            return IsTankRole(ai, bot) || IsSoakRole(ai, bot);
+        }
+
+        bool NeedsBrutallusReposition(bot_ai const* ai, Creature const* bot, Player const* master, Creature const* brutallus)
+        {
+            if (!ShouldUseBrutallusPosition(ai, bot, master, brutallus))
+                return false;
+
+            Position desired;
+            if (!TryGetBrutallusPosition(ai, bot, master, brutallus, desired))
+                return false;
+
+            float const tolerance = IsTankRole(ai, bot) ? 1.5f : SOAK_GROUP_TOLERANCE;
+            return bot->GetExactDist2d(desired.GetPositionX(), desired.GetPositionY()) > tolerance;
+        }
+    }
+
     namespace IllidanBot
     {
         static constexpr uint32 NPC_ILLIDAN_STORMRAGE = 22917;
@@ -9581,6 +9980,18 @@ std::pair<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool& res
             }
         }
 
+        // Sunwell Plateau - Kalecgos. Non-tank DPS bots balance damage between
+        // Kalecgos and Sathrovarr so the linked-pressure Crazed Rage check does
+        // not punish a bot raid for tunneling the first target acquired.
+        bool const kalecgosBalanceTankRole = IsTank() || IsOffTank() || HasRole(BOT_ROLE_TANK | BOT_ROLE_TANK_OFF);
+        if (me->GetMapId() == MAP_THE_SUNWELL && me->IsInCombat() && HasRole(BOT_ROLE_DPS) && !kalecgosBalanceTankRole && !HasRole(BOT_ROLE_HEAL) &&
+            !HasBotCommandState(BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION) &&
+            !(HasRole(BOT_ROLE_HEAL) && IsCasting()))
+        {
+            if (Creature* kalecgosTarget = KalecgosBot::SelectBalancedTarget(this, me, mytar, byspell, reset))
+                return { kalecgosTarget, nullptr };
+        }
+
         // Black Temple - Reliquary of Souls. During intermissions, owned bots
         // should clean up Enslaved Souls without dragging the Soul Release value
         // away from the raid.
@@ -12779,6 +13190,157 @@ bool bot_ai::TryGurtoggTankSwap(uint32 diff)
     return false;
 }
 
+bool bot_ai::TryBrutallusTankSwap(uint32 diff)
+{
+    if (!me || !me->IsAlive() || IAmFree() || !IsTank() || IsCasting())
+        return false;
+
+    Creature* brutallus = BrutallusBot::FindBrutallus(me);
+    if (!BrutallusBot::IsActive(brutallus) || brutallus->HasAuraType(SPELL_AURA_MOD_TAUNT))
+        return false;
+
+    Unit* oldTank = BrutallusBot::GetCurrentTank(brutallus);
+    if (!oldTank || oldTank == me)
+        return false;
+
+    uint8 const meteorStacks = BrutallusBot::GetMeteorSlashStacks(oldTank);
+    bool const stomped = oldTank->HasAura(BrutallusBot::SPELL_STOMP);
+    bool const unableToTank = GurtoggBot::IsUnableToTank(oldTank);
+    if (!unableToTank && !stomped && meteorStacks < BrutallusBot::TANK_SWAP_METEOR_STACKS)
+        return false;
+
+    uint32 const baseTaunt = GurtoggBot::GetDirectTauntBaseSpell(this);
+    uint32 const taunt = baseTaunt ? GetSpell(baseTaunt) : 0;
+    if (taunt && IsSpellReady(baseTaunt, diff, false) && CheckBotCast(brutallus, taunt) == SPELL_CAST_OK)
+    {
+        if (doCast(brutallus, taunt))
+            return true;
+    }
+
+    if (unableToTank || stomped || meteorStacks >= BrutallusBot::EMERGENCY_METEOR_STACKS)
+    {
+        GurtoggBot::ApplyThreatHandoff(brutallus, me, oldTank);
+        me->Attack(brutallus, true);
+        return true;
+    }
+
+    return false;
+}
+
+bool bot_ai::TryBrutallusBurnSurvival(uint32 diff)
+{
+    if (!me || !me->IsAlive() || IAmFree() || me->GetMapId() != MAP_THE_SUNWELL)
+    {
+        BrutallusBot::ClearBurnSurvivalState(me);
+        return false;
+    }
+
+    Creature* brutallus = BrutallusBot::FindBrutallus(me);
+    if (!BrutallusBot::IsActive(brutallus))
+    {
+        BrutallusBot::ClearBurnSurvivalState(me);
+        return false;
+    }
+
+    BrutallusBot::BurnSurvivalState& state = BrutallusBot::GetBurnSurvivalState(me, brutallus);
+    bool cast = false;
+
+    auto firePotionAlreadyUsed = [&state]() -> bool
+    {
+        return state.burnPotionCast || state.tankPotionCast;
+    };
+
+    bool const tankRole = BrutallusBot::IsTankRole(this, me);
+    if (tankRole && !firePotionAlreadyUsed())
+    {
+        if (BrutallusBot::TryCastFireProtectionPotion(me))
+        {
+            state.tankPotionCast = true;
+            cast = true;
+        }
+    }
+
+    bool const hasBurn = BrutallusBot::HasBurn(me);
+    if (!hasBurn)
+    {
+        state.hadBurn = false;
+        state.classResponseHandled = false;
+        return cast;
+    }
+
+    bool burnReceived = !state.hadBurn;
+    state.hadBurn = true;
+
+    auto trySelfSpell = [this, diff](uint32 baseSpell) -> bool
+    {
+        uint32 const spell = GetSpell(baseSpell);
+        if (!spell || !IsSpellReady(baseSpell, diff, false))
+            return false;
+
+        if (IsCasting())
+            me->InterruptNonMeleeSpells(false);
+
+        return doCast(me, spell);
+    };
+
+    bool shouldUsePotion = false;
+    if (!state.classResponseHandled)
+    {
+        switch (GetBotClass())
+        {
+            case BOT_CLASS_MAGE:
+                if (trySelfSpell(BrutallusBot::SPELL_ICE_BLOCK))
+                {
+                    state.classResponseHandled = true;
+                    cast = true;
+                }
+                else
+                {
+                    shouldUsePotion = true;
+                    if (trySelfSpell(BrutallusBot::SPELL_FIRE_WARD))
+                    {
+                        state.classResponseHandled = true;
+                        cast = true;
+                    }
+                }
+                break;
+            case BOT_CLASS_PALADIN:
+            {
+                bool const holyHealer = HasRole(BOT_ROLE_HEAL) && GetSpec() == BOT_SPEC_PALADIN_HOLY;
+                bool const retDps = HasRole(BOT_ROLE_DPS) && GetSpec() == BOT_SPEC_PALADIN_RETRIBUTION;
+                if ((holyHealer || retDps) && trySelfSpell(BrutallusBot::SPELL_DIVINE_SHIELD))
+                {
+                    state.classResponseHandled = true;
+                    cast = true;
+                }
+                else
+                    shouldUsePotion = true;
+                break;
+            }
+            case BOT_CLASS_ROGUE:
+                if (trySelfSpell(BrutallusBot::SPELL_CLOAK_OF_SHADOWS))
+                {
+                    state.classResponseHandled = true;
+                    cast = true;
+                }
+                else
+                    shouldUsePotion = true;
+                break;
+            default:
+                shouldUsePotion = burnReceived || !state.burnPotionCast;
+                break;
+        }
+    }
+
+    if (shouldUsePotion && !firePotionAlreadyUsed() && BrutallusBot::TryCastFireProtectionPotion(me))
+    {
+        state.burnPotionCast = true;
+        cast = true;
+    }
+
+    return cast;
+}
+
 bool bot_ai::TryReliquarySupport(uint32 diff)
 {
     if (!me || !me->IsAlive() || me->IsMounted() || IsCasting() || GC_Timer > diff)
@@ -15447,6 +16009,17 @@ void bot_ai::CalculateAttackPos(Unit* target, Position& pos, bool& force) const
                 force = true;
                 return;
             }
+        }
+    }
+
+    if (BrutallusBot::ShouldUseBrutallusPosition(this, me, master, target->ToCreature()))
+    {
+        Position brutallusPos;
+        if (BrutallusBot::TryGetBrutallusPosition(this, me, master, target->ToCreature(), brutallusPos))
+        {
+            pos.Relocate(brutallusPos);
+            force = true;
+            return;
         }
     }
 
@@ -29380,6 +29953,8 @@ bool bot_ai::GlobalUpdate(uint32 diff)
         }
 
         TryGurtoggTankSwap(lastdiff);
+        TryBrutallusTankSwap(lastdiff);
+        TryBrutallusBurnSurvival(lastdiff);
         TryReliquarySupport(lastdiff);
         TryIllidariCouncilSupport(lastdiff);
         IllidanBot::TryUseEncounterConsumables(this, me);
@@ -29390,6 +29965,12 @@ bool bot_ai::GlobalUpdate(uint32 diff)
         bool const mustMoveFromLurkerSpout = combatPositionCreature && LurkerBot::ShouldMoveForSpout(me, combatPositionCreature);
         bool const mustMoveFromSupremusFixation = combatPositionCreature && SupremusBot::IsFixated(me, combatPositionCreature);
         bool const mustMoveForBloodboil = combatPositionCreature && GurtoggBot::ShouldUseBloodboilPosition(this, me, combatPositionCreature);
+        Creature* brutallusPositionCreature = combatPositionCreature && combatPositionCreature->GetEntry() == BrutallusBot::NPC_BRUTALLUS ?
+            combatPositionCreature : BrutallusBot::FindBrutallus(me);
+        bool const brutallusAssignedPositionHandled = brutallusPositionCreature &&
+            BrutallusBot::MaintainAssignedPosition(this, me, master, brutallusPositionCreature);
+        bool const mustMoveForBrutallus = !brutallusAssignedPositionHandled && brutallusPositionCreature &&
+            BrutallusBot::NeedsBrutallusReposition(this, me, master, brutallusPositionCreature);
         bool const mustMoveForReliquary = combatPositionCreature && ReliquaryBot::ShouldUseReliquaryPosition(this, me, combatPositionCreature);
         Creature* motherShahrazPositionCreature = combatPositionCreature && combatPositionCreature->GetEntry() == MotherShahrazBot::NPC_MOTHER_SHAHRAZ ?
             combatPositionCreature : MotherShahrazBot::FindMother(me);
@@ -29404,9 +29985,9 @@ bool bot_ai::GlobalUpdate(uint32 diff)
         bool const mustMoveForIllidan = illidanPositionCreature &&
             IllidanBot::NeedsIllidanReposition(this, me, master, illidanPositionCreature);
         bool const forcedEncounterMove = mustMoveFromLurkerSpout || mustMoveFromSupremusFixation || mustMoveForBloodboil || mustMoveForReliquary ||
-            mustMoveForMotherShahraz || mustMoveForIllidariCouncil || mustMoveForIllidan;
+            mustMoveForBrutallus || mustMoveForMotherShahraz || mustMoveForIllidariCouncil || mustMoveForIllidan;
         bool const canIgnoreUnchaseForEncounterMove = (motherFatalAttractionEmergency && !HasBotCommandState(BOT_COMMAND_INACTION)) ||
-            ((mustMoveFromSupremusFixation || mustMoveForReliquary || mustMoveForMotherShahraz || mustMoveForIllidariCouncil || mustMoveForIllidan) &&
+            ((mustMoveFromSupremusFixation || mustMoveForReliquary || mustMoveForBrutallus || mustMoveForMotherShahraz || mustMoveForIllidariCouncil || mustMoveForIllidan) &&
             !HasBotCommandState(BOT_COMMAND_MASK_UNMOVING | BOT_COMMAND_INACTION));
         if ((!HasBotCommandState(BOT_COMMAND_MASK_UNCHASE) || canIgnoreUnchaseForEncounterMove) && !CCed(mover, true) &&
             (motherFatalAttractionEmergency || IAmFree() || master->GetBotMgr()->GetBotAllowCombatPositioning()) &&
@@ -29416,6 +29997,7 @@ bool bot_ai::GlobalUpdate(uint32 diff)
         {
             Unit* positionTarget = mustMoveForMotherShahraz ? motherShahrazPositionCreature :
                 mustMoveForIllidariCouncil ? illidariCouncilPositionCreature :
+                mustMoveForBrutallus ? brutallusPositionCreature :
                 mustMoveForIllidan ? illidanPositionCreature : combatPositionTarget;
             if (Unit* victim = positionTarget)
             {
@@ -29440,7 +30022,7 @@ bool bot_ai::GlobalUpdate(uint32 diff)
                     RefreshAoeSpots(&master->GetBotMgr()->GetAoeSpots());
 
                 //BOT_LOG_ERROR("scripts", "GetInPos prepare by %s", me->GetName().c_str());
-                if (mustMoveForMotherShahraz || mustMoveForIllidariCouncil || mustMoveForIllidan)
+                if (mustMoveForMotherShahraz || mustMoveForIllidariCouncil || mustMoveForBrutallus || mustMoveForIllidan)
                 {
                     bool force = false;
                     CalculateAttackPos(victim, attackpos, force);

@@ -441,6 +441,8 @@ protected:
     void RefreshAura(uint32 spellId, int8 count = 1, Unit* target = nullptr) const;
     bool CheckAttackTarget();
     bool TryGurtoggTankSwap(uint32 diff);
+    bool TryBrutallusTankSwap(uint32 diff);
+    bool TryBrutallusBurnSurvival(uint32 diff);
     bool TryReliquarySupport(uint32 diff);
     bool TryIllidariCouncilSupport(uint32 diff);
     BotEncounterHeroismState GetIllidanPhaseTwoHeroismState() const;

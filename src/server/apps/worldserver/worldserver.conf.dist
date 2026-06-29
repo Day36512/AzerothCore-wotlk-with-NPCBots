@@ -5028,6 +5028,37 @@ BlackTemple.Illidan.FlameOfAzzinoth.TetherExtraDistance = 5
 BlackTemple.Illidan.RangedDpsBotHazardDamageMultiplier = 0.7
 
 #
+#    SunwellPlateau.Brutallus.MeteorSlashDamageMultiplier
+#        Description: Damage multiplier applied to Brutallus Meteor Slash after
+#                     normal split damage is calculated. Set below 1.0 to soften
+#                     the fight for groups without three tanks, or above 1.0 to
+#                     increase Meteor Slash pressure. Values are clamped from
+#                     0.0 to 5.0.
+#        Default:     1.0
+
+SunwellPlateau.Brutallus.MeteorSlashDamageMultiplier = 1.0
+
+#
+#    SunwellPlateau.Brutallus.BurnDurationSeconds
+#        Description: Duration in seconds for Brutallus Burn. Values are clamped
+#                     from 1 to 300.
+#        Default:     60
+
+SunwellPlateau.Brutallus.BurnDurationSeconds = 60
+
+#
+#    SunwellPlateau.Brutallus.MaxActiveBurnTargets
+#        Description: Maximum number of players and NPCBots that can have
+#                     Brutallus Burn at the same time while Brutallus is in
+#                     combat. New Burn applications above this cap are removed.
+#                     Tanks are always stripped of Burn separately.
+#                     Values are clamped from 0 to 25. Set to 0 to prevent all
+#                     active Burn auras during the fight.
+#        Default:     3
+
+SunwellPlateau.Brutallus.MaxActiveBurnTargets = 3
+
+#
 #    Glyph.ExtraSlots.RequiredItemQuality
 #        Description: Minimum item quality required when applying glyph items to the
 #                     ExtraGlyphSlots mastery slots. This does not affect normal

@@ -16,15 +16,41 @@
  */
 
 #include "AreaTriggerScript.h"
+#include "Config.h"
+#include "Containers.h"
 #include "CreatureScript.h"
+#include "Group.h"
 #include "MapReference.h"
 #include "PassiveAI.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
+#include "SpellAuras.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
+#include "ThreatManager.h"
 #include "WorldSession.h"
+#include "bot_ai.h"
+#include "botmgr.h"
 #include "sunwell_plateau.h"
+
+#include <algorithm>
+#include <cmath>
+#include <functional>
+#include <limits>
+#include <map>
+#include <string>
+#include <vector>
+
+namespace BonusLootRolls
+{
+    void AddExplicitBossDeathOpportunities(Player* killer, Creature* killed);
+}
+
+namespace DBMFTABotCallouts
+{
+    uint32 GetCooldownMs();
+    void AnnounceMoveAwayFromMe(Creature* bot, uint32 spellId, std::string const& mechanicName, uint32 cooldownMs = 5000);
+}
 
 enum Quotes
 {
@@ -46,6 +72,7 @@ enum Spells
     SPELL_METEOR_SLASH                  = 45150,
     SPELL_BURN_DAMAGE                   = 46394,
     SPELL_BURN                          = 45141,
+    SPELL_BURN_SPREAD                   = 45151,
     SPELL_STOMP                         = 45185,
     SPELL_BERSERK                       = 26662,
     SPELL_DUAL_WIELD                    = 42459,
@@ -63,6 +90,670 @@ enum Misc
     ACTION_SPAWN_FELMYST                = 2
 };
 
+namespace
+{
+    constexpr float BRUTALLUS_BURN_TARGET_RANGE = 100.0f;
+    constexpr float BRUTALLUS_BURN_SAFE_SCAN_RANGE = 60.0f;
+    constexpr float BRUTALLUS_BURN_SAFE_DISTANCE = 11.0f;
+    constexpr float BRUTALLUS_BURN_SAFE_MIN_BOSS_DISTANCE = 16.0f;
+    constexpr float BRUTALLUS_BURN_SAFE_MAX_MOVE_DISTANCE = 90.0f;
+    constexpr float BRUTALLUS_BURN_BOSS_RELOCATE_DISTANCE = 10.0f;
+    constexpr float BRUTALLUS_BURN_DESTINATION_TOLERANCE = 2.0f;
+    constexpr float BRUTALLUS_BURN_RUN_DISTANCE = 26.0f;
+    constexpr float BRUTALLUS_BURN_RUN_ANGLE_OFFSET = 0.85f;
+    constexpr float BRUTALLUS_TANK_PULL_THREAT = 750000.0f;
+    constexpr float BRUTALLUS_TANK_ANCHOR_TOLERANCE = 2.0f;
+    constexpr float BRUTALLUS_PI = 3.14159265358979323846f;
+    constexpr char const* CONFIG_BRUTALLUS_METEOR_SLASH_DAMAGE_MULTIPLIER = "SunwellPlateau.Brutallus.MeteorSlashDamageMultiplier";
+    constexpr char const* CONFIG_BRUTALLUS_BURN_DURATION_SECONDS = "SunwellPlateau.Brutallus.BurnDurationSeconds";
+    constexpr char const* CONFIG_BRUTALLUS_MAX_ACTIVE_BURN_TARGETS = "SunwellPlateau.Brutallus.MaxActiveBurnTargets";
+
+    float GetBrutallusMeteorSlashDamageMultiplier()
+    {
+        return std::clamp(sConfigMgr->GetOption<float>(CONFIG_BRUTALLUS_METEOR_SLASH_DAMAGE_MULTIPLIER, 1.0f), 0.0f, 5.0f);
+    }
+
+    int32 GetBrutallusBurnDurationMs()
+    {
+        int32 const seconds = std::clamp<int32>(sConfigMgr->GetOption<int32>(CONFIG_BRUTALLUS_BURN_DURATION_SECONDS, 60), 1, 300);
+        return seconds * IN_MILLISECONDS;
+    }
+
+    uint32 GetBrutallusMaxActiveBurnTargets()
+    {
+        return std::clamp<int32>(sConfigMgr->GetOption<int32>(CONFIG_BRUTALLUS_MAX_ACTIVE_BURN_TARGETS, 3), 0, 25);
+    }
+
+    bool IsBrutallusNpcBotRangedOrHealer(Unit* unit)
+    {
+        Creature* creature = unit ? unit->ToCreature() : nullptr;
+        if (!creature || !creature->IsNPCBot())
+            return false;
+
+        bot_ai* ai = creature->GetBotAI();
+        return ai && !ai->IsTank() && !ai->IsOffTank() && !ai->HasRole(BOT_ROLE_TANK | BOT_ROLE_TANK_OFF) && ai->HasRole(BOT_ROLE_RANGED | BOT_ROLE_HEAL);
+    }
+
+    bool IsBrutallusNpcBotTank(Unit* unit)
+    {
+        Creature* creature = unit ? unit->ToCreature() : nullptr;
+        if (!creature || !creature->IsNPCBot())
+            return false;
+
+        bot_ai* ai = creature->GetBotAI();
+        return ai && (ai->IsTank() || ai->IsOffTank() || ai->HasRole(BOT_ROLE_TANK | BOT_ROLE_TANK_OFF));
+    }
+
+    bool IsBrutallusPlayerMarkedTank(Player* player)
+    {
+        Group* group = player ? player->GetGroup() : nullptr;
+        if (!group)
+            return false;
+
+        for (Group::member_citerator itr = group->GetMemberSlots().begin(); itr != group->GetMemberSlots().end(); ++itr)
+            if (itr->guid == player->GetGUID())
+                return itr->flags & MEMBER_FLAG_MAINTANK;
+
+        return false;
+    }
+
+    bool IsBrutallusTank(Unit* unit, Creature* source)
+    {
+        if (!unit)
+            return false;
+
+        if (source && (unit == source->GetThreatMgr().GetCurrentVictim() || unit == source->GetThreatMgr().GetLastVictim() || unit == source->GetVictim()))
+            return true;
+
+        if (IsBrutallusNpcBotTank(unit))
+            return true;
+
+        if (Player* player = unit->ToPlayer())
+            return IsBrutallusPlayerMarkedTank(player);
+
+        return false;
+    }
+
+    bool IsValidBrutallusBurnTarget(Creature* source, Unit* unit, bool excludeTanks)
+    {
+        if (!source || !unit || !unit->IsInWorld() || !unit->IsAlive())
+            return false;
+
+        if (!unit->IsPlayer() && !unit->IsNPCBot())
+            return false;
+
+        if (unit->IsNPCBot() && !IsBrutallusNpcBotRangedOrHealer(unit))
+            return false;
+
+        if (unit->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE) || unit->HasAura(SPELL_BURN_DAMAGE))
+            return false;
+
+        if (excludeTanks && IsBrutallusTank(unit, source))
+            return false;
+
+        if (!unit->IsInMap(source) || !unit->InSamePhase(source))
+            return false;
+
+        if (!source->IsWithinDistInMap(unit, BRUTALLUS_BURN_TARGET_RANGE))
+            return false;
+
+        if (!source->IsValidAttackTarget(unit) || !source->CanSeeOrDetect(unit) || !source->IsWithinLOSInMap(unit))
+            return false;
+
+        return true;
+    }
+
+    void AddBrutallusBurnTarget(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, Unit* unit, bool excludeTanks)
+    {
+        if (!IsValidBrutallusBurnTarget(source, unit, excludeTanks))
+            return;
+
+        if (!seen.insert(unit->GetGUID()).second)
+            return;
+
+        targets.push_back(unit);
+    }
+
+    Player* GetBrutallusOwnerPlayer(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player;
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotOwner() : nullptr;
+    }
+
+    Group* GetBrutallusGroup(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player->GetGroup();
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotGroup() : nullptr;
+    }
+
+    void AddBrutallusOwnedBots(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, Player* player, bool excludeTanks)
+    {
+        if (!player || !player->HaveBot())
+            return;
+
+        BotMgr* botMgr = player->GetBotMgr();
+        if (!botMgr)
+            return;
+
+        for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+            AddBrutallusBurnTarget(source, targets, seen, pair.second, excludeTanks);
+    }
+
+    void AddBrutallusThreatTargets(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, bool excludeTanks)
+    {
+        if (!source)
+            return;
+
+        for (ThreatReference const* ref : source->GetThreatMgr().GetSortedThreatList())
+        {
+            if (!ref || !ref->IsAvailable())
+                continue;
+
+            AddBrutallusBurnTarget(source, targets, seen, ref->GetVictim(), excludeTanks);
+        }
+    }
+
+    std::vector<Unit*> GatherBrutallusBurnTargets(Creature* source, bool excludeTanks)
+    {
+        std::vector<Unit*> targets;
+        GuidSet seen;
+
+        if (!source)
+            return targets;
+
+        Unit* seed = source->GetThreatMgr().GetCurrentVictim();
+        if (!seed)
+            seed = source->GetVictim();
+
+        if (Group* group = GetBrutallusGroup(seed))
+        {
+            for (Unit* member : BotMgr::GetAllGroupMembers(group))
+            {
+                AddBrutallusBurnTarget(source, targets, seen, member, excludeTanks);
+
+                if (Player* player = member ? member->ToPlayer() : nullptr)
+                    AddBrutallusOwnedBots(source, targets, seen, player, excludeTanks);
+            }
+        }
+        else
+        {
+            AddBrutallusBurnTarget(source, targets, seen, seed, excludeTanks);
+
+            if (Player* player = GetBrutallusOwnerPlayer(seed))
+            {
+                AddBrutallusBurnTarget(source, targets, seen, player, excludeTanks);
+                AddBrutallusOwnedBots(source, targets, seen, player, excludeTanks);
+            }
+        }
+
+        AddBrutallusThreatTargets(source, targets, seen, excludeTanks);
+        return targets;
+    }
+
+    Unit* SelectBrutallusBurnTarget(Creature* source)
+    {
+        std::vector<Unit*> targets = GatherBrutallusBurnTargets(source, true);
+        if (targets.empty())
+            targets = GatherBrutallusBurnTargets(source, false);
+
+        return targets.empty() ? nullptr : Acore::Containers::SelectRandomContainerElement(targets);
+    }
+
+    bool IsBrutallusEncounterActive(Creature* brutallus)
+    {
+        return brutallus && brutallus->GetEntry() == NPC_BRUTALLUS && brutallus->IsAlive() && brutallus->IsInCombat();
+    }
+
+    Creature* GetBrutallusForUnit(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        InstanceScript* instance = unit->GetInstanceScript();
+        return instance ? instance->GetCreature(DATA_BRUTALLUS) : nullptr;
+    }
+
+    void ForEachBrutallusPlayerAndBot(Creature* source, std::function<void(Unit*)> const& action)
+    {
+        if (!source || !source->GetMap())
+            return;
+
+        source->GetMap()->DoForAllPlayers([&](Player* player)
+        {
+            if (!player || !player->IsInMap(source) || !player->InSamePhase(source))
+                return;
+
+            action(player);
+
+            if (!player->HaveBot())
+                return;
+
+            if (BotMgr* botMgr = player->GetBotMgr())
+                for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+                    if (Creature* bot = pair.second)
+                        if (bot->IsInMap(source) && bot->InSamePhase(source))
+                            action(bot);
+        });
+    }
+
+    void RemoveBrutallusBurnAuras(Unit* unit)
+    {
+        if (!unit)
+            return;
+
+        unit->RemoveAurasDueToSpell(SPELL_BURN_DAMAGE);
+        unit->RemoveAurasDueToSpell(SPELL_BURN);
+        unit->RemoveAurasDueToSpell(SPELL_BURN_SPREAD);
+    }
+
+    void RemoveAllBrutallusBurnAuras(Creature* source)
+    {
+        ForEachBrutallusPlayerAndBot(source, [](Unit* unit)
+        {
+            RemoveBrutallusBurnAuras(unit);
+        });
+    }
+
+    bool TryGetBrutallusTankHomePosition(Creature* tank, Creature* brutallus, Position& destination)
+    {
+        if (!tank || !brutallus)
+            return false;
+
+        Position const& home = brutallus->GetHomePosition();
+        float x = home.GetPositionX();
+        float y = home.GetPositionY();
+        float z = home.GetPositionZ();
+        if (!tank->CanFly())
+            tank->UpdateAllowedPositionZ(x, y, z);
+
+        destination.Relocate(x, y, z, tank->GetAngle(brutallus));
+        return destination.IsPositionValid() && tank->IsWithinLOS(destination.GetPositionX(), destination.GetPositionY(), destination.GetPositionZ());
+    }
+
+    void MoveBrutallusTankBotToHome(Creature* tank, Creature* brutallus)
+    {
+        if (!tank || !tank->IsNPCBot() || !tank->IsAlive() || !brutallus)
+            return;
+
+        bot_ai* ai = tank->GetBotAI();
+        if (!ai || ai->IAmFree())
+            return;
+
+        Position destination;
+        if (!TryGetBrutallusTankHomePosition(tank, brutallus, destination))
+            return;
+
+        tank->InterruptNonMeleeSpells(false);
+        tank->Attack(brutallus, true);
+
+        if (!ai->HasBotCommandState(BOT_COMMAND_STAY))
+            ai->SetBotCommandState(BOT_COMMAND_STAY);
+
+        if (tank->GetExactDist2d(destination.GetPositionX(), destination.GetPositionY()) <= BRUTALLUS_TANK_ANCHOR_TOLERANCE)
+        {
+            tank->BotStopMovement();
+            return;
+        }
+
+        ai->BotMovement(BOT_MOVE_POINT, &destination, nullptr, true);
+    }
+
+    void RestoreBrutallusTankBotCommandState(Creature* tank, uint32 originalCommandState)
+    {
+        if (!tank || !tank->IsNPCBot())
+            return;
+
+        bot_ai* ai = tank->GetBotAI();
+        if (!ai)
+            return;
+
+        ai->RemoveBotCommandState(BOT_COMMAND_STAY | BOT_COMMAND_FULLSTOP | BOT_COMMAND_ATTACK | BOT_COMMAND_COMBATRESET);
+
+        if (!tank->IsAlive() || ai->IAmFree())
+            return;
+
+        if (originalCommandState & BOT_COMMAND_FULLSTOP)
+            ai->SetBotCommandState(BOT_COMMAND_FULLSTOP);
+        else if (originalCommandState & BOT_COMMAND_STAY)
+            ai->SetBotCommandState(BOT_COMMAND_STAY);
+        else if (originalCommandState & BOT_COMMAND_ATTACK)
+            ai->SetBotCommandState(BOT_COMMAND_ATTACK);
+        else if (originalCommandState & BOT_COMMAND_COMBATRESET)
+            ai->SetBotCommandState(BOT_COMMAND_COMBATRESET);
+        else if (!(originalCommandState & BOT_COMMAND_INACTION))
+            ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+    }
+
+    void PrepareBrutallusTankBots(Creature* brutallus, std::map<ObjectGuid, uint32>& originalStates)
+    {
+        if (!brutallus || !brutallus->CanHaveThreatList())
+            return;
+
+        ForEachBrutallusPlayerAndBot(brutallus, [brutallus, &originalStates](Unit* unit)
+        {
+            Creature* bot = unit ? unit->ToCreature() : nullptr;
+            if (!bot || !bot->IsNPCBot())
+                return;
+
+            bool const isTank = IsBrutallusNpcBotTank(bot);
+            if (!isTank && !IsBrutallusNpcBotRangedOrHealer(bot))
+                return;
+
+            if (bot_ai* ai = bot->GetBotAI())
+                originalStates.try_emplace(bot->GetGUID(), ai->GetBotCommandState());
+
+            if (!isTank)
+                return;
+
+            float const currentThreat = brutallus->GetThreatMgr().GetThreat(bot, true);
+            if (currentThreat < BRUTALLUS_TANK_PULL_THREAT)
+                brutallus->GetThreatMgr().AddThreat(bot, BRUTALLUS_TANK_PULL_THREAT - currentThreat, nullptr, true, true);
+
+            MoveBrutallusTankBotToHome(bot, brutallus);
+        });
+    }
+
+    void ReleaseBrutallusTankBots(Creature* brutallus, std::map<ObjectGuid, uint32>& originalStates)
+    {
+        if (!brutallus || originalStates.empty())
+            return;
+
+        ForEachBrutallusPlayerAndBot(brutallus, [&originalStates](Unit* unit)
+        {
+            Creature* tank = unit ? unit->ToCreature() : nullptr;
+            if (!tank || !tank->IsNPCBot())
+                return;
+
+            auto itr = originalStates.find(tank->GetGUID());
+            if (itr == originalStates.end())
+                return;
+
+            RestoreBrutallusTankBotCommandState(tank, itr->second);
+        });
+
+        originalStates.clear();
+    }
+
+    uint32 CountBrutallusBurnTargets(Creature* source)
+    {
+        uint32 count = 0;
+        ForEachBrutallusPlayerAndBot(source, [&](Unit* unit)
+        {
+            if (unit && unit->IsAlive() && unit->HasAura(SPELL_BURN_DAMAGE))
+                ++count;
+        });
+
+        return count;
+    }
+
+    bool CanApplyBrutallusBurn(Creature* brutallus, Unit* target)
+    {
+        if (!target || !target->IsAlive())
+            return false;
+
+        if (!IsBrutallusEncounterActive(brutallus))
+            return true;
+
+        if (IsBrutallusTank(target, brutallus))
+            return false;
+
+        uint32 const maxTargets = GetBrutallusMaxActiveBurnTargets();
+        if (!maxTargets)
+            return false;
+
+        return target->HasAura(SPELL_BURN_DAMAGE) || CountBrutallusBurnTargets(brutallus) < maxTargets;
+    }
+
+    bool ShouldKeepBrutallusBurn(Creature* brutallus, Unit* target)
+    {
+        if (!target || !target->IsAlive())
+            return false;
+
+        if (!IsBrutallusEncounterActive(brutallus))
+            return true;
+
+        if (IsBrutallusTank(target, brutallus))
+            return false;
+
+        uint32 const maxTargets = GetBrutallusMaxActiveBurnTargets();
+        if (!maxTargets)
+            return false;
+
+        return CountBrutallusBurnTargets(brutallus) <= maxTargets;
+    }
+
+    void AddBrutallusBurnObstacle(Creature* source, Unit* avoid, std::vector<Unit*>& obstacles, Unit* unit)
+    {
+        if (!source || !unit || unit == avoid || !unit->IsInWorld() || !unit->IsAlive())
+            return;
+
+        if (!unit->IsPlayer() && !unit->IsNPCBot())
+            return;
+
+        if (!unit->IsInMap(source) || !unit->InSamePhase(source))
+            return;
+
+        // Existing Burn targets are already contaminated; do not make them chase
+        // each other. Clean players/bots are the only spacing problem here.
+        if (unit->HasAura(SPELL_BURN_DAMAGE))
+            return;
+
+        if (!source->IsWithinDistInMap(unit, BRUTALLUS_BURN_SAFE_SCAN_RANGE))
+            return;
+
+        obstacles.push_back(unit);
+    }
+
+    std::vector<Unit*> GatherBrutallusBurnObstacles(Creature* source, Unit* avoid)
+    {
+        std::vector<Unit*> obstacles;
+        GuidSet seen;
+
+        ForEachBrutallusPlayerAndBot(source, [&](Unit* unit)
+        {
+            if (!unit || !seen.insert(unit->GetGUID()).second)
+                return;
+
+            AddBrutallusBurnObstacle(source, avoid, obstacles, unit);
+        });
+
+        return obstacles;
+    }
+
+    float GetBrutallusBurnClearance(Position const& position, std::vector<Unit*> const& obstacles)
+    {
+        if (obstacles.empty())
+            return BRUTALLUS_BURN_SAFE_DISTANCE * 2.0f;
+
+        float clearance = std::numeric_limits<float>::max();
+        for (Unit* unit : obstacles)
+            if (unit)
+                clearance = std::min(clearance, unit->GetExactDist2d(position.GetPositionX(), position.GetPositionY()));
+
+        return clearance;
+    }
+
+    bool IsBrutallusBurnSafePosition(Creature* bot, Creature* brutallus, Position const& position)
+    {
+        if (!bot)
+            return false;
+
+        Creature* source = brutallus ? brutallus : bot;
+        if (brutallus && brutallus->GetExactDist2d(position.GetPositionX(), position.GetPositionY()) < BRUTALLUS_BURN_SAFE_MIN_BOSS_DISTANCE)
+            return false;
+
+        if (!bot->IsWithinLOS(position.GetPositionX(), position.GetPositionY(), position.GetPositionZ()))
+            return false;
+
+        if (brutallus && !brutallus->IsWithinLOS(position.GetPositionX(), position.GetPositionY(), position.GetPositionZ()))
+            return false;
+
+        return GetBrutallusBurnClearance(position, GatherBrutallusBurnObstacles(source, bot)) >= BRUTALLUS_BURN_SAFE_DISTANCE;
+    }
+
+    Position GetBrutallusEncounterAnchor(Creature* brutallus)
+    {
+        if (!brutallus)
+            return Position();
+
+        Position const& home = brutallus->GetHomePosition();
+        Position anchor = home;
+        if (brutallus->GetExactDist2d(home.GetPositionX(), home.GetPositionY()) >= BRUTALLUS_BURN_BOSS_RELOCATE_DISTANCE)
+            anchor.Relocate(brutallus->GetPositionX(), brutallus->GetPositionY(), brutallus->GetPositionZ(), brutallus->GetOrientation());
+
+        return anchor;
+    }
+
+    bool TryGetBrutallusBurnSafePosition(Creature* bot, Creature* brutallus, Position& destination)
+    {
+        if (!bot || !brutallus)
+            return false;
+
+        Position anchor = GetBrutallusEncounterAnchor(brutallus);
+        float const angle = Position::NormalizeOrientation(anchor.GetOrientation() + BRUTALLUS_PI + BRUTALLUS_BURN_RUN_ANGLE_OFFSET);
+        float x = anchor.GetPositionX() + std::cos(angle) * BRUTALLUS_BURN_RUN_DISTANCE;
+        float y = anchor.GetPositionY() + std::sin(angle) * BRUTALLUS_BURN_RUN_DISTANCE;
+        float z = anchor.GetPositionZ();
+
+        if (!bot->CanFly())
+            bot->UpdateAllowedPositionZ(x, y, z);
+
+        destination.Relocate(x, y, z, bot->GetAngle(brutallus));
+        if (!destination.IsPositionValid())
+            return false;
+
+        if (bot->GetExactDist(destination) > BRUTALLUS_BURN_SAFE_MAX_MOVE_DISTANCE)
+            return false;
+
+        return bot->IsWithinLOS(destination.GetPositionX(), destination.GetPositionY(), destination.GetPositionZ()) &&
+            brutallus->IsWithinLOS(destination.GetPositionX(), destination.GetPositionY(), destination.GetPositionZ());
+    }
+
+    void RestoreBrutallusBurnBotCommandState(Creature* bot, uint32 originalCommandState)
+    {
+        if (!bot || !bot->IsNPCBot())
+            return;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai)
+            return;
+
+        if (!(originalCommandState & BOT_COMMAND_INACTION))
+            ai->RemoveBotCommandState(BOT_COMMAND_INACTION);
+
+        if (!(originalCommandState & BOT_COMMAND_MASK_NOCAST_ANY))
+            ai->RemoveBotCommandState(BOT_COMMAND_MASK_NOCAST_ANY);
+        else
+            ai->SetBotCommandState(originalCommandState & BOT_COMMAND_MASK_NOCAST_ANY);
+
+        ai->RemoveBotCommandState(BOT_COMMAND_STAY | BOT_COMMAND_FULLSTOP | BOT_COMMAND_ATTACK | BOT_COMMAND_COMBATRESET);
+
+        if (!bot->IsAlive() || ai->IAmFree())
+            return;
+
+        if (originalCommandState & BOT_COMMAND_FULLSTOP)
+            ai->SetBotCommandState(BOT_COMMAND_FULLSTOP);
+        else if (originalCommandState & BOT_COMMAND_STAY)
+            ai->SetBotCommandState(BOT_COMMAND_STAY);
+        else if (originalCommandState & BOT_COMMAND_ATTACK)
+            ai->SetBotCommandState(BOT_COMMAND_ATTACK);
+        else if (originalCommandState & BOT_COMMAND_COMBATRESET)
+            ai->SetBotCommandState(BOT_COMMAND_COMBATRESET);
+        else if (!(originalCommandState & BOT_COMMAND_INACTION))
+            ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+    }
+
+    bool HoldBrutallusBurnBot(Unit* target, uint32& originalCommandState)
+    {
+        Creature* bot = target ? target->ToCreature() : nullptr;
+        if (!bot || !bot->IsNPCBot() || !bot->IsAlive())
+            return false;
+
+        if (!IsBrutallusNpcBotRangedOrHealer(bot))
+            return false;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai || ai->IAmFree())
+            return false;
+
+        originalCommandState = ai->GetBotCommandState();
+        DBMFTABotCallouts::AnnounceMoveAwayFromMe(bot, SPELL_BURN_DAMAGE, "Burn", DBMFTABotCallouts::GetCooldownMs());
+
+        bot->InterruptNonMeleeSpells(false);
+        bot->AttackStop();
+        bot->BotStopMovement();
+
+        if (!(originalCommandState & BOT_COMMAND_INACTION))
+            ai->SetBotCommandState(BOT_COMMAND_INACTION);
+
+        ai->SetBotCommandState(BOT_COMMAND_STAY);
+        return true;
+    }
+
+    void EnsureBrutallusBurnBotInaction(Creature* bot)
+    {
+        if (!bot || !bot->IsNPCBot() || !bot->IsAlive())
+            return;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai || ai->IAmFree() || ai->HasBotCommandState(BOT_COMMAND_INACTION))
+            return;
+
+        ai->SetBotCommandState(BOT_COMMAND_INACTION);
+    }
+
+    void StopBrutallusBurnBot(Creature* bot)
+    {
+        if (!bot || !bot->IsNPCBot() || !bot->IsAlive())
+            return;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai || ai->IAmFree())
+            return;
+
+        if (!ai->HasBotCommandState(BOT_COMMAND_INACTION))
+            ai->SetBotCommandState(BOT_COMMAND_INACTION);
+
+        bot->AttackStop();
+        bot->BotStopMovement();
+        if (!ai->HasBotCommandState(BOT_COMMAND_STAY) || bot->isMoving())
+            ai->SetBotCommandState(BOT_COMMAND_STAY);
+    }
+
+    bool MoveBrutallusBurnBotTo(Creature* bot, Position const& destination)
+    {
+        if (!bot || !bot->IsNPCBot() || !bot->IsAlive())
+            return false;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai || ai->IAmFree())
+            return false;
+
+        Position movePosition = destination;
+        bot->InterruptNonMeleeSpells(false);
+        bot->AttackStop();
+        bot->BotStopMovement();
+        if (!ai->HasBotCommandState(BOT_COMMAND_INACTION))
+            ai->SetBotCommandState(BOT_COMMAND_INACTION);
+        if (!ai->HasBotCommandState(BOT_COMMAND_STAY))
+            ai->SetBotCommandState(BOT_COMMAND_STAY);
+        ai->BotMovement(BOT_MOVE_POINT, &movePosition, nullptr, true);
+        return true;
+    }
+}
+
 struct boss_brutallus : public BossAI
 {
     boss_brutallus(Creature* creature) : BossAI(creature, DATA_BRUTALLUS)
@@ -75,6 +766,8 @@ struct boss_brutallus : public BossAI
         BossAI::Reset();
         DoCastSelf(SPELL_DUAL_WIELD, true);
         me->m_Events.KillAllEvents(false);
+        ReleaseBrutallusTankBots(me, _tankAnchorOriginalStates);
+        RemoveAllBrutallusBurnAuras(me);
     }
 
     void JustEngagedWith(Unit* who) override
@@ -84,6 +777,7 @@ struct boss_brutallus : public BossAI
 
         Talk(YELL_AGGRO);
         BossAI::JustEngagedWith(who);
+        PrepareBrutallusTankBots(me, _tankAnchorOriginalStates);
 
         ScheduleEnrageTimer(SPELL_BERSERK, 6min, YELL_BERSERK);
 
@@ -97,7 +791,7 @@ struct boss_brutallus : public BossAI
         }, 30s);
 
         ScheduleTimedEvent(20s, [&] {
-            if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true, true, -SPELL_BURN_DAMAGE))
+            if (Unit* target = SelectBrutallusBurnTarget(me))
                 DoCast(target, SPELL_BURN);
         }, 20s);
     }
@@ -110,6 +804,10 @@ struct boss_brutallus : public BossAI
 
     void JustDied(Unit* killer) override
     {
+        BonusLootRolls::AddExplicitBossDeathOpportunities(killer ? killer->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr, me);
+        ReleaseBrutallusTankBots(me, _tankAnchorOriginalStates);
+        RemoveAllBrutallusBurnAuras(me);
+
         BossAI::JustDied(killer);
         Talk(YELL_DEATH);
 
@@ -124,6 +822,9 @@ struct boss_brutallus : public BossAI
             return;
         BossAI::AttackStart(who);
     }
+
+private:
+    std::map<ObjectGuid, uint32> _tankAnchorOriginalStates;
 };
 
 enum eMadrigosa
@@ -426,20 +1127,271 @@ class spell_brutallus_burn : public SpellScript
 
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
-        return ValidateSpellInfo({ SPELL_BURN_DAMAGE });
+        return ValidateSpellInfo({ SPELL_BURN, SPELL_BURN_SPREAD, SPELL_BURN_DAMAGE });
     }
 
     void HandleScriptEffect(SpellEffIndex effIndex)
     {
         PreventHitDefaultEffect(effIndex);
         if (Unit* target = GetHitUnit())
+        {
+            Creature* brutallus = GetCaster() ? GetCaster()->ToCreature() : nullptr;
+            if (!IsBrutallusEncounterActive(brutallus))
+                brutallus = GetBrutallusForUnit(target);
+
+            if (GetSpellInfo()->Id == SPELL_BURN_SPREAD && target->HasAura(SPELL_BURN_DAMAGE))
+                return;
+
+            if (!CanApplyBrutallusBurn(brutallus, target))
+            {
+                RemoveBrutallusBurnAuras(target);
+                return;
+            }
+
             if (!target->HasAura(SPELL_BURN_DAMAGE))
+            {
                 target->CastSpell(target, SPELL_BURN_DAMAGE, true);
+                if (Aura* burn = target->GetAura(SPELL_BURN_DAMAGE))
+                {
+                    int32 const durationMs = GetBrutallusBurnDurationMs();
+                    burn->SetMaxDuration(durationMs);
+                    burn->SetDuration(durationMs);
+                }
+
+                if (!ShouldKeepBrutallusBurn(brutallus, target))
+                {
+                    RemoveBrutallusBurnAuras(target);
+                    return;
+                }
+            }
+        }
     }
 
     void Register() override
     {
         OnEffectHitTarget += SpellEffectFn(spell_brutallus_burn::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
+};
+
+class spell_brutallus_burn_damage : public AuraScript
+{
+    PrepareAuraScript(spell_brutallus_burn_damage);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SPELL_BURN_DAMAGE });
+    }
+
+    void HandleApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Unit* target = GetTarget();
+        Creature* brutallus = GetBrutallusForUnit(target);
+        if (!ShouldKeepBrutallusBurn(brutallus, target))
+        {
+            RemoveBrutallusBurnAuras(target);
+            return;
+        }
+
+        Creature* bot = target ? target->ToCreature() : nullptr;
+        _handledBot = HoldBrutallusBurnBot(target, _originalCommandState);
+        if (!_handledBot || !bot)
+            return;
+
+        UpdateBossAnchor(brutallus);
+        SettleBurnBot(bot, brutallus, true);
+    }
+
+    void HandlePeriodic(AuraEffect const* aurEff)
+    {
+        Unit* target = GetTarget();
+        Creature* brutallus = GetBrutallusForUnit(target);
+        if (!ShouldKeepBrutallusBurn(brutallus, target))
+        {
+            RemoveBrutallusBurnAuras(target);
+            return;
+        }
+
+        Creature* bot = target ? target->ToCreature() : nullptr;
+        if (!_handledBot || !bot || !bot->IsNPCBot() || !bot->IsAlive())
+            return;
+
+        EnsureBrutallusBurnBotInaction(bot);
+
+        if (HasBossMovedSignificantly(brutallus))
+        {
+            SettleBurnBot(bot, brutallus, true);
+            return;
+        }
+
+        if (_movingToSafeSpot)
+        {
+            if (bot->GetExactDist2d(_safeSpot.GetPositionX(), _safeSpot.GetPositionY()) <= BRUTALLUS_BURN_DESTINATION_TOLERANCE)
+            {
+                StopBrutallusBurnBot(bot);
+                _movingToSafeSpot = false;
+                _settled = true;
+            }
+            else if (!bot->isMoving())
+            {
+                Position current;
+                current.Relocate(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetOrientation());
+                if (!IsBrutallusBurnSafePosition(bot, brutallus, current) && !_retriedSafeMove)
+                {
+                    _retriedSafeMove = true;
+                    Position destination;
+                    if (TryGetBrutallusBurnSafePosition(bot, brutallus, destination))
+                    {
+                        _safeSpot = destination;
+                        _hasSafeSpot = true;
+                        _movingToSafeSpot = MoveBrutallusBurnBotTo(bot, _safeSpot);
+                        return;
+                    }
+                }
+
+                StopBrutallusBurnBot(bot);
+                _movingToSafeSpot = false;
+                _settled = true;
+            }
+
+            return;
+        }
+
+        if (aurEff->GetTickNumber() % 3 == 0)
+        {
+            if (!_settled)
+            {
+                SettleBurnBot(bot, brutallus, false);
+                return;
+            }
+
+            Position current;
+            current.Relocate(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetOrientation());
+            bool const atAssignedSpot = _hasSafeSpot &&
+                bot->GetExactDist2d(_safeSpot.GetPositionX(), _safeSpot.GetPositionY()) <= BRUTALLUS_BURN_DESTINATION_TOLERANCE;
+
+            if (!atAssignedSpot && !IsBrutallusBurnSafePosition(bot, brutallus, current))
+            {
+                SettleBurnBot(bot, brutallus, true);
+                return;
+            }
+        }
+
+        if (_settled && bot->isMoving())
+            StopBrutallusBurnBot(bot);
+    }
+
+    void HandleRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (!_handledBot)
+            return;
+
+        if (Creature* bot = GetTarget() ? GetTarget()->ToCreature() : nullptr)
+            RestoreBrutallusBurnBotCommandState(bot, _originalCommandState);
+    }
+
+    void Register() override
+    {
+        AfterEffectApply += AuraEffectApplyFn(spell_brutallus_burn_damage::HandleApply, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_brutallus_burn_damage::HandlePeriodic, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE);
+        AfterEffectRemove += AuraEffectRemoveFn(spell_brutallus_burn_damage::HandleRemove, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
+    }
+
+private:
+    void UpdateBossAnchor(Creature* brutallus)
+    {
+        if (!brutallus)
+        {
+            _hasBossAnchor = false;
+            return;
+        }
+
+        _bossAnchor.Relocate(brutallus->GetPositionX(), brutallus->GetPositionY(), brutallus->GetPositionZ(), brutallus->GetOrientation());
+        _hasBossAnchor = true;
+    }
+
+    bool HasBossMovedSignificantly(Creature* brutallus) const
+    {
+        if (!brutallus || !_hasBossAnchor)
+            return false;
+
+        return brutallus->GetExactDist2d(_bossAnchor.GetPositionX(), _bossAnchor.GetPositionY()) >= BRUTALLUS_BURN_BOSS_RELOCATE_DISTANCE;
+    }
+
+    void SettleBurnBot(Creature* bot, Creature* brutallus, bool forceRecheck)
+    {
+        if (!bot)
+            return;
+
+        Position current;
+        current.Relocate(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetOrientation());
+
+        if (!forceRecheck && IsBrutallusBurnSafePosition(bot, brutallus, current))
+        {
+            StopBrutallusBurnBot(bot);
+            _hasSafeSpot = false;
+            _movingToSafeSpot = false;
+            _settled = true;
+            UpdateBossAnchor(brutallus);
+            return;
+        }
+
+        Position destination;
+        if (TryGetBrutallusBurnSafePosition(bot, brutallus, destination))
+        {
+            _safeSpot = destination;
+            _hasSafeSpot = true;
+            _movingToSafeSpot = MoveBrutallusBurnBotTo(bot, _safeSpot);
+            _settled = false;
+            _retriedSafeMove = false;
+            UpdateBossAnchor(brutallus);
+            return;
+        }
+
+        StopBrutallusBurnBot(bot);
+        _hasSafeSpot = false;
+        _movingToSafeSpot = false;
+        _settled = true;
+        UpdateBossAnchor(brutallus);
+    }
+
+    bool _handledBot = false;
+    bool _hasBossAnchor = false;
+    bool _hasSafeSpot = false;
+    bool _movingToSafeSpot = false;
+    bool _settled = false;
+    bool _retriedSafeMove = false;
+    uint32 _originalCommandState = 0;
+    Position _bossAnchor;
+    Position _safeSpot;
+};
+
+class spell_brutallus_meteor_slash : public SpellScript
+{
+    PrepareSpellScript(spell_brutallus_meteor_slash);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SPELL_METEOR_SLASH });
+    }
+
+    void ScaleDamage()
+    {
+        int32 damage = GetHitDamage();
+        if (damage <= 0)
+            return;
+
+        float const multiplier = GetBrutallusMeteorSlashDamageMultiplier();
+        if (multiplier == 1.0f)
+            return;
+
+        double scaled = double(damage) * double(multiplier);
+        scaled = std::clamp(scaled, double(std::numeric_limits<int32>::min()), double(std::numeric_limits<int32>::max()));
+        SetHitDamage(int32(scaled));
+    }
+
+    void Register() override
+    {
+        OnHit += SpellHitFn(spell_brutallus_meteor_slash::ScaleDamage);
     }
 };
 
@@ -466,5 +1418,7 @@ void AddSC_boss_brutallus()
     RegisterSpellScript(spell_madrigosa_activate_barrier);
     RegisterSpellScript(spell_madrigosa_deactivate_barrier);
     RegisterSpellScript(spell_brutallus_burn);
+    RegisterSpellScript(spell_brutallus_burn_damage);
+    RegisterSpellScript(spell_brutallus_meteor_slash);
     new at_sunwell_madrigosa();
 }

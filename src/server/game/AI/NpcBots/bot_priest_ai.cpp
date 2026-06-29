@@ -126,6 +126,7 @@ enum PriestSpecial
 
     PRE_PULL_SUPPORT_TIMER = 1500,
     TANK_SUPPORT_CHECK_TIMER = 850,
+    PROACTIVE_DISC_SHIELD_TIMER = 1200,
     POWER_INFUSION_RETRY_TIMER = 1500,
 
     SHADOWFIEND_1 = 34433
@@ -333,14 +334,22 @@ public:
             return false;
         }
 
-        bool ShieldTarget(Unit* target, uint32 diff)
+        bool CanShieldTarget(Unit* target) const
         {
             if (!target || !target->IsAlive())
                 return false;
-            if (!IsSpellReady(PW_SHIELD_1, diff) || IsCasting())
-                return false;
             if (target->HasAuraTypeWithFamilyFlags(SPELL_AURA_MECHANIC_IMMUNITY, SPELLFAMILY_PRIEST, 0x20000000) ||
                 target->HasAuraTypeWithFamilyFlags(SPELL_AURA_SCHOOL_ABSORB, SPELLFAMILY_PRIEST, 0x1))
+                return false;
+
+            return true;
+        }
+
+        bool ShieldTarget(Unit* target, uint32 diff)
+        {
+            if (!CanShieldTarget(target))
+                return false;
+            if (!IsSpellReady(PW_SHIELD_1, diff) || IsCasting())
                 return false;
 
             if (doCast(target, GetSpell(PW_SHIELD_1)))
@@ -638,6 +647,71 @@ public:
             return false;
         }
 
+        bool TryProactiveDisciplineShield(uint32 diff)
+        {
+            if (ProactiveShieldTimer > diff || GC_Timer > diff)
+                return false;
+            if (me->IsMounted() || me->GetVehicle() || IAmFree() || IsCasting())
+                return false;
+            if (GetSpec() != BOT_SPEC_PRIEST_DISCIPLINE || !HasRole(BOT_ROLE_HEAL) || HasRole(BOT_ROLE_TANK))
+                return false;
+            if (!master || !master->GetBotMgr() || !IsSpellReady(PW_SHIELD_1, false, diff))
+                return false;
+
+            bool const partyInCombat = me->IsInCombat() || master->IsInCombat() || master->GetBotMgr()->IsPartyInCombat(false);
+            if (!partyInCombat)
+                return false;
+
+            ProactiveShieldTimer = PROACTIVE_DISC_SHIELD_TIMER;
+
+            if (me->GetPowerType() != POWER_MANA || GetManaPCT(me) < 45)
+                return false;
+
+            Unit* best = nullptr;
+            uint32 bestScore = 0;
+            for (Unit* member : BotMgr::GetAllGroupMembers(master))
+            {
+                if (!member || !member->IsAlive() || me->GetMap() != member->FindMap())
+                    continue;
+                if (member->isPossessed() || member->IsCharmed() || me->GetDistance(member) > 40.f)
+                    continue;
+                if (!member->IsPlayer() && !member->IsNPCBot())
+                    continue;
+                if (member->IsNPCBot() && member->ToCreature()->IsTempBot())
+                    continue;
+
+                uint8 const hp = GetHealthPCT(member);
+                bool const underPressure = member->IsInCombat() || !member->getAttackers().empty();
+                if (hp <= GetHealHpPctThreshold() || (hp <= 88 && underPressure))
+                    return false;
+                if (!CanShieldTarget(member))
+                    continue;
+
+                uint32 score = 1;
+                if (IsTank(member))
+                    score += 500;
+                if (!member->getAttackers().empty())
+                    score += 250;
+                if (member->IsInCombat())
+                    score += 75;
+                if (member->IsPlayer())
+                    score += 60;
+                else
+                    score += 45;
+                if (member == master)
+                    score += 25;
+                score += 100 - hp;
+
+                if (!best || score > bestScore)
+                {
+                    best = member;
+                    bestScore = score;
+                }
+            }
+
+            return best && ShieldTarget(best, diff);
+        }
+
         void StartAttack(Unit* u, bool force = false)
         {
             if (!bot_ai::StartAttack(u, force))
@@ -761,6 +835,9 @@ public:
             DoPrePullTankSupport(diff);
 
             if (ProcessImmediateNonAttackTarget())
+                return;
+
+            if (TryProactiveDisciplineShield(diff))
                 return;
 
             if (!CheckAttackTarget())
@@ -2428,6 +2505,7 @@ public:
             Mend_Timer = 0;
             PrePullSupportTimer = 0;
             TankSupportTimer = 0;
+            ProactiveShieldTimer = 0;
 
             DispelcheckTimer = 0;
             DevcheckTimer = 0;
@@ -2445,6 +2523,7 @@ public:
             if (Mend_Timer > diff)                  Mend_Timer -= diff;
             if (PrePullSupportTimer > diff)         PrePullSupportTimer -= diff;
             if (TankSupportTimer > diff)            TankSupportTimer -= diff;
+            if (ProactiveShieldTimer > diff)        ProactiveShieldTimer -= diff;
 
             if (DispelcheckTimer > diff)            DispelcheckTimer -= diff;
             if (DevcheckTimer > diff)               DevcheckTimer -= diff;
@@ -2656,7 +2735,7 @@ public:
 
     private:
         uint32 HEAL;
-        uint32 Shackle_Timer, Mend_Timer, PrePullSupportTimer, TankSupportTimer, DispelcheckTimer, DevcheckTimer, ShackcheckTimer;
+        uint32 Shackle_Timer, Mend_Timer, PrePullSupportTimer, TankSupportTimer, ProactiveShieldTimer, DispelcheckTimer, DevcheckTimer, ShackcheckTimer;
         /*Misc*/bool Devcheck, Shackcheck;
 
         using HealMap = std::unordered_map<uint32 /*baseId*/, int32 /*amount*/>;
