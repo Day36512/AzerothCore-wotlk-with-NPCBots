@@ -16,15 +16,22 @@
  */
 
 #include "CreatureScript.h"
+#include "Group.h"
 #include "PassiveAI.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "SpellAuraEffects.h"
+#include "SpellAuras.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
+#include "SpellMgr.h"
+#include "bot_ai.h"
+#include "botmgr.h"
 #include "sunwell_plateau.h"
 #include "VMapFactory.h"
 #include "VMapMgr2.h"
+
+#include <vector>
 
 enum Spells
 {
@@ -58,10 +65,176 @@ enum Spells
     // Dark Fiend Spells
     SPELL_DARK_FIEND_APPEARANCE         = 45934,
     SPELL_DARK_FIEND_SECONDARY          = 45936,
-    SPELL_DARK_FIEND_TRIGGER            = 45944
+    SPELL_DARK_FIEND_TRIGGER            = 45944,
     // It is currently unkown why Dark Fiend Casts this or what it should do
     //SPELL_DARK_FIEND_TRIGGER_SINGLE   = 45943
+
+    // NPCBot opening consumables
+    SPELL_FLASK_OF_CHROMATIC_WONDER     = 42735,
+    SPELL_SCROLL_OF_STAMINA             = 48101
 };
+
+namespace
+{
+    constexpr float MURU_BOT_CONSUMABLE_RANGE = 150.0f;
+
+    bool IsOwnedMuruNpcBot(Unit const* unit)
+    {
+        Creature const* creature = unit ? unit->ToCreature() : nullptr;
+        return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI();
+    }
+
+    bool IsMuruConsumableBot(Unit const* unit)
+    {
+        return unit && unit->IsAlive() && unit->IsInWorld() && IsOwnedMuruNpcBot(unit);
+    }
+
+    bool HasMuruFlaskAura(Unit const* unit)
+    {
+        if (!unit)
+            return false;
+
+        for (Unit::AuraApplicationMap::value_type const& pair : unit->GetAppliedAuras())
+        {
+            Aura const* aura = pair.second ? pair.second->GetBase() : nullptr;
+            if (!aura)
+                continue;
+
+            uint32 const spellId = aura->GetId();
+            if (sSpellMgr->IsSpellMemberOfSpellGroup(spellId, SPELL_GROUP_ELIXIR_BATTLE) &&
+                sSpellMgr->IsSpellMemberOfSpellGroup(spellId, SPELL_GROUP_ELIXIR_GUARDIAN))
+                return true;
+        }
+
+        return false;
+    }
+
+    void CastMuruKnownSelfSpell(Creature* bot, uint32 spellId)
+    {
+        if (bot && sSpellMgr->GetSpellInfo(spellId))
+            bot->CastSpell(bot, spellId, true);
+    }
+
+    void AddMuruConsumableBot(Creature* source, std::vector<Creature*>& bots, GuidSet& seen, Unit* unit)
+    {
+        if (!source || !IsMuruConsumableBot(unit))
+            return;
+
+        Creature* bot = unit->ToCreature();
+        if (!bot || !bot->IsInMap(source) || !bot->InSamePhase(source))
+            return;
+
+        if (!source->IsWithinDistInMap(bot, MURU_BOT_CONSUMABLE_RANGE))
+            return;
+
+        if (!seen.insert(bot->GetGUID()).second)
+            return;
+
+        bots.push_back(bot);
+    }
+
+    Player* GetMuruOwnerPlayer(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player;
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotOwner() : nullptr;
+    }
+
+    Group* GetMuruGroup(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player->GetGroup();
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotGroup() : nullptr;
+    }
+
+    void AddMuruOwnedBots(Creature* source, std::vector<Creature*>& bots, GuidSet& seen, Player* player)
+    {
+        if (!player || !player->HaveBot())
+            return;
+
+        BotMgr* botMgr = player->GetBotMgr();
+        if (!botMgr)
+            return;
+
+        for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+            AddMuruConsumableBot(source, bots, seen, pair.second);
+    }
+
+    void AddMuruThreatBots(Creature* source, std::vector<Creature*>& bots, GuidSet& seen)
+    {
+        if (!source)
+            return;
+
+        for (ThreatReference const* ref : source->GetThreatMgr().GetSortedThreatList())
+        {
+            if (!ref || !ref->IsAvailable())
+                continue;
+
+            AddMuruConsumableBot(source, bots, seen, ref->GetVictim());
+        }
+    }
+
+    std::vector<Creature*> GatherMuruConsumableBots(Creature* source, Unit* seed)
+    {
+        std::vector<Creature*> bots;
+        GuidSet seen;
+
+        if (!source)
+            return bots;
+
+        if (!seed)
+            seed = source->GetThreatMgr().GetCurrentVictim();
+
+        if (!seed)
+            seed = source->GetVictim();
+
+        if (Group* group = GetMuruGroup(seed))
+        {
+            for (Unit* member : BotMgr::GetAllGroupMembers(group))
+            {
+                AddMuruConsumableBot(source, bots, seen, member);
+
+                if (Player* player = member ? member->ToPlayer() : nullptr)
+                    AddMuruOwnedBots(source, bots, seen, player);
+            }
+        }
+        else
+        {
+            AddMuruConsumableBot(source, bots, seen, seed);
+
+            if (Player* player = GetMuruOwnerPlayer(seed))
+            {
+                AddMuruConsumableBot(source, bots, seen, player);
+                AddMuruOwnedBots(source, bots, seen, player);
+            }
+        }
+
+        AddMuruThreatBots(source, bots, seen);
+        return bots;
+    }
+
+    void CastMuruOpeningBotConsumables(Creature* source, Unit* seed)
+    {
+        for (Creature* bot : GatherMuruConsumableBots(source, seed))
+        {
+            if (HasMuruFlaskAura(bot))
+                continue;
+
+            CastMuruKnownSelfSpell(bot, SPELL_FLASK_OF_CHROMATIC_WONDER);
+            CastMuruKnownSelfSpell(bot, SPELL_SCROLL_OF_STAMINA);
+        }
+    }
+}
 
 struct boss_muru : public BossAI
 {
@@ -90,6 +263,8 @@ struct boss_muru : public BossAI
     void JustEngagedWith(Unit* who) override
     {
         BossAI::JustEngagedWith(who);
+        CastMuruOpeningBotConsumables(me, who);
+
         DoCastSelf(SPELL_NEGATIVE_ENERGY, true);
         DoCastSelf(SPELL_SUMMON_BLOOD_ELVES_PERIODIC, true);
         DoCastSelf(SPELL_OPEN_PORTAL_PERIODIC, true);
@@ -152,7 +327,7 @@ struct boss_entropius : public ScriptedAI
         me->m_Events.AddEventAtOffset([&] {
             me->SetReactState(REACT_AGGRESSIVE);
             me->SetInCombatWithZone();
-            AttackStart(SelectTargetFromPlayerList(50.0f));
+            AttackStart(SelectTarget(SelectTargetMethod::Random, 0, 50.0f, false, true));
         }, 3s);
     }
 
@@ -169,7 +344,7 @@ struct boss_entropius : public ScriptedAI
     void JustEngagedWith(Unit* /*who*/) override
     {
         ScheduleTimedEvent(8s, 29s, [this]() {
-            DoCastRandomTarget(SPELL_DARKNESS, 0, 50.0f, true, true);
+            DoCastRandomTarget(SPELL_DARKNESS, 0, 50.0f, false, true);
         }, 8s, 29s);
 
         ScheduleTimedEvent(14s, 29s, [this]() {
@@ -213,7 +388,7 @@ struct npc_dark_fiend : public ScriptedAI
             Unit* target = nullptr;
             if (InstanceScript* instance = me->GetInstanceScript())
                 if (Creature* muru = instance->GetCreature(DATA_MURU))
-                    target = muru->GetAI()->SelectTarget(SelectTargetMethod::Random, 0, RangeSelector(me, 50.0f, true, true));
+                    target = muru->GetAI()->SelectTarget(SelectTargetMethod::Random, 0, RangeSelector(me, 50.0f, false, true));
 
             if (target)
             {

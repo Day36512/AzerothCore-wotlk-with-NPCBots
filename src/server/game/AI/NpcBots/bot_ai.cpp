@@ -3060,6 +3060,31 @@ namespace
                 alythess->GetThreatMgr().AddThreat(bot, WARLOCK_TANK_THREAT - currentThreat, nullptr, true, true);
         }
 
+        bool IsTankRole(bot_ai const* ai, Creature const* bot)
+        {
+            return ai && bot && (ai->IsTank(bot) || ai->IsOffTank(bot) || ai->HasRole(BOT_ROLE_TANK | BOT_ROLE_TANK_OFF));
+        }
+
+        Creature* SelectSacrolashForTankRole(bot_ai const* ai, Creature* bot, Unit* currentUnit, int8 byspell, bool& reset)
+        {
+            if (!ai || !bot || !IsTankRole(ai, bot) || ai->GetBotClass() == BOT_CLASS_WARLOCK ||
+                bot->GetMapId() != MAP_THE_SUNWELL || !bot->IsInCombat())
+                return nullptr;
+
+            Creature* currentCreature = currentUnit ? currentUnit->ToCreature() : nullptr;
+            Creature* sacrolash = currentCreature && currentCreature->GetEntry() == NPC_LADY_SACROLASH
+                ? currentCreature
+                : FindTwin(ai, bot, NPC_LADY_SACROLASH, byspell);
+
+            if (!IsAttackableTwin(ai, bot, sacrolash, byspell))
+                return nullptr;
+
+            if (currentUnit != sacrolash)
+                reset = true;
+
+            return sacrolash;
+        }
+
         Creature* SelectAlythessForWarlock(bot_ai const* ai, Creature* bot, Unit* currentUnit, int8 byspell, bool& reset)
         {
             if (!ai || !bot || ai->GetBotClass() != BOT_CLASS_WARLOCK || bot->GetMapId() != MAP_THE_SUNWELL || !bot->IsInCombat())
@@ -3115,6 +3140,684 @@ namespace
                     continue;
 
                 spots.emplace_back(*blaze, BLAZE_AVOID_RADIUS + blaze->GetObjectSize() + DEFAULT_COMBAT_REACH);
+            }
+        }
+    }
+
+    namespace MuruBot
+    {
+        static constexpr uint32 NPC_MURU = 25741;
+        static constexpr uint32 NPC_ENTROPIUS = 25840;
+        static constexpr uint32 NPC_DARK_FIEND = 25744;
+        static constexpr uint32 NPC_VOID_SENTINEL = 25772;
+        static constexpr uint32 NPC_VOID_SPAWN = 25824;
+        static constexpr uint32 NPC_SHADOWSWORD_BERSERKER = 25798;
+        static constexpr uint32 NPC_SHADOWSWORD_FURY_MAGE = 25799;
+        static constexpr uint32 NPC_DARKNESS = 25879;
+        static constexpr uint32 NPC_SINGULARITY = 25855;
+
+        static constexpr uint32 SPELL_DARK_FIEND_APPEARANCE = 45934;
+        static constexpr uint32 SPELL_SHADOWSWORD_SPELL_FURY = 46102;
+        static constexpr uint32 SPELL_PRIEST_DISPEL_MAGIC = 527;
+        static constexpr uint32 SPELL_PRIEST_MASS_DISPEL = 32375;
+        static constexpr uint32 SPELL_SHAMAN_PURGE = 370;
+        static constexpr uint32 SPELL_MAGE_SPELLSTEAL = 30449;
+        static constexpr uint32 SPELL_SHAMAN_BLOODLUST = 2825;
+        static constexpr uint32 SPELL_SHAMAN_HEROISM = 32182;
+        static constexpr uint32 SPELL_BLOODLUST_EXHAUSTION = 57723;
+        static constexpr uint32 SPELL_BLOODLUST_SATED = 57724;
+        static constexpr uint32 SPELL_MAJOR_SHADOW_PROTECTION_POTION = 28537;
+        static constexpr uint32 SPELL_FEL_BLOSSOM = 28527;
+        static constexpr uint32 SPELL_NIGHTMARE_SEED = 28726;
+
+        static constexpr float ENCOUNTER_SCAN_RANGE = 125.0f;
+        static constexpr float VOID_SENTINEL_TANK_THREAT = 1500000.0f;
+        static constexpr float ADD_TANK_THREAT = 750000.0f;
+        static constexpr float ENTROPIUS_TANK_THREAT = 1200000.0f;
+        static constexpr float MURU_CENTER_X = 1816.25f;
+        static constexpr float MURU_CENTER_Y = 625.48f;
+        static constexpr float MURU_CENTER_Z = 69.60f;
+        static constexpr float VOID_SENTINEL_TANK_DISTANCE = 30.0f;
+        static constexpr float ENTROPIUS_TANK_DISTANCE = 8.0f;
+        static constexpr float MURU_POSITION_TOLERANCE = 3.0f;
+        static constexpr float ENTROPIUS_SOON_HEALTH_PCT = 5.0f;
+        static constexpr float FEL_BLOSSOM_MODERATE_HEALTH_PCT = 75.0f;
+        static constexpr float FEL_BLOSSOM_LOOSE_ADD_HEALTH_PCT = 85.0f;
+        static constexpr float NIGHTMARE_SEED_DANGER_HEALTH_PCT = 40.0f;
+        static constexpr float NIGHTMARE_SEED_TANK_SPIKE_HEALTH_PCT = 55.0f;
+        static constexpr float NIGHTMARE_SEED_HEALER_ADD_HEALTH_PCT = 60.0f;
+
+        struct ConsumableState
+        {
+            uint32 instanceId = 0;
+            bool shadowProtection = false;
+            bool felBlossom = false;
+            bool nightmareSeed = false;
+        };
+
+        std::unordered_map<ObjectGuid::LowType, ConsumableState> ConsumableStates;
+
+        bool IsTankRole(bot_ai const* ai, Creature const* bot)
+        {
+            return ai && bot && (ai->IsTank(bot) || ai->IsOffTank(bot) || ai->HasRole(BOT_ROLE_TANK | BOT_ROLE_TANK_OFF));
+        }
+
+        bool IsMeleeDpsRole(bot_ai const* ai)
+        {
+            return ai && ai->HasRole(BOT_ROLE_DPS) && !ai->HasRole(BOT_ROLE_RANGED);
+        }
+
+        bool IsHealerOrCasterRole(bot_ai const* ai)
+        {
+            if (!ai)
+                return false;
+
+            if (ai->HasRole(BOT_ROLE_HEAL) || ai->HasRole(BOT_ROLE_RANGED))
+                return true;
+
+            switch (ai->GetBotClass())
+            {
+                case BOT_CLASS_DRUID:
+                case BOT_CLASS_MAGE:
+                case BOT_CLASS_PRIEST:
+                case BOT_CLASS_SHAMAN:
+                case BOT_CLASS_WARLOCK:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        bool IsPriorityAdd(uint32 entry)
+        {
+            return entry == NPC_VOID_SENTINEL || entry == NPC_VOID_SPAWN ||
+                entry == NPC_SHADOWSWORD_FURY_MAGE || entry == NPC_SHADOWSWORD_BERSERKER;
+        }
+
+        bool IsLooseAddEntry(uint32 entry)
+        {
+            return IsPriorityAdd(entry) || entry == NPC_DARK_FIEND;
+        }
+
+        bool IsMuruEncounterEntry(uint32 entry)
+        {
+            return entry == NPC_MURU || entry == NPC_ENTROPIUS || IsPriorityAdd(entry) ||
+                entry == NPC_DARK_FIEND || entry == NPC_DARKNESS || entry == NPC_SINGULARITY;
+        }
+
+        bool IsActiveCreature(Creature const* creature)
+        {
+            return creature && creature->IsInWorld() && creature->IsAlive() &&
+                !creature->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+        }
+
+        bool IsActiveAttackTarget(bot_ai const* ai, Creature* bot, Creature* creature, int8 byspell)
+        {
+            if (!ai || !bot || !IsActiveCreature(creature) || creature->GetMapId() != MAP_THE_SUNWELL || bot->GetMap() != creature->GetMap())
+                return false;
+
+            if (!IsMuruEncounterEntry(creature->GetEntry()) || !creature->IsVisible() || !creature->isTargetableForAttack(false))
+                return false;
+
+            if (!(ai->CanSeeEveryone() || (bot->CanSeeOrDetect(creature) && creature->InSamePhase(bot))))
+                return false;
+
+            if (!bot->IsWithinLOSInMap(creature))
+                return false;
+
+            return ai->CanBotAttack(creature, byspell);
+        }
+
+        bool IsConsumableEncounterCreature(Creature const* creature, uint32 entry)
+        {
+            return creature && creature->IsInWorld() && creature->IsAlive() &&
+                creature->GetMapId() == MAP_THE_SUNWELL && creature->GetEntry() == entry;
+        }
+
+        Creature* FindCreatureForConsumables(Unit const* unit, uint32 entry, float range = ENCOUNTER_SCAN_RANGE)
+        {
+            if (!unit || unit->GetMapId() != MAP_THE_SUNWELL || !unit->GetMap())
+                return nullptr;
+
+            if (Creature* victim = unit->GetVictim() ? unit->GetVictim()->ToCreature() : nullptr)
+                if (IsConsumableEncounterCreature(victim, entry))
+                    return victim;
+
+            std::list<Creature*> creatures;
+            Unit* mutableUnit = const_cast<Unit*>(unit);
+            mutableUnit->GetCreatureListWithEntryInGrid(creatures, entry, range);
+
+            Creature* best = nullptr;
+            float bestDistance = std::numeric_limits<float>::max();
+            for (Creature* creature : creatures)
+            {
+                if (!IsConsumableEncounterCreature(creature, entry) || !creature->IsInMap(unit) || !creature->InSamePhase(unit))
+                    continue;
+
+                float const distance = unit->GetDistance(creature);
+                if (!best || distance < bestDistance)
+                {
+                    best = creature;
+                    bestDistance = distance;
+                }
+            }
+
+            return best;
+        }
+
+        Creature* FindMuruForConsumables(Unit const* unit)
+        {
+            return FindCreatureForConsumables(unit, NPC_MURU);
+        }
+
+        Creature* FindEntropiusForConsumables(Unit const* unit)
+        {
+            Creature* entropius = FindCreatureForConsumables(unit, NPC_ENTROPIUS);
+            return entropius && entropius->IsInCombat() ? entropius : nullptr;
+        }
+
+        bool IsMuruNearEntropiusTransition(Creature const* muru)
+        {
+            return muru && muru->IsInCombat() &&
+                (muru->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE) || muru->GetHealthPct() <= ENTROPIUS_SOON_HEALTH_PCT);
+        }
+
+        bool HasActiveEncounter(Unit const* unit, Creature const* muru, Creature const* entropius)
+        {
+            if ((muru && muru->IsInCombat()) || entropius)
+                return true;
+
+            for (uint32 entry : { NPC_VOID_SENTINEL, NPC_VOID_SPAWN, NPC_SHADOWSWORD_FURY_MAGE, NPC_SHADOWSWORD_BERSERKER, NPC_DARK_FIEND })
+                if (FindCreatureForConsumables(unit, entry, 85.0f))
+                    return true;
+
+            return false;
+        }
+
+        ConsumableState& GetConsumableState(Creature* bot)
+        {
+            ConsumableState& state = ConsumableStates[bot->GetGUID().GetCounter()];
+            uint32 const instanceId = bot->GetInstanceId();
+            if (state.instanceId != instanceId)
+                state = ConsumableState{ instanceId };
+
+            return state;
+        }
+
+        void ClearConsumableState(Creature const* bot)
+        {
+            if (bot)
+                ConsumableStates.erase(bot->GetGUID().GetCounter());
+        }
+
+        bool TryCastOnce(Creature* bot, uint32 spellId, bool& used)
+        {
+            if (used || !bot || !sSpellMgr->GetSpellInfo(spellId))
+                return false;
+
+            if (bot->HasAura(spellId))
+            {
+                used = true;
+                return false;
+            }
+
+            bot->CastSpell(bot, spellId, true);
+            used = true;
+            return true;
+        }
+
+        bool TryCastShadowProtection(Creature* bot, ConsumableState& state)
+        {
+            return TryCastOnce(bot, SPELL_MAJOR_SHADOW_PROTECTION_POTION, state.shadowProtection);
+        }
+
+        bool IsNearActiveCreature(Unit const* unit, uint32 entry, float range)
+        {
+            return FindCreatureForConsumables(unit, entry, range) != nullptr;
+        }
+
+        void CollectDarkFiends(Unit const* unit, std::list<Creature*>& fiends, float range);
+
+        uint8 CountNearbyDarkFiends(Unit const* unit, float range)
+        {
+            std::list<Creature*> fiends;
+            CollectDarkFiends(unit, fiends, range);
+            return uint8(std::min<size_t>(fiends.size(), std::numeric_limits<uint8>::max()));
+        }
+
+        bool HasDarkFiendDispelTool(bot_ai const* ai)
+        {
+            if (!ai)
+                return false;
+
+            switch (ai->GetBotClass())
+            {
+                case BOT_CLASS_PRIEST:
+                case BOT_CLASS_SHAMAN:
+                case BOT_CLASS_MAGE:
+                case BOT_CLASS_SPELLBREAKER:
+                case BOT_CLASS_SPHYNX:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        bool HasLooseAddPressure(Creature const* bot)
+        {
+            if (!bot)
+                return false;
+
+            for (Unit* attacker : bot->getAttackers())
+            {
+                Creature const* creature = attacker ? attacker->ToCreature() : nullptr;
+                if (creature && creature->IsAlive() && IsLooseAddEntry(creature->GetEntry()))
+                    return true;
+            }
+
+            return false;
+        }
+
+        bool IsTankingEntry(Creature const* bot, uint32 entry)
+        {
+            if (!bot)
+                return false;
+
+            for (Unit* attacker : bot->getAttackers())
+            {
+                Creature* creature = attacker ? attacker->ToCreature() : nullptr;
+                if (!creature || creature->GetEntry() != entry || !creature->IsAlive())
+                    continue;
+
+                if (creature->GetVictim() == bot)
+                    return true;
+
+                if (Unit* current = const_cast<Creature*>(creature)->GetThreatMgr().GetCurrentVictim())
+                    if (current == bot)
+                        return true;
+            }
+
+            return false;
+        }
+
+        void TryUseShadowProtectionForVoidSentinelTank(bot_ai const* ai, Creature* bot, Creature const* sentinel)
+        {
+            if (!IsTankRole(ai, bot) || !IsActiveCreature(sentinel) || sentinel->GetEntry() != NPC_VOID_SENTINEL)
+                return;
+
+            ConsumableState& state = GetConsumableState(bot);
+            TryCastShadowProtection(bot, state);
+        }
+
+        Creature* FindBestCreature(bot_ai const* ai, Creature* bot, std::initializer_list<uint32> entries, int8 byspell)
+        {
+            if (!bot || bot->GetMapId() != MAP_THE_SUNWELL)
+                return nullptr;
+
+            Creature* best = nullptr;
+            float bestDistance = std::numeric_limits<float>::max();
+            float bestHealthPct = 101.0f;
+
+            for (uint32 entry : entries)
+            {
+                std::list<Creature*> creatures;
+                bot->GetCreatureListWithEntryInGrid(creatures, entry, ENCOUNTER_SCAN_RANGE);
+
+                for (Creature* creature : creatures)
+                {
+                    if (!IsActiveAttackTarget(ai, bot, creature, byspell))
+                        continue;
+
+                    float const distance = bot->GetDistance(creature);
+                    float const healthPct = creature->GetHealthPct();
+                    if (!best || distance < bestDistance - 5.0f || (std::fabs(distance - bestDistance) <= 5.0f && healthPct < bestHealthPct))
+                    {
+                        best = creature;
+                        bestDistance = distance;
+                        bestHealthPct = healthPct;
+                    }
+                }
+            }
+
+            return best;
+        }
+
+        Creature* FindEntropius(bot_ai const* ai, Creature* bot, int8 byspell)
+        {
+            return FindBestCreature(ai, bot, { NPC_ENTROPIUS }, byspell);
+        }
+
+        Creature* FindMuru(bot_ai const* ai, Creature* bot, int8 byspell)
+        {
+            return FindBestCreature(ai, bot, { NPC_MURU }, byspell);
+        }
+
+        void EnsureThreat(Creature* target, Unit* unit, float desiredThreat)
+        {
+            if (!target || !unit || !target->CanHaveThreatList())
+                return;
+
+            target->SetInCombatWith(unit);
+            unit->SetInCombatWith(target);
+
+            float const currentThreat = target->GetThreatMgr().GetThreat(unit, true);
+            if (currentThreat < desiredThreat)
+                target->GetThreatMgr().AddThreat(unit, desiredThreat - currentThreat, nullptr, true, true);
+        }
+
+        uint8 GetTankSlot(bot_ai const* ai, Creature const* bot, Player const* master)
+        {
+            if (!ai || !bot)
+                return 0;
+
+            if (master && master->GetBotMgr())
+            {
+                uint8 const slot = master->GetBotMgr()->GetNpcBotSlotByRole(BOT_ROLE_TANK | BOT_ROLE_TANK_OFF, bot);
+                if (slot)
+                    return slot;
+            }
+
+            return uint8(bot->GetGUID().GetCounter() % 3 + 1);
+        }
+
+        uint8 GetTankCount(Player const* master)
+        {
+            return master && master->GetBotMgr() ? master->GetBotMgr()->GetNpcBotsCountByRole(BOT_ROLE_TANK | BOT_ROLE_TANK_OFF) : 1;
+        }
+
+        bool ShouldTankVoidSentinel(bot_ai const* ai, Creature const* bot, Player const* master)
+        {
+            if (!IsTankRole(ai, bot))
+                return false;
+
+            uint8 const tankCount = GetTankCount(master);
+            if (tankCount <= 1)
+                return true;
+
+            uint8 const slot = GetTankSlot(ai, bot, master);
+            return ai->IsOffTank(bot) || slot == 2 || (tankCount >= 3 && slot % 3 == 2);
+        }
+
+        Creature* SelectPriorityTarget(bot_ai const* ai, Creature* bot, Player const* master, int8 byspell, bool ranged, Unit* currentUnit, bool& reset)
+        {
+            if (!ai || !bot || bot->GetMapId() != MAP_THE_SUNWELL || !bot->IsInCombat())
+                return nullptr;
+
+            Creature* target = nullptr;
+            bool const tankRole = IsTankRole(ai, bot);
+            bool const meleeDps = IsMeleeDpsRole(ai) && !ranged;
+            Creature* entropius = FindEntropius(ai, bot, byspell);
+
+            if (entropius)
+            {
+                if (tankRole)
+                {
+                    target = entropius;
+                    EnsureThreat(target, bot, ENTROPIUS_TANK_THREAT);
+                }
+                else if (ranged)
+                    target = FindBestCreature(ai, bot, { NPC_VOID_SENTINEL, NPC_VOID_SPAWN, NPC_SHADOWSWORD_FURY_MAGE, NPC_SHADOWSWORD_BERSERKER }, byspell);
+                else if (meleeDps)
+                    target = FindBestCreature(ai, bot, { NPC_SHADOWSWORD_FURY_MAGE, NPC_SHADOWSWORD_BERSERKER }, byspell);
+
+                if (!target)
+                    target = entropius;
+            }
+            else if (tankRole)
+            {
+                Creature* sentinel = FindBestCreature(ai, bot, { NPC_VOID_SENTINEL }, byspell);
+                Creature* humanoid = FindBestCreature(ai, bot, { NPC_SHADOWSWORD_FURY_MAGE, NPC_SHADOWSWORD_BERSERKER }, byspell);
+
+                if (sentinel && (ShouldTankVoidSentinel(ai, bot, master) || !humanoid))
+                {
+                    target = sentinel;
+                    EnsureThreat(target, bot, VOID_SENTINEL_TANK_THREAT);
+                    TryUseShadowProtectionForVoidSentinelTank(ai, bot, target);
+                }
+                else if (humanoid)
+                {
+                    target = humanoid;
+                    EnsureThreat(target, bot, ADD_TANK_THREAT);
+                }
+                else if (sentinel)
+                {
+                    target = sentinel;
+                    EnsureThreat(target, bot, VOID_SENTINEL_TANK_THREAT);
+                    TryUseShadowProtectionForVoidSentinelTank(ai, bot, target);
+                }
+            }
+            else if (ranged)
+                target = FindBestCreature(ai, bot, { NPC_VOID_SENTINEL, NPC_VOID_SPAWN, NPC_SHADOWSWORD_FURY_MAGE, NPC_SHADOWSWORD_BERSERKER, NPC_MURU }, byspell);
+            else if (meleeDps)
+                target = FindBestCreature(ai, bot, { NPC_SHADOWSWORD_FURY_MAGE, NPC_SHADOWSWORD_BERSERKER, NPC_MURU }, byspell);
+
+            if (!target)
+                return nullptr;
+
+            if (currentUnit != target)
+                reset = true;
+
+            return target;
+        }
+
+        bool IsActiveDarkFiend(Creature const* creature)
+        {
+            return IsActiveCreature(creature) && creature->GetEntry() == NPC_DARK_FIEND && creature->HasAura(SPELL_DARK_FIEND_APPEARANCE);
+        }
+
+        void CollectDarkFiends(Unit const* unit, std::list<Creature*>& fiends, float range)
+        {
+            if (!unit || unit->GetMapId() != MAP_THE_SUNWELL)
+                return;
+
+            Bcore::AllCreaturesOfEntryInRange check(unit, NPC_DARK_FIEND, range);
+            Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> searcher(unit, fiends, check);
+            Cell::VisitObjects(unit, searcher, range);
+            fiends.remove_if([](Creature const* creature) { return !IsActiveDarkFiend(creature); });
+        }
+
+        Creature* SelectDarkFiendDispelTarget(Unit const* unit, float range)
+        {
+            std::list<Creature*> fiends;
+            CollectDarkFiends(unit, fiends, range);
+            if (fiends.empty())
+                return nullptr;
+
+            return fiends.size() == 1 ? fiends.front() : Bcore::Containers::SelectRandomContainerElement(fiends);
+        }
+
+        Creature* SelectClusteredDarkFiendAnchor(Unit const* unit, float range, float clusterRange, uint8 requiredCount)
+        {
+            std::list<Creature*> fiends;
+            CollectDarkFiends(unit, fiends, range);
+
+            Creature* best = nullptr;
+            uint8 bestCount = 0;
+            for (Creature* anchor : fiends)
+            {
+                uint8 count = 0;
+                for (Creature* candidate : fiends)
+                    if (anchor->GetExactDist2d(candidate) <= clusterRange)
+                        ++count;
+
+                if (count > bestCount)
+                {
+                    best = anchor;
+                    bestCount = count;
+                }
+            }
+
+            return bestCount >= requiredCount ? best : nullptr;
+        }
+
+        Creature* FindFuryMageWithSpellFury(bot_ai const* ai, Creature* bot, int8 byspell)
+        {
+            std::list<Creature*> mages;
+            bot->GetCreatureListWithEntryInGrid(mages, NPC_SHADOWSWORD_FURY_MAGE, ENCOUNTER_SCAN_RANGE);
+
+            for (Creature* mage : mages)
+                if (IsActiveAttackTarget(ai, bot, mage, byspell) && mage->HasAura(SPELL_SHADOWSWORD_SPELL_FURY))
+                    return mage;
+
+            return nullptr;
+        }
+
+        bool HasEntropiusActive(Unit const* unit)
+        {
+            if (!unit || unit->GetMapId() != MAP_THE_SUNWELL)
+                return false;
+
+            std::list<Creature*> creatures;
+            Unit* mutableUnit = const_cast<Unit*>(unit);
+            mutableUnit->GetCreatureListWithEntryInGrid(creatures, NPC_ENTROPIUS, ENCOUNTER_SCAN_RANGE);
+            for (Creature const* creature : creatures)
+                if (IsActiveCreature(creature))
+                    return true;
+
+            return false;
+        }
+
+        bool TryBuildPosition(Creature* bot, float x, float y, float z, Position& destination)
+        {
+            if (!bot)
+                return false;
+
+            if (!bot->CanFly())
+                bot->UpdateAllowedPositionZ(x, y, z);
+
+            destination.Relocate(x, y, z, bot->GetOrientation());
+            return destination.IsPositionValid() && bot->IsWithinLOS(x, y, z);
+        }
+
+        bool ShouldUseMuruPosition(bot_ai const* ai, Creature const* bot, Creature const* target)
+        {
+            if (!IsTankRole(ai, bot) || !IsActiveCreature(target))
+                return false;
+
+            return target->GetEntry() == NPC_VOID_SENTINEL || target->GetEntry() == NPC_ENTROPIUS;
+        }
+
+        bool TryGetMuruPosition(bot_ai const* ai, Creature* bot, Creature const* target, Position& destination)
+        {
+            if (!ShouldUseMuruPosition(ai, bot, target))
+                return false;
+
+            float angle = Position::NormalizeOrientation(std::atan2(target->GetPositionY() - MURU_CENTER_Y, target->GetPositionX() - MURU_CENTER_X));
+            float distance = VOID_SENTINEL_TANK_DISTANCE;
+
+            if (target->GetEntry() == NPC_ENTROPIUS)
+            {
+                angle = Position::NormalizeOrientation(target->GetAngle(MURU_CENTER_X, MURU_CENTER_Y) + float(M_PI));
+                distance = ENTROPIUS_TANK_DISTANCE;
+            }
+
+            float const x = MURU_CENTER_X + std::cos(angle) * distance;
+            float const y = MURU_CENTER_Y + std::sin(angle) * distance;
+            return TryBuildPosition(bot, x, y, MURU_CENTER_Z, destination);
+        }
+
+        bool NeedsMuruReposition(bot_ai const* ai, Creature* bot, Creature const* target)
+        {
+            Position destination;
+            if (!TryGetMuruPosition(ai, bot, target, destination))
+                return false;
+
+            return bot->GetExactDist2d(destination.GetPositionX(), destination.GetPositionY()) > MURU_POSITION_TOLERANCE;
+        }
+
+        void TryUseEncounterConsumables(bot_ai const* ai, Creature* bot, uint32 /*diff*/)
+        {
+            if (!bot)
+                return;
+
+            if (!ai || !bot->IsAlive() || ai->IAmFree() || bot->GetMapId() != MAP_THE_SUNWELL)
+            {
+                ClearConsumableState(bot);
+                return;
+            }
+
+            Creature* muru = FindMuruForConsumables(bot);
+            Creature* entropius = FindEntropiusForConsumables(bot);
+            if (!HasActiveEncounter(bot, muru, entropius))
+            {
+                ClearConsumableState(bot);
+                return;
+            }
+
+            ConsumableState& state = GetConsumableState(bot);
+            bool const entropiusExpected = entropius || IsMuruNearEntropiusTransition(muru);
+            if (entropiusExpected && TryCastShadowProtection(bot, state))
+                return;
+
+            bool const tankRole = IsTankRole(ai, bot);
+            bool const healerOrCaster = IsHealerOrCasterRole(ai);
+            bool const looseAddPressure = HasLooseAddPressure(bot);
+            bool const nearDarkness = IsNearActiveCreature(bot, NPC_DARKNESS, 19.0f);
+            bool const nearSingularity = entropius && IsNearActiveCreature(bot, NPC_SINGULARITY, 20.0f);
+            uint8 const nearbyDarkFiends = CountNearbyDarkFiends(bot, 14.0f);
+            bool const dangerousMovement = bot->isMoving() && (nearDarkness || nearSingularity || nearbyDarkFiends);
+            float const healthPct = bot->GetHealthPct();
+
+            bool const sentinelTankSpike = tankRole && IsTankingEntry(bot, NPC_VOID_SENTINEL) &&
+                healthPct <= NIGHTMARE_SEED_TANK_SPIKE_HEALTH_PCT;
+            bool const healerUnderLooseAddPressure = ai->HasRole(BOT_ROLE_HEAL) && looseAddPressure &&
+                healthPct <= NIGHTMARE_SEED_HEALER_ADD_HEALTH_PCT;
+            bool const lowDuringEntropius = entropius && healthPct <= NIGHTMARE_SEED_DANGER_HEALTH_PCT;
+            bool const lowDuringDangerousMovement = dangerousMovement && healthPct <= NIGHTMARE_SEED_DANGER_HEALTH_PCT + 5.0f;
+            bool const lowDuringRaidPressure = healthPct <= NIGHTMARE_SEED_DANGER_HEALTH_PCT &&
+                (entropius || nearDarkness || nearSingularity || nearbyDarkFiends);
+
+            if ((sentinelTankSpike || healerUnderLooseAddPressure || lowDuringEntropius ||
+                lowDuringDangerousMovement || lowDuringRaidPressure) &&
+                TryCastOnce(bot, SPELL_NIGHTMARE_SEED, state.nightmareSeed))
+                return;
+
+            bool const damagedDarknessMove = nearDarkness && bot->isMoving() && healthPct <= FEL_BLOSSOM_MODERATE_HEALTH_PCT;
+            bool const damagedSingularityMove = nearSingularity && bot->isMoving() && healthPct <= FEL_BLOSSOM_MODERATE_HEALTH_PCT;
+            bool const delayedDarkFiendDispel = nearbyDarkFiends && (!HasDarkFiendDispelTool(ai) || nearbyDarkFiends >= 2) &&
+                healthPct <= FEL_BLOSSOM_LOOSE_ADD_HEALTH_PCT;
+            bool const casterLooseAddPressure = healerOrCaster && looseAddPressure && healthPct <= FEL_BLOSSOM_LOOSE_ADD_HEALTH_PCT;
+            bool const nonTankRaidPressure = !tankRole && healthPct <= 65.0f &&
+                (entropius || nearDarkness || nearSingularity || nearbyDarkFiends);
+
+            if (damagedDarknessMove || damagedSingularityMove || delayedDarkFiendDispel ||
+                casterLooseAddPressure || nonTankRaidPressure)
+                TryCastOnce(bot, SPELL_FEL_BLOSSOM, state.felBlossom);
+        }
+
+        void AddAvoidanceSpots(Unit const* unit, AoeSpotsVec& spots)
+        {
+            if (!unit || unit->GetMapId() != MAP_THE_SUNWELL)
+                return;
+
+            Creature const* botCreature = unit->ToCreature();
+            bot_ai const* ai = botCreature && botCreature->IsNPCBot() ? botCreature->GetBotAI() : nullptr;
+            bool const tankRole = IsTankRole(ai, botCreature);
+
+            auto addCreatureSpots = [unit, &spots](uint32 entry, float scanRange, float avoidRadius)
+            {
+                std::list<Creature*> creatures;
+                Bcore::AllCreaturesOfEntryInRange check(unit, entry, scanRange);
+                Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> searcher(unit, creatures, check);
+                Cell::VisitObjects(unit, searcher, scanRange);
+
+                for (Creature const* creature : creatures)
+                {
+                    if (!IsActiveCreature(creature))
+                        continue;
+
+                    spots.emplace_back(*creature, avoidRadius + creature->GetObjectSize() + DEFAULT_COMBAT_REACH);
+                }
+            };
+
+            addCreatureSpots(NPC_DARKNESS, 90.0f, 15.0f);
+            addCreatureSpots(NPC_SINGULARITY, 90.0f, 16.0f);
+            addCreatureSpots(NPC_DARK_FIEND, 55.0f, 11.0f);
+
+            if (!tankRole)
+            {
+                addCreatureSpots(NPC_VOID_SENTINEL, 75.0f, 16.0f);
+                addCreatureSpots(NPC_VOID_SPAWN, 60.0f, 9.0f);
             }
         }
     }
@@ -10939,6 +11642,16 @@ std::pair<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool& res
             }
         }
 
+        // Sunwell Plateau - M'uru / Entropius. Phase 1 is add-control first;
+        // Entropius is a burn target once dangerous transition adds are stable.
+        if (me->GetMapId() == MAP_THE_SUNWELL && me->IsInCombat() && (HasRole(BOT_ROLE_DPS) || IsTank() || IsOffTank()) &&
+            !HasBotCommandState(BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION) &&
+            !(HasRole(BOT_ROLE_HEAL) && IsCasting()))
+        {
+            if (Creature* muruTarget = MuruBot::SelectPriorityTarget(this, me, master, byspell, ranged, mytar, reset))
+                return { muruTarget, nullptr };
+        }
+
         // Sunwell Plateau - Felmyst. During the air phase, beam-spawned
         // Unyielding Dead should be cleaned up instead of bots tunneling Felmyst.
         if (me->GetMapId() == MAP_THE_SUNWELL && me->IsInCombat() && (HasRole(BOT_ROLE_DPS) || IsTank() || IsOffTank()) &&
@@ -10948,6 +11661,14 @@ std::pair<Unit*, Unit*> bot_ai::_getTargets(bool byspell, bool ranged, bool& res
             Creature* current = mytar ? mytar->ToCreature() : nullptr;
             if (Creature* felmystTarget = FelmystBot::SelectPriorityTarget(this, me, byspell, ranged, current, reset))
                 return { felmystTarget, nullptr };
+        }
+
+        // Sunwell Plateau - Eredar Twins. Physical tank-role bots belong on
+        // Sacrolash, while warlock bots are the Alythess tank assignment.
+        if (me->GetMapId() == MAP_THE_SUNWELL && me->IsInCombat() && !HasBotCommandState(BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION))
+        {
+            if (Creature* sacrolashTarget = EredarTwinsBot::SelectSacrolashForTankRole(this, me, mytar, byspell, reset))
+                return { sacrolashTarget, nullptr };
         }
 
         // Sunwell Plateau - Eredar Twins. Warlock bots are valid Alythess tanks,
@@ -14852,30 +15573,70 @@ bool bot_ai::ProcessImmediateNonAttackTarget()
 
     if (me->GetMapId() == 580 && isInWMOArea(_lastWMOAreaId, WMOAreaGroupMuru)) // Sunwell - M'uru
     {
-        static const uint32 SPELL_PURGE_1 = 370u;
-        static const uint32 SPELL_DISPEL_MAGIC_1 = 527u;
-        uint32 dspell = 0;
-        if (_botclass == BOT_CLASS_SHAMAN)
-            dspell = SPELL_PURGE_1;
-        else if (_botclass == BOT_CLASS_PRIEST)
-            dspell = SPELL_DISPEL_MAGIC_1;
-
-        if (dspell && IsSpellReady(dspell, lastdiff))
+        if (_botclass == BOT_CLASS_PRIEST)
         {
-            std::list<Creature*> cList;
-            Bcore::AllCreaturesOfEntryInRange check(me, 25744, 30.f); // Dark Fiend
-            Bcore::CreatureListSearcher<Bcore::AllCreaturesOfEntryInRange> searcher(me, cList, check);
-            Cell::VisitObjects(me, searcher, 30.f);
-
-            //Dark Fiends do not die instantly, remove purged ones
-            std::erase_if(cList, Bcore::UnitAuraCheck(false, 45934)); // "Dark Fiend"
-
-            if (Unit* fiend = cList.empty() ? nullptr : cList.size() == 1u ? cList.front() :
-                Bcore::Containers::SelectRandomContainerElement(cList))
+            uint32 const massDispel = GetSpell(MuruBot::SPELL_PRIEST_MASS_DISPEL);
+            if (massDispel && IsSpellReady(MuruBot::SPELL_PRIEST_MASS_DISPEL, lastdiff, false))
             {
-                if (CheckBotCast(fiend, GetSpell(dspell)) == SPELL_CAST_OK)
-                    if (doCast(fiend, GetSpell(dspell)))
+                if (Creature* anchor = MuruBot::SelectClusteredDarkFiendAnchor(me, 35.0f, 12.0f, 2))
+                {
+                    if (CheckBotCast(anchor, massDispel) == SPELL_CAST_OK && doCast(anchor, massDispel))
                         return true;
+                }
+            }
+        }
+
+        uint32 dispelBase = 0;
+        switch (_botclass)
+        {
+            case BOT_CLASS_PRIEST:
+                dispelBase = MuruBot::SPELL_PRIEST_DISPEL_MAGIC;
+                break;
+            case BOT_CLASS_SHAMAN:
+                dispelBase = MuruBot::SPELL_SHAMAN_PURGE;
+                break;
+            case BOT_CLASS_MAGE:
+                dispelBase = MuruBot::SPELL_MAGE_SPELLSTEAL;
+                break;
+            case BOT_CLASS_SPELLBREAKER:
+                dispelBase = SPELL_STEAL_MAGIC;
+                break;
+            case BOT_CLASS_SPHYNX:
+                dispelBase = SPELL_DEVOUR_MAGIC;
+                break;
+            default:
+                break;
+        }
+
+        if (dispelBase && IsSpellReady(dispelBase, lastdiff, false))
+        {
+            uint32 const dispelSpell = GetSpell(dispelBase);
+            if (dispelSpell)
+                if (Creature* fiend = MuruBot::SelectDarkFiendDispelTarget(me, 35.0f))
+                    if (CheckBotCast(fiend, dispelSpell) == SPELL_CAST_OK && doCast(fiend, dispelSpell))
+                        return true;
+        }
+
+        if (_botclass == BOT_CLASS_MAGE && IsSpellReady(MuruBot::SPELL_MAGE_SPELLSTEAL, lastdiff, false))
+        {
+            uint32 const spellsteal = GetSpell(MuruBot::SPELL_MAGE_SPELLSTEAL);
+            if (spellsteal)
+                if (Creature* furyMage = MuruBot::FindFuryMageWithSpellFury(this, me, true))
+                    if (CheckBotCast(furyMage, spellsteal) == SPELL_CAST_OK && doCast(furyMage, spellsteal))
+                        return true;
+        }
+
+        if (_botclass == BOT_CLASS_SHAMAN && MuruBot::HasEntropiusActive(me) &&
+            !me->HasAura(MuruBot::SPELL_BLOODLUST_EXHAUSTION) && !me->HasAura(MuruBot::SPELL_BLOODLUST_SATED))
+        {
+            for (uint32 bloodlustBase : { MuruBot::SPELL_SHAMAN_HEROISM, MuruBot::SPELL_SHAMAN_BLOODLUST })
+            {
+                uint32 const bloodlust = GetSpell(bloodlustBase);
+                if (!bloodlust || !IsSpellReady(bloodlustBase, lastdiff, false))
+                    continue;
+
+                if (CheckBotCast(me, bloodlust) == SPELL_CAST_OK && doCast(me, bloodlust))
+                    return true;
             }
         }
     }
@@ -15291,6 +16052,7 @@ void bot_ai::CalculateAoeSpots(Unit const* unit, AoeSpotsVec& spots)
     {
         FelmystBot::AddFelmystAvoidanceSpots(unit, spots);
         EredarTwinsBot::AddBlazeAvoidanceSpots(unit, spots);
+        MuruBot::AddAvoidanceSpots(unit, spots);
     }
     // Hellfire Ramparts - Liquid Fire puddles + aura carrier avoidance
     else if (unit->GetMapId() == 543) // Hellfire Ramparts
@@ -17009,6 +17771,21 @@ void bot_ai::CalculateAttackPos(Unit* target, Position& pos, bool& force) const
             pos.Relocate(councilPos);
             force = true;
             return;
+        }
+    }
+
+    if (MuruBot::ShouldUseMuruPosition(this, me, target->ToCreature()))
+    {
+        Position muruPos;
+        if (MuruBot::TryGetMuruPosition(this, me, target->ToCreature(), muruPos))
+        {
+            Position candidate = muruPos;
+            if (ValidateArenaCombatPosition(candidate) && !IsWithinAoERadius(candidate))
+            {
+                pos.Relocate(candidate);
+                force = true;
+                return;
+            }
         }
     }
 
@@ -31005,6 +31782,7 @@ bool bot_ai::GlobalUpdate(uint32 diff)
         TryBrutallusBurnSurvival(lastdiff);
         TryReliquarySupport(lastdiff);
         TryIllidariCouncilSupport(lastdiff);
+        MuruBot::TryUseEncounterConsumables(this, me, lastdiff);
         IllidanBot::TryUseEncounterConsumables(this, me);
 
         Unit* mover = me->GetVehicle() ? me->GetVehicleBase() : me;
@@ -31029,6 +31807,9 @@ bool bot_ai::GlobalUpdate(uint32 diff)
         bool const mustMoveForFelmyst = !felmystAssignedPositionHandled && felmystPositionCreature &&
             (felmystVaporEmergency || felmystEncapsulateEmergency || FelmystBot::NeedsFelmystReposition(this, me, master, felmystPositionCreature));
         bool const mustMoveForReliquary = combatPositionCreature && ReliquaryBot::ShouldUseReliquaryPosition(this, me, combatPositionCreature);
+        Creature* muruPositionCreature = combatPositionCreature && MuruBot::ShouldUseMuruPosition(this, me, combatPositionCreature) ?
+            combatPositionCreature : nullptr;
+        bool const mustMoveForMuru = muruPositionCreature && MuruBot::NeedsMuruReposition(this, me, muruPositionCreature);
         Creature* motherShahrazPositionCreature = combatPositionCreature && combatPositionCreature->GetEntry() == MotherShahrazBot::NPC_MOTHER_SHAHRAZ ?
             combatPositionCreature : MotherShahrazBot::FindMother(me);
         bool const mustMoveForMotherShahraz = motherShahrazPositionCreature &&
@@ -31042,13 +31823,13 @@ bool bot_ai::GlobalUpdate(uint32 diff)
         bool const mustMoveForIllidan = illidanPositionCreature &&
             IllidanBot::NeedsIllidanReposition(this, me, master, illidanPositionCreature);
         bool const forcedEncounterMove = mustMoveFromLurkerSpout || mustMoveFromSupremusFixation || mustMoveForBloodboil || mustMoveForReliquary ||
-            mustMoveForBrutallus || mustMoveForFelmyst || mustMoveForMotherShahraz || mustMoveForIllidariCouncil || mustMoveForIllidan;
+            mustMoveForBrutallus || mustMoveForFelmyst || mustMoveForMuru || mustMoveForMotherShahraz || mustMoveForIllidariCouncil || mustMoveForIllidan;
         bool const canIgnoreUnchaseForEncounterMove = ((motherFatalAttractionEmergency || felmystVaporEmergency || felmystEncapsulateEmergency) && !HasBotCommandState(BOT_COMMAND_INACTION)) ||
-            ((mustMoveFromSupremusFixation || mustMoveForReliquary || mustMoveForBrutallus || mustMoveForFelmyst ||
+            ((mustMoveFromSupremusFixation || mustMoveForReliquary || mustMoveForBrutallus || mustMoveForFelmyst || mustMoveForMuru ||
             mustMoveForMotherShahraz || mustMoveForIllidariCouncil || mustMoveForIllidan) &&
             !HasBotCommandState(BOT_COMMAND_MASK_UNMOVING | BOT_COMMAND_INACTION));
         if ((!HasBotCommandState(BOT_COMMAND_MASK_UNCHASE) || canIgnoreUnchaseForEncounterMove) && !CCed(mover, true) &&
-            (motherFatalAttractionEmergency || felmystVaporEmergency || felmystEncapsulateEmergency || mustMoveForFelmyst || IAmFree() || master->GetBotMgr()->GetBotAllowCombatPositioning()) &&
+            (motherFatalAttractionEmergency || felmystVaporEmergency || felmystEncapsulateEmergency || mustMoveForFelmyst || mustMoveForMuru || IAmFree() || master->GetBotMgr()->GetBotAllowCombatPositioning()) &&
             ((!mover->isMoving() || Rand() < 50) || forcedEncounterMove) &&
             (!IsCasting(mover) || forcedEncounterMove) &&
             (!IsShootingWand(mover) || forcedEncounterMove))
@@ -31057,6 +31838,7 @@ bool bot_ai::GlobalUpdate(uint32 diff)
                 mustMoveForIllidariCouncil ? illidariCouncilPositionCreature :
                 mustMoveForBrutallus ? brutallusPositionCreature :
                 mustMoveForFelmyst ? felmystPositionCreature :
+                mustMoveForMuru ? muruPositionCreature :
                 mustMoveForIllidan ? illidanPositionCreature : combatPositionTarget;
             if (Unit* victim = positionTarget)
             {
@@ -31081,7 +31863,7 @@ bool bot_ai::GlobalUpdate(uint32 diff)
                     RefreshAoeSpots(&master->GetBotMgr()->GetAoeSpots());
 
                 //BOT_LOG_ERROR("scripts", "GetInPos prepare by %s", me->GetName().c_str());
-                if (mustMoveForMotherShahraz || mustMoveForIllidariCouncil || mustMoveForBrutallus || mustMoveForFelmyst || mustMoveForIllidan)
+                if (mustMoveForMotherShahraz || mustMoveForIllidariCouncil || mustMoveForBrutallus || mustMoveForFelmyst || mustMoveForMuru || mustMoveForIllidan)
                 {
                     bool force = false;
                     CalculateAttackPos(victim, attackpos, force);
