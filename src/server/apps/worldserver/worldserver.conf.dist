@@ -5059,6 +5059,15 @@ SunwellPlateau.Brutallus.BurnDurationSeconds = 60
 SunwellPlateau.Brutallus.MaxActiveBurnTargets = 3
 
 #
+#    SunwellPlateau.Felmyst.EncapsulateHitDamage
+#        Description: Raw damage dealt by Felmyst Encapsulate spell 45662 each
+#                     time its school-damage hit resolves. Set to 0 to make the
+#                     hit non-damaging while preserving the rest of the mechanic.
+#        Default:     3500
+
+SunwellPlateau.Felmyst.EncapsulateHitDamage = 3500
+
+#
 #    Glyph.ExtraSlots.RequiredItemQuality
 #        Description: Minimum item quality required when applying glyph items to the
 #                     ExtraGlyphSlots mastery slots. This does not affect normal

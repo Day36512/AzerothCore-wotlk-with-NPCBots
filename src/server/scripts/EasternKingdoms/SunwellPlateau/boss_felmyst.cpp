@@ -17,13 +17,27 @@
 
 #include "Cell.h"
 #include "CellImpl.h"
+#include "Config.h"
+#include "Containers.h"
 #include "CreatureScript.h"
 #include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
+#include "Group.h"
 #include "PassiveAI.h"
+#include "Player.h"
 #include "ScriptedCreature.h"
+#include "SpellAuraEffects.h"
+#include "SpellAuras.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
+#include "SpellMgr.h"
+#include "bot_ai.h"
+#include "botmgr.h"
 #include "sunwell_plateau.h"
+
+#include <array>
+#include <list>
+#include <vector>
 
 enum Yells
 {
@@ -46,7 +60,17 @@ enum Spells
     SPELL_CLEAVE                                = 19983,
     SPELL_CORROSION                             = 45866,
     SPELL_GAS_NOVA                              = 45855,
+    SPELL_MOIST_TOWELETTE                       = 7108,
     SPELL_ENCAPSULATE_CHANNEL                   = 45661,
+    SPELL_ENCAPSULATE_DAMAGE                    = 45662,
+    SPELL_ENCAPSULATE_LIFT                      = 45665,
+    SPELL_MAJOR_ARCANE_PROTECTION_POTION        = 28536,
+    SPELL_NIGHTMARE_SEED                        = 28726,
+    SPELL_FEL_BLOSSOM                           = 28527, // Spell cast by Fel Blossom item 22795
+    SPELL_LIFEBLOOD                             = 55502,
+    SPELL_FEL_REGENERATION_POTION               = 38908,
+    SPELL_FLASK_OF_CHROMATIC_WONDER             = 42735,
+    SPELL_SCROLL_OF_STAMINA                     = 48101,
 
     //Flight phase
     SPELL_TRIGGER_TOP_STRAFE                    = 45586,
@@ -111,6 +135,312 @@ const Position LeftSide = { 1469.0642f, 729.5854f, 59.823853f, 4.6774f };
 const Position LandingLeftPos = { 1476.77f, 665.094f, 20.6423f };
 const Position LandingRightPos = { 1469.93f, 557.009f, 22.631699f };
 
+namespace
+{
+    constexpr float FELMYST_ENCAPSULATE_TARGET_RANGE = 50.0f;
+    constexpr float FELMYST_BOT_CONSUMABLE_RANGE = 150.0f;
+    constexpr float FELMYST_ENCAPSULATE_BOT_LIFT_HEIGHT = 8.0f;
+    constexpr uint32 FELMYST_GAS_NOVA_TOWELETTE_CHANCE = 25;
+    constexpr char const* CONFIG_FELMYST_ENCAPSULATE_HIT_DAMAGE = "SunwellPlateau.Felmyst.EncapsulateHitDamage";
+    constexpr std::array<uint32, 5> FELMYST_ENCAPSULATE_BOT_CONSUMABLES =
+    {
+        SPELL_MAJOR_ARCANE_PROTECTION_POTION,
+        SPELL_NIGHTMARE_SEED,
+        SPELL_LIFEBLOOD,
+        SPELL_FEL_BLOSSOM,
+        SPELL_FEL_REGENERATION_POTION
+    };
+
+    int32 GetFelmystEncapsulateHitDamage()
+    {
+        int32 const damage = sConfigMgr->GetOption<int32>(CONFIG_FELMYST_ENCAPSULATE_HIT_DAMAGE, 3500);
+        return damage < 0 ? 0 : damage;
+    }
+
+    float GetFelmystEncapsulateBotLiftZ(Creature* bot)
+    {
+        if (!bot)
+            return 0.0f;
+
+        float const x = bot->GetPositionX();
+        float const y = bot->GetPositionY();
+        float floorZ = bot->GetPositionZ();
+
+        // Clamp while the bot is still grounded; once CanFly is set, this no longer constrains to terrain.
+        bot->UpdateAllowedPositionZ(x, y, floorZ);
+
+        if (floorZ <= INVALID_HEIGHT)
+        {
+            float const mapZ = bot->GetMapHeight(x, y, bot->GetPositionZ(), true, MAX_FALL_DISTANCE);
+            if (mapZ > INVALID_HEIGHT)
+                floorZ = mapZ;
+        }
+
+        if (floorZ <= INVALID_HEIGHT)
+        {
+            float const objectFloorZ = bot->GetFloorZ();
+            if (objectFloorZ > INVALID_HEIGHT)
+                floorZ = objectFloorZ;
+        }
+
+        if (floorZ <= INVALID_HEIGHT)
+        {
+            float const surfaceZ = bot->GetMapHeight(x, y, MAX_HEIGHT, true, MAX_FALL_DISTANCE);
+            if (surfaceZ > INVALID_HEIGHT)
+                floorZ = surfaceZ;
+        }
+
+        if (floorZ <= INVALID_HEIGHT)
+            floorZ = bot->GetPositionZ();
+
+        return floorZ + FELMYST_ENCAPSULATE_BOT_LIFT_HEIGHT;
+    }
+
+    bool IsOwnedNpcBot(Unit const* unit)
+    {
+        Creature const* creature = unit ? unit->ToCreature() : nullptr;
+        return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI();
+    }
+
+    bool IsFelmystConsumableBot(Unit const* unit)
+    {
+        return unit && unit->IsAlive() && unit->IsInWorld() && IsOwnedNpcBot(unit);
+    }
+
+    bool HasFelmystFlaskAura(Unit const* unit)
+    {
+        if (!unit)
+            return false;
+
+        for (Unit::AuraApplicationMap::value_type const& pair : unit->GetAppliedAuras())
+        {
+            Aura const* aura = pair.second ? pair.second->GetBase() : nullptr;
+            if (!aura)
+                continue;
+
+            uint32 const spellId = aura->GetId();
+            if (sSpellMgr->IsSpellMemberOfSpellGroup(spellId, SPELL_GROUP_ELIXIR_BATTLE) &&
+                sSpellMgr->IsSpellMemberOfSpellGroup(spellId, SPELL_GROUP_ELIXIR_GUARDIAN))
+                return true;
+        }
+
+        return false;
+    }
+
+    void CastFelmystKnownSelfSpell(Creature* bot, uint32 spellId)
+    {
+        if (bot && sSpellMgr->GetSpellInfo(spellId))
+            bot->CastSpell(bot, spellId, true);
+    }
+
+    void AddFelmystConsumableBot(Creature* source, std::vector<Creature*>& bots, GuidSet& seen, Unit* unit)
+    {
+        if (!source || !IsFelmystConsumableBot(unit))
+            return;
+
+        Creature* bot = unit->ToCreature();
+        if (!bot || !bot->IsInMap(source) || !bot->InSamePhase(source))
+            return;
+
+        if (!source->IsWithinDistInMap(bot, FELMYST_BOT_CONSUMABLE_RANGE))
+            return;
+
+        if (!seen.insert(bot->GetGUID()).second)
+            return;
+
+        bots.push_back(bot);
+    }
+
+    Player* GetFelmystOwnerPlayer(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player;
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotOwner() : nullptr;
+    }
+
+    Group* GetFelmystGroup(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player->GetGroup();
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotGroup() : nullptr;
+    }
+
+    void AddFelmystOwnedBots(Creature* source, std::vector<Creature*>& bots, GuidSet& seen, Player* player)
+    {
+        if (!player || !player->HaveBot())
+            return;
+
+        BotMgr* botMgr = player->GetBotMgr();
+        if (!botMgr)
+            return;
+
+        for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+            AddFelmystConsumableBot(source, bots, seen, pair.second);
+    }
+
+    void AddFelmystThreatBots(Creature* source, std::vector<Creature*>& bots, GuidSet& seen)
+    {
+        if (!source)
+            return;
+
+        for (ThreatReference const* ref : source->GetThreatMgr().GetSortedThreatList())
+        {
+            if (!ref || !ref->IsAvailable())
+                continue;
+
+            AddFelmystConsumableBot(source, bots, seen, ref->GetVictim());
+        }
+    }
+
+    std::vector<Creature*> GatherFelmystConsumableBots(Creature* source)
+    {
+        std::vector<Creature*> bots;
+        GuidSet seen;
+
+        if (!source)
+            return bots;
+
+        Unit* seed = source->GetThreatMgr().GetCurrentVictim();
+        if (!seed)
+            seed = source->GetVictim();
+
+        if (Group* group = GetFelmystGroup(seed))
+        {
+            for (Unit* member : BotMgr::GetAllGroupMembers(group))
+            {
+                AddFelmystConsumableBot(source, bots, seen, member);
+
+                if (Player* player = member ? member->ToPlayer() : nullptr)
+                    AddFelmystOwnedBots(source, bots, seen, player);
+            }
+        }
+        else
+        {
+            AddFelmystConsumableBot(source, bots, seen, seed);
+
+            if (Player* player = GetFelmystOwnerPlayer(seed))
+            {
+                AddFelmystConsumableBot(source, bots, seen, player);
+                AddFelmystOwnedBots(source, bots, seen, player);
+            }
+        }
+
+        AddFelmystThreatBots(source, bots, seen);
+        return bots;
+    }
+
+    void CastFelmystOpeningBotConsumables(Creature* source)
+    {
+        for (Creature* bot : GatherFelmystConsumableBots(source))
+        {
+            if (HasFelmystFlaskAura(bot))
+                continue;
+
+            CastFelmystKnownSelfSpell(bot, SPELL_FLASK_OF_CHROMATIC_WONDER);
+            CastFelmystKnownSelfSpell(bot, SPELL_SCROLL_OF_STAMINA);
+        }
+    }
+
+    void CastFelmystEncapsulateBotConsumables(Creature* source)
+    {
+        for (Creature* bot : GatherFelmystConsumableBots(source))
+            CastFelmystKnownSelfSpell(bot, Acore::Containers::SelectRandomContainerElement(FELMYST_ENCAPSULATE_BOT_CONSUMABLES));
+    }
+
+    void TryCastFelmystGasNovaTowelette(Unit* target)
+    {
+        if (!IsFelmystConsumableBot(target) || !roll_chance_i(FELMYST_GAS_NOVA_TOWELETTE_CHANCE))
+            return;
+
+        CastFelmystKnownSelfSpell(target->ToCreature(), SPELL_MOIST_TOWELETTE);
+    }
+
+    bool IsNpcBotTank(Unit const* unit)
+    {
+        Creature const* creature = unit ? unit->ToCreature() : nullptr;
+        bot_ai const* ai = creature && creature->IsNPCBot() ? creature->GetBotAI() : nullptr;
+        return ai && (ai->IsTank(creature) || ai->IsOffTank(creature) || ai->HasRole(BOT_ROLE_TANK | BOT_ROLE_TANK_OFF));
+    }
+
+    bool IsMarkedPlayerTank(Unit const* unit)
+    {
+        Player const* player = unit ? unit->ToPlayer() : nullptr;
+        Group const* group = player ? player->GetGroup() : nullptr;
+        if (!group)
+            return false;
+
+        for (auto const& slot : group->GetMemberSlots())
+            if (slot.guid == player->GetGUID())
+                return (slot.flags & (MEMBER_FLAG_MAINTANK | MEMBER_FLAG_MAINASSIST)) != 0;
+
+        return false;
+    }
+
+    bool IsCurrentOrRecentTankTarget(Creature const* source, Unit const* unit)
+    {
+        if (!source || !unit)
+            return false;
+
+        Creature* mutableSource = const_cast<Creature*>(source);
+        return mutableSource->GetVictim() == unit ||
+            mutableSource->GetThreatMgr().GetCurrentVictim() == unit ||
+            mutableSource->GetThreatMgr().GetLastVictim() == unit;
+    }
+
+    bool IsEncapsulateTankTarget(Creature const* source, Unit const* unit)
+    {
+        return IsCurrentOrRecentTankTarget(source, unit) || IsNpcBotTank(unit) || IsMarkedPlayerTank(unit);
+    }
+
+    bool IsValidEncapsulateTarget(Creature const* source, Unit const* unit)
+    {
+        if (!source || !unit || !unit->IsAlive() || !unit->IsInWorld() || unit->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
+            return false;
+
+        if (IsEncapsulateTankTarget(source, unit))
+            return false;
+
+        if (!unit->IsPlayer() && !IsOwnedNpcBot(unit))
+            return false;
+
+        if (!unit->IsInMap(source) || !unit->InSamePhase(source))
+            return false;
+
+        if (!source->IsWithinDistInMap(unit, FELMYST_ENCAPSULATE_TARGET_RANGE) || !source->IsWithinLOSInMap(unit))
+            return false;
+
+        return source->IsValidAttackTarget(unit) && source->CanSeeOrDetect(unit);
+    }
+
+    Unit* SelectEncapsulateTarget(Creature* source)
+    {
+        if (!source)
+            return nullptr;
+
+        std::list<Unit*> units;
+        Bcore::AnyUnitInObjectRangeCheck check(source, FELMYST_ENCAPSULATE_TARGET_RANGE);
+        Bcore::UnitListSearcher<Bcore::AnyUnitInObjectRangeCheck> searcher(source, units, check);
+        Cell::VisitObjects(source, searcher, FELMYST_ENCAPSULATE_TARGET_RANGE);
+
+        std::vector<Unit*> targets;
+        for (Unit* unit : units)
+            if (IsValidEncapsulateTarget(source, unit))
+                targets.push_back(unit);
+
+        return targets.empty() ? nullptr : Acore::Containers::SelectRandomContainerElement(targets);
+    }
+}
+
 class CorruptTriggers : public BasicEvent
 {
 public:
@@ -173,6 +503,7 @@ struct boss_felmyst : public BossAI
     void JustEngagedWith(Unit* who) override
     {
         BossAI::JustEngagedWith(who);
+        CastFelmystOpeningBotConsumables(me);
 
         ScheduleEnrageTimer(SPELL_BERSERK, 10min, YELL_BERSERK);
 
@@ -229,7 +560,13 @@ struct boss_felmyst : public BossAI
 
         ScheduleTimedEvent(26s, 53s, [&] {
             if (scheduler.GetNextGroupOccurrence(GROUP_TAKEOFF) > 9s)
-                DoCastRandomTarget(SPELL_ENCAPSULATE_CHANNEL, 0, 50.0f);
+            {
+                if (Unit* target = SelectEncapsulateTarget(me))
+                {
+                    CastFelmystEncapsulateBotConsumables(me);
+                    DoCast(target, SPELL_ENCAPSULATE_CHANNEL);
+                }
+            }
         }, 26s, 53s);
 
         scheduler.Schedule(1min, GROUP_TAKEOFF, [&](TaskContext)
@@ -479,6 +816,91 @@ class spell_felmyst_fog_of_corruption : public SpellScript
     }
 };
 
+class spell_felmyst_gas_nova_bot_towelette : public SpellScript
+{
+    PrepareSpellScript(spell_felmyst_gas_nova_bot_towelette);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SPELL_MOIST_TOWELETTE });
+    }
+
+    void HandleAfterHit()
+    {
+        TryCastFelmystGasNovaTowelette(GetHitUnit());
+    }
+
+    void Register() override
+    {
+        AfterHit += SpellHitFn(spell_felmyst_gas_nova_bot_towelette::HandleAfterHit);
+    }
+};
+
+class spell_felmyst_encapsulate_bot_aura : public AuraScript
+{
+    PrepareAuraScript(spell_felmyst_encapsulate_bot_aura);
+
+    void HandleApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Unit* target = GetTarget();
+        Creature* bot = target ? target->ToCreature() : nullptr;
+        if (!bot || !bot->IsNPCBot())
+            return;
+
+        float const liftZ = GetFelmystEncapsulateBotLiftZ(bot);
+
+        bot->AttackStop();
+        bot->InterruptNonMeleeSpells(false);
+        bot->BotStopMovement();
+        bot->GetMotionMaster()->Clear();
+        bot->SetCanFly(true);
+        bot->SetDisableGravity(true);
+        bot->SendMovementFlagUpdate();
+        bot->NearTeleportTo(bot->GetPositionX(), bot->GetPositionY(), liftZ, bot->GetOrientation(), true);
+        bot->GetMotionMaster()->MoveIdle();
+    }
+
+    void HandleRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Unit* target = GetTarget();
+        Creature* bot = target ? target->ToCreature() : nullptr;
+        if (!bot || !bot->IsNPCBot())
+            return;
+
+        bot->GetMotionMaster()->Clear();
+        bot->SetCanFly(false);
+        bot->SetDisableGravity(false);
+        bot->SendMovementFlagUpdate();
+        bot->GetMotionMaster()->MoveFall(0, true);
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_felmyst_encapsulate_bot_aura::HandleApply, EFFECT_ALL, SPELL_AURA_ANY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectRemove += AuraEffectRemoveFn(spell_felmyst_encapsulate_bot_aura::HandleRemove, EFFECT_ALL, SPELL_AURA_ANY, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+class spell_felmyst_encapsulate_damage : public SpellScript
+{
+    PrepareSpellScript(spell_felmyst_encapsulate_damage);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SPELL_ENCAPSULATE_DAMAGE });
+    }
+
+    void HandleDamage(SpellEffIndex /*effIndex*/)
+    {
+        SetHitDamage(GetFelmystEncapsulateHitDamage());
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_felmyst_encapsulate_damage::HandleDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+    }
+};
+
 class spell_felmyst_fog_of_corruption_charm_aura : public AuraScript
 {
     PrepareAuraScript(spell_felmyst_fog_of_corruption_charm_aura);
@@ -552,7 +974,10 @@ void AddSC_boss_felmyst()
     RegisterSunwellPlateauCreatureAI(boss_felmyst);
     RegisterSunwellPlateauCreatureAI(npc_demonic_vapor);
     RegisterSunwellPlateauCreatureAI(npc_demonic_vapor_trail);
+    RegisterSpellScript(spell_felmyst_encapsulate_bot_aura);
+    RegisterSpellScript(spell_felmyst_encapsulate_damage);
     RegisterSpellScript(spell_felmyst_fog_of_corruption);
+    RegisterSpellScript(spell_felmyst_gas_nova_bot_towelette);
     RegisterSpellScript(spell_felmyst_fog_of_corruption_charm_aura);
     RegisterSpellScript(spell_felmyst_open_brutallus_back_doors);
 }

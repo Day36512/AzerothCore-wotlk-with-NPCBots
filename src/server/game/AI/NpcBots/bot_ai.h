@@ -442,6 +442,7 @@ protected:
     bool CheckAttackTarget();
     bool TryGurtoggTankSwap(uint32 diff);
     bool TryBrutallusTankSwap(uint32 diff);
+    bool TryFelmystTankSwap(uint32 diff);
     bool TryBrutallusBurnSurvival(uint32 diff);
     bool TryReliquarySupport(uint32 diff);
     bool TryIllidariCouncilSupport(uint32 diff);

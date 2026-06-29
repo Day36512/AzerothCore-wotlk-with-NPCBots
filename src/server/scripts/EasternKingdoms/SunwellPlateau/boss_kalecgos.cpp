@@ -894,8 +894,8 @@ void AddSC_boss_kalecgos()
     RegisterSunwellPlateauCreatureAI(boss_sathrovarr);
     RegisterSunwellPlateauCreatureAI(boss_kalec);
     RegisterSpellScript(spell_kalecgos_spectral_blast_dummy);
-    RegisterSpellAndAuraScriptPairWithArgs(spell_kalecgos_curse_of_boundless_agony, spell_kalecgos_curse_of_boundless_agony_aura, "spell_kalecgos_curse_of_boundless_agony_aura");
-    RegisterSpellAndAuraScriptPairWithArgs(spell_kalecgos_curse_of_boundless_agony_player, spell_kalecgos_curse_of_boundless_agony_aura, "spell_kalecgos_curse_of_boundless_agony_player");
+    RegisterSpellScript(spell_kalecgos_curse_of_boundless_agony);
+    RegisterSpellAndAuraScriptPair(spell_kalecgos_curse_of_boundless_agony_player, spell_kalecgos_curse_of_boundless_agony_aura);
     RegisterSpellScript(spell_kalecgos_spectral_realm_dummy);
     RegisterSpellScript(spell_kalecgos_spectral_realm_aura);
 }

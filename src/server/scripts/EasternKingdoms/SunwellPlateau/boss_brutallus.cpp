@@ -21,6 +21,7 @@
 #include "CreatureScript.h"
 #include "Group.h"
 #include "MapReference.h"
+#include "ObjectAccessor.h"
 #include "PassiveAI.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
@@ -34,6 +35,7 @@
 #include "sunwell_plateau.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <functional>
 #include <limits>
@@ -81,11 +83,6 @@ enum Spells
 
 enum Misc
 {
-    EVENT_SPELL_SLASH                   = 1,
-    EVENT_SPELL_STOMP                   = 2,
-    EVENT_SPELL_BURN                    = 3,
-    EVENT_SPELL_BERSERK                 = 4,
-
     ACTION_START_EVENT                  = 1,
     ACTION_SPAWN_FELMYST                = 2
 };
@@ -102,11 +99,20 @@ namespace
     constexpr float BRUTALLUS_BURN_RUN_DISTANCE = 26.0f;
     constexpr float BRUTALLUS_BURN_RUN_ANGLE_OFFSET = 0.85f;
     constexpr float BRUTALLUS_TANK_PULL_THREAT = 750000.0f;
+    constexpr float BRUTALLUS_TANK_SWAP_THREAT_BONUS = BRUTALLUS_TANK_PULL_THREAT;
+    constexpr float BRUTALLUS_TANK_SWAP_MIN_THREAT = BRUTALLUS_TANK_PULL_THREAT * 2.0f;
     constexpr float BRUTALLUS_TANK_ANCHOR_TOLERANCE = 2.0f;
     constexpr float BRUTALLUS_PI = 3.14159265358979323846f;
+    constexpr uint8 BRUTALLUS_TANK_SWAP_METEOR_STACKS = 2;
     constexpr char const* CONFIG_BRUTALLUS_METEOR_SLASH_DAMAGE_MULTIPLIER = "SunwellPlateau.Brutallus.MeteorSlashDamageMultiplier";
     constexpr char const* CONFIG_BRUTALLUS_BURN_DURATION_SECONDS = "SunwellPlateau.Brutallus.BurnDurationSeconds";
     constexpr char const* CONFIG_BRUTALLUS_MAX_ACTIVE_BURN_TARGETS = "SunwellPlateau.Brutallus.MaxActiveBurnTargets";
+
+    static const std::array<Position, 2> BRUTALLUS_TANK_ANCHOR_POSITIONS =
+    {
+        Position{ 1469.40f, 573.68f, 21.98f, 0.0f },
+        Position{ 1484.94f, 582.96f, 23.45f, 0.0f }
+    };
 
     float GetBrutallusMeteorSlashDamageMultiplier()
     {
@@ -316,6 +322,35 @@ namespace
         return brutallus && brutallus->GetEntry() == NPC_BRUTALLUS && brutallus->IsAlive() && brutallus->IsInCombat();
     }
 
+    uint8 GetBrutallusMeteorSlashStacks(Unit const* unit)
+    {
+        Aura const* aura = unit ? unit->GetAura(SPELL_METEOR_SLASH) : nullptr;
+        return aura ? std::max<uint8>(1, aura->GetStackAmount()) : 0;
+    }
+
+    void ApplyBrutallusTankSwapThreat(Creature* brutallus, Unit* newTank, Unit* oldTank)
+    {
+        if (!IsBrutallusEncounterActive(brutallus) || !newTank || !newTank->IsAlive() || !brutallus->CanHaveThreatList())
+            return;
+
+        if (GetBrutallusMeteorSlashStacks(newTank) >= BRUTALLUS_TANK_SWAP_METEOR_STACKS)
+            return;
+
+        float const oldThreat = oldTank ? brutallus->GetThreatMgr().GetThreat(oldTank, true) : 0.0f;
+        float const newThreat = brutallus->GetThreatMgr().GetThreat(newTank, true);
+        float const targetThreat = std::max<float>(oldThreat + BRUTALLUS_TANK_SWAP_THREAT_BONUS, BRUTALLUS_TANK_SWAP_MIN_THREAT);
+        bool threatAdjusted = false;
+
+        if (newThreat < targetThreat)
+        {
+            brutallus->GetThreatMgr().AddThreat(newTank, targetThreat - newThreat, nullptr, true, true);
+            threatAdjusted = true;
+        }
+
+        if (threatAdjusted && oldTank && oldTank != newTank)
+            brutallus->GetThreatMgr().ModifyThreatByPercent(oldTank, -60);
+    }
+
     Creature* GetBrutallusForUnit(Unit* unit)
     {
         if (!unit)
@@ -366,15 +401,35 @@ namespace
         });
     }
 
-    bool TryGetBrutallusTankHomePosition(Creature* tank, Creature* brutallus, Position& destination)
+    uint8 GetBrutallusTankAnchorIndex(Creature* tank)
+    {
+        if (!tank || !tank->IsNPCBot())
+            return 0;
+
+        bot_ai* ai = tank->GetBotAI();
+        if (ai && ai->IsOffTank(tank))
+            return 1;
+
+        if (Player* owner = tank->GetBotOwner())
+            if (BotMgr* botMgr = owner->GetBotMgr())
+            {
+                uint8 const slot = botMgr->GetNpcBotSlotByRole(BOT_ROLE_TANK | BOT_ROLE_TANK_OFF, tank);
+                if (slot > 0)
+                    return uint8((slot - 1) % BRUTALLUS_TANK_ANCHOR_POSITIONS.size());
+            }
+
+        return uint8(tank->GetGUID().GetCounter() % BRUTALLUS_TANK_ANCHOR_POSITIONS.size());
+    }
+
+    bool TryGetBrutallusTankAnchorPosition(Creature* tank, Creature* brutallus, Position& destination)
     {
         if (!tank || !brutallus)
             return false;
 
-        Position const& home = brutallus->GetHomePosition();
-        float x = home.GetPositionX();
-        float y = home.GetPositionY();
-        float z = home.GetPositionZ();
+        Position const& anchor = BRUTALLUS_TANK_ANCHOR_POSITIONS[GetBrutallusTankAnchorIndex(tank)];
+        float x = anchor.GetPositionX();
+        float y = anchor.GetPositionY();
+        float z = anchor.GetPositionZ();
         if (!tank->CanFly())
             tank->UpdateAllowedPositionZ(x, y, z);
 
@@ -382,7 +437,7 @@ namespace
         return destination.IsPositionValid() && tank->IsWithinLOS(destination.GetPositionX(), destination.GetPositionY(), destination.GetPositionZ());
     }
 
-    void MoveBrutallusTankBotToHome(Creature* tank, Creature* brutallus)
+    void MoveBrutallusTankBotToAnchor(Creature* tank, Creature* brutallus)
     {
         if (!tank || !tank->IsNPCBot() || !tank->IsAlive() || !brutallus)
             return;
@@ -392,7 +447,7 @@ namespace
             return;
 
         Position destination;
-        if (!TryGetBrutallusTankHomePosition(tank, brutallus, destination))
+        if (!TryGetBrutallusTankAnchorPosition(tank, brutallus, destination))
             return;
 
         tank->InterruptNonMeleeSpells(false);
@@ -410,18 +465,18 @@ namespace
         ai->BotMovement(BOT_MOVE_POINT, &destination, nullptr, true);
     }
 
-    void RestoreBrutallusTankBotCommandState(Creature* tank, uint32 originalCommandState)
+    void RestoreBrutallusBotCommandState(Creature* bot, uint32 originalCommandState)
     {
-        if (!tank || !tank->IsNPCBot())
+        if (!bot || !bot->IsNPCBot())
             return;
 
-        bot_ai* ai = tank->GetBotAI();
+        bot_ai* ai = bot->GetBotAI();
         if (!ai)
             return;
 
         ai->RemoveBotCommandState(BOT_COMMAND_STAY | BOT_COMMAND_FULLSTOP | BOT_COMMAND_ATTACK | BOT_COMMAND_COMBATRESET);
 
-        if (!tank->IsAlive() || ai->IAmFree())
+        if (!bot->IsAlive() || ai->IAmFree())
             return;
 
         if (originalCommandState & BOT_COMMAND_FULLSTOP)
@@ -436,7 +491,7 @@ namespace
             ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
     }
 
-    void PrepareBrutallusTankBots(Creature* brutallus, std::map<ObjectGuid, uint32>& originalStates)
+    void PrepareBrutallusEncounterBots(Creature* brutallus, std::map<ObjectGuid, uint32>& originalStates)
     {
         if (!brutallus || !brutallus->CanHaveThreatList())
             return;
@@ -451,6 +506,8 @@ namespace
             if (!isTank && !IsBrutallusNpcBotRangedOrHealer(bot))
                 return;
 
+            // Ranged/healer bots are anchored by bot_ai.cpp; save their pull state
+            // here so Reset/Death can release encounter STAY commands.
             if (bot_ai* ai = bot->GetBotAI())
                 originalStates.try_emplace(bot->GetGUID(), ai->GetBotCommandState());
 
@@ -461,26 +518,26 @@ namespace
             if (currentThreat < BRUTALLUS_TANK_PULL_THREAT)
                 brutallus->GetThreatMgr().AddThreat(bot, BRUTALLUS_TANK_PULL_THREAT - currentThreat, nullptr, true, true);
 
-            MoveBrutallusTankBotToHome(bot, brutallus);
+            MoveBrutallusTankBotToAnchor(bot, brutallus);
         });
     }
 
-    void ReleaseBrutallusTankBots(Creature* brutallus, std::map<ObjectGuid, uint32>& originalStates)
+    void ReleaseBrutallusEncounterBots(Creature* brutallus, std::map<ObjectGuid, uint32>& originalStates)
     {
         if (!brutallus || originalStates.empty())
             return;
 
         ForEachBrutallusPlayerAndBot(brutallus, [&originalStates](Unit* unit)
         {
-            Creature* tank = unit ? unit->ToCreature() : nullptr;
-            if (!tank || !tank->IsNPCBot())
+            Creature* bot = unit ? unit->ToCreature() : nullptr;
+            if (!bot || !bot->IsNPCBot())
                 return;
 
-            auto itr = originalStates.find(tank->GetGUID());
+            auto itr = originalStates.find(bot->GetGUID());
             if (itr == originalStates.end())
                 return;
 
-            RestoreBrutallusTankBotCommandState(tank, itr->second);
+            RestoreBrutallusBotCommandState(bot, itr->second);
         });
 
         originalStates.clear();
@@ -764,10 +821,11 @@ struct boss_brutallus : public BossAI
     void Reset() override
     {
         BossAI::Reset();
+        _lastTankGuid.Clear();
         DoCastSelf(SPELL_DUAL_WIELD, true);
         me->m_Events.KillAllEvents(false);
-        ReleaseBrutallusTankBots(me, _tankAnchorOriginalStates);
         RemoveAllBrutallusBurnAuras(me);
+        ReleaseBrutallusEncounterBots(me, _botCommandOriginalStates);
     }
 
     void JustEngagedWith(Unit* who) override
@@ -777,9 +835,15 @@ struct boss_brutallus : public BossAI
 
         Talk(YELL_AGGRO);
         BossAI::JustEngagedWith(who);
-        PrepareBrutallusTankBots(me, _tankAnchorOriginalStates);
+        PrepareBrutallusEncounterBots(me, _botCommandOriginalStates);
+        Unit* currentTank = GetCurrentBrutallusTank();
+        _lastTankGuid = currentTank ? currentTank->GetGUID() : ObjectGuid::Empty;
 
         ScheduleEnrageTimer(SPELL_BERSERK, 6min, YELL_BERSERK);
+
+        ScheduleTimedEvent(500ms, [&] {
+            HandleBrutallusTankSwapThreat();
+        }, 500ms);
 
         ScheduleTimedEvent(11s, [&] {
             DoCastVictim(SPELL_METEOR_SLASH);
@@ -805,8 +869,8 @@ struct boss_brutallus : public BossAI
     void JustDied(Unit* killer) override
     {
         BonusLootRolls::AddExplicitBossDeathOpportunities(killer ? killer->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr, me);
-        ReleaseBrutallusTankBots(me, _tankAnchorOriginalStates);
         RemoveAllBrutallusBurnAuras(me);
+        ReleaseBrutallusEncounterBots(me, _botCommandOriginalStates);
 
         BossAI::JustDied(killer);
         Talk(YELL_DEATH);
@@ -824,7 +888,45 @@ struct boss_brutallus : public BossAI
     }
 
 private:
-    std::map<ObjectGuid, uint32> _tankAnchorOriginalStates;
+    Unit* GetCurrentBrutallusTank()
+    {
+        if (Unit* victim = me->GetVictim())
+            return victim;
+
+        if (Unit* current = me->GetThreatMgr().GetCurrentVictim())
+            return current;
+
+        return me->GetThreatMgr().GetLastVictim();
+    }
+
+    void HandleBrutallusTankSwapThreat()
+    {
+        Unit* currentTank = GetCurrentBrutallusTank();
+        ObjectGuid const currentTankGuid = currentTank ? currentTank->GetGUID() : ObjectGuid::Empty;
+        if (currentTankGuid.IsEmpty())
+        {
+            _lastTankGuid.Clear();
+            return;
+        }
+
+        if (_lastTankGuid.IsEmpty())
+        {
+            _lastTankGuid = currentTankGuid;
+            return;
+        }
+
+        if (_lastTankGuid == currentTankGuid)
+            return;
+
+        Unit* oldTank = ObjectAccessor::GetUnit(*me, _lastTankGuid);
+        if (GetBrutallusMeteorSlashStacks(oldTank) >= BRUTALLUS_TANK_SWAP_METEOR_STACKS)
+            ApplyBrutallusTankSwapThreat(me, currentTank, oldTank);
+
+        _lastTankGuid = currentTankGuid;
+    }
+
+    std::map<ObjectGuid, uint32> _botCommandOriginalStates;
+    ObjectGuid _lastTankGuid;
 };
 
 enum eMadrigosa

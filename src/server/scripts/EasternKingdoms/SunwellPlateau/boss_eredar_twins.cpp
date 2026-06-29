@@ -16,16 +16,29 @@
  */
 
 #include "AreaTriggerScript.h"
+#include "Containers.h"
 #include "CreatureScript.h"
 #include "GameObjectAI.h"
 #include "GameObjectScript.h"
+#include "Group.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
+#include "SpellAuras.h"
 #include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "SpellAuraEffects.h"
+#include "bot_ai.h"
+#include "botmgr.h"
 #include "sunwell_plateau.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <limits>
+#include <unordered_map>
+#include <vector>
 
 enum Quotes
 {
@@ -68,7 +81,23 @@ enum Spells
     SPELL_CONFLAGRATION         = 45342,
     SPELL_FLAME_SEAR            = 46771,
     SPELL_BLAZE                 = 45235,
-    SPELL_BLAZE_SUMMON          = 45236
+    SPELL_BLAZE_SUMMON          = 45236,
+
+    // NPCBot opening consumables
+    SPELL_FLASK_OF_CHROMATIC_WONDER = 42735,
+    SPELL_SCROLL_OF_STAMINA     = 48101,
+
+    // NPCBot Conflagration responses
+    SPELL_GNOMISH_CLOAKING_DEVICE = 4079,
+    SPELL_SWIFTNESS_POTION      = 2379,
+    SPELL_MAJOR_FIRE_PROTECTION_POTION = 28511,
+    SPELL_FROZEN_RUNE           = 29432,
+    SPELL_NIGHTMARE_SEED        = 28726,
+    SPELL_FEL_BLOSSOM           = 28527,
+    SPELL_ICE_BLOCK             = 45438,
+    SPELL_DIVINE_SHIELD         = 642,
+    SPELL_CLOAK_OF_SHADOWS      = 31224,
+    SPELL_VANISH                = 1856
 };
 
 enum TwinPhases
@@ -78,6 +107,664 @@ enum TwinPhases
     GROUP_PYROGENICS            = 2,
     GROUP_FLAME_SEAR            = 3
 };
+
+namespace
+{
+    constexpr float EREDAR_TWINS_BOT_CONSUMABLE_RANGE = 150.0f;
+
+    bool IsOwnedEredarTwinsNpcBot(Unit const* unit)
+    {
+        Creature const* creature = unit ? unit->ToCreature() : nullptr;
+        return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI();
+    }
+
+    bool IsEredarTwinsConsumableBot(Unit const* unit)
+    {
+        return unit && unit->IsAlive() && unit->IsInWorld() && IsOwnedEredarTwinsNpcBot(unit);
+    }
+
+    bool HasEredarTwinsFlaskAura(Unit const* unit)
+    {
+        if (!unit)
+            return false;
+
+        for (Unit::AuraApplicationMap::value_type const& pair : unit->GetAppliedAuras())
+        {
+            Aura const* aura = pair.second ? pair.second->GetBase() : nullptr;
+            if (!aura)
+                continue;
+
+            uint32 const spellId = aura->GetId();
+            if (sSpellMgr->IsSpellMemberOfSpellGroup(spellId, SPELL_GROUP_ELIXIR_BATTLE) &&
+                sSpellMgr->IsSpellMemberOfSpellGroup(spellId, SPELL_GROUP_ELIXIR_GUARDIAN))
+                return true;
+        }
+
+        return false;
+    }
+
+    void CastEredarTwinsKnownSelfSpell(Creature* bot, uint32 spellId)
+    {
+        if (bot && sSpellMgr->GetSpellInfo(spellId))
+            bot->CastSpell(bot, spellId, true);
+    }
+
+    void AddEredarTwinsConsumableBot(Creature* source, std::vector<Creature*>& bots, GuidSet& seen, Unit* unit)
+    {
+        if (!source || !IsEredarTwinsConsumableBot(unit))
+            return;
+
+        Creature* bot = unit->ToCreature();
+        if (!bot || !bot->IsInMap(source) || !bot->InSamePhase(source))
+            return;
+
+        if (!source->IsWithinDistInMap(bot, EREDAR_TWINS_BOT_CONSUMABLE_RANGE))
+            return;
+
+        if (!seen.insert(bot->GetGUID()).second)
+            return;
+
+        bots.push_back(bot);
+    }
+
+    Player* GetEredarTwinsOwnerPlayer(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player;
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotOwner() : nullptr;
+    }
+
+    Group* GetEredarTwinsGroup(Unit* unit)
+    {
+        if (!unit)
+            return nullptr;
+
+        if (Player* player = unit->ToPlayer())
+            return player->GetGroup();
+
+        Creature* creature = unit->ToCreature();
+        return creature && creature->IsNPCBot() ? creature->GetBotGroup() : nullptr;
+    }
+
+    void AddEredarTwinsOwnedBots(Creature* source, std::vector<Creature*>& bots, GuidSet& seen, Player* player)
+    {
+        if (!player || !player->HaveBot())
+            return;
+
+        BotMgr* botMgr = player->GetBotMgr();
+        if (!botMgr)
+            return;
+
+        for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+            AddEredarTwinsConsumableBot(source, bots, seen, pair.second);
+    }
+
+    void AddEredarTwinsThreatBots(Creature* source, std::vector<Creature*>& bots, GuidSet& seen)
+    {
+        if (!source)
+            return;
+
+        for (ThreatReference const* ref : source->GetThreatMgr().GetSortedThreatList())
+        {
+            if (!ref || !ref->IsAvailable())
+                continue;
+
+            AddEredarTwinsConsumableBot(source, bots, seen, ref->GetVictim());
+        }
+    }
+
+    std::vector<Creature*> GatherEredarTwinsConsumableBots(Creature* source, Unit* seed)
+    {
+        std::vector<Creature*> bots;
+        GuidSet seen;
+
+        if (!source)
+            return bots;
+
+        if (!seed)
+            seed = source->GetThreatMgr().GetCurrentVictim();
+
+        if (!seed)
+            seed = source->GetVictim();
+
+        if (Group* group = GetEredarTwinsGroup(seed))
+        {
+            for (Unit* member : BotMgr::GetAllGroupMembers(group))
+            {
+                AddEredarTwinsConsumableBot(source, bots, seen, member);
+
+                if (Player* player = member ? member->ToPlayer() : nullptr)
+                    AddEredarTwinsOwnedBots(source, bots, seen, player);
+            }
+        }
+        else
+        {
+            AddEredarTwinsConsumableBot(source, bots, seen, seed);
+
+            if (Player* player = GetEredarTwinsOwnerPlayer(seed))
+            {
+                AddEredarTwinsConsumableBot(source, bots, seen, player);
+                AddEredarTwinsOwnedBots(source, bots, seen, player);
+            }
+        }
+
+        AddEredarTwinsThreatBots(source, bots, seen);
+        return bots;
+    }
+
+    void CastEredarTwinsOpeningBotConsumables(Creature* source, Unit* seed)
+    {
+        for (Creature* bot : GatherEredarTwinsConsumableBots(source, seed))
+        {
+            if (HasEredarTwinsFlaskAura(bot))
+                continue;
+
+            CastEredarTwinsKnownSelfSpell(bot, SPELL_FLASK_OF_CHROMATIC_WONDER);
+            CastEredarTwinsKnownSelfSpell(bot, SPELL_SCROLL_OF_STAMINA);
+        }
+    }
+
+    constexpr float EREDAR_TWINS_ABILITY_TARGET_RANGE = 120.0f;
+    constexpr float EREDAR_TWINS_CONFLAGRATION_SAFE_DISTANCE = 22.0f;
+    constexpr float EREDAR_TWINS_ALYTHESS_WARLOCK_THREAT = 3000000.0f;
+    constexpr float EREDAR_TWINS_ALYTHESS_PRIMARY_WARLOCK_THREAT = 4000000.0f;
+
+    struct EredarTwinsConflagrationBotState
+    {
+        ObjectGuid encounterGuid;
+        uint32 instanceId = 0;
+        bool cloakOfShadows = false;
+        bool vanish = false;
+        bool iceBlock = false;
+        bool divineShield = false;
+        bool cloakDevice = false;
+    };
+
+    std::unordered_map<ObjectGuid::LowType, EredarTwinsConflagrationBotState> EredarTwinsConflagrationStates;
+
+    bool IsEredarTwinsWarlock(Unit const* unit)
+    {
+        if (!unit)
+            return false;
+
+        if (Player const* player = unit->ToPlayer())
+            return player->getClass() == CLASS_WARLOCK;
+
+        Creature const* creature = unit->ToCreature();
+        bot_ai const* ai = creature && creature->IsNPCBot() ? creature->GetBotAI() : nullptr;
+        return ai && ai->GetBotClass() == BOT_CLASS_WARLOCK;
+    }
+
+    bool IsNpcBotTank(Unit const* unit)
+    {
+        Creature const* creature = unit ? unit->ToCreature() : nullptr;
+        bot_ai const* ai = creature && creature->IsNPCBot() ? creature->GetBotAI() : nullptr;
+        return ai && (ai->IsTank(creature) || ai->IsOffTank(creature) || ai->HasRole(BOT_ROLE_TANK | BOT_ROLE_TANK_OFF));
+    }
+
+    bool IsMarkedPlayerTank(Unit const* unit)
+    {
+        Player const* player = unit ? unit->ToPlayer() : nullptr;
+        Group const* group = player ? player->GetGroup() : nullptr;
+        if (!group)
+            return false;
+
+        for (auto const& slot : group->GetMemberSlots())
+            if (slot.guid == player->GetGUID())
+                return (slot.flags & (MEMBER_FLAG_MAINTANK | MEMBER_FLAG_MAINASSIST)) != 0;
+
+        return false;
+    }
+
+    bool IsCurrentOrRecentTankTarget(Creature const* source, Unit const* unit)
+    {
+        if (!source || !unit)
+            return false;
+
+        Creature* mutableSource = const_cast<Creature*>(source);
+        return mutableSource->GetVictim() == unit ||
+            mutableSource->GetThreatMgr().GetCurrentVictim() == unit ||
+            mutableSource->GetThreatMgr().GetLastVictim() == unit;
+    }
+
+    bool IsEredarTwinsTankTarget(Creature const* source, Unit const* unit)
+    {
+        if (IsNpcBotTank(unit) || IsMarkedPlayerTank(unit) || IsEredarTwinsWarlock(unit) || IsCurrentOrRecentTankTarget(source, unit))
+            return true;
+
+        if (!source)
+            return false;
+
+        Creature* mutableSource = const_cast<Creature*>(source);
+        if (InstanceScript* instance = mutableSource->GetInstanceScript())
+        {
+            if (Creature* alythess = instance->GetCreature(DATA_ALYTHESS))
+                if (IsCurrentOrRecentTankTarget(alythess, unit))
+                    return true;
+
+            if (Creature* sacrolash = instance->GetCreature(DATA_SACROLASH))
+                if (IsCurrentOrRecentTankTarget(sacrolash, unit))
+                    return true;
+        }
+
+        return false;
+    }
+
+    bool IsValidEredarTwinsAbilityTarget(Creature const* source, Unit const* unit)
+    {
+        if (!source || !unit || !unit->IsAlive() || !unit->IsInWorld() || unit->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
+            return false;
+
+        if (!unit->IsPlayer() && !IsOwnedEredarTwinsNpcBot(unit))
+            return false;
+
+        if (!unit->IsInMap(source) || !unit->InSamePhase(source))
+            return false;
+
+        if (!source->IsWithinDistInMap(unit, EREDAR_TWINS_ABILITY_TARGET_RANGE) || !source->IsWithinLOSInMap(unit))
+            return false;
+
+        return source->IsValidAttackTarget(unit);
+    }
+
+    void AddEredarTwinsAbilityTarget(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, Unit* unit)
+    {
+        if (!IsValidEredarTwinsAbilityTarget(source, unit))
+            return;
+
+        if (!seen.insert(unit->GetGUID()).second)
+            return;
+
+        targets.push_back(unit);
+    }
+
+    void AddEredarTwinsOwnedBotTargets(Creature* source, std::vector<Unit*>& targets, GuidSet& seen, Player* player)
+    {
+        if (!player || !player->HaveBot())
+            return;
+
+        BotMgr* botMgr = player->GetBotMgr();
+        if (!botMgr)
+            return;
+
+        for (BotMap::value_type const& pair : *botMgr->GetBotMap())
+            AddEredarTwinsAbilityTarget(source, targets, seen, pair.second);
+    }
+
+    std::vector<Unit*> GatherEredarTwinsAbilityTargets(Creature* source, Unit* seed)
+    {
+        std::vector<Unit*> targets;
+        GuidSet seen;
+
+        if (!source)
+            return targets;
+
+        if (!seed)
+            seed = source->GetThreatMgr().GetCurrentVictim();
+
+        if (!seed)
+            seed = source->GetVictim();
+
+        if (Group* group = GetEredarTwinsGroup(seed))
+        {
+            for (Unit* member : BotMgr::GetAllGroupMembers(group))
+            {
+                AddEredarTwinsAbilityTarget(source, targets, seen, member);
+
+                if (Player* player = member ? member->ToPlayer() : nullptr)
+                    AddEredarTwinsOwnedBotTargets(source, targets, seen, player);
+            }
+        }
+        else
+        {
+            AddEredarTwinsAbilityTarget(source, targets, seen, seed);
+
+            if (Player* player = GetEredarTwinsOwnerPlayer(seed))
+            {
+                AddEredarTwinsAbilityTarget(source, targets, seen, player);
+                AddEredarTwinsOwnedBotTargets(source, targets, seen, player);
+            }
+        }
+
+        for (ThreatReference const* ref : source->GetThreatMgr().GetSortedThreatList())
+        {
+            if (!ref || !ref->IsAvailable())
+                continue;
+
+            Unit* victim = ref->GetVictim();
+            AddEredarTwinsAbilityTarget(source, targets, seen, victim);
+
+            if (Player* player = GetEredarTwinsOwnerPlayer(victim))
+            {
+                AddEredarTwinsAbilityTarget(source, targets, seen, player);
+                AddEredarTwinsOwnedBotTargets(source, targets, seen, player);
+            }
+        }
+
+        return targets;
+    }
+
+    Unit* SelectEredarTwinsRandomTarget(Creature* source, Unit* seed, bool excludeTanks)
+    {
+        std::vector<Unit*> targets = GatherEredarTwinsAbilityTargets(source, seed);
+
+        targets.erase(std::remove_if(targets.begin(), targets.end(), [source, excludeTanks](Unit* target)
+        {
+            return !target || (excludeTanks && IsEredarTwinsTankTarget(source, target));
+        }), targets.end());
+
+        if (targets.empty())
+            return nullptr;
+
+        return Acore::Containers::SelectRandomContainerElement(targets);
+    }
+
+    Unit* SelectEredarTwinsThreatTarget(Creature* source, Creature* threatSource, Unit* seed, uint8 topCount, bool excludeTanks)
+    {
+        if (!threatSource)
+            threatSource = source;
+
+        std::vector<Unit*> targets = GatherEredarTwinsAbilityTargets(source, seed);
+        targets.erase(std::remove_if(targets.begin(), targets.end(), [source, excludeTanks](Unit* target)
+        {
+            return !target || (excludeTanks && IsEredarTwinsTankTarget(source, target));
+        }), targets.end());
+
+        if (targets.empty())
+            return nullptr;
+
+        std::sort(targets.begin(), targets.end(), [threatSource](Unit* left, Unit* right)
+        {
+            return threatSource->GetThreatMgr().GetThreat(left, true) > threatSource->GetThreatMgr().GetThreat(right, true);
+        });
+
+        if (topCount && targets.size() > topCount)
+            targets.resize(topCount);
+
+        return Acore::Containers::SelectRandomContainerElement(targets);
+    }
+
+    ObjectGuid GetEredarTwinsEncounterGuid(Creature* source)
+    {
+        if (source)
+        {
+            if (InstanceScript* instance = source->GetInstanceScript())
+            {
+                ObjectGuid guid = instance->GetGuidData(DATA_SACROLASH);
+                if (guid != ObjectGuid::Empty)
+                    return guid;
+
+                guid = instance->GetGuidData(DATA_ALYTHESS);
+                if (guid != ObjectGuid::Empty)
+                    return guid;
+            }
+
+            return source->GetGUID();
+        }
+
+        return ObjectGuid::Empty;
+    }
+
+    EredarTwinsConflagrationBotState& GetEredarTwinsConflagrationState(Creature* source, Creature* bot)
+    {
+        EredarTwinsConflagrationBotState& state = EredarTwinsConflagrationStates[bot->GetGUID().GetCounter()];
+        uint32 const instanceId = bot->GetInstanceId();
+        ObjectGuid const encounterGuid = GetEredarTwinsEncounterGuid(source);
+
+        if (state.instanceId != instanceId || state.encounterGuid != encounterGuid)
+        {
+            state = EredarTwinsConflagrationBotState();
+            state.instanceId = instanceId;
+            state.encounterGuid = encounterGuid;
+        }
+
+        return state;
+    }
+
+    bool TryCastEredarTwinsBotClassSpell(Creature* bot, bot_ai* ai, uint32 spellId)
+    {
+        if (!bot || !ai || !ai->HasSpell(spellId) || !ai->IsSpellReady(spellId, ai->GetLastDiff(), false) || !sSpellMgr->GetSpellInfo(spellId))
+            return false;
+
+        bot->InterruptNonMeleeSpells(false);
+        bot->CastSpell(bot, spellId, true);
+        return true;
+    }
+
+    float GetEredarTwinsConflagrationClearance(Position const& position, std::vector<Unit*> const& nearbyUnits, Unit const* ignored)
+    {
+        float clearance = std::numeric_limits<float>::max();
+
+        for (Unit const* unit : nearbyUnits)
+        {
+            if (!unit || unit == ignored || !unit->IsAlive())
+                continue;
+
+            clearance = std::min(clearance, position.GetExactDist2d(unit->GetPositionX(), unit->GetPositionY()));
+        }
+
+        return clearance;
+    }
+
+    bool FindEredarTwinsConflagrationSafeSpot(Creature* source, Creature* bot, Position& destination)
+    {
+        if (!bot)
+            return false;
+
+        std::vector<Unit*> nearbyUnits = GatherEredarTwinsAbilityTargets(source, bot);
+        float repelX = 0.0f;
+        float repelY = 0.0f;
+
+        for (Unit const* unit : nearbyUnits)
+        {
+            if (!unit || unit == bot || !unit->IsAlive())
+                continue;
+
+            float const dx = bot->GetPositionX() - unit->GetPositionX();
+            float const dy = bot->GetPositionY() - unit->GetPositionY();
+            float const dist = std::max(std::sqrt(dx * dx + dy * dy), 0.1f);
+            float const weight = std::max(0.0f, EREDAR_TWINS_ABILITY_TARGET_RANGE - dist);
+            repelX += dx / dist * weight;
+            repelY += dy / dist * weight;
+        }
+
+        if (std::fabs(repelX) < 0.01f && std::fabs(repelY) < 0.01f && source)
+        {
+            repelX = bot->GetPositionX() - source->GetPositionX();
+            repelY = bot->GetPositionY() - source->GetPositionY();
+        }
+
+        float const baseAngle = Position::NormalizeOrientation(std::atan2(repelY, repelX));
+        std::array<float, 6> const distances = { 24.0f, 30.0f, 36.0f, 42.0f, 50.0f, 58.0f };
+        std::array<float, 11> const offsets = { 0.0f, 0.35f, -0.35f, 0.7f, -0.7f, 1.1f, -1.1f, 1.57f, -1.57f, 2.35f, -2.35f };
+
+        float bestClearance = 0.0f;
+        Position bestPosition;
+
+        for (float distance : distances)
+        {
+            for (float offset : offsets)
+            {
+                Position candidate = bot->GetFirstCollisionPosition(distance, Position::NormalizeOrientation(baseAngle + offset - bot->GetOrientation()));
+                float x = candidate.GetPositionX();
+                float y = candidate.GetPositionY();
+                float z = candidate.GetPositionZ();
+                bot->UpdateAllowedPositionZ(x, y, z);
+                candidate.Relocate(x, y, z, bot->GetOrientation());
+
+                if (!bot->IsWithinLOS(x, y, z))
+                    continue;
+
+                if (source && !source->IsWithinLOS(x, y, z))
+                    continue;
+
+                float const clearance = GetEredarTwinsConflagrationClearance(candidate, nearbyUnits, bot);
+                if (clearance > bestClearance)
+                {
+                    bestClearance = clearance;
+                    bestPosition = candidate;
+                }
+
+                if (clearance >= EREDAR_TWINS_CONFLAGRATION_SAFE_DISTANCE)
+                {
+                    destination = candidate;
+                    return true;
+                }
+            }
+        }
+
+        if (bestClearance > 0.0f)
+        {
+            destination = bestPosition;
+            return true;
+        }
+
+        return false;
+    }
+
+    void MoveEredarTwinsConflagrationBotToSafeSpot(Creature* source, Creature* bot, bot_ai* ai)
+    {
+        if (!bot || !ai)
+            return;
+
+        CastEredarTwinsKnownSelfSpell(bot, SPELL_SWIFTNESS_POTION);
+
+        std::array<uint32, 4> const protectionSpells =
+        {
+            SPELL_FEL_BLOSSOM,
+            SPELL_MAJOR_FIRE_PROTECTION_POTION,
+            SPELL_NIGHTMARE_SEED,
+            SPELL_FROZEN_RUNE
+        };
+
+        CastEredarTwinsKnownSelfSpell(bot, protectionSpells[urand(0, protectionSpells.size() - 1)]);
+
+        Position destination;
+        if (!FindEredarTwinsConflagrationSafeSpot(source, bot, destination))
+            return;
+
+        bot->InterruptNonMeleeSpells(false);
+        bot->AttackStop();
+        bot->BotStopMovement();
+        ai->RemoveBotCommandState(BOT_COMMAND_FOLLOW | BOT_COMMAND_ATTACK);
+        ai->SetBotCommandState(BOT_COMMAND_STAY, true);
+        bot->GetMotionMaster()->MovePoint(bot->GetMapId(), destination, FORCED_MOVEMENT_RUN, 0.0f, false);
+
+        bot->m_Events.AddEventAtOffset([bot]()
+        {
+            if (!bot || !bot->IsInWorld() || !bot->IsAlive() || !bot->IsNPCBot())
+                return;
+
+            if (bot_ai* ai = bot->GetBotAI())
+            {
+                ai->RemoveBotCommandState(BOT_COMMAND_STAY);
+                ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+            }
+        }, 16s);
+    }
+
+    void HandleEredarTwinsConflagrationTarget(Creature* source, Unit* target)
+    {
+        if (!source || !target || !IsOwnedEredarTwinsNpcBot(target))
+            return;
+
+        Creature* bot = target->ToCreature();
+        bot_ai* ai = bot ? bot->GetBotAI() : nullptr;
+        if (!bot || !ai)
+            return;
+
+        EredarTwinsConflagrationBotState& state = GetEredarTwinsConflagrationState(source, bot);
+        bool handled = false;
+
+        switch (ai->GetBotClass())
+        {
+            case BOT_CLASS_ROGUE:
+                if (!state.cloakOfShadows && TryCastEredarTwinsBotClassSpell(bot, ai, SPELL_CLOAK_OF_SHADOWS))
+                {
+                    state.cloakOfShadows = true;
+                    handled = true;
+                }
+                else if (!state.vanish && TryCastEredarTwinsBotClassSpell(bot, ai, SPELL_VANISH))
+                {
+                    state.vanish = true;
+                    handled = true;
+                }
+                break;
+            case BOT_CLASS_MAGE:
+                if (!state.iceBlock && TryCastEredarTwinsBotClassSpell(bot, ai, SPELL_ICE_BLOCK))
+                {
+                    state.iceBlock = true;
+                    handled = true;
+                }
+                break;
+            case BOT_CLASS_PALADIN:
+                if (!state.divineShield && TryCastEredarTwinsBotClassSpell(bot, ai, SPELL_DIVINE_SHIELD))
+                {
+                    state.divineShield = true;
+                    handled = true;
+                }
+                break;
+            default:
+                break;
+        }
+
+        if (handled)
+            return;
+
+        if (!state.cloakDevice)
+        {
+            state.cloakDevice = true;
+            CastEredarTwinsKnownSelfSpell(bot, SPELL_GNOMISH_CLOAKING_DEVICE);
+            return;
+        }
+
+        MoveEredarTwinsConflagrationBotToSafeSpot(source, bot, ai);
+    }
+
+    void ApplyEredarTwinsAlythessWarlockThreat(Creature* alythess, Unit* seed)
+    {
+        if (!alythess || !alythess->IsAlive() || !alythess->CanHaveThreatList())
+            return;
+
+        std::vector<Unit*> warlocks = GatherEredarTwinsAbilityTargets(alythess, seed);
+        warlocks.erase(std::remove_if(warlocks.begin(), warlocks.end(), [](Unit* unit)
+        {
+            return !IsEredarTwinsWarlock(unit);
+        }), warlocks.end());
+
+        if (warlocks.empty())
+            return;
+
+        std::sort(warlocks.begin(), warlocks.end(), [](Unit* left, Unit* right)
+        {
+            if (IsMarkedPlayerTank(left) != IsMarkedPlayerTank(right))
+                return IsMarkedPlayerTank(left);
+
+            if (IsNpcBotTank(left) != IsNpcBotTank(right))
+                return IsNpcBotTank(left);
+
+            return left->GetGUID().GetCounter() < right->GetGUID().GetCounter();
+        });
+
+        for (std::size_t i = 0; i < warlocks.size(); ++i)
+        {
+            Unit* warlock = warlocks[i];
+            float const desiredThreat = i == 0 ? EREDAR_TWINS_ALYTHESS_PRIMARY_WARLOCK_THREAT : EREDAR_TWINS_ALYTHESS_WARLOCK_THREAT;
+            float const currentThreat = alythess->GetThreatMgr().GetThreat(warlock, true);
+
+            alythess->SetInCombatWith(warlock);
+            warlock->SetInCombatWith(alythess);
+
+            if (currentThreat < desiredThreat)
+                alythess->GetThreatMgr().AddThreat(warlock, desiredThreat - currentThreat, nullptr, true, true);
+        }
+    }
+}
 
 struct boss_sacrolash : public BossAI
 {
@@ -121,10 +808,11 @@ struct boss_sacrolash : public BossAI
 
             scheduler.CancelGroup(GROUP_SPECIAL_ABILITY);
             ScheduleTimedEvent(20s, [&] {
-                Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true, false);
+                Unit* target = SelectEredarTwinsRandomTarget(me, me->GetVictim(), true);
                 if (!target)
-                    target = me->GetVictim();
+                    return;
 
+                HandleEredarTwinsConflagrationTarget(me, target);
                 DoCast(target, SPELL_CONFLAGRATION);
 
                 if (Creature* alythess = instance->GetCreature(DATA_ALYTHESS))
@@ -136,11 +824,22 @@ struct boss_sacrolash : public BossAI
     void JustEngagedWith(Unit* who) override
     {
         BossAI::JustEngagedWith(who);
+        CastEredarTwinsOpeningBotConsumables(me, who);
+
         if (Creature* alythess = instance->GetCreature(DATA_ALYTHESS))
+        {
             if (alythess->IsAlive() && !alythess->IsInCombat())
                 alythess->AI()->AttackStart(who);
 
+            ApplyEredarTwinsAlythessWarlockThreat(alythess, who);
+        }
+
         ScheduleEnrageTimer(SPELL_ENRAGE, 6min, YELL_BERSERK);
+
+        ScheduleTimedEvent(3s, [&] {
+            if (Creature* alythess = instance->GetCreature(DATA_ALYTHESS))
+                ApplyEredarTwinsAlythessWarlockThreat(alythess, me->GetVictim());
+        }, 5s);
 
         ScheduleTimedEvent(10s, [&] {
             DoCastSelf(SPELL_SHADOW_BLADES);
@@ -157,14 +856,17 @@ struct boss_sacrolash : public BossAI
         scheduler.Schedule(36s, GROUP_SPECIAL_ABILITY, [this](TaskContext context) {
             Unit* target = nullptr;
             if (Creature* alythess = instance->GetCreature(DATA_ALYTHESS))
-            {
-                std::list<Unit*> targets;
-                alythess->AI()->SelectTargetList(targets, 6, SelectTargetMethod::MaxThreat, 0, 100.0f, true, false);
-                if (!targets.empty())
-                    target = Acore::Containers::SelectRandomContainerElement(targets);
-            }
+                target = SelectEredarTwinsThreatTarget(me, alythess, me->GetVictim(), 6, false);
+
             if (!target)
                 target = me->GetVictim();
+
+            if (!target)
+            {
+                context.Repeat(30s, 35s);
+                return;
+            }
+
             Talk(EMOTE_SHADOW_NOVA, target);
             Talk(YELL_SHADOW_NOVA);
             DoCast(target, SPELL_SHADOW_NOVA);
@@ -194,7 +896,7 @@ struct boss_sacrolash : public BossAI
     void JustSummoned(Creature* summon) override
     {
         summons.Summon(summon);
-        if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 50.0f, true))
+        if (Unit* target = SelectEredarTwinsRandomTarget(summon, me->GetVictim(), false))
         {
             summon->AI()->AttackStart(target);
             summon->AddThreat(target, 10000000);
@@ -253,9 +955,13 @@ struct boss_alythess : public BossAI
             }, 8s, 10s);
 
             ScheduleTimedEvent(20s, 26s, [&] {
-                Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true, false);
+                Unit* target = SelectEredarTwinsRandomTarget(me, me->GetVictim(), false);
                 if (!target)
                     target = me->GetVictim();
+
+                if (!target)
+                    return;
+
                 DoCast(target, SPELL_SHADOW_NOVA);
 
                 if (Creature* sacrolash = instance->GetCreature(DATA_SACROLASH))
@@ -267,11 +973,19 @@ struct boss_alythess : public BossAI
     void JustEngagedWith(Unit* who) override
     {
         BossAI::JustEngagedWith(who);
+        CastEredarTwinsOpeningBotConsumables(me, who);
+
         if (Creature* sacrolash = instance->GetCreature(DATA_SACROLASH))
             if (sacrolash->IsAlive() && !sacrolash->IsInCombat())
                 sacrolash->AI()->AttackStart(who);
 
+        ApplyEredarTwinsAlythessWarlockThreat(me, who);
+
         ScheduleEnrageTimer(SPELL_ENRAGE, 6min, YELL_BERSERK);
+
+        ScheduleTimedEvent(3s, [&] {
+            ApplyEredarTwinsAlythessWarlockThreat(me, me->GetVictim());
+        }, 5s);
 
         ScheduleTimedEvent(1s, [&] {
             DoCastVictim(SPELL_BLAZE);
@@ -291,16 +1005,20 @@ struct boss_alythess : public BossAI
         scheduler.Schedule(20s, GROUP_SPECIAL_ABILITY, [this](TaskContext context) {
             Unit* target = nullptr;
             if (Creature* sacrolash = instance->GetCreature(DATA_SACROLASH))
-            {
-                std::list<Unit*> targets;
-                sacrolash->AI()->SelectTargetList(targets, 6, SelectTargetMethod::MaxThreat, 0, 100.0f, true, false);
-                if (!targets.empty())
-                    target = Acore::Containers::SelectRandomContainerElement(targets);
-            }
+                target = SelectEredarTwinsThreatTarget(me, sacrolash, me->GetVictim(), 6, true);
+
             if (!target)
-                target = me->GetVictim();
+                target = SelectEredarTwinsRandomTarget(me, me->GetVictim(), true);
+
+            if (!target)
+            {
+                context.Repeat(30s, 35s);
+                return;
+            }
+
             Talk(EMOTE_CONFLAGRATION, target);
             Talk(YELL_CANFLAGRATION);
+            HandleEredarTwinsConflagrationTarget(me, target);
             DoCast(target, SPELL_CONFLAGRATION);
             context.Repeat(30s, 35s);
         });
@@ -343,7 +1061,8 @@ public:
 
     void HandleApplyTouch()
     {
-        if (Player* target = GetHitPlayer())
+        Unit* target = GetHitUnit();
+        if (target && (target->IsPlayer() || IsOwnedEredarTwinsNpcBot(target)))
             target->CastSpell(target, _touchSpell, true);
     }
 
