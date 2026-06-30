@@ -376,6 +376,13 @@ public:
             if (BloodlustCheckTimer > diff || (!me->IsInCombat() && !master->IsInCombat()))
                 return;
 
+            BotEncounterHeroismState const muruHeroismState = GetMuruEntropiusHeroismState();
+            if (muruHeroismState == BotEncounterHeroismState::Delay)
+            {
+                BloodlustCheckTimer = 1000;
+                return;
+            }
+
             BotEncounterHeroismState const illidanHeroismState = GetIllidanPhaseTwoHeroismState();
             if (illidanHeroismState == BotEncounterHeroismState::Delay)
             {
@@ -383,14 +390,24 @@ public:
                 return;
             }
 
+            BotEncounterHeroismState const kiljaedenHeroismState = GetKiljaedenFinalPhaseHeroismState();
+            if (kiljaedenHeroismState == BotEncounterHeroismState::Delay)
+            {
+                BloodlustCheckTimer = 1000;
+                return;
+            }
+
+            bool const muruHeroismReady = muruHeroismState == BotEncounterHeroismState::Ready;
             bool const illidanHeroismReady = illidanHeroismState == BotEncounterHeroismState::Ready;
-            if (!illidanHeroismReady && me->GetDistance(master) > 18)
+            bool const kiljaedenHeroismReady = kiljaedenHeroismState == BotEncounterHeroismState::Ready;
+            bool const encounterHeroismReady = muruHeroismReady || illidanHeroismReady || kiljaedenHeroismReady;
+            if (!encounterHeroismReady && me->GetDistance(master) > 18)
                 return;
 
-            if (!illidanHeroismReady && Rand() > 35)
+            if (!encounterHeroismReady && Rand() > 35)
                 return;
 
-            BloodlustCheckTimer = illidanHeroismReady ? 1000 : 3000;
+            BloodlustCheckTimer = encounterHeroismReady ? 1000 : 3000;
 
             uint32 BLOODLUST = (me->GetRaceMask() & sRaceMgr->GetAllianceRaceMask()) ? HEROISM_1 : BLOODLUST_1;
             if (!IsSpellReady(BLOODLUST, diff))
@@ -410,7 +427,7 @@ public:
             bool const isDungeon = me->GetMap()->IsDungeon();
 
             bool shouldBloodlust = false;
-            if (illidanHeroismReady)
+            if (encounterHeroismReady)
                 shouldBloodlust = true;
 
             if (!shouldBloodlust && isRaid)

@@ -15,15 +15,36 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Containers.h"
+#include "Config.h"
 #include "CreatureScript.h"
 #include "CreatureTextMgr.h"
 #include "MoveSplineInit.h"
+#include "ObjectAccessor.h"
 #include "PassiveAI.h"
+#include "Player.h"
 #include "ScriptedCreature.h"
 #include "SpellAuraEffects.h"
+#include "SpellAuras.h"
+#include "SpellMgr.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
+#include "bot_ai.h"
+#include "botmgr.h"
 #include "sunwell_plateau.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <limits>
+#include <list>
+#include <unordered_set>
+#include <vector>
+
+namespace BonusLootRolls
+{
+    void AddExplicitBossDeathOpportunities(Player* killer, Creature* killed);
+}
 
 enum Yells
 {
@@ -90,8 +111,578 @@ enum Spells
     SPELL_SUMMON_BLUE_DRAKE                     = 45836,
     SPELL_VENGEANCE_OF_THE_BLUE_FLIGHT          = 45839,
     SPELL_POSSESS_DRAKE_IMMUNITY                = 45838,
+    SPELL_SHIELD_OF_THE_BLUE                    = 45848,
+    SPELL_KILJAEDEN_ANTI_MAGIC_ZONE             = 600446,
+    SPELL_POTION_OF_SWIFTNESS                   = 2379,
     SPELL_SACRIFICE_OF_ANVEENA                  = 46474,
+
+    // NPCBot opening consumables
+    SPELL_FLASK_OF_CHROMATIC_WONDER             = 42735,
+    SPELL_SCROLL_OF_STAMINA                     = 48101,
 };
+
+namespace
+{
+    constexpr float KILJAEDEN_MECHANIC_TARGET_RANGE = 65.0f;
+    constexpr float KILJAEDEN_SHIELD_STACK_RADIUS = 18.0f;
+    constexpr float KILJAEDEN_ANTI_MAGIC_ZONE_STACK_RADIUS = 8.0f;
+    constexpr float KILJAEDEN_DARKNESS_STACK_HOLD_TOLERANCE = 2.5f;
+    constexpr float KILJAEDEN_DARKNESS_STACK_WIDTH = 6.0f;
+    constexpr char CONFIG_KILJAEDEN_DARKNESS_ANTI_MAGIC_ZONE[] = "SunwellPlateau.Kiljaeden.DarknessAntiMagicZone.Enable";
+
+    std::unordered_set<ObjectGuid::LowType> KiljaedenDarknessStackedBots;
+    ObjectGuid::LowType KiljaedenDarknessAntiMagicZoneAnchor = 0;
+
+    bool KiljaedenDarknessAntiMagicZoneEnabled()
+    {
+        return sConfigMgr->GetOption<bool>(CONFIG_KILJAEDEN_DARKNESS_ANTI_MAGIC_ZONE, true);
+    }
+
+    bool IsOwnedKiljaedenNpcBot(Unit const* unit)
+    {
+        Creature const* creature = unit ? unit->ToCreature() : nullptr;
+        return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI();
+    }
+
+    bool IsKiljaedenPlayerOrOwnedBot(Unit const* unit)
+    {
+        if (!unit || !unit->IsAlive() || !unit->IsInWorld())
+            return false;
+
+        if (Player const* player = unit->ToPlayer())
+            return !player->IsGameMaster();
+
+        return IsOwnedKiljaedenNpcBot(unit);
+    }
+
+    bool IsKiljaedenConsumableBot(Unit const* unit)
+    {
+        return unit && unit->IsAlive() && unit->IsInWorld() && IsOwnedKiljaedenNpcBot(unit);
+    }
+
+    bool IsKiljaedenTankBot(Creature const* bot)
+    {
+        bot_ai* ai = bot && bot->IsNPCBot() ? bot->GetBotAI() : nullptr;
+        return ai && (ai->IsTank(bot) || ai->IsOffTank(bot) || ai->HasRole(BOT_ROLE_TANK | BOT_ROLE_TANK_OFF));
+    }
+
+    void AddKiljaedenUnit(std::vector<Unit*>& units, Unit* unit, WorldObject const* source, float range)
+    {
+        if (!unit || !source || !IsKiljaedenPlayerOrOwnedBot(unit) || unit->GetMap() != source->GetMap())
+            return;
+
+        if (!unit->InSamePhase(source) || source->GetDistance(unit) > range)
+            return;
+
+        if (std::find(units.begin(), units.end(), unit) == units.end())
+            units.push_back(unit);
+    }
+
+    std::vector<Unit*> GatherKiljaedenParticipants(WorldObject const* source, float range)
+    {
+        std::vector<Unit*> units;
+        if (!source || !source->GetMap())
+            return units;
+
+        Map::PlayerList const& playerList = source->GetMap()->GetPlayers();
+        for (Map::PlayerList::const_iterator itr = playerList.begin(); itr != playerList.end(); ++itr)
+        {
+            Player* player = itr->GetSource();
+            AddKiljaedenUnit(units, player, source, range);
+            if (!player || !player->HaveBot())
+                continue;
+
+            if (BotMgr* botMgr = player->GetBotMgr())
+                for (auto const& [_, bot] : *botMgr->GetBotMap())
+                    AddKiljaedenUnit(units, bot, source, range);
+        }
+
+        return units;
+    }
+
+    bool HasKiljaedenFlaskAura(Unit const* unit)
+    {
+        if (!unit)
+            return false;
+
+        for (Unit::AuraApplicationMap::value_type const& pair : unit->GetAppliedAuras())
+        {
+            Aura const* aura = pair.second ? pair.second->GetBase() : nullptr;
+            if (!aura)
+                continue;
+
+            uint32 const spellId = aura->GetId();
+            if (sSpellMgr->IsSpellMemberOfSpellGroup(spellId, SPELL_GROUP_ELIXIR_BATTLE) &&
+                sSpellMgr->IsSpellMemberOfSpellGroup(spellId, SPELL_GROUP_ELIXIR_GUARDIAN))
+                return true;
+        }
+
+        return false;
+    }
+
+    void CastKiljaedenKnownSelfSpell(Creature* bot, uint32 spellId)
+    {
+        if (bot && sSpellMgr->GetSpellInfo(spellId))
+            bot->CastSpell(bot, spellId, true);
+    }
+
+    void CastKiljaedenOpeningBotConsumables(Creature* source)
+    {
+        for (Unit* unit : GatherKiljaedenParticipants(source, 150.0f))
+        {
+            if (!IsKiljaedenConsumableBot(unit))
+                continue;
+
+            Creature* bot = unit->ToCreature();
+            if (HasKiljaedenFlaskAura(bot))
+                continue;
+
+            CastKiljaedenKnownSelfSpell(bot, SPELL_FLASK_OF_CHROMATIC_WONDER);
+            CastKiljaedenKnownSelfSpell(bot, SPELL_SCROLL_OF_STAMINA);
+        }
+    }
+
+    bool IsKiljaedenMechanicTarget(WorldObject const* target, WorldObject const* source, float range)
+    {
+        Unit const* unit = target ? target->ToUnit() : nullptr;
+        return unit && IsKiljaedenPlayerOrOwnedBot(unit) && source && unit->GetMap() == source->GetMap() &&
+            unit->InSamePhase(source) && source->GetDistance(unit) <= range &&
+            !unit->HasAura(SPELL_VENGEANCE_OF_THE_BLUE_FLIGHT);
+    }
+
+    void AddKiljaedenMechanicTargets(WorldObject const* source, std::list<WorldObject*>& targets, float range)
+    {
+        for (Unit* unit : GatherKiljaedenParticipants(source, range))
+            if (std::find(targets.begin(), targets.end(), unit) == targets.end())
+                targets.push_back(unit);
+    }
+
+    Unit* SelectKiljaedenMechanicTarget(Unit* caster, float range)
+    {
+        std::vector<Unit*> targets = GatherKiljaedenParticipants(caster, range);
+        std::erase_if(targets, [caster, range](Unit const* unit)
+        {
+            return !IsKiljaedenMechanicTarget(unit, caster, range);
+        });
+
+        return targets.empty() ? nullptr : Acore::Containers::SelectRandomContainerElement(targets);
+    }
+
+    bool TryMoveNpcBotAwayFrom(Creature* bot, WorldObject const* hazard, float moveDistance)
+    {
+        if (!bot || !hazard || !bot->IsAlive() || bot->GetMap() != hazard->GetMap())
+            return false;
+
+        bot_ai* ai = bot->GetBotAI();
+        if (!ai || ai->IAmFree() || ai->HasBotCommandState(BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION) || bot_ai::CCed(bot, true))
+            return false;
+
+        float const baseAngle = Position::NormalizeOrientation(std::atan2(bot->GetPositionY() - hazard->GetPositionY(), bot->GetPositionX() - hazard->GetPositionX()));
+        static constexpr std::array<float, 9> offsets =
+        {
+            0.0f, 0.35f, -0.35f, 0.70f, -0.70f, 1.05f, -1.05f, 1.45f, -1.45f
+        };
+
+        for (float offset : offsets)
+        {
+            Position candidate = bot->GetFirstCollisionPosition(moveDistance, Position::NormalizeOrientation(baseAngle + offset - bot->GetOrientation()));
+            if (!candidate.IsPositionValid() || !bot->IsWithinLOS(candidate.GetPositionX(), candidate.GetPositionY(), candidate.GetPositionZ()))
+                continue;
+
+            bot->InterruptNonMeleeSpells(false);
+            ai->BotMovement(BOT_MOVE_POINT, &candidate, nullptr, true);
+            return true;
+        }
+
+        return false;
+    }
+
+    void MoveNearbyNpcBotsAwayFrom(WorldObject const* hazard, float dangerRadius, float moveDistance)
+    {
+        if (!hazard)
+            return;
+
+        for (Unit* unit : GatherKiljaedenParticipants(hazard, 80.0f))
+            if (Creature* bot = unit->ToCreature())
+                if (bot->IsNPCBot() && bot->GetExactDist2d(hazard) <= dangerRadius)
+                    TryMoveNpcBotAwayFrom(bot, hazard, moveDistance);
+    }
+
+    Unit* SelectKiljaedenDarknessStackTank(Creature* kiljaeden)
+    {
+        if (!kiljaeden)
+            return nullptr;
+
+        if (Unit* victim = kiljaeden->GetVictim())
+            if (IsKiljaedenPlayerOrOwnedBot(victim))
+                return victim;
+
+        if (Unit* victim = kiljaeden->GetThreatMgr().GetCurrentVictim())
+            if (IsKiljaedenPlayerOrOwnedBot(victim))
+                return victim;
+
+        if (Unit* victim = kiljaeden->GetThreatMgr().GetLastVictim())
+            if (IsKiljaedenPlayerOrOwnedBot(victim))
+                return victim;
+
+        Creature* bestTank = nullptr;
+        float bestDistance = std::numeric_limits<float>::max();
+        for (Unit* unit : GatherKiljaedenParticipants(kiljaeden, 120.0f))
+        {
+            Creature* bot = unit ? unit->ToCreature() : nullptr;
+            if (!bot || !IsKiljaedenTankBot(bot))
+                continue;
+
+            float const distance = kiljaeden->GetDistance(bot);
+            if (!bestTank || distance < bestDistance)
+            {
+                bestTank = bot;
+                bestDistance = distance;
+            }
+        }
+
+        return bestTank;
+    }
+
+    Creature* GetKiljaedenDarknessAntiMagicZoneAnchor(WorldObject const* source)
+    {
+        if (!source || !KiljaedenDarknessAntiMagicZoneAnchor)
+            return nullptr;
+
+        for (Unit* unit : GatherKiljaedenParticipants(source, 180.0f))
+        {
+            Creature* bot = unit ? unit->ToCreature() : nullptr;
+            if (bot && bot->GetGUID().GetCounter() == KiljaedenDarknessAntiMagicZoneAnchor && IsOwnedKiljaedenNpcBot(bot))
+                return bot;
+        }
+
+        return nullptr;
+    }
+
+    Creature* SelectKiljaedenDarknessAntiMagicZoneCaster(Creature* kiljaeden)
+    {
+        if (!kiljaeden)
+            return nullptr;
+
+        Unit* stackTank = SelectKiljaedenDarknessStackTank(kiljaeden);
+        Creature* bestBot = nullptr;
+        float bestScore = std::numeric_limits<float>::max();
+
+        for (Unit* unit : GatherKiljaedenParticipants(kiljaeden, 140.0f))
+        {
+            Creature* bot = unit ? unit->ToCreature() : nullptr;
+            bot_ai* ai = bot && IsOwnedKiljaedenNpcBot(bot) ? bot->GetBotAI() : nullptr;
+            if (!bot || !ai || !IsKiljaedenTankBot(bot) || ai->IAmFree() || ai->HasBotCommandState(BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION))
+                continue;
+
+            float score = stackTank ? bot->GetExactDist2d(stackTank) : kiljaeden->GetExactDist2d(bot);
+            if (unit == stackTank)
+                score = -1.0f;
+
+            if (!bestBot || score < bestScore)
+            {
+                bestBot = bot;
+                bestScore = score;
+            }
+        }
+
+        return bestBot;
+    }
+
+    uint8 GetKiljaedenBotSlot(Creature const* bot)
+    {
+        bot_ai* ai = bot && bot->IsNPCBot() ? bot->GetBotAI() : nullptr;
+        Player const* owner = ai ? ai->GetBotOwner() : nullptr;
+        if (owner && owner->GetBotMgr())
+            return owner->GetBotMgr()->GetNpcBotSlot(bot);
+
+        return bot ? uint8(bot->GetGUID().GetCounter() % 24) : 0;
+    }
+
+    bool TryGetKiljaedenDarknessStackPosition(Creature* kiljaeden, Creature* bot, Unit* stackTank, Position& destination)
+    {
+        if (!kiljaeden || !bot || !stackTank)
+            return false;
+
+        if (IsKiljaedenTankBot(bot))
+        {
+            destination.Relocate(bot);
+            return destination.IsPositionValid();
+        }
+
+        float const tankToBossAngle = stackTank->GetAngle(kiljaeden);
+        float const behindTankAngle = Position::NormalizeOrientation(tankToBossAngle + float(M_PI));
+        float const sideAngle = Position::NormalizeOrientation(behindTankAngle + float(M_PI) * 0.5f);
+        uint8 const slot = GetKiljaedenBotSlot(bot);
+        uint8 const row = slot / 7;
+        int8 const sideSlot = int8(slot % 7) - 3;
+        float const backOffset = 2.5f + float(row % 3) * 1.8f;
+        float const sideOffset = std::clamp(float(sideSlot) * 1.35f, -KILJAEDEN_DARKNESS_STACK_WIDTH, KILJAEDEN_DARKNESS_STACK_WIDTH);
+
+        float x = stackTank->GetPositionX() + std::cos(behindTankAngle) * backOffset + std::cos(sideAngle) * sideOffset;
+        float y = stackTank->GetPositionY() + std::sin(behindTankAngle) * backOffset + std::sin(sideAngle) * sideOffset;
+        float z = stackTank->GetPositionZ();
+        if (!bot->CanFly())
+            bot->UpdateAllowedPositionZ(x, y, z);
+
+        destination.Relocate(x, y, z, bot->GetAngle(kiljaeden));
+        return destination.IsPositionValid() && bot->IsWithinLOS(destination.GetPositionX(), destination.GetPositionY(), destination.GetPositionZ());
+    }
+
+    void PrepareKiljaedenDarknessNpcBotStack(Creature* kiljaeden)
+    {
+        if (!kiljaeden || !kiljaeden->IsAlive() || !kiljaeden->IsInCombat())
+            return;
+
+        Unit* stackTank = SelectKiljaedenDarknessStackTank(kiljaeden);
+        if (!stackTank)
+            return;
+
+        for (Unit* unit : GatherKiljaedenParticipants(kiljaeden, 140.0f))
+        {
+            Creature* bot = unit ? unit->ToCreature() : nullptr;
+            bot_ai* ai = bot && IsOwnedKiljaedenNpcBot(bot) ? bot->GetBotAI() : nullptr;
+            if (!bot || !ai || ai->IAmFree() || ai->HasBotCommandState(BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION))
+                continue;
+
+            if (bot->HasAura(SPELL_FIRE_BLOOM))
+                continue;
+
+            Position destination;
+            if (!TryGetKiljaedenDarknessStackPosition(kiljaeden, bot, stackTank, destination))
+                continue;
+
+            KiljaedenDarknessStackedBots.insert(bot->GetGUID().GetCounter());
+
+            if (!bot->GetVictim())
+                bot->Attack(kiljaeden, true);
+
+            if (bot->GetExactDist2d(destination.GetPositionX(), destination.GetPositionY()) <= KILJAEDEN_DARKNESS_STACK_HOLD_TOLERANCE)
+            {
+                if (bot->isMoving())
+                    bot->BotStopMovement();
+
+                if (!ai->HasBotCommandState(BOT_COMMAND_STAY))
+                    ai->SetBotCommandState(BOT_COMMAND_STAY);
+
+                continue;
+            }
+
+            bot->InterruptNonMeleeSpells(false);
+            if (!ai->HasBotCommandState(BOT_COMMAND_STAY))
+                ai->SetBotCommandState(BOT_COMMAND_STAY);
+
+            ai->BotMovement(BOT_MOVE_POINT, &destination, nullptr, true);
+        }
+    }
+
+    void ReleaseKiljaedenDarknessNpcBotStack(WorldObject const* source)
+    {
+        KiljaedenDarknessAntiMagicZoneAnchor = 0;
+
+        if (KiljaedenDarknessStackedBots.empty())
+            return;
+
+        for (Unit* unit : GatherKiljaedenParticipants(source, 160.0f))
+        {
+            Creature* bot = unit ? unit->ToCreature() : nullptr;
+            bot_ai* ai = bot && IsOwnedKiljaedenNpcBot(bot) ? bot->GetBotAI() : nullptr;
+            if (!bot || !ai)
+                continue;
+
+            if (!KiljaedenDarknessStackedBots.contains(bot->GetGUID().GetCounter()))
+                continue;
+
+            if (!ai->HasBotCommandState(BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION))
+                ai->SetBotCommandState(BOT_COMMAND_FOLLOW, true);
+        }
+
+        KiljaedenDarknessStackedBots.clear();
+    }
+
+    Creature* FindActiveKiljaedenDarknessCaster(Unit* source)
+    {
+        if (!source || !source->GetMap())
+            return nullptr;
+
+        if (Creature* kiljaeden = source->FindNearestCreature(NPC_KILJAEDEN, 180.0f, true))
+            if (kiljaeden->IsInCombat() && kiljaeden->HasAura(SPELL_DARKNESS_OF_A_THOUSAND_SOULS))
+                return kiljaeden;
+
+        return nullptr;
+    }
+
+    bool TryGetKiljaedenShieldStackPosition(Unit* shieldCaster, Creature* bot, Position& destination)
+    {
+        if (!shieldCaster || !bot)
+            return false;
+
+        uint8 const slot = GetKiljaedenBotSlot(bot);
+        float const angle = Position::NormalizeOrientation(shieldCaster->GetOrientation() + float(slot % 8) * (2.0f * float(M_PI) / 8.0f));
+        float const radius = 2.0f + float(slot / 8) * 1.5f;
+
+        float x = shieldCaster->GetPositionX() + std::cos(angle) * radius;
+        float y = shieldCaster->GetPositionY() + std::sin(angle) * radius;
+        float z = shieldCaster->GetPositionZ();
+        if (!bot->CanFly())
+            bot->UpdateAllowedPositionZ(x, y, z);
+
+        destination.Relocate(x, y, z, bot->GetOrientation());
+        if (destination.IsPositionValid() && bot->IsWithinLOS(x, y, z))
+            return true;
+
+        x = shieldCaster->GetPositionX();
+        y = shieldCaster->GetPositionY();
+        z = shieldCaster->GetPositionZ();
+        if (!bot->CanFly())
+            bot->UpdateAllowedPositionZ(x, y, z);
+
+        destination.Relocate(x, y, z, bot->GetOrientation());
+        return destination.IsPositionValid();
+    }
+
+    void TryUseKiljaedenSwiftnessPotion(Creature* bot)
+    {
+        if (!bot || bot->HasAura(SPELL_POTION_OF_SWIFTNESS) || !sSpellMgr->GetSpellInfo(SPELL_POTION_OF_SWIFTNESS))
+            return;
+
+        bot->CastSpell(bot, SPELL_POTION_OF_SWIFTNESS, true);
+    }
+
+    void MoveKiljaedenNpcBotsToAntiMagicZone(Creature* anchor, Creature* kiljaeden)
+    {
+        if (!anchor || !kiljaeden)
+            return;
+
+        for (Unit* unit : GatherKiljaedenParticipants(anchor, 160.0f))
+        {
+            Creature* bot = unit ? unit->ToCreature() : nullptr;
+            bot_ai* ai = bot && IsOwnedKiljaedenNpcBot(bot) ? bot->GetBotAI() : nullptr;
+            if (!bot || !ai || ai->IAmFree() || ai->HasBotCommandState(BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION))
+                continue;
+
+            KiljaedenDarknessStackedBots.insert(bot->GetGUID().GetCounter());
+
+            if (!bot->GetVictim())
+                bot->Attack(kiljaeden, true);
+
+            bot->InterruptNonMeleeSpells(false);
+            if (!ai->HasBotCommandState(BOT_COMMAND_STAY))
+                ai->SetBotCommandState(BOT_COMMAND_STAY);
+
+            if (bot->GetExactDist2d(anchor) <= KILJAEDEN_ANTI_MAGIC_ZONE_STACK_RADIUS - 1.0f)
+            {
+                if (bot->isMoving())
+                    bot->BotStopMovement();
+
+                continue;
+            }
+
+            Position destination;
+            if (!TryGetKiljaedenShieldStackPosition(anchor, bot, destination))
+                continue;
+
+            TryUseKiljaedenSwiftnessPotion(bot);
+            ai->BotMovement(BOT_MOVE_POINT, &destination, nullptr, true);
+        }
+    }
+
+    void CastKiljaedenDarknessAntiMagicZone(Creature* kiljaeden)
+    {
+        KiljaedenDarknessAntiMagicZoneAnchor = 0;
+
+        if (!kiljaeden || !KiljaedenDarknessAntiMagicZoneEnabled() || !sSpellMgr->GetSpellInfo(SPELL_KILJAEDEN_ANTI_MAGIC_ZONE))
+            return;
+
+        Creature* tankBot = SelectKiljaedenDarknessAntiMagicZoneCaster(kiljaeden);
+        bot_ai* ai = tankBot ? tankBot->GetBotAI() : nullptr;
+        if (!tankBot || !ai)
+            return;
+
+        KiljaedenDarknessAntiMagicZoneAnchor = tankBot->GetGUID().GetCounter();
+
+        if (!tankBot->GetVictim())
+            tankBot->Attack(kiljaeden, true);
+
+        tankBot->InterruptNonMeleeSpells(false);
+        if (!ai->HasBotCommandState(BOT_COMMAND_STAY))
+            ai->SetBotCommandState(BOT_COMMAND_STAY);
+
+        tankBot->CastSpell(tankBot, SPELL_KILJAEDEN_ANTI_MAGIC_ZONE, true);
+        MoveKiljaedenNpcBotsToAntiMagicZone(tankBot, kiljaeden);
+    }
+
+    void MoveKiljaedenNpcBotsToShield(Unit* shieldCaster)
+    {
+        Creature* kiljaeden = FindActiveKiljaedenDarknessCaster(shieldCaster);
+        if (!kiljaeden)
+            return;
+
+        if (KiljaedenDarknessAntiMagicZoneEnabled())
+        {
+            if (Creature* anchor = GetKiljaedenDarknessAntiMagicZoneAnchor(shieldCaster))
+            {
+                MoveKiljaedenNpcBotsToAntiMagicZone(anchor, kiljaeden);
+                return;
+            }
+        }
+
+        for (Unit* unit : GatherKiljaedenParticipants(shieldCaster, 160.0f))
+        {
+            Creature* bot = unit ? unit->ToCreature() : nullptr;
+            bot_ai* ai = bot && IsOwnedKiljaedenNpcBot(bot) ? bot->GetBotAI() : nullptr;
+            if (!bot || !ai || ai->IAmFree() || ai->HasBotCommandState(BOT_COMMAND_FULLSTOP | BOT_COMMAND_INACTION))
+                continue;
+
+            KiljaedenDarknessStackedBots.insert(bot->GetGUID().GetCounter());
+
+            if (!bot->GetVictim())
+                bot->Attack(kiljaeden, true);
+
+            bot->InterruptNonMeleeSpells(false);
+            if (!ai->HasBotCommandState(BOT_COMMAND_STAY))
+                ai->SetBotCommandState(BOT_COMMAND_STAY);
+
+            if (bot->GetExactDist2d(shieldCaster) <= KILJAEDEN_SHIELD_STACK_RADIUS - 1.0f)
+            {
+                if (bot->isMoving())
+                    bot->BotStopMovement();
+
+                continue;
+            }
+
+            Position destination;
+            if (!TryGetKiljaedenShieldStackPosition(shieldCaster, bot, destination))
+                continue;
+
+            TryUseKiljaedenSwiftnessPotion(bot);
+            bot->BotStopMovement();
+            bot->NearTeleportTo(destination.GetPositionX(), destination.GetPositionY(), destination.GetPositionZ(), destination.GetOrientation(), true);
+            bot->BotStopMovement();
+        }
+    }
+
+    void EnsureKiljaedenTankBotThreat(Creature* target, float desiredThreat)
+    {
+        if (!target || !target->CanHaveThreatList())
+            return;
+
+        for (Unit* unit : GatherKiljaedenParticipants(target, 80.0f))
+        {
+            Creature* bot = unit ? unit->ToCreature() : nullptr;
+            bot_ai* ai = bot && bot->IsNPCBot() ? bot->GetBotAI() : nullptr;
+            if (!bot || !ai || !(ai->IsTank(bot) || ai->IsOffTank(bot) || ai->HasRole(BOT_ROLE_TANK | BOT_ROLE_TANK_OFF)))
+                continue;
+
+            target->SetInCombatWith(bot);
+            bot->SetInCombatWith(target);
+
+            float const currentThreat = target->GetThreatMgr().GetThreat(bot, true);
+            if (currentThreat < desiredThreat)
+                target->GetThreatMgr().AddThreat(bot, desiredThreat - currentThreat, nullptr, true, true);
+        }
+    }
+}
 
 enum Misc
 {
@@ -175,10 +766,21 @@ struct npc_kiljaeden_controller : public NullCreatureAI
         summons.Summon(summon);
         if (summon->GetEntry() == NPC_SINISTER_REFLECTION)
         {
+            EnsureKiljaedenTankBotThreat(summon, 650000.0f);
             summon->m_Events.AddEventAtOffset([summon] {
                 if (summon && summon->IsAlive() && !summon->IsInCombat())
                     summon->SetInCombatWithZone();
             }, 5s);
+        }
+        else if (summon->GetEntry() == NPC_HAND_OF_THE_DECEIVER)
+        {
+            summon->m_Events.AddEventAtOffset([summon] {
+                if (summon && summon->IsAlive())
+                {
+                    summon->SetInCombatWithZone();
+                    EnsureKiljaedenTankBotThreat(summon, 850000.0f);
+                }
+            }, 500ms);
         }
         else if (summon->GetEntry() == NPC_KALECGOS_KJ)
             summon->setActive(true);
@@ -251,6 +853,7 @@ struct boss_kiljaeden : public BossAI
 
     void Reset() override
     {
+        ReleaseKiljaedenDarknessNpcBotStack(me);
         _phase = PHASE_NORMAL;
 
         ScheduleHealthCheckEvent(85, [&]{
@@ -287,8 +890,17 @@ struct boss_kiljaeden : public BossAI
                 DoCastSelf(SPELL_FLAME_DART);
             }, 20s);
 
+            ScheduleTimedEvent(50s, [&] {
+                PrepareKiljaedenDarknessNpcBotStack(me);
+            }, 45s);
+
+            ScheduleTimedEvent(53s, [&] {
+                PrepareKiljaedenDarknessNpcBotStack(me);
+            }, 45s);
+
             ScheduleTimedEvent(55s, [&] {
                 Talk(EMOTE_KJ_DARKNESS);
+                CastKiljaedenDarknessAntiMagicZone(me);
                 DoCastAOE(SPELL_DARKNESS_OF_A_THOUSAND_SOULS);
             }, 45s);
         });
@@ -327,9 +939,18 @@ struct boss_kiljaeden : public BossAI
                 DoCastSelf(SPELL_FLAME_DART);
             }, 20s);
 
+            ScheduleTimedEvent(59s, [&] {
+                PrepareKiljaedenDarknessNpcBotStack(me);
+            }, 45s);
+
+            ScheduleTimedEvent(62s, [&] {
+                PrepareKiljaedenDarknessNpcBotStack(me);
+            }, 45s);
+
             ScheduleTimedEvent(64s, [&] {
                 me->RemoveAurasDueToSpell(SPELL_ARMAGEDDON_PERIODIC);
                 Talk(EMOTE_KJ_DARKNESS);
+                CastKiljaedenDarknessAntiMagicZone(me);
                 DoCastAOE(SPELL_DARKNESS_OF_A_THOUSAND_SOULS);
 
                 me->m_Events.AddEventAtOffset([this]() {
@@ -393,9 +1014,18 @@ struct boss_kiljaeden : public BossAI
                                 DoCastSelf(SPELL_FLAME_DART);
                             }, 20s);
 
+                            ScheduleTimedEvent(12s, [&] {
+                                PrepareKiljaedenDarknessNpcBotStack(me);
+                            }, 25s);
+
+                            ScheduleTimedEvent(14s, [&] {
+                                PrepareKiljaedenDarknessNpcBotStack(me);
+                            }, 25s);
+
                             ScheduleTimedEvent(15s, [&] {
                                 me->RemoveAurasDueToSpell(SPELL_ARMAGEDDON_PERIODIC);
                                 Talk(EMOTE_KJ_DARKNESS);
+                                CastKiljaedenDarknessAntiMagicZone(me);
                                 DoCastAOE(SPELL_DARKNESS_OF_A_THOUSAND_SOULS);
 
                                 me->m_Events.AddEventAtOffset([this]() {
@@ -428,7 +1058,10 @@ struct boss_kiljaeden : public BossAI
         }, 4s, 5s);
 
         ScheduleTimedEvent(7s, [&] {
-            DoCastRandomTarget(SPELL_LEGION_LIGHTNING, 0, 40.0f);
+            if (Unit* target = SelectKiljaedenMechanicTarget(me, 40.0f))
+                me->CastSpell(target, SPELL_LEGION_LIGHTNING, false);
+            else
+                DoCastRandomTarget(SPELL_LEGION_LIGHTNING, 0, 40.0f);
         }, _phase == PHASE_SACRIFICE ? 15s : 30s);
 
         ScheduleTimedEvent(9s, [&] {
@@ -471,6 +1104,7 @@ struct boss_kiljaeden : public BossAI
         if (me->GetReactState() == REACT_PASSIVE)
             return;
 
+        ReleaseKiljaedenDarknessNpcBotStack(me);
         ScriptedAI::EnterEvadeMode(why);
         if (InstanceScript* instance = me->GetInstanceScript())
             if (Creature* controller = instance->GetCreature(DATA_KJ_CONTROLLER))
@@ -507,8 +1141,10 @@ struct boss_kiljaeden : public BossAI
         }
     }
 
-    void JustDied(Unit* /*killer*/) override
+    void JustDied(Unit* killer) override
     {
+        ReleaseKiljaedenDarknessNpcBotStack(me);
+        BonusLootRolls::AddExplicitBossDeathOpportunities(killer ? killer->GetCharmerOrOwnerPlayerOrPlayerItself() : nullptr, me);
         Talk(SAY_KJ_DEATH);
         instance->SetBossState(DATA_KILJAEDEN, DONE);
         if (Creature* controller = instance->GetCreature(DATA_KJ_CONTROLLER))
@@ -529,6 +1165,8 @@ struct boss_kiljaeden : public BossAI
 
     void JustEngagedWith(Unit* /*who*/) override
     {
+        CastKiljaedenOpeningBotConsumables(me);
+
         if (Creature* kalec = instance->GetCreature(DATA_KALECGOS_KJ))
             kalec->AI()->Talk(SAY_KALECGOS_JOIN, 26s);
 
@@ -548,6 +1186,10 @@ struct boss_kiljaeden : public BossAI
             summon->m_Events.AddEventAtOffset(new CastArmageddon(summon), 6s);
             summon->DespawnOrUnsummon(randtime(8s, 10s));
         }
+        else if (summon->GetEntry() == NPC_SHIELD_ORB)
+            summon->SetInCombatWithZone();
+        else if (summon->GetEntry() == NPC_SINISTER_REFLECTION)
+            EnsureKiljaedenTankBotThreat(summon, 650000.0f);
     }
 
     void UpdateAI(uint32 diff) override
@@ -933,8 +1575,15 @@ class spell_kiljaeden_shadow_spike_aura : public AuraScript
     void HandlePeriodic(AuraEffect const* aurEff)
     {
         PreventDefaultAction();
-        if (Unit* target = GetUnitOwner()->GetAI()->SelectTarget(SelectTargetMethod::Random, 0, 60.0f, true))
+        Unit* target = SelectKiljaedenMechanicTarget(GetUnitOwner(), 60.0f);
+        if (!target)
+            target = GetUnitOwner()->GetAI()->SelectTarget(SelectTargetMethod::Random, 0, 60.0f, true);
+
+        if (target)
+        {
             GetUnitOwner()->CastSpell(target, GetSpellInfo()->Effects[aurEff->GetEffIndex()].TriggerSpell, true);
+            MoveNearbyNpcBotsAwayFrom(target, 13.0f, 18.0f);
+        }
     }
 
     void Register() override
@@ -954,7 +1603,12 @@ class spell_kiljaeden_sinister_reflection : public SpellScript
 
     void FilterTargets(std::list<WorldObject*>& targets)
     {
+        AddKiljaedenMechanicTargets(GetCaster(), targets, KILJAEDEN_MECHANIC_TARGET_RANGE);
         targets.remove_if(Acore::UnitAuraCheck(true, SPELL_VENGEANCE_OF_THE_BLUE_FLIGHT));
+        targets.remove_if([this](WorldObject const* target)
+        {
+            return !IsKiljaedenMechanicTarget(target, GetCaster(), KILJAEDEN_MECHANIC_TARGET_RANGE);
+        });
     }
 
     void HandleScriptEffect(SpellEffIndex effIndex)
@@ -977,6 +1631,28 @@ class spell_kiljaeden_sinister_reflection : public SpellScript
     {
         OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_kiljaeden_sinister_reflection::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
         OnEffectHitTarget += SpellEffectFn(spell_kiljaeden_sinister_reflection::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
+};
+
+class spell_kiljaeden_fire_bloom : public SpellScript
+{
+    PrepareSpellScript(spell_kiljaeden_fire_bloom);
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        AddKiljaedenMechanicTargets(GetCaster(), targets, KILJAEDEN_MECHANIC_TARGET_RANGE);
+        targets.remove_if([this](WorldObject const* target)
+        {
+            return !IsKiljaedenMechanicTarget(target, GetCaster(), KILJAEDEN_MECHANIC_TARGET_RANGE);
+        });
+
+        if (targets.size() > 5)
+            Acore::Containers::RandomResize(targets, 5);
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_kiljaeden_fire_bloom::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
     }
 };
 
@@ -1045,6 +1721,7 @@ class spell_kiljaeden_darkness_aura : public AuraScript
             GetUnitOwner()->ToCreature()->AI()->DoAction(ACTION_NO_KILL_TALK);
 
         GetUnitOwner()->CastSpell(GetUnitOwner(), SPELL_DARKNESS_OF_A_THOUSAND_SOULS_DAMAGE, true);
+        ReleaseKiljaedenDarknessNpcBotStack(GetUnitOwner());
     }
 
     void Register() override
@@ -1120,8 +1797,15 @@ class spell_kiljaeden_armageddon_periodic_aura : public AuraScript
         if (armageddons.size() >= 3)
             return;
 
-        if (Unit* target = caster->GetAI()->SelectTarget(SelectTargetMethod::Random, 0, 60.0f, true))
+        Unit* target = SelectKiljaedenMechanicTarget(caster, 60.0f);
+        if (!target)
+            target = caster->GetAI()->SelectTarget(SelectTargetMethod::Random, 0, 60.0f, true);
+
+        if (target)
+        {
             caster->CastSpell(target, GetSpellInfo()->Effects[aurEff->GetEffIndex()].TriggerSpell, true);
+            MoveNearbyNpcBotsAwayFrom(target, 18.0f, 24.0f);
+        }
     }
 
     void Register() override
@@ -1171,9 +1855,24 @@ class spell_kiljaeden_dragon_breath : public SpellScript
 };
 
 // 45848 - Shield of the Blue
-class spell_kiljaeden_shield_of_the_blue : public AuraScript
+class spell_kiljaeden_shield_of_the_blue : public SpellScript
 {
-    PrepareAuraScript(spell_kiljaeden_shield_of_the_blue);
+    PrepareSpellScript(spell_kiljaeden_shield_of_the_blue);
+
+    void HandleBeforeCast()
+    {
+        MoveKiljaedenNpcBotsToShield(GetCaster());
+    }
+
+    void Register() override
+    {
+        BeforeCast += SpellCastFn(spell_kiljaeden_shield_of_the_blue::HandleBeforeCast);
+    }
+};
+
+class spell_kiljaeden_shield_of_the_blue_aura : public AuraScript
+{
+    PrepareAuraScript(spell_kiljaeden_shield_of_the_blue_aura);
 
     void HandleEffectApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
@@ -1186,7 +1885,7 @@ class spell_kiljaeden_shield_of_the_blue : public AuraScript
 
     void Register() override
     {
-        OnEffectApply += AuraEffectApplyFn(spell_kiljaeden_shield_of_the_blue::HandleEffectApply, EFFECT_0, SPELL_AURA_MOD_DAMAGE_PERCENT_TAKEN, AURA_EFFECT_HANDLE_REAL);
+        OnEffectApply += AuraEffectApplyFn(spell_kiljaeden_shield_of_the_blue_aura::HandleEffectApply, EFFECT_0, SPELL_AURA_MOD_DAMAGE_PERCENT_TAKEN, AURA_EFFECT_HANDLE_REAL);
     }
 };
 
@@ -1198,6 +1897,7 @@ void AddSC_boss_kiljaeden()
     RegisterSpellScript(spell_kiljaeden_shadow_spike_aura);
     RegisterSpellScript(spell_kiljaeden_sinister_reflection);
     RegisterSpellScript(spell_kiljaeden_sinister_reflection_clone);
+    RegisterSpellScript(spell_kiljaeden_fire_bloom);
     RegisterSpellScript(spell_kiljaeden_flame_dart);
     RegisterSpellScript(spell_kiljaeden_darkness_aura);
     RegisterSpellScript(spell_kiljaeden_power_of_the_blue_flight);
@@ -1205,5 +1905,5 @@ void AddSC_boss_kiljaeden()
     RegisterSpellScript(spell_kiljaeden_armageddon_periodic_aura);
     RegisterSpellScript(spell_kiljaeden_armageddon_missile);
     RegisterSpellScript(spell_kiljaeden_dragon_breath);
-    RegisterSpellScript(spell_kiljaeden_shield_of_the_blue);
+    RegisterSpellAndAuraScriptPair(spell_kiljaeden_shield_of_the_blue, spell_kiljaeden_shield_of_the_blue_aura);
 }

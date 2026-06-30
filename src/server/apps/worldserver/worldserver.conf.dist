@@ -5068,6 +5068,17 @@ SunwellPlateau.Brutallus.MaxActiveBurnTargets = 3
 SunwellPlateau.Felmyst.EncapsulateHitDamage = 3500
 
 #
+#    SunwellPlateau.Kiljaeden.DarknessAntiMagicZone.Enable
+#        Description: If enabled, one tank NPCBot casts spell 600446 when Kil'jaeden begins
+#                     Darkness of a Thousand Souls. NPCBots prioritize stacking on that
+#                     anti-magic zone during Darkness, falling back to player-cast Shield
+#                     of the Blue if no anti-magic zone anchor is available.
+#        Default:     1 - (Enabled)
+#                     0 - Disabled
+
+SunwellPlateau.Kiljaeden.DarknessAntiMagicZone.Enable = 1
+
+#
 #    Glyph.ExtraSlots.RequiredItemQuality
 #        Description: Minimum item quality required when applying glyph items to the
 #                     ExtraGlyphSlots mastery slots. This does not affect normal

@@ -15,8 +15,14 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Cell.h"
+#include "CellImpl.h"
+#include "Containers.h"
 #include "CreatureScript.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
 #include "Group.h"
+#include "ObjectAccessor.h"
 #include "PassiveAI.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
@@ -71,7 +77,11 @@ enum Spells
 
     // NPCBot opening consumables
     SPELL_FLASK_OF_CHROMATIC_WONDER     = 42735,
-    SPELL_SCROLL_OF_STAMINA             = 48101
+    SPELL_SCROLL_OF_STAMINA             = 48101,
+
+    // Custom Ashbringer support
+    SPELL_ASHBRINGER                    = 28282,
+    SPELL_ENDLESS_VOID                  = 600467
 };
 
 namespace
@@ -82,6 +92,11 @@ namespace
     {
         Creature const* creature = unit ? unit->ToCreature() : nullptr;
         return creature && creature->IsNPCBot() && !creature->IsTempBot() && !creature->IsFreeBot() && creature->GetBotAI();
+    }
+
+    bool IsMuruPlayerOrOwnedBot(Unit const* unit)
+    {
+        return unit && (unit->IsPlayer() || IsOwnedMuruNpcBot(unit));
     }
 
     bool IsMuruConsumableBot(Unit const* unit)
@@ -234,6 +249,98 @@ namespace
             CastMuruKnownSelfSpell(bot, SPELL_SCROLL_OF_STAMINA);
         }
     }
+
+    bool IsValidSingularityTarget(Creature* source, Unit* unit)
+    {
+        if (!source || !unit || !unit->IsAlive() || !unit->IsInWorld() || unit->HasAura(SPELL_BLACK_HOLE_EFFECT))
+            return false;
+
+        if (!IsMuruPlayerOrOwnedBot(unit))
+            return false;
+
+        if (!unit->IsInMap(source) || !unit->InSamePhase(source))
+            return false;
+
+        if (!source->IsWithinDistInMap(unit, 90.0f) || !source->IsWithinLOSInMap(unit))
+            return false;
+
+        return true;
+    }
+
+    Unit* SelectSingularityTarget(Creature* source)
+    {
+        if (!source)
+            return nullptr;
+
+        std::list<Unit*> units;
+        Bcore::AnyUnitInObjectRangeCheck check(source, 90.0f);
+        Bcore::UnitListSearcher<Bcore::AnyUnitInObjectRangeCheck> searcher(source, units, check);
+        Cell::VisitObjects(source, searcher, 90.0f);
+
+        std::vector<Unit*> targets;
+        for (Unit* unit : units)
+            if (IsValidSingularityTarget(source, unit))
+                targets.push_back(unit);
+
+        return targets.empty() ? nullptr : Acore::Containers::SelectRandomContainerElement(targets);
+    }
+
+    bool IsValidEndlessVoidUnit(Creature* source, Unit* unit)
+    {
+        return source && unit && unit->IsAlive() && unit->IsInWorld() && IsMuruPlayerOrOwnedBot(unit) &&
+            unit->IsInMap(source) && unit->InSamePhase(source);
+    }
+
+    void MaintainMuruEndlessVoidAura(Creature* source, GuidSet& trackedTargets)
+    {
+        if (!source || !sSpellMgr->GetSpellInfo(SPELL_ENDLESS_VOID))
+            return;
+
+        std::list<Unit*> units;
+        Bcore::AnyUnitInObjectRangeCheck check(source, 100.0f);
+        Bcore::UnitListSearcher<Bcore::AnyUnitInObjectRangeCheck> searcher(source, units, check);
+        Cell::VisitObjects(source, searcher, 100.0f);
+
+        for (Unit* unit : units)
+        {
+            if (!IsValidEndlessVoidUnit(source, unit))
+                continue;
+
+            if (!unit->HasAura(SPELL_ASHBRINGER))
+            {
+                unit->RemoveAurasDueToSpell(SPELL_ENDLESS_VOID);
+                trackedTargets.erase(unit->GetGUID());
+                continue;
+            }
+
+            if (!source->IsWithinLOSInMap(unit))
+                continue;
+
+            if (!unit->HasAura(SPELL_ENDLESS_VOID))
+                unit->AddAura(SPELL_ENDLESS_VOID, unit);
+
+            trackedTargets.insert(unit->GetGUID());
+        }
+
+        for (GuidSet::iterator itr = trackedTargets.begin(); itr != trackedTargets.end();)
+        {
+            Unit* unit = ObjectAccessor::GetUnit(*source, *itr);
+            if (!unit || !unit->IsInWorld())
+            {
+                itr = trackedTargets.erase(itr);
+                continue;
+            }
+
+            if (!unit->HasAura(SPELL_ASHBRINGER))
+            {
+                unit->RemoveAurasDueToSpell(SPELL_ENDLESS_VOID);
+                itr = trackedTargets.erase(itr);
+                continue;
+            }
+
+            ++itr;
+        }
+    }
 }
 
 struct boss_muru : public BossAI
@@ -247,6 +354,8 @@ struct boss_muru : public BossAI
         me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
         me->SetVisible(true);
         me->m_Events.KillAllEvents(false);
+        _endlessVoidTimer = 0;
+        _endlessVoidTargets.clear();
     }
 
     void MoveInLineOfSight(Unit* who) override
@@ -309,6 +418,23 @@ struct boss_muru : public BossAI
             }
         }
     }
+
+    void UpdateAI(uint32 diff) override
+    {
+        if (_endlessVoidTimer <= diff)
+        {
+            MaintainMuruEndlessVoidAura(me, _endlessVoidTargets);
+            _endlessVoidTimer = 15000;
+        }
+        else
+            _endlessVoidTimer -= diff;
+
+        BossAI::UpdateAI(diff);
+    }
+
+private:
+    uint32 _endlessVoidTimer = 0;
+    GuidSet _endlessVoidTargets;
 };
 
 struct boss_entropius : public ScriptedAI
@@ -480,20 +606,7 @@ struct npc_singularity : public NullCreatureAI
     {
         scheduler.Schedule(1s, [this](TaskContext context)
         {
-            Player* target = nullptr;
-
-            auto const& playerList = me->GetMap()->GetPlayers();
-            for (auto const& playerRef : playerList)
-            {
-                if (Player* player = playerRef.GetSource())
-                {
-                    if (me->IsWithinLOSInMap(player) && player->IsAlive() && !player->HasAura(SPELL_BLACK_HOLE_EFFECT))
-                    {
-                        target = player;
-                        break;
-                    }
-                }
-            }
+            Unit* target = SelectSingularityTarget(me);
 
             if (target)
             {

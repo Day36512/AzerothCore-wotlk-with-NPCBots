@@ -446,7 +446,9 @@ protected:
     bool TryBrutallusBurnSurvival(uint32 diff);
     bool TryReliquarySupport(uint32 diff);
     bool TryIllidariCouncilSupport(uint32 diff);
+    BotEncounterHeroismState GetMuruEntropiusHeroismState() const;
     BotEncounterHeroismState GetIllidanPhaseTwoHeroismState() const;
+    BotEncounterHeroismState GetKiljaedenFinalPhaseHeroismState() const;
     bool TryCastIllidanPhaseTwoDrumsOfWar() const;
     void MoveBehind(Unit const* target) const;
 
