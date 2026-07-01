@@ -2242,9 +2242,13 @@ public:
             if ((*bot_name)[i] == '_')
                 (*bot_name)[i] = ' ';
 
-        auto canBotUseSpell = [=](Creature const* tbot, uint32 bspell) {
+        auto getBotBaseSpell = [handler](Creature const* bot, std::string_view spellname) {
+            return bot->GetBotAI()->GetBaseSpell(spellname, handler->GetSessionDbcLocale());
+        };
+
+        auto canBotUseSpell = [](Creature const* tbot, uint32 bspell) {
             //we ignore GCD for now
-            return bspell && (tbot->GetBotAI()->GetSpellCooldown(bspell) <= tbot->GetBotAI()->GetLastDiff());
+            return bspell && tbot->GetBotAI()->IsSpellReady(bspell, tbot->GetBotAI()->GetLastDiff(), false);
         };
 
         uint32 base_spell = 0;
@@ -2253,7 +2257,7 @@ public:
         {
             if (!bot->IsInWorld())
             {
-                handler->PSendSysMessage("Bot {} is not found!", *bot_name);
+                handler->PSendSysMessage("Bot {} is not found!", bot->GetName());
                 return true;
             }
             if (!bot->IsAlive())
@@ -2262,7 +2266,7 @@ public:
                 return true;
             }
 
-            base_spell = bot->GetBotAI()->GetBaseSpell(*spell_name, handler->GetSessionDbcLocale());
+            base_spell = getBotBaseSpell(bot, *spell_name);
             if (!base_spell)
             {
                 handler->PSendSysMessage("{} doesn't have spell named '{}'!", bot->GetName(), *spell_name);
@@ -2300,23 +2304,26 @@ public:
 
             uint32 found_bots_count = static_cast<uint32>(cBots.size());
 
+            uint32 found_spell_bots_count = 0;
             for (Creature const* fbot : cBots)
             {
-                base_spell = fbot->GetBotAI()->GetBaseSpell(*spell_name, handler->GetSessionDbcLocale());
-                if (base_spell)
-                    break;
+                if (uint32 bspell = getBotBaseSpell(fbot, *spell_name))
+                {
+                    ++found_spell_bots_count;
+                    base_spell = bspell;
+                }
             }
 
-            if (!base_spell)
+            if (found_spell_bots_count == 0)
             {
-                handler->PSendSysMessage("None of {} found bots have spell named '{}'!", found_bots_count, *spell_name);
+                handler->PSendSysMessage("None of {} found {} bots have spell named '{}'!", found_bots_count, class_name, *spell_name);
                 return true;
             }
 
             std::erase_if(cBots, [=](Creature const* tbot) {
                 if (tbot->GetBotAI()->GetActionsQueueSize() >= MAX_BOT_ORDERS_QUEUE_SIZE)
                     return true;
-                return !canBotUseSpell(tbot, base_spell);
+                return !getBotBaseSpell(tbot, *spell_name) || !canBotUseSpell(tbot, base_spell);
             });
 
             decltype(cBots) ccBots;
@@ -2337,7 +2344,7 @@ public:
 
             if (!bot)
             {
-                handler->PSendSysMessage("None of {} found bots can use {} yet!", found_bots_count, *spell_name);
+                handler->PSendSysMessage("None of {} found bots can use {} yet!", found_spell_bots_count, *spell_name);
                 return true;
             }
         }
@@ -3891,9 +3898,9 @@ public:
         }
 
         WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_CREATURE_BY_ID);
-        //"SELECT guid FROM creature WHERE id1 = ? OR id2 = ? OR id3 = ?", CONNECTION_SYNCH
+        //"SELECT guid FROM creature WHERE id = ? UNION SELECT spawnId AS guid FROM creature_multispawn WHERE entry = ?", CONNECTION_SYNCH
         //stmt->setUInt32(0, id);
-        stmt->SetArguments(id, id, id);
+        stmt->SetArguments(id, id);
         PreparedQueryResult res2 = WorldDatabase.Query(stmt);
         if (res2)
         {

@@ -24,6 +24,7 @@
 #include "ObjectDefines.h"
 #include "ObjectMgr.h"
 #include "ScriptedCreature.h"
+#include "ScriptMgr.h"
 #include "SpellMgr.h"
 #include "Vehicle.h"
 #include "World.h"
@@ -712,7 +713,7 @@ void SmartAI::JustExitedCombat()
     CreatureAI::JustExitedCombat();
 }
 
-void SmartAI::EnterEvadeMode(EvadeReason /*why*/)
+void SmartAI::EnterEvadeMode(EvadeReason why)
 {
     if (mSuppressEvade)
         return;
@@ -764,6 +765,8 @@ void SmartAI::EnterEvadeMode(EvadeReason /*why*/)
         if (!me->HasUnitState(UNIT_STATE_EVADE))
             GetScript()->OnReset();
     }
+
+    sScriptMgr->OnUnitEnterEvadeMode(me, why);
 }
 
 void SmartAI::MoveInLineOfSight(Unit* who)

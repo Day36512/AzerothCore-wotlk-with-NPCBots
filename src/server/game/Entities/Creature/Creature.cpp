@@ -271,7 +271,7 @@ Creature::Creature(): Unit(), MovableMapObject(), m_groupLootTimer(0), lootingGr
     m_spawnId(0), m_equipmentId(0), m_originalEquipmentId(0), m_alreadyCallForHelp(false), m_AlreadyCallAssistance(false),
     m_AlreadySearchedAssistance(false), m_regenHealth(true), m_regenPower(true), m_AI_locked(false), m_meleeDamageSchoolMask(SPELL_SCHOOL_MASK_NORMAL), m_originalEntry(0), _gossipMenuId(0), m_moveInLineOfSightDisabled(false), m_moveInLineOfSightStrictlyDisabled(false),
     m_homePosition(), m_transportHomePosition(), m_creatureInfo(nullptr), m_creatureData(nullptr), m_detectionDistance(20.0f),_sparringPct(0.0f), m_waypointID(0), m_path_id(0), m_formation(nullptr), m_lastLeashExtensionTime(nullptr),
-    _isMissingSwimmingFlagOutOfCombat(false), m_assistanceTimer(0), _playerDamageReq(0), _damagedByPlayer(false), _isCombatMovementAllowed(true)
+    _isMissingSwimmingFlagOutOfCombat(false), m_assistanceTimer(0), _playerDamageReq(0), _damagedByPlayer(false), _highestPlayerAttackerLevel(0), _isCombatMovementAllowed(true)
 {
     m_regenTimer = CREATURE_REGEN_INTERVAL;
     m_valuesCount = UNIT_END;
@@ -1520,7 +1520,7 @@ void Creature::SaveToDB(uint32 mapid, uint8 spawnMask, uint32 phaseMask)
             dynamicflags = 0;
     }
 
-    data.id1 = GetEntry();
+    data.id = GetEntry();
     data.mapid = mapid;
     data.phaseMask = phaseMask;
     data.displayid = displayId;
@@ -1566,8 +1566,6 @@ void Creature::SaveToDB(uint32 mapid, uint8 spawnMask, uint32 phaseMask)
     stmt = WorldDatabase.GetPreparedStatement(WORLD_INS_CREATURE);
     stmt->SetData(index++, m_spawnId);
     stmt->SetData(index++, GetEntry());
-    stmt->SetData(index++, 0);
-    stmt->SetData(index++, 0);
     stmt->SetData(index++, uint16(mapid));
     stmt->SetData(index++, spawnMask);
     stmt->SetData(index++, GetPhaseMask());
@@ -1813,7 +1811,7 @@ bool Creature::LoadCreatureFromDB(ObjectGuid::LowType spawnId, Map* map, bool ad
     }
 
     //npcbot
-    if (BotDataMgr::SelectNpcBotData(data->id1))
+    if (BotDataMgr::SelectNpcBotData(data->id))
         return false;
     //end npcbot
 
@@ -1827,7 +1825,7 @@ bool Creature::LoadCreatureFromDB(ObjectGuid::LowType spawnId, Map* map, bool ad
         || !groupData || (groupData->flags & SPAWNGROUP_FLAG_COMPATIBILITY_MODE);
 
     // Add to world
-    uint32 entry = GetRandomId(data->id1, data->id2, data->id3);
+    uint32 entry = GetRandomId(data->id, data->id2, data->id3);
 
     if (!Create(map->GenerateLowGuid<HighGuid::Unit>(), map, data->phaseMask, entry, 0, data->posX, data->posY, data->posZ, data->orientation, data))
         return false;
@@ -1978,6 +1976,10 @@ void Creature::DeleteFromDB()
     trans->Append(stmt);
 
     stmt = WorldDatabase.GetPreparedStatement(WORLD_DEL_CREATURE_ADDON);
+    stmt->SetData(0, m_spawnId);
+    trans->Append(stmt);
+
+    stmt = WorldDatabase.GetPreparedStatement(WORLD_DEL_CREATURE_MULTISPAWN);
     stmt->SetData(0, m_spawnId);
     trans->Append(stmt);
 
@@ -2190,7 +2192,7 @@ void Creature::Respawn(bool force)
     if (!allowed && !force) // Will be rechecked on next Update call
         return;
 
-    ObjectGuid dbtableHighGuid = ObjectGuid::Create<HighGuid::Unit>(m_creatureData ? m_creatureData->id1 : GetEntry(), m_spawnId);
+    ObjectGuid dbtableHighGuid = ObjectGuid::Create<HighGuid::Unit>(m_creatureData ? m_creatureData->id : GetEntry(), m_spawnId);
     time_t linkedRespawntime = GetMap()->GetLinkedRespawnTime(dbtableHighGuid);
 
     CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(GetEntry());
@@ -2210,7 +2212,7 @@ void Creature::Respawn(bool force)
                     // Respawn check if spawn has 2 entries
                     if (data->id2)
                     {
-                        uint32 entry = GetRandomId(data->id1, data->id2, data->id3);
+                        uint32 entry = GetRandomId(data->id, data->id2, data->id3);
                         UpdateEntry(entry, data, true);  // Select Random Entry
                         m_defaultMovementType = MovementGeneratorType(data->movementType);                    // Reload Movement Type
                         LoadEquipment(data->equipmentId);                                                     // Reload Equipment
@@ -3054,6 +3056,13 @@ void Creature::AtEngage(Unit* target)
         UpdateSpeed(MOVE_FLIGHT, true);
     }
 
+    // Notify controlled creatures (guardians/pets) so they assist when
+    // the owner enters combat via assist/aggro chain, not only via damage.
+    for (Unit* controlled : m_Controlled)
+        if (Creature* cControlled = controlled->ToCreature())
+            if (CreatureAI* controlledAI = cControlled->AI())
+                controlledAI->OwnerAttackedBy(target);
+
     MovementGeneratorType const movetype = GetMotionMaster()->GetCurrentMovementGeneratorType();
     if (movetype == WAYPOINT_MOTION_TYPE || movetype == ESCORT_MOTION_TYPE || (IsAIEnabled && AI()->IsEscorted()))
     {
@@ -3363,7 +3372,7 @@ uint32 Creature::GetScriptId() const
     if (CreatureData const* creatureData = GetCreatureData())
     {
         uint32 scriptId = creatureData->ScriptId;
-        if (scriptId && GetEntry() == creatureData->id1)
+        if (scriptId && GetEntry() == creatureData->id)
             return scriptId;
     }
 
@@ -4062,7 +4071,7 @@ bool Creature::IsDamageEnoughForLootingAndReward() const
     return m_creatureInfo->HasFlagsExtra(CREATURE_FLAG_EXTRA_NO_PLAYER_DAMAGE_REQ) || (_playerDamageReq == 0 && _damagedByPlayer);
 }
 
-void Creature::LowerPlayerDamageReq(uint32 unDamage, bool damagedByPlayer /*= true*/)
+void Creature::LowerPlayerDamageReq(uint32 unDamage, bool damagedByPlayer /*= true*/, uint8 attackerLevel /*= 0*/)
 {
     if (_playerDamageReq)
         _playerDamageReq > unDamage ? _playerDamageReq -= unDamage : _playerDamageReq = 0;
@@ -4071,12 +4080,16 @@ void Creature::LowerPlayerDamageReq(uint32 unDamage, bool damagedByPlayer /*= tr
     {
         _damagedByPlayer = damagedByPlayer;
     }
+
+    if (attackerLevel > _highestPlayerAttackerLevel)
+        _highestPlayerAttackerLevel = attackerLevel;
 }
 
 void Creature::ResetPlayerDamageReq()
 {
     _playerDamageReq = GetHealth() / 2;
     _damagedByPlayer = false;
+    _highestPlayerAttackerLevel = 0;
 }
 
 uint32 Creature::GetPlayerDamageReq() const
@@ -4181,7 +4194,7 @@ bool Creature::LoadBotCreatureFromDB(ObjectGuid::LowType spawnId, Map* map, bool
 
     if (!Create(map->GenerateLowGuid<HighGuid::Unit>(), map,
         data ? data->phaseMask : PHASEMASK_NORMAL,
-        data ? data->id1 : entry, 0,
+        data ? data->id : entry, 0,
         data ? data->posX : pos->m_positionX, data ? data->posY : pos->m_positionY,
         data ? data->posZ : pos->m_positionZ, data ? data->orientation : pos->GetOrientation(),
         data))

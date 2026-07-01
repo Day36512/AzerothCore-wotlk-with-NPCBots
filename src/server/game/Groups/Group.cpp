@@ -559,7 +559,7 @@ bool Group::AddMember(Creature* creature)
 }
 //end npcbot
 
-bool Group::AddMember(Player* player)
+bool Group::AddMember(Player* player, uint8 roles /* = 0 */)
 {
     if (!player)
         return false;
@@ -587,7 +587,7 @@ bool Group::AddMember(Player* player)
     member.name      = player->GetName();
     member.group     = subGroup;
     member.flags     = 0;
-    member.roles     = 0;
+    member.roles     = roles;
     m_memberSlots.push_back(member);
 
     if (!isBGGroup() && !isBFGroup())
@@ -1796,7 +1796,7 @@ void Group::CountTheRoll(Rolls::iterator rollI, Map* allowedMap)
                 roll->totalNeed = 0;
         }
     }
-    if (roll->totalNeed == 0 && roll->totalGreed > 0) // pussywizard: if (roll->totalNeed == 0 && ...), not else if, because numbers can be modified above if player is on a different map
+    if (roll->totalNeed == 0 && roll->totalGreed > 0) // if, not else if, because totals can be decremented above
     {
         if (!roll->playerVote.empty())
         {
@@ -1910,7 +1910,7 @@ void Group::CountTheRoll(Rolls::iterator rollI, Map* allowedMap)
                 roll->totalGreed = 0;
         }
     }
-    if (roll->totalNeed == 0 && roll->totalGreed == 0) // pussywizard: if, not else, because numbers can be modified above if player is on a different map
+    if (roll->totalNeed == 0 && roll->totalGreed == 0) // if, not else, because totals can be decremented above
     {
         SendLootAllPassed(*roll);
 

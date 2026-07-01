@@ -478,6 +478,14 @@ struct boss_murmur : public BossAI
         }
     }
 
+    void DamageTaken(Unit* attacker, uint32& damage, DamageEffectType damagetype, SpellSchoolMask damageSchoolMask) override
+    {
+        BossAI::DamageTaken(attacker, damage, damagetype, damageSchoolMask);
+
+        if (attacker && !me->GetVictim() && attacker->IsControlledByPlayer())
+            AttackStart(attacker);
+    }
+
     void JustDied(Unit* killer) override
     {
         MurmurCustom::SetMurmurSonicBoomNonAttackable(me, false);
@@ -487,7 +495,8 @@ struct boss_murmur : public BossAI
 
     void JustEngagedWith(Unit* who) override
     {
-        if (who->IsPlayer() || who->IsPet() || who->IsGuardian())
+        // Boss engages mobs during roleplay, this checks prevents it from setting the zone in combat before players engage it.
+        if (who->IsControlledByPlayer())
             _JustEngagedWith();
 
         scheduler.Schedule(28s, [this](TaskContext context)

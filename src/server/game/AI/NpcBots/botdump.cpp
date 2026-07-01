@@ -95,7 +95,7 @@ static constexpr const TableImportData TableImportDatas[IMPORT_TABLES_COUNT] =
     { "`creature` ",
       "("
       //0      1    2     3           4           5            6            7            8             9           10
-      "`guid`,`id1`,`map`,`spawnMask`,`phaseMask`,`position_x`,`position_y`,`position_z`,`orientation`,`curhealth`,`curmana`"
+      "`guid`,`id`,`map`,`spawnMask`,`phaseMask`,`position_x`,`position_y`,`position_z`,`orientation`,`curhealth`,`curmana`"
       ") VALUES ", 11, 0, 0 }
 };
 
@@ -453,7 +453,7 @@ BotDataDumpResult NPCBotsDump::LoadDump(std::ifstream& input)
         } while (result->NextRow());
     }
     //second - join with entries from `creature` table (who knows what you have spawned there before you needed to import bots eh?)
-    result = WorldDatabase.Query("SELECT `id1` FROM `creature` WHERE `id1` IN (SELECT `entry` FROM `creature_template_npcbot_extras`) ORDER BY `id1`");
+    result = WorldDatabase.Query("SELECT `id` FROM `creature` WHERE `id` IN (SELECT `entry` FROM `creature_template_npcbot_extras`) ORDER BY `id`");
     if (result)
     {
         fields = result->Fetch();
@@ -768,7 +768,7 @@ BotDataVerificationResult NPCBotsDump::VerifyWriteData(uint32 entry) const
         return BOT_DATA_INCOMPLETE;
     }
 
-    QueryResult result = WorldDatabase.Query("SELECT `guid` FROM `creature` WHERE `id1` = {}", entry);
+    QueryResult result = WorldDatabase.Query("SELECT `guid` FROM `creature` WHERE `id` = {}", entry);
 
     //creature is not spawned, corrupted
     if (!result)
@@ -964,7 +964,7 @@ void NPCBotsDump::AppendBotEquipsData(BotStringTransaction* trans, uint32 entry)
 
 void NPCBotsDump::AppendBotCreatureData(BotStringTransaction* trans, uint32 entry) const
 {
-    QueryResult cresult = WorldDatabase.Query("SELECT `guid`,`id1`,`map`,`spawnMask`,`phaseMask`,`position_x`,`position_y`,`position_z`,`orientation`,`curhealth`,`curmana` FROM `creature` WHERE id1 = {}", entry);
+    QueryResult cresult = WorldDatabase.Query("SELECT `guid`,`id`,`map`,`spawnMask`,`phaseMask`,`position_x`,`position_y`,`position_z`,`orientation`,`curhealth`,`curmana` FROM `creature` WHERE id = {}", entry);
 
     ASSERT(cresult);
 

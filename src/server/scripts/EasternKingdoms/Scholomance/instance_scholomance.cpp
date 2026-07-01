@@ -337,7 +337,7 @@ public:
                 if (!data || data->mapid != MAP_SCHOLOMANCE)
                     continue;
 
-                if (data->id1 == NPC_RATTLEGORE || data->id2 == NPC_RATTLEGORE || data->id3 == NPC_RATTLEGORE)
+                if (data->id == NPC_RATTLEGORE || data->id2 == NPC_RATTLEGORE || data->id3 == NPC_RATTLEGORE)
                     return true;
             }
 

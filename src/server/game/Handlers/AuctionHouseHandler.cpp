@@ -45,7 +45,7 @@ static bool ResolveAuctionHouseIdForPost(Creature* creature, AuctionHouseEntry c
     // Stock path for normal DB-spawned auctioneers.
     if (CreatureData const* auctioneerData = sObjectMgr->GetCreatureData(creature->GetSpawnId()))
     {
-        if (CreatureTemplate const* auctioneerInfo = sObjectMgr->GetCreatureTemplate(auctioneerData->id1))
+        if (CreatureTemplate const* auctioneerInfo = sObjectMgr->GetCreatureTemplate(auctioneerData->id))
         {
             if (AuctionHouseEntry const* templateAuctionHouseEntry = AuctionHouseMgr::GetAuctionHouseEntryFromFactionTemplate(auctioneerInfo->faction))
             {
@@ -185,6 +185,13 @@ void WorldSession::HandleAuctionSellItem(WorldPacket& recvData)
     if (itemsCount > MAX_AUCTION_ITEMS)
     {
         SendAuctionCommandResult(0, AUCTION_SELL_ITEM, ERR_AUCTION_DATABASE_ERROR);
+        recvData.rfinish();
+        return;
+    }
+
+    if (sWorld->getBoolConfig(CONFIG_TRIAL_RESTRICTION_AUCTION) && IsTrialAccount())
+    {
+        SendAuctionCommandResult(0, AUCTION_SELL_ITEM, ERR_AUCTION_RESTRICTED_ACCOUNT);
         recvData.rfinish();
         return;
     }
@@ -471,6 +478,12 @@ void WorldSession::HandleAuctionPlaceBid(WorldPacket& recvData)
     if (!auctionId || !price)
         return;                                             //check for cheaters
 
+    if (sWorld->getBoolConfig(CONFIG_TRIAL_RESTRICTION_AUCTION) && IsTrialAccount())
+    {
+        SendAuctionCommandResult(0, AUCTION_PLACE_BID, ERR_AUCTION_RESTRICTED_ACCOUNT);
+        return;
+    }
+
     Creature* creature = GetPlayer()->GetNPCIfCanInteractWith(auctioneer, UNIT_NPC_FLAG_AUCTIONEER);
     if (!creature)
     {
@@ -622,6 +635,12 @@ void WorldSession::HandleAuctionRemoveItem(WorldPacket& recvData)
     uint32 auctionId;
     recvData >> auctioneer;
     recvData >> auctionId;
+
+    if (sWorld->getBoolConfig(CONFIG_TRIAL_RESTRICTION_AUCTION) && IsTrialAccount())
+    {
+        SendAuctionCommandResult(0, AUCTION_CANCEL, ERR_AUCTION_RESTRICTED_ACCOUNT);
+        return;
+    }
 
     Creature* creature = GetPlayer()->GetNPCIfCanInteractWith(auctioneer, UNIT_NPC_FLAG_AUCTIONEER);
     if (!creature)

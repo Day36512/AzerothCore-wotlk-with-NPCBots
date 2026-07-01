@@ -9528,8 +9528,8 @@ void bot_ai::BuffAndHealGroup(uint32 diff)
         std::erase_if(targets2, BOTAI_PRED::BuffTargetExclude());
         std::erase_if(targets2, [this](Unit const* unit) {
             return !unit->IsPlayer() && !(IsWanderer() && unit->IsNPCBot() && unit->ToCreature()->GetBotAI()->IsWanderer());
-            });
-        if (!targets2.empty() && BuffTarget(targets2.size() == 1 ? targets2.front() : Bcore::Containers::SelectRandomContainerElement(targets2), diff))
+        });
+        if (!targets2.empty() && CanDoNonCombatActions() && BuffTarget(targets2.size() == 1 ? targets2.front() : Bcore::Containers::SelectRandomContainerElement(targets2), diff))
             return;
         for (Unit* heal_target : targets2)
             if (GetHealthPCT(heal_target) < 95 && urand(1, 100) <= (30 + 30 * uint32(!!GetBG())) && HealTarget(heal_target, diff))
@@ -10094,12 +10094,16 @@ void bot_ai::BuffAndHealGroup(uint32 diff)
 // no need to check global cooldown
 void bot_ai::ResurrectGroup(uint32 spell_id)
 {
-    if (!spell_id || Rand() > 10)
+    if (!spell_id || Rand() > 10 || me->GetMap()->IsBattleground())
         return;
 
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spell_id);
     ASSERT(spellInfo);
     spellInfo = spellInfo->TryGetSpellInfoOverride(me);
+
+    if (!spellInfo->CanBeUsedInCombat() && (me->IsInCombat() || !CanDoNonCombatActions()))
+        return;
+
     if (int32(me->GetPower(Powers(spellInfo->PowerType))) < spellInfo->CalcPowerCost(me, spellInfo->GetSchoolMask()))
         return;
 
@@ -10508,6 +10512,32 @@ bool bot_ai::CanRemoveReflectSpells(Unit const* target, uint32 spellId) const
         }
         //}
     }
+
+    return false;
+}
+
+bool bot_ai::CanTauntTarget(Unit const* target, float dist) const
+{
+    Unit const* u = target->GetVictim();
+
+    if (u && u != me && Rand() < 50 && dist < 30 &&
+        target->CanHaveThreatList() && !CCed(target) && !target->HasAuraType(SPELL_AURA_MOD_TAUNT) &&
+        (!IsTank(u) || (IsTank() && GetHealthPCT(me) > 67 &&
+        (GetHealthPCT(u) < 30 || (IsOffTank() && !IsOffTank(u) && IsPointedOffTankingTarget(target)) ||
+        (!IsOffTank() && IsOffTank(u) && IsPointedTankingTarget(target))))))
+        return true;
+
+    return false;
+}
+bool bot_ai::CanTauntDistantTarget(Unit const* target) const
+{
+    Unit const* u = target->GetVictim();
+
+    if (!IAmFree() && u == me && Rand() < 35 && IsTank() &&
+        (IsOffTank() || master->GetBotMgr()->GetNpcBotsCountByRole(BOT_ROLE_TANK_OFF) == 0) &&
+        !(me->GetLevel() >= 40 && target->IsCreature() &&
+        (target->ToCreature()->IsDungeonBoss() || target->ToCreature()->isWorldBoss())))
+        return true;
 
     return false;
 }
@@ -30327,6 +30357,10 @@ void bot_ai::JustEngagedWith(Unit* u)
         }
     }
 }
+void bot_ai::JustExitedCombat()
+{
+    _nonCombatActionsTimer = NON_COMBAT_ACTIONS_TIMER_DEFAULT;
+}
 //killer may be NULL
 void bot_ai::JustDied(Unit* u)
 {
@@ -30379,7 +30413,7 @@ void bot_ai::JustDied(Unit* u)
     }
 
     _reviveTimer = (IsWanderer() && !(u && u->IsControlledByPlayer())) ? REVIVE_TIMER_MEDIUM :
-        IAmFree() ? REVIVE_TIMER_DEFAULT : master->InBattleground() ? REVIVE_TIMER_SHORT / 2 : REVIVE_TIMER_SHORT;
+        IAmFree() ? REVIVE_TIMER_DEFAULT : master->InBattleground() ? REVIVE_TIMER_BG : REVIVE_TIMER_SHORT;
     _atHome = false;
     _evadeMode = false;
     spawned = false;
@@ -33247,6 +33281,7 @@ void bot_ai::CommonTimers(uint32 diff)
         }
     }
 
+    if (_nonCombatActionsTimer > diff)_nonCombatActionsTimer -= diff;
     if (_contestedPvPTimer > diff)  _contestedPvPTimer -= diff;
 
     if (_groupUpdateTimer > diff)   _groupUpdateTimer -= diff;
